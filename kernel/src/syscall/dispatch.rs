@@ -78,60 +78,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_DMA_PHYS => handlers::sys_device_dma_phys(args[0]),
         SYS_DEVICE_IRQ_WAIT => handlers::sys_device_irq_wait(args[0], args[1], args[2]),
 
-        SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
-        SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2]),
-        SYS_ROOT_BYTESPACE_READ => {
-            handlers::sys_root_bytespace_read(args[0], args[1], args[2], args[3])
-        }
-        SYS_ROOT_BYTESPACE_WRITE => {
-            handlers::sys_root_bytespace_write(args[0], args[1], args[2], args[3])
-        }
-        SYS_ROOT_BYTESPACE_INFO => handlers::sys_root_bytespace_info(args[0]),
-        SYS_ROOT_BYTESPACE_MAP => handlers::sys_root_bytespace_map(args[0]),
-        SYS_ROOT_BYTESPACE_UNMAP => handlers::sys_root_bytespace_unmap(args[0], args[1]),
-        SYS_ROOT_BYTESPACE_PHYS => handlers::sys_root_bytespace_phys(args[0]),
-        SYS_ROOT_WATCH_SUBSCRIBE => handlers::sys_root_watch_subscribe(args[0], args[1]),
-        SYS_ROOT_STREAM_POLL => handlers::sys_root_stream_poll(args[0], args[1], args[2]),
-        SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
-        SYS_ROOT_DESCRIBE_THING => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
-        SYS_ROOT_DESCRIBE_SYMBOL => handlers::sys_root_describe_symbol(args[0], args[1], args[2]),
-        SYS_ROOT_DESCRIBE_EDGE => {
-            handlers::sys_root_describe_edge(args[0], args[1], args[2], args[3], args[4])
-        }
-        SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
-        SYS_ROOT_DUMP_EDGES => handlers::sys_root_dump_edges(args[0], args[1], args[2]),
-        SYS_ROOT_GET_EDGES => handlers::sys_root_get_edges(args[0], args[1], args[2]),
-        SYS_ROOT_GET_PROPS => handlers::sys_root_get_props(args[0], args[1], args[2]),
-        SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
-        SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
-        SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),
-        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
-        SYS_ROOT_QUERY => handlers::sys_root_query(args[0], args[1], args[2], args[3]),
-        SYS_ROOT_DUMP_GRAPH => handlers::sys_root_dump_graph(args[0]),
-
-        SYS_ROOT_WATCH_OPEN => handlers::sys_root_watch_open(args[0]),
-        SYS_ROOT_WATCH_NEXT => handlers::sys_root_watch_next(args[0], args[1], args[2], args[3]),
-        SYS_ROOT_WATCH_TRY_NEXT => {
-            handlers::sys_root_watch_try_next(args[0], args[1], args[2], args[3])
-        }
-        SYS_ROOT_WATCH_CLOSE => handlers::sys_root_watch_close(args[0]),
-        SYS_ROOT_APPLY_BATCH => handlers::sys_root_apply_batch(args[0], args[1]),
-        SYS_ROOT_PROPS_GET_MANY => {
-            handlers::sys_root_props_get_many(args[0], args[1], args[2], args[3])
-        }
-
-        SYS_ROOT_BYTESPACE_TRUNCATE => handlers::sys_root_bytespace_truncate(args[0], args[1]),
-        SYS_ROOT_RESOLVE_PATH => handlers::sys_root_resolve_path(args[0], args[1]),
-        SYS_ROOT_UNLINK => handlers::sys_root_unlink(args[0], args[1], args[2]),
-        SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),
-        SYS_ROOT_ORPHAN_THING => handlers::sys_root_orphan_thing(args[0]),
-
-        SYS_ROOT_ASYNC_PROP_SET => handlers::sys_root_async_prop_set(args[0], args[1], args[2]),
-        SYS_ROOT_ASYNC_LINK => handlers::sys_root_async_link(args[0], args[1], args[2]),
-        SYS_ROOT_ASYNC_CREATE_NODE => handlers::sys_root_async_create_node(args[0]),
-        SYS_ROOT_ASYNC_WAIT => handlers::sys_root_async_wait(args[0]),
-        SYS_ROOT_ASYNC_DROP => handlers::sys_root_async_drop(args[0]),
-        SYS_ROOT_ASYNC_STATUS => handlers::sys_root_async_status(args[0]),
+        SYS_MEMFD_CREATE => handlers::sys_memfd_create(args[0], args[1], args[2]),
+        SYS_MEMFD_PHYS => handlers::sys_memfd_phys(args[0]),
 
         SYS_NIC_MAC => handlers::sys_nic_mac(args[0]),
         SYS_NIC_LINK_UP => handlers::sys_nic_link_up(),
@@ -145,22 +93,38 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
 
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
 
+        // ── Unified Object Graph (Root) ───────────────────────────────────
+        SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
+        SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
+        SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
+        SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
+        SYS_ROOT_UNLINK => handlers::sys_root_unlink(args[0], args[1], args[2]),
+        SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
+        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
+        SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),
+        SYS_ROOT_DESCRIBE => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
+        SYS_ROOT_RESOLVE_PATH => handlers::sys_root_resolve_path(args[0], args[1]),
+        SYS_ROOT_GET_PROPS => handlers::sys_root_get_props(args[0], args[1], args[2]),
+        SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),
+        SYS_ROOT_APPLY_BATCH => handlers::sys_root_apply_batch(args[0], args[1]),
+
         // ── VFS (janix) ───────────────────────────────────────────────────
-        SYS_VFS_OPEN => handlers::vfs::sys_vfs_open(args[0], args[1], args[2]),
-        SYS_VFS_CLOSE => handlers::vfs::sys_vfs_close(args[0]),
-        SYS_VFS_READ => handlers::vfs::sys_vfs_read(args[0], args[1], args[2]),
-        SYS_VFS_WRITE => handlers::vfs::sys_vfs_write(args[0], args[1], args[2]),
-        SYS_DUP => handlers::vfs::sys_dup(args[0]),
-        SYS_DUP2 => handlers::vfs::sys_dup2(args[0], args[1]),
+        SYS_FS_OPEN => handlers::vfs::SYS_FS_open(args[0], args[1], args[2]),
+        SYS_FS_CLOSE => handlers::vfs::SYS_FS_close(args[0]),
+        SYS_FS_READ => handlers::vfs::SYS_FS_read(args[0], args[1], args[2]),
+        SYS_FS_WRITE => handlers::vfs::SYS_FS_write(args[0], args[1], args[2]),
+        SYS_FS_DUP => handlers::vfs::SYS_FS_DUP(args[0]),
+        SYS_FS_DUP2 => handlers::vfs::SYS_FS_DUP2(args[0], args[1]),
         SYS_PIPE => handlers::vfs::sys_pipe(args[0]),
-        SYS_VFS_UNLINK => handlers::vfs::sys_vfs_unlink(args[0], args[1]),
-        SYS_VFS_MKDIR => handlers::vfs::sys_vfs_mkdir(args[0], args[1]),
-        SYS_VFS_MOUNT => handlers::vfs::sys_vfs_mount(args[0], args[1], args[2]),
-        SYS_VFS_UMOUNT => handlers::vfs::sys_vfs_umount(args[0], args[1]),
-        SYS_VFS_POLL => handlers::vfs::sys_vfs_poll(args[0], args[1], args[2]),
+        SYS_FS_UNLINK => handlers::vfs::SYS_FS_unlink(args[0], args[1]),
+        SYS_FS_MKDIR => handlers::vfs::SYS_FS_mkdir(args[0], args[1]),
+        SYS_FS_MOUNT => handlers::vfs::SYS_FS_mount(args[0], args[1], args[2]),
+        SYS_FS_UMOUNT => handlers::vfs::SYS_FS_umount(args[0], args[1]),
+        SYS_FS_POLL => handlers::vfs::SYS_FS_poll(args[0], args[1], args[2]),
+        SYS_FS_SEEK => handlers::vfs::SYS_FS_seek(args[0], args[1], args[2]),
 
         _ => {
-            crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);
+            crate::kprintln!("SYSCALL: Unknown syscall #{} (0x{:x})", syscall_id, syscall_id);
             Err(abi::errors::Errno::ENOSYS)
         }
     };

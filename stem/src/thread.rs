@@ -134,7 +134,7 @@ where
 
     let stack = Stack::alloc_growing_stack(StackSpec::default())?;
 
-    let tid = crate::syscall::spawn_thread(generic_thread_trampoline::<F> as usize, ptr, &stack)
+    let tid = crate::syscall::spawn_thread(generic_thread_trampoline::<F> as *const () as usize, ptr, &stack)
         .map(|id| id as ThreadId)?;
 
     Ok(JoinHandle { tid })

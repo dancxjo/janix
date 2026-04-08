@@ -21,14 +21,15 @@ use stem::ui::UiBuilder;
 const KIND_NET_STACK: &str = "svc.net.Stack";
 
 fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
-    use stem::thing::sys::{bytespace_create, bytespace_write};
+    use stem::thing::sys::{memfd_create, write};
     if value.is_empty() {
         prop_set(id, key_name, 0).ok();
         return;
     }
-    let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
-    bytespace_write(bs_id, 0, value.as_bytes()).ok();
-    prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+    if let Ok(fd) = memfd_create(key_name, 0) {
+        let _ = write(fd, value.as_bytes());
+        prop_set(id, key_name, fd as u64).ok();
+    }
 }
 
 /// Holds the node IDs for the fetchd UI tree so we can update text without recreating nodes.
@@ -87,11 +88,10 @@ fn main(_arg: usize) -> ! {
     // Wait for UI Root (Compositor) - like Bloom / Photosynthesis pattern
     info!("FETCHD: Waiting for UI Root (Compositor)...");
     let ui_crown = {
-        let kind = stem::thing::sys::intern(kinds::UI_CROWN).unwrap_or(0) as u64;
         let mut found_id = 0;
         loop {
             let mut ids = [ThingId::default(); 1];
-            if let Ok(n) = stem::thing::sys::find(kind, &mut ids) {
+            if let Ok(n) = stem::thing::sys::find(kinds::UI_CROWN, &mut ids) {
                 if n > 0 {
                     found_id = ids[0].to_u64_lossy();
                     break;

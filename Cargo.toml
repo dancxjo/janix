@@ -73,4 +73,5 @@ resolver = "2"
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = "symbols"
+strip = "none"
+debug = true

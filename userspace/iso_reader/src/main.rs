@@ -395,17 +395,19 @@ fn publish_iso_file(
     // Set source to a distinct value for ISO files
     thingsys::prop_set(node, keys::SOURCE, 10u64).map_err(|_| "set source failed")?; // 10 = ISO
 
-    // Create bytespace and write data only if we have content
+    // Create memfd and write data only if we have content
     let bs = if let Some(ref data_vec) = data {
-        let bytespace = thingsys::bytespace_create(size as usize, 0, 0)
-            .map_err(|_| "bytespace_create failed")?;
-        thingsys::bytespace_write(bytespace, 0, data_vec).map_err(|_| "bytespace_write failed")?;
+        let fd = thingsys::memfd_create(path, 0)
+            .map_err(|_| "memfd_create failed")?;
+        thingsys::write(fd, data_vec).map_err(|_| "write failed")?;
 
         stats.bytes_read += size;
 
-        thingsys::prop_set(node, keys::BYTESPACE, bytespace.to_u64_lossy()).ok();
-        thingsys::link(node, rels::BACKED_BY, bytespace).ok();
-        Some(bytespace)
+        thingsys::prop_set(node, keys::BYTESPACE, fd as u64).ok();
+        // BACKED_BY link might still be useful for generic graph traversals
+        // though it now refers to an FD index.
+        thingsys::link(node, rels::BACKED_BY, ThingId::from_u64(fd as u64)).ok();
+        Some(ThingId::from_u64(fd as u64))
     } else {
         None
     };

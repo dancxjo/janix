@@ -8,8 +8,9 @@ extern crate alloc;
 use abi::font_protocol::GlyphPlacement;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use stem::thing::sys::{bytespace_create, bytespace_write};
+use stem::thing::sys::{write};
 use stem::thing::ThingId;
+use stem::syscall::memfd_create;
 
 /// Initial atlas size
 const INITIAL_ATLAS_SIZE: u32 = 256;
@@ -96,7 +97,7 @@ impl RowPacker {
 
 /// Atlas for a specific (face, size) combination
 pub struct Atlas {
-    pub bytespace_id: ThingId,
+    pub atlas_fd: u32,
     pub width: u32,
     pub height: u32,
     pub version: u64,
@@ -114,7 +115,7 @@ impl Atlas {
         let pixels = alloc::vec![0u8; (width * height) as usize];
 
         Self {
-            bytespace_id: ThingId::default(),
+            atlas_fd: 0,
             width,
             height,
             version: 1,
@@ -213,21 +214,22 @@ impl Atlas {
         true
     }
 
-    /// Commit atlas to bytespace
+    /// Commit atlas to memfd shared memory
     pub fn commit(&mut self) -> bool {
-        let size = self.pixels.len();
-
-        // Create or resize bytespace
-        match bytespace_create(size, 0, 0) {
-            Ok(bs_id) => {
-                if bytespace_write(bs_id, 0, &self.pixels).is_ok() {
-                    self.bytespace_id = bs_id;
-                    true
-                } else {
-                    false
-                }
+        // Create or reuse memfd
+        if self.atlas_fd == 0 {
+            let name = alloc::format!("font_atlas_v{}", self.version);
+            let size = self.pixels.len();
+            match memfd_create(&name, size) {
+                Ok(fd) => self.atlas_fd = fd,
+                Err(_) => return false,
             }
-            Err(_) => false,
+        }
+
+        if stem::thing::sys::write(self.atlas_fd, &self.pixels).is_ok() {
+            true
+        } else {
+            false
         }
     }
 

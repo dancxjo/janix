@@ -1,6 +1,6 @@
 //! VFS RPC wire format — shared between kernel and userland providers.
 //!
-//! When a userland process calls `SYS_VFS_MOUNT(port_write_handle, path)`, the
+//! When a userland process calls `SYS_FS_MOUNT(port_write_handle, path)`, the
 //! kernel registers a [`ProviderFs`][kernel-side] at the given path.  From that
 //! point on, every VFS operation that touches a path under that mount point is
 //! serialised into one of the messages below and sent to the provider's port.

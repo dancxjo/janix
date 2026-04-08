@@ -37,7 +37,8 @@ pub struct InfoResp {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct BufferResp {
-    pub bytespace_id: u64,
+    pub fd: u32,
+    pub _pad: u32,
     pub size: u64,
     pub stride: u32,
     pub format: u32,

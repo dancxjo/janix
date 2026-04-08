@@ -12,8 +12,8 @@ use alloc::vec::Vec;
 /// Source of SVG data for rasterization
 #[derive(Debug, Clone)]
 pub enum SvgSource {
-    /// SVG bytes are in a bytespace
-    Bytespace(ThingId),
+    /// SVG bytes are in a memfd
+    MemFd(u32),
     /// SVG bytes are inline (for tests/debug only)
     InlineBytes(Vec<u8>),
 }
@@ -55,8 +55,8 @@ pub struct RasterizeSvgRequest {
 pub struct RasterizeSvgResponse {
     /// Status code
     pub status: u8,
-    /// Bytespace containing rasterized pixels
-    pub raster_bytespace: ThingId,
+    /// MemFD containing rasterized pixels
+    pub raster_fd: u32,
     /// Actual width of rasterized image
     pub width: u32,
     /// Actual height of rasterized image
@@ -94,7 +94,7 @@ pub enum SvgRequestTag {
 impl RasterizeSvgRequest {
     /// Encode request to wire format
     /// Format: tag(1) + source_type(1) + [source_data] + width(4) + height(4) + format(1) + flags(4)
-    /// For Bytespace: source_data = bytespace_id(8)
+    /// For MemFd: source_data = fd(4) + pad(4)
     /// For InlineBytes: source_data = len(4) + bytes(len)
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         let mut pos = 0;
@@ -108,17 +108,18 @@ impl RasterizeSvgRequest {
 
         // Source
         match &self.source {
-            SvgSource::Bytespace(bs_id) => {
+            SvgSource::MemFd(fd) => {
                 if pos >= buf.len() {
                     return None;
                 }
-                buf[pos] = 0; // Bytespace type
+                buf[pos] = 0; // MemFd type
                 pos += 1;
 
                 if pos + 8 > buf.len() {
                     return None;
                 }
-                buf[pos..pos + 8].copy_from_slice(&bs_id.to_u64_lossy().to_le_bytes());
+                buf[pos..pos + 4].copy_from_slice(&fd.to_le_bytes());
+                buf[pos + 4..pos + 8].fill(0);
                 pos += 8;
             }
             SvgSource::InlineBytes(bytes) => {
@@ -172,13 +173,13 @@ impl RasterizeSvgRequest {
 
         let source = match source_type {
             0 => {
-                // Bytespace
+                // MemFd
                 if pos + 8 > buf.len() {
                     return None;
                 }
-                let bs_id = u64::from_le_bytes(buf[pos..pos + 8].try_into().ok()?);
+                let fd = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
                 pos += 8;
-                SvgSource::Bytespace(ThingId::from_u64(bs_id))
+                SvgSource::MemFd(fd)
             }
             1 => {
                 // Inline
@@ -222,7 +223,7 @@ impl RasterizeSvgRequest {
 
 impl RasterizeSvgResponse {
     /// Encode response to wire format
-    /// Format: status(1) + bytespace(8) + width(4) + height(4) + stride(4) + format(1) + variant_hash(8)
+    /// Format: status(1) + raster_fd(4) + pad(4) + width(4) + height(4) + stride(4) + format(1) + variant_hash(8)
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         const SIZE: usize = 1 + 8 + 4 + 4 + 4 + 1 + 8;
         if buf.len() < SIZE {
@@ -232,7 +233,8 @@ impl RasterizeSvgResponse {
         let mut pos = 0;
         buf[pos] = self.status;
         pos += 1;
-        buf[pos..pos + 8].copy_from_slice(&self.raster_bytespace.to_u64_lossy().to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.raster_fd.to_le_bytes());
+        buf[pos + 4..pos + 8].fill(0);
         pos += 8;
         buf[pos..pos + 4].copy_from_slice(&self.width.to_le_bytes());
         pos += 4;
@@ -258,8 +260,7 @@ impl RasterizeSvgResponse {
         let mut pos = 0;
         let status = buf[pos];
         pos += 1;
-        let raster_bytespace =
-            ThingId::from_u64(u64::from_le_bytes(buf[pos..pos + 8].try_into().ok()?));
+        let raster_fd = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 8;
         let width = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
@@ -273,7 +274,7 @@ impl RasterizeSvgResponse {
 
         Some(Self {
             status,
-            raster_bytespace,
+            raster_fd,
             width,
             height,
             stride_bytes,
@@ -299,7 +300,7 @@ pub fn decode_request_tag(buf: &[u8]) -> Option<SvgRequestTag> {
 pub fn encode_error(status: SvgStatus, buf: &mut [u8]) -> Option<usize> {
     let response = RasterizeSvgResponse {
         status: status as u8,
-        raster_bytespace: ThingId::default(),
+        raster_fd: 0,
         width: 0,
         height: 0,
         stride_bytes: 0,

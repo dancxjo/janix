@@ -1,4 +1,5 @@
-#![feature(restricted_std)]
+#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(target_os = "thingos", feature(restricted_std))]
 #![no_main]
 
 extern crate alloc;
@@ -66,7 +67,7 @@ fn rect_clamp_to_bounds(r: Rect, w: u32, h: u32) -> Rect {
 // ============================================================================
 
 struct Buffer {
-    bs_id: ThingId,
+    fd: u32,
     res_id: u32,
     phys: u64,
     last_present_seq: u64,
@@ -245,20 +246,20 @@ fn main(arg: usize) -> ! {
     let frame_pool_count = 1;
     let mut frame_pool_buffers = alloc::vec::Vec::new();
     for i in 0..frame_pool_count {
-        let bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
+        let fd = match stem::syscall::memfd_create("frame_pool", disp_size) {
             Ok(id) => id,
             Err(e) => {
-                info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
+                info!("display_virtio_gpu: memfd_create failed: {:?}", e);
                 loop {
                     stem::time::sleep_ms(1);
                 }
             }
         };
 
-        let phys = match thingsys::bytespace_phys(bs_id) {
+        let phys = match stem::syscall::memfd_phys(fd) {
             Ok(phys) => phys,
             Err(e) => {
-                info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
+                info!("display_virtio_gpu: memfd_phys failed: {:?}", e);
                 loop {
                     stem::time::sleep_ms(1);
                 }
@@ -266,7 +267,11 @@ fn main(arg: usize) -> ! {
         };
 
         // Explicitly map it locally so it stays pinned/resident
-        let _ = thingsys::bytespace_map(bs_id);
+        let mut req: abi::vm::VmMapReq = unsafe { core::mem::zeroed() };
+        req.backing = abi::vm::VmBacking::File { fd, offset: 0 };
+        req.len = disp_size;
+        req.prot = abi::vm::VmProt::READ | abi::vm::VmProt::WRITE | abi::vm::VmProt::USER;
+        let _ = stem::syscall::vm_map(&req);
 
         let res_id = (i + 1) as u32;
         gpu.set_dimensions(disp_width, disp_height);
@@ -284,7 +289,7 @@ fn main(arg: usize) -> ! {
         }
 
         frame_pool_buffers.push(Buffer {
-            bs_id,
+            fd,
             res_id,
             phys,
             last_present_seq: 0,
@@ -322,7 +327,7 @@ fn main(arg: usize) -> ! {
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
 
-    let mut current_bs_id: Option<ThingId> = None;
+    let mut current_fd: Option<u32> = None;
     let mut current_res_id: u32 = 1;
     let mut next_buffer_idx = 0;
     let mut present_seq: u64 = 0;
@@ -442,16 +447,17 @@ fn main(arg: usize) -> ! {
                     next_buffer_idx = (next_buffer_idx + 1) % frame_pool_buffers.len();
 
                     let acquired = drvproto::AcquiredPayload {
-                        bytespace_id: frame_pool_buffers[idx].bs_id.to_u64_lossy(),
+                        fd: frame_pool_buffers[idx].fd,
+                        _pad1: 0,
                         width: disp_width,
                         height: disp_height,
                         stride: disp_stride,
                         format: disp_format,
                         buffer_age,
-                        _pad: 0,
+                        _pad2: 0,
                     };
 
-                    current_bs_id = Some(frame_pool_buffers[idx].bs_id);
+                    current_fd = Some(frame_pool_buffers[idx].fd);
                     current_res_id = frame_pool_buffers[idx].res_id;
 
                     let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
@@ -464,21 +470,16 @@ fn main(arg: usize) -> ! {
                 drvproto::MSG_BIND => {
                     // MSG_BIND legacy fallback
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
-                        let bs_id = ThingId({
-                            let mut b = [0u8; 16];
-                            b[0..8].copy_from_slice(&bind.bytespace_id.to_le_bytes());
-                            b
-                        });
-                        current_bs_id = Some(bs_id);
+                        current_fd = Some(bind.fb_fd);
                         // In legacy mode, we just stay on the first buffer's resource
                         current_res_id = frame_pool_buffers[0].res_id;
                         send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
                     }
                 }
                 drvproto::MSG_PRESENT => {
-                    if current_bs_id.is_none() {
+                    if current_fd.is_none() {
                         stem::error!(
-                            "display_virtio_gpu: current_bs_id is NONE during MSG_PRESENT!"
+                            "display_virtio_gpu: current_fd is NONE during MSG_PRESENT!"
                         );
                         let err = drvproto::ErrResp { code: 1 };
                         let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
@@ -708,11 +709,16 @@ fn main(arg: usize) -> ! {
                             let data_slice = &pixel_data[..hdr.data_len as usize];
 
                             // Allocate DMA-accessible memory for texture data
-                            match thingsys::bytespace_create(hdr.data_len as usize, 0, 0) {
-                                Ok(bs_id) => {
-                                    // Map the bytespace to get a writable pointer
-                                    match thingsys::bytespace_map(bs_id) {
-                                        Ok(ptr) => {
+                            match stem::syscall::memfd_create("tex_upload", hdr.data_len as usize) {
+                                Ok(fd) => {
+                                    // Map the memfd to get a writable pointer
+                                    let mut req: abi::vm::VmMapReq = unsafe { core::mem::zeroed() };
+                                    req.backing = abi::vm::VmBacking::File { fd, offset: 0 };
+                                    req.len = hdr.data_len as usize;
+                                    req.prot = abi::vm::VmProt::READ | abi::vm::VmProt::WRITE | abi::vm::VmProt::USER;
+                                    match stem::syscall::vm_map(&req) {
+                                        Ok(resp) => {
+                                            let ptr = resp.addr;
                                             // Copy pixel data to DMA buffer
                                             unsafe {
                                                 core::ptr::copy_nonoverlapping(
@@ -723,7 +729,7 @@ fn main(arg: usize) -> ! {
                                             }
 
                                             // Get physical address for attach_backing_3d
-                                            match thingsys::bytespace_phys(bs_id) {
+                                            match stem::syscall::memfd_phys(fd) {
                                                 Ok(phys_addr) => {
                                                     // Attach backing and transfer
                                                     if gpu

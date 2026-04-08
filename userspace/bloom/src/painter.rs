@@ -14,7 +14,7 @@ impl<'a> Painter<'a> {
     }
 
     pub fn paint_list_to_window(&mut self, wid: ThingId, list: &DrawList) -> Result<(), abi::errors::Errno> {
-        let (Ok(bs_id_u64), Ok(w), Ok(h)) = (
+        let (Ok(fd_u64), Ok(w), Ok(h)) = (
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_BYTESPACE),
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_WIDTH),
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_HEIGHT),
@@ -22,24 +22,37 @@ impl<'a> Painter<'a> {
             return Err(abi::errors::Errno::EINVAL);
         };
 
-        let bs_id = ThingId::from_u64(bs_id_u64);
+        let fd = fd_u64 as u32;
         let stride = stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_STRIDE).unwrap_or(w * 4);
         
-        if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: (stride * h) as usize,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            let ptr = resp.addr as *mut u8;
+            let mut surf = unsafe { PixelBuffer::new(ptr, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             surf.clear(); // Ensure surface is zeroed before painting
             
             // Paint the list using the unified rasterizer
             crate::raster::execute(&mut surf, list, false);
 
-            let _ = stem::thing::sys::bytespace_unmap(bs_id, ptr);
+            // stem::thing::sys::vm_unmap(&resp).ok();
         }
 
         Ok(())
     }
 
     pub fn paint_window_snapshot(&mut self, wid: ThingId) -> Result<(), abi::errors::Errno> {
-        let (Ok(bs_id_u64), Ok(w), Ok(h)) = (
+        let (Ok(fd_u64), Ok(w), Ok(h)) = (
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_BYTESPACE),
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_WIDTH),
             stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_HEIGHT),
@@ -47,11 +60,24 @@ impl<'a> Painter<'a> {
             return Err(abi::errors::Errno::EINVAL);
         };
 
-        let bs_id = ThingId::from_u64(bs_id_u64);
+        let fd = fd_u64 as u32;
         let stride = stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_STRIDE).unwrap_or(w * 4);
         
-        if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: (stride * h) as usize,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            let ptr = resp.addr as *mut u8;
+            let mut surf = unsafe { PixelBuffer::new(ptr, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             surf.clear(); // Ensure surface is zeroed before painting
             let color_top = 0xFF303038u32;
             let color_bot = 0xFF101018u32;
@@ -65,7 +91,7 @@ impl<'a> Painter<'a> {
                 }
             }
             
-            let _ = stem::thing::sys::bytespace_unmap(bs_id, ptr);
+            // stem::thing::sys::vm_unmap(&resp).ok();
         }
 
         Ok(())
@@ -80,16 +106,29 @@ impl<'a> Painter<'a> {
         UI_CROWN: ThingId, 
         cursor_rasterizer: &mut crate::cursor_rasterizer::CursorRasterizer,
     ) -> Result<(), abi::errors::Errno> {
-        let bs_id_u64 = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
-        if bs_id_u64 == 0 { return Err(abi::errors::Errno::ENOENT); }
+        let fd_u64 = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
+        if fd_u64 == 0 { return Err(abi::errors::Errno::ENOENT); }
         
-        let bs_id = ThingId::from_u64(bs_id_u64);
+        let fd = fd_u64 as u32;
         let w = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_WIDTH).unwrap_or(32);
         let h = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_HEIGHT).unwrap_or(32);
         let stride = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_STRIDE).unwrap_or(w * 4);
 
-        if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: (stride * h) as usize,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            let ptr = resp.addr as *mut u8;
+            let mut surf = unsafe { PixelBuffer::new(ptr, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             
             // Fill with transparency
             surf.clear();
@@ -118,7 +157,7 @@ impl<'a> Painter<'a> {
                 }
             }
 
-            let _ = stem::thing::sys::bytespace_unmap(bs_id, ptr);
+            // stem::thing::sys::vm_unmap(&resp).ok();
         }
         
         Ok(())

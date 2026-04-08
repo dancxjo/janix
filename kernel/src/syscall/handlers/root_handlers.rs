@@ -279,239 +279,18 @@ pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
     })
 }
 
-pub fn sys_root_bytespace_create(len: usize, flags: usize, format: usize) -> SysResult<usize> {
-    root_call(RootOp::BytespaceCreate {
-        len: len as u64,
-        flags: flags as u64,
-        format: format as u64,
-    })
-}
-
-pub fn sys_root_bytespace_read(
-    id: usize,
-    offset: usize,
-    ptr: usize,
-    len: usize,
-) -> SysResult<usize> {
-    validate_user_range(ptr, len, true)?;
-
-    let mut kbuf = [0u8; 4096];
-    let mut total_read = 0;
-    let mut curr_offset = offset;
-    let mut curr_ptr = ptr;
-    let mut remaining = len;
-
-    while remaining > 0 {
-        let chunk_len = core::cmp::min(remaining, kbuf.len());
-
-        let op = RootOp::BytespaceRead {
-            id: id as u64,
-            offset: curr_offset as u64,
-            ptr: kbuf.as_mut_ptr() as u64,
-            len: chunk_len as u64,
-        };
-
-        let res = root_call(op)?;
-        if res == 0 {
-            break;
-        }
-
-        unsafe {
-            copyout(curr_ptr, &kbuf[..res])?;
-        }
-
-        curr_offset += res;
-        curr_ptr += res;
-        total_read += res;
-        remaining -= res;
-
-        if res < chunk_len {
-            break;
-        }
-    }
-
-    Ok(total_read)
-}
-
 pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
     let _ = (target, mask);
     Err(Errno::ENOSYS)
 }
 
-pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysResult<usize> {
-    validate_user_range(out_ptr, max, true)?;
-
-    let evt_size = core::mem::size_of::<abi::types::RootWatchEvent>();
-    if max < evt_size {
-        return Err(Errno::EINVAL);
-    }
-
-    let reply = root_svc::enqueue(RootOp::StreamPoll {
-        stream_id: stream as u64,
-        max,
-        out_ptr: out_ptr as u64,
-    });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    let count = reply.value.load(Ordering::Relaxed);
-
-    if status == 0 && count > 0 {
-        let p0 = reply.p0.load(Ordering::Relaxed);
-        let p1 = reply.p1.load(Ordering::Relaxed);
-        let p2 = reply.p2.load(Ordering::Relaxed);
-
-        let evt = abi::types::RootWatchEvent {
-            target: p0,
-            key: p1,
-            value: p2,
-        };
-
-        let src = unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
-        unsafe {
-            copyout(out_ptr, src)?;
-        }
-
-        return Ok(1);
-    } else {
-        return Ok(0);
-    }
-}
-
-pub fn sys_root_bytespace_write(
-    id: usize,
-    offset: usize,
-    ptr: usize,
-    len: usize,
-) -> SysResult<usize> {
-    validate_user_range(ptr, len, false)?;
-
-    let mut kbuf = [0u8; 4096];
-    let mut total_written = 0;
-    let mut curr_offset = offset;
-    let mut curr_ptr = ptr;
-    let mut remaining = len;
-
-    while remaining > 0 {
-        let chunk_len = core::cmp::min(remaining, kbuf.len());
-
-        unsafe {
-            copyin(&mut kbuf[..chunk_len], curr_ptr)?;
-        }
-
-        let op = RootOp::BytespaceWrite {
-            id: id as u64,
-            offset: curr_offset as u64,
-            ptr: kbuf.as_ptr() as u64,
-            len: chunk_len as u64,
-        };
-
-        let res = root_call(op)?;
-        if res == 0 {
-            break;
-        }
-
-        curr_offset += res;
-        curr_ptr += res;
-        total_written += res;
-        remaining -= res;
-
-        if res < chunk_len {
-            break;
-        }
-    }
-
-    Ok(total_written)
-}
-
-pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
-    let reply = root_svc::enqueue(RootOp::BytespaceInfo { id: id as u64 });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    if status == 0 {
-        // Size is in value, page_count in p0, flags in p1
-        let size = reply.value.load(Ordering::Relaxed);
-        return Ok(size as usize);
-    } else {
-        return Err(Errno::ENOENT);
-    }
-}
-
 pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
-    // Get caller's TID
-    let tid = unsafe { crate::sched::current_tid_current() };
-
-    let reply = root_svc::enqueue(RootOp::BytespaceMap { id: id as u64, tid });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    if status == 0 {
-        let user_va = reply.value.load(Ordering::Relaxed);
-        let phys_base = reply.p0.load(Ordering::Relaxed);
-        let page_count = reply.p1.load(Ordering::Relaxed) as usize;
-
-        // Map pages using global mapping hook
-        for i in 0..page_count {
-            let virt = user_va + (i as u64 * 4096);
-            let phys = phys_base + (i as u64 * 4096);
-
-            unsafe {
-                crate::memory::map_user_page(virt, phys)?;
-            }
-        }
-
-        // Add mapping
-        let region = VmRegionInfo {
-            start: user_va as usize,
-            end: (user_va as usize) + page_count * 4096,
-            prot: VmProt::USER | VmProt::READ | VmProt::WRITE, // Assuming RW
-            flags: VmMapFlags::SHARED,                         // Assuming shared
-            backing_kind: VmBackingKind::Unknown,
-            _reserved: [0; 7],
-        };
-        unsafe {
-            crate::sched::add_user_mapping_current(region).ok();
-        }
-
-        return Ok(user_va as usize);
-    } else {
-        return Err(Errno::ENOENT);
-    }
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
-    let tid = unsafe { crate::sched::current_tid_current() };
-
-    let reply = root_svc::enqueue(RootOp::BytespaceUnmap {
-        id: id as u64,
-        user_va: user_va as u64,
-        tid,
-    });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    if status == 0 {
-        // Unmap pages
-        if let Some(region) = unsafe { crate::sched::get_user_mapping_at_current(user_va) } {
-            let len = region.end - region.start;
-            unsafe {
-                if let Ok(removed) = crate::sched::remove_user_mappings_current(user_va, len) {
-                    for (start, end) in removed {
-                        let mut virt = start as u64;
-                        let end_virt = end as u64;
-                        while virt < end_virt {
-                            let _ = crate::memory::unmap_user_page(virt);
-                            virt += 4096;
-                        }
-                    }
-                }
-            }
-        }
-        return Ok(0);
-    } else {
-        return Err(Errno::ENOENT);
-    }
+    let _ = (id, user_va);
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_async_prop_set(id: usize, key_ptr: usize, value: usize) -> SysResult<usize> {
@@ -585,16 +364,8 @@ pub fn sys_root_async_status(handle: usize) -> SysResult<usize> {
 }
 
 pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
-    let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    if status == 0 {
-        let phys_base = reply.value.load(Ordering::Relaxed);
-        return Ok(phys_base as usize);
-    } else {
-        return Err(Errno::ENOENT);
-    }
+    let _ = id;
+    Err(Errno::ENOSYS)
 }
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     let _ = spec_ptr;
@@ -742,10 +513,8 @@ pub fn sys_root_resolve_path(ptr: usize, len: usize) -> SysResult<usize> {
 /// Truncate a bytespace to a new logical length.
 /// Args: bytespace_id, new_len
 pub fn sys_root_bytespace_truncate(id: usize, new_len: usize) -> SysResult<usize> {
-    root_call(RootOp::BytespaceTruncate {
-        id: id as u64,
-        new_len: new_len as u64,
-    })
+    let _ = (id, new_len);
+    Err(Errno::ENOSYS)
 }
 
 /// Unlink an edge between two nodes.

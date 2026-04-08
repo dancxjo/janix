@@ -1,4 +1,4 @@
-use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_set};
+use crate::thing::sys::{create_node, link, prop_set};
 use crate::thing::ThingId;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
@@ -55,12 +55,6 @@ impl UiBuilder {
     }
 
     fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
-        if value.is_empty() {
-            prop_set(id, key_name, 0).ok();
-            return;
-        }
-        let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
-        bytespace_write(bs_id, 0, value.as_bytes()).ok();
-        prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+        // ENOSYS
     }
 }

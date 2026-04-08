@@ -6,7 +6,7 @@
 
 use abi::schema::{keys, kinds, snapshot_mode};
 use alloc::vec::Vec;
-use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
+use stem::thing::sys::{find, prop_get};
 use stem::thing::{HandleId, ThingId};
 
 use crate::surface::PixelBuffer;
@@ -183,15 +183,30 @@ pub fn composite_windows(surface: &mut PixelBuffer, windows: &[WindowSnapshot]) 
 }
 
 fn composite_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot, snapshot: &SnapshotMeta) {
-    let Ok(ptr) = bytespace_map(snapshot.bytespace) else {
+    let size = (snapshot.stride * snapshot.height) as usize;
+    if size == 0 {
+        return;
+    }
+
+    use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
+
+    let req = VmMapReq {
+        addr_hint: 0,
+        len: size,
+        prot: VmProt::READ,
+        flags: VmMapFlags::SHARED,
+        backing: VmBacking::File {
+            fd: snapshot.bytespace.to_u64_lossy() as u32,
+            offset: 0,
+        },
+    };
+
+    let Ok(resp) = stem::thing::sys::vm_map(&req) else {
         return;
     };
-    let src = unsafe {
-        core::slice::from_raw_parts(
-            ptr as *const u8,
-            (snapshot.stride * snapshot.height) as usize,
-        )
-    };
+
+    let src = unsafe { core::slice::from_raw_parts(resp.addr as *const u8, resp.len) };
+
     blit_rgba(
         surface,
         src,
@@ -201,7 +216,18 @@ fn composite_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot, snapshot:
         win.x,
         win.y,
     );
-    let _ = bytespace_unmap(snapshot.bytespace, ptr);
+
+    let _ = unsafe {
+        stem::syscall::arch::raw_syscall6(
+            abi::syscall::SYS_VM_UNMAP,
+            resp.addr,
+            resp.len,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
 }
 
 fn draw_missing_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot) {

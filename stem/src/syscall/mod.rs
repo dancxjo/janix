@@ -1,5 +1,4 @@
-mod arch;
-pub mod graph;
+pub mod arch;
 pub mod pipe;
 pub mod port;
 pub mod stream;
@@ -78,7 +77,7 @@ pub use port::{
 };
 pub use vfs::{
     dup, dup2, pipe, vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,
-    vfs_umount, vfs_unlink, vfs_write,
+    vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_write,
 };
 pub use wait::wait_many;
 
@@ -487,216 +486,26 @@ pub fn device_irq_wait(claim_handle: usize, irq_index: u8) -> Result<u32, Errno>
     abi::errors::errno(ret).map(|v| v as u32)
 }
 
-// --- Root / Graph Wrappers ---
-
-pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
-    // [DEPRECATION GUARDRAIL]
-    // Check for WATCH_START_LATEST usage and warn once.
-    // Assuming abi::types::WATCH_START_LATEST is available.
-    if spec.start_seq == abi::types::WATCH_START_LATEST {
-        static WARNED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-        if !WARNED.swap(true, core::sync::atomic::Ordering::Relaxed) {
-            let _ = log_write("WARN: root_watch_open: WATCH_START_LATEST is deprecated; use start_seq=0 + watch_drain.", 2);
-        }
-    }
-
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_WATCH_OPEN,
-            spec as *const _ as usize,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-/// Blocking watch read.
-///
-/// Parks the calling task until a matching graph commit is available, then
-/// returns the number of bytes written to `out`.  Unlike `root_watch_try_next`
-/// this never returns `Err(Errno::EAGAIN)` — it blocks instead.
-///
-/// Use `root_watch_try_next` in drain loops where the caller has already
-/// established readiness via [`WaitSet::wait`](crate::wait_set::WaitSet) or
-/// `SYS_WAIT_MANY`.
-pub fn root_watch_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_WATCH_NEXT,
-            id,
-            seq_out as *mut _ as usize,
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-/// Non-blocking watch read.
-///
-/// Returns `Err(Errno::EAGAIN)` immediately when no matching event is pending.
-/// Prefer this inside drain loops that follow a
-/// [`WaitSet::wait`](crate::wait_set::WaitSet) / `SYS_WAIT_MANY` call, so
-/// the loop terminates quickly once all queued events have been consumed.
-pub fn root_watch_try_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_WATCH_TRY_NEXT,
-            id,
-            seq_out as *mut _ as usize,
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_watch_close(id: usize) -> Result<(), Errno> {
-    unsafe {
-        match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id, 0, 0, 0, 0, 0) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            _ => {}
-        }
-    };
-    Ok(())
-}
-
-pub fn root_bytespace_read(id: usize, offset: usize, buf: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_BYTESPACE_READ,
-            id,
-            offset,
-            buf.as_mut_ptr() as usize,
-            buf.len(),
-            0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_bytespace_write(id: usize, offset: usize, buf: &[u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_BYTESPACE_WRITE,
-            id,
-            offset,
-            buf.as_ptr() as usize,
-            buf.len(),
-            0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_bytespace_create(len: usize, flags: usize, format: usize) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(SYS_ROOT_BYTESPACE_CREATE, len, flags, format, 0, 0, 0) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_resolve_path(path: &str) -> Result<u64, Errno> {
+pub fn memfd_create(name: &str, size: usize) -> Result<u32, Errno> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_ROOT_RESOLVE_PATH,
-            path.as_ptr() as usize,
-            path.len(),
-            0,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|v| v as u64)
-}
-
-pub fn root_dir_list(dir_id: u64, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_DIR_LIST,
-            dir_id as usize,
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
-}
-
-pub fn root_intern(name: &str) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(
-            SYS_ROOT_INTERN,
+            SYS_MEMFD_CREATE,
             name.as_ptr() as usize,
             name.len(),
+            size,
             0,
             0,
             0,
-            0,
-        ) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
+        )
     };
-    Ok(ret)
+    abi::errors::errno(ret).map(|v| v as u32)
 }
 
-pub fn root_create_node(kind_ptr: usize) -> Result<usize, Errno> {
+pub fn memfd_phys(fd: u32) -> Result<u64, Errno> {
     let ret = unsafe {
-        match raw_syscall6(SYS_ROOT_CREATE_NODE, kind_ptr, 0, 0, 0, 0, 0) {
+        match raw_syscall6(SYS_MEMFD_PHYS, fd as usize, 0, 0, 0, 0, 0) {
             r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_prop_set(id: usize, key_ptr: usize, value: usize) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(SYS_ROOT_PROP_SET, id, key_ptr, value, 0, 0, 0) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
-        }
-    };
-    Ok(ret)
-}
-
-pub fn root_link(src: usize, rel_ptr: usize, dst: usize) -> Result<usize, Errno> {
-    let ret = unsafe {
-        match raw_syscall6(SYS_ROOT_LINK, src, rel_ptr, dst, 0, 0, 0) {
-            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-            r => r as usize,
+            r => r as u64,
         }
     };
     Ok(ret)
@@ -731,4 +540,58 @@ pub fn getrandom(buf: &mut [u8]) -> Result<(), Errno> {
         offset += filled;
     }
     Ok(())
+}
+
+pub fn vm_map(req: &abi::vm::VmMapReq) -> Result<abi::vm::VmMapResp, Errno> {
+    let mut resp = abi::vm::VmMapResp { addr: 0, len: 0 };
+    let req_ptr = req as *const _ as usize;
+    let resp_ptr = &mut resp as *mut _ as usize;
+    let ret = unsafe {
+        raw_syscall6(SYS_VM_MAP, req_ptr, resp_ptr, 0, 0, 0, 0)
+    };
+    if ret < 0 {
+        Err(unsafe { core::mem::transmute(-(ret as i32)) })
+    } else {
+        Ok(resp)
+    }
+}
+
+pub fn vm_unmap(addr: usize, len: usize) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_VM_UNMAP, addr, len, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<u32, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_WATCH_OPEN,
+            spec as *const _ as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+pub fn root_watch_try_next(handle: u32, seq: &mut u64, buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_WATCH_TRY_NEXT,
+            handle as usize,
+            seq as *mut _ as usize,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
+pub fn root_watch_close(handle: u32) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_ROOT_WATCH_CLOSE, handle as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
 }

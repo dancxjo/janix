@@ -9,8 +9,9 @@ use abi::schema::{keys, kinds};
 use abi::types::HandleId;
 use abi::ui_paint::{PaintOpTag, PaintReader};
 use stem::thing::sys::{
-    bytespace_info, bytespace_map, bytespace_read, bytespace_unmap, find, prop_get,
+    find, prop_get, stat, read,
 };
+use stem::syscall::{vm_map, vm_unmap};
 use stem::thing::ThingId;
 
 use crate::asset::Image;
@@ -182,7 +183,7 @@ impl PaintPipeline {
                         pixels: Arc::from(buffer.as_slice()),
                         gen: AssetGeneration(target_asset_gen),
                         name: Arc::from("window"),
-                        id: Some(id),
+                        id: None,
                     });
 
                     self.render_state.insert_window_raster(cache_key, image);
@@ -811,13 +812,27 @@ fn build_drawlist(
     let origin_x = rect.x();
     let origin_y = rect.y();
 
-    let paint_bs = ThingId::from_u64(paint_bs);
-    if let Ok(size) = bytespace_info(paint_bs) {
+    let fd = paint_bs as u32;
+    if let Ok((_, size_u64, _)) = stat(fd) {
+        let size = size_u64 as usize;
         if size > 0 {
-            if let Ok(ptr) = bytespace_map(paint_bs) {
-                let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
+            use abi::vm::{VmBacking, VmMapReq, VmProt};
+            let req = VmMapReq {
+                addr_hint: 0,
+                len: size,
+                prot: VmProt::READ | VmProt::USER,
+                flags: abi::vm::VmMapFlags::empty(),
+                backing: VmBacking::File {
+                    fd,
+                    offset: 0,
+                },
+            };
+
+            if let Ok(resp) = vm_map(&req) {
+                let ptr = resp.addr as *const u8;
+                let bytes = unsafe { core::slice::from_raw_parts(ptr, size) };
                 decode_paint_ops(bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
-                let _ = bytespace_unmap(paint_bs, ptr);
+                let _ = vm_unmap(ptr as usize, size);
                 list.commands().push(DrawCmd::PopClip);
                 return list;
             }
@@ -825,7 +840,7 @@ fn build_drawlist(
     }
 
     // Fallback for platforms/targets where mapping can fail.
-    if let Ok(bytes) = read_bytespace(paint_bs) {
+    if let Ok(bytes) = read_fd(fd) {
         decode_paint_ops(&bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
     }
     list.commands().push(DrawCmd::PopClip);
@@ -1024,8 +1039,9 @@ fn decode_text_run(payload: &[u8]) -> Option<TextRunDecoded> {
     })
 }
 
-fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
-    let size = bytespace_info(bs_id)?;
+fn read_fd(fd: u32) -> Result<Vec<u8>, abi::errors::Errno> {
+    let (_, size_u64, _) = stat(fd)?;
+    let size = size_u64 as usize;
     if size == 0 {
         return Ok(Vec::new());
     }
@@ -1033,12 +1049,11 @@ fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
     out.resize(size, 0);
     let mut offset = 0usize;
     while offset < size {
-        let end = core::cmp::min(offset + 4096, size);
-        let read = bytespace_read(bs_id, offset, &mut out[offset..end])?;
-        if read == 0 {
+        let read_len = read(fd, &mut out[offset..])?;
+        if read_len == 0 {
             break;
         }
-        offset = offset.saturating_add(read);
+        offset = offset.saturating_add(read_len);
     }
     Ok(out)
 }

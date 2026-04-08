@@ -2,7 +2,7 @@ use abi::ids::HandleId;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
-use stem::thing::sys::get_kind;
+use stem::thing::sys::{get_kind, stat, read};
 use stem::thing::ThingId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,23 +397,23 @@ impl AssetCache {
         Some(asset)
     }
 
-    fn read_bytes_raw(bs_id: ThingId) -> Option<Vec<u8>> {
-        use stem::thing::sys::{bytespace_info, bytespace_read};
-        let size = bytespace_info(bs_id).ok()?;
-        let mut buf = vec![0u8; size];
-        bytespace_read(bs_id, 0, &mut buf).ok()?;
+    fn read_bytes_raw(fd_u64: ThingId) -> Option<Vec<u8>> {
+        let fd = fd_u64.to_u64_lossy() as u32;
+        let (_, size, _) = stat(fd).ok()?;
+        let mut buf = vec![0u8; size as usize];
+        read(fd, &mut buf).ok()?;
         Some(buf)
     }
 
-    fn read_string_raw(bs_id: ThingId) -> Option<String> {
-        use stem::thing::sys::{bytespace_info, bytespace_read};
+    fn read_string_raw(fd_u64: ThingId) -> Option<String> {
         crate::trace_counter!("snap.syscalls.read_string", 2);
-        let size = bytespace_info(bs_id).ok()?;
+        let fd = fd_u64.to_u64_lossy() as u32;
+        let (_, size, _) = stat(fd).ok()?;
         if size == 0 {
             return Some(String::new());
         }
-        let mut buf = alloc::vec![0u8; size];
-        let len = bytespace_read(bs_id, 0, &mut buf).ok()?;
+        let mut buf = alloc::vec![0u8; size as usize];
+        let len = read(fd, &mut buf).ok()?;
         Some(String::from(
             core::str::from_utf8(&buf[..len]).unwrap_or(""),
         ))

@@ -1,6 +1,6 @@
 //! Userland VFS provider channel — kernel side.
 //!
-//! When a userland process calls `SYS_VFS_MOUNT`, the kernel instantiates a
+//! When a userland process calls `SYS_FS_MOUNT`, the kernel instantiates a
 //! [`ProviderFs`] and registers it in the global mount table.  From that point
 //! on every VFS operation whose path falls under the mount point is serialised
 //! into a [`VfsRpcOp`] message and forwarded to the provider process via the
@@ -9,7 +9,7 @@
 //! ## Transport
 //!
 //! At mount time the kernel:
-//! 1. Takes the *write* handle supplied by `SYS_VFS_MOUNT` — this is the port
+//! 1. Takes the *write* handle supplied by `SYS_FS_MOUNT` — this is the port
 //!    the kernel sends requests **to** the provider on.
 //! 2. Creates a fresh response port.  The kernel holds `Arc<Port>` for the
 //!    read side; the write handle of that port is embedded in every request so

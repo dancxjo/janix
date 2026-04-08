@@ -91,7 +91,8 @@ pub struct WelcomePayload {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct BindPayload {
-    pub bytespace_id: u64,
+    pub fb_fd: u32,
+    pub _pad: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -125,7 +126,8 @@ pub struct ErrResp {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct OfferFramebufferPayload {
-    pub bytespace_id: u64,
+    pub fd: u32,
+    pub _pad: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -144,13 +146,14 @@ pub struct AcceptFramebufferPayload {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct AcquiredPayload {
-    pub bytespace_id: u64,
+    pub fd: u32,
+    pub _pad1: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
     pub format: u32,
     pub buffer_age: u32,
-    pub _pad: u32,
+    pub _pad2: u32,
 }
 
 /// Header for 3D command submission (MSG_SUBMIT_3D).
@@ -370,7 +373,8 @@ pub fn encode_bind_payload_le(payload: &BindPayload, out: &mut [u8]) -> Option<u
     if out.len() < BIND_PAYLOAD_WIRE_SIZE {
         return None;
     }
-    out[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
+    out[0..4].copy_from_slice(&payload.fb_fd.to_le_bytes());
+    out[4..8].copy_from_slice(&payload._pad.to_le_bytes());
     out[8..12].copy_from_slice(&payload.width.to_le_bytes());
     out[12..16].copy_from_slice(&payload.height.to_le_bytes());
     out[16..20].copy_from_slice(&payload.stride.to_le_bytes());
@@ -383,7 +387,8 @@ pub fn decode_bind_payload_le(buf: &[u8]) -> Option<BindPayload> {
         return None;
     }
     Some(BindPayload {
-        bytespace_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        fb_fd: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        _pad: u32::from_le_bytes(buf[4..8].try_into().ok()?),
         width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
         height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
         stride: u32::from_le_bytes(buf[16..20].try_into().ok()?),
@@ -506,7 +511,8 @@ pub fn encode_offer_framebuffer_payload_le(
     if out.len() < OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE {
         return None;
     }
-    out[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
+    out[0..4].copy_from_slice(&payload.fd.to_le_bytes());
+    out[4..8].copy_from_slice(&payload._pad.to_le_bytes());
     out[8..12].copy_from_slice(&payload.width.to_le_bytes());
     out[12..16].copy_from_slice(&payload.height.to_le_bytes());
     out[16..20].copy_from_slice(&payload.stride.to_le_bytes());
@@ -519,7 +525,8 @@ pub fn decode_offer_framebuffer_payload_le(buf: &[u8]) -> Option<OfferFramebuffe
         return None;
     }
     Some(OfferFramebufferPayload {
-        bytespace_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        fd: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        _pad: u32::from_le_bytes(buf[4..8].try_into().ok()?),
         width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
         height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
         stride: u32::from_le_bytes(buf[16..20].try_into().ok()?),
@@ -553,13 +560,14 @@ pub fn encode_acquired_payload_le(payload: &AcquiredPayload, out: &mut [u8]) -> 
     if out.len() < ACQUIRED_PAYLOAD_WIRE_SIZE {
         return None;
     }
-    out[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
+    out[0..4].copy_from_slice(&payload.fd.to_le_bytes());
+    out[4..8].copy_from_slice(&payload._pad1.to_le_bytes());
     out[8..12].copy_from_slice(&payload.width.to_le_bytes());
     out[12..16].copy_from_slice(&payload.height.to_le_bytes());
     out[16..20].copy_from_slice(&payload.stride.to_le_bytes());
     out[20..24].copy_from_slice(&payload.format.to_le_bytes());
     out[24..28].copy_from_slice(&payload.buffer_age.to_le_bytes());
-    out[28..32].copy_from_slice(&payload._pad.to_le_bytes());
+    out[28..32].copy_from_slice(&payload._pad2.to_le_bytes());
     Some(ACQUIRED_PAYLOAD_WIRE_SIZE)
 }
 
@@ -568,13 +576,14 @@ pub fn decode_acquired_payload_le(buf: &[u8]) -> Option<AcquiredPayload> {
         return None;
     }
     Some(AcquiredPayload {
-        bytespace_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        fd: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        _pad1: u32::from_le_bytes(buf[4..8].try_into().ok()?),
         width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
         height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
         stride: u32::from_le_bytes(buf[16..20].try_into().ok()?),
         format: u32::from_le_bytes(buf[20..24].try_into().ok()?),
         buffer_age: u32::from_le_bytes(buf[24..28].try_into().ok()?),
-        _pad: u32::from_le_bytes(buf[28..32].try_into().ok()?),
+        _pad2: u32::from_le_bytes(buf[28..32].try_into().ok()?),
     })
 }
 

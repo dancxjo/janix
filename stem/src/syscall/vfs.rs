@@ -6,9 +6,9 @@
 
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{
-    PollFd, SYS_DUP, SYS_DUP2, SYS_PIPE, SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT,
-    SYS_VFS_OPEN, SYS_VFS_POLL, SYS_VFS_READ, SYS_VFS_READDIR, SYS_VFS_UMOUNT, SYS_VFS_UNLINK,
-    SYS_VFS_WRITE,
+    PollFd, SYS_FS_CLOSE, SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_OPEN,
+    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_UMOUNT,
+    SYS_FS_UNLINK, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -20,7 +20,7 @@ use super::arch::raw_syscall6;
 pub fn vfs_open(path: &str, flags: u32) -> SysResult<u32> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_OPEN,
+            SYS_FS_OPEN,
             path.as_ptr() as usize,
             path.len(),
             flags as usize,
@@ -34,7 +34,7 @@ pub fn vfs_open(path: &str, flags: u32) -> SysResult<u32> {
 
 /// Close a VFS file descriptor previously returned by [`vfs_open`].
 pub fn vfs_close(fd: u32) -> SysResult<()> {
-    let ret = unsafe { raw_syscall6(SYS_VFS_CLOSE, fd as usize, 0, 0, 0, 0, 0) };
+    let ret = unsafe { raw_syscall6(SYS_FS_CLOSE, fd as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -44,7 +44,7 @@ pub fn vfs_close(fd: u32) -> SysResult<()> {
 pub fn vfs_read(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_READ,
+            SYS_FS_READ,
             fd as usize,
             buf.as_mut_ptr() as usize,
             buf.len(),
@@ -62,7 +62,7 @@ pub fn vfs_read(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
 pub fn vfs_readdir(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_READDIR,
+            SYS_FS_READDIR,
             fd as usize,
             buf.as_mut_ptr() as usize,
             buf.len(),
@@ -80,7 +80,7 @@ pub fn vfs_readdir(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
 pub fn vfs_write(fd: u32, buf: &[u8]) -> SysResult<usize> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_WRITE,
+            SYS_FS_WRITE,
             fd as usize,
             buf.as_ptr() as usize,
             buf.len(),
@@ -92,13 +92,54 @@ pub fn vfs_write(fd: u32, buf: &[u8]) -> SysResult<usize> {
     abi::errors::errno(ret)
 }
 
+/// Seek to `offset` relative to `whence`.
+///
+/// `whence` is: 0 (SEEK_SET), 1 (SEEK_CUR), 2 (SEEK_END).
+/// Returns the new absolute offset from the start of the file.
+pub fn vfs_seek(fd: u32, offset: i64, whence: u32) -> SysResult<u64> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_SEEK,
+            fd as usize,
+            offset as usize,
+            whence as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+/// Stat an open file descriptor.
+///
+/// Returns (mode, size, ino) on success.
+pub fn vfs_stat(fd: u32) -> SysResult<(u32, u64, u64)> {
+    let mut mode = 0u32;
+    let mut size = 0u64;
+    let mut ino = 0u64;
+
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_STAT,
+            fd as usize,
+            &mut mode as *mut _ as usize,
+            &mut size as *mut _ as usize,
+            &mut ino as *mut _ as usize,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| (mode, size, ino))
+}
+
 /// Remove a file or empty directory at `path`.
 ///
 /// Returns `Ok(())` on success, or an [`Errno`] on failure.
 pub fn vfs_unlink(path: &str) -> SysResult<()> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_UNLINK,
+            SYS_FS_UNLINK,
             path.as_ptr() as usize,
             path.len(),
             0,
@@ -114,17 +155,7 @@ pub fn vfs_unlink(path: &str) -> SysResult<()> {
 ///
 /// Returns `Ok(())` on success, or an [`Errno`] on failure.
 pub fn vfs_mkdir(path: &str) -> SysResult<()> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_VFS_MKDIR,
-            path.as_ptr() as usize,
-            path.len(),
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_FS_MKDIR, path.as_ptr() as usize, path.len(), 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -138,7 +169,7 @@ pub fn vfs_mkdir(path: &str) -> SysResult<()> {
 pub fn vfs_mount(provider_write_handle: u32, path: &str) -> SysResult<()> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_MOUNT,
+            SYS_FS_MOUNT,
             provider_write_handle as usize,
             path.as_ptr() as usize,
             path.len(),
@@ -156,7 +187,7 @@ pub fn vfs_mount(provider_write_handle: u32, path: &str) -> SysResult<()> {
 pub fn vfs_umount(path: &str) -> SysResult<()> {
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_UMOUNT,
+            SYS_FS_UMOUNT,
             path.as_ptr() as usize,
             path.len(),
             0,
@@ -172,7 +203,7 @@ pub fn vfs_umount(path: &str) -> SysResult<()> {
 ///
 /// Returns the new file descriptor on success.
 pub fn dup(old_fd: u32) -> SysResult<u32> {
-    let ret = unsafe { raw_syscall6(SYS_DUP, old_fd as usize, 0, 0, 0, 0, 0) };
+    let ret = unsafe { raw_syscall6(SYS_FS_DUP, old_fd as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u32)
 }
 
@@ -180,8 +211,7 @@ pub fn dup(old_fd: u32) -> SysResult<u32> {
 ///
 /// Returns `new_fd` on success.
 pub fn dup2(old_fd: u32, new_fd: u32) -> SysResult<u32> {
-    let ret =
-        unsafe { raw_syscall6(SYS_DUP2, old_fd as usize, new_fd as usize, 0, 0, 0, 0) };
+    let ret = unsafe { raw_syscall6(SYS_FS_DUP2, old_fd as usize, new_fd as usize, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u32)
 }
 
@@ -190,17 +220,7 @@ pub fn dup2(old_fd: u32, new_fd: u32) -> SysResult<u32> {
 ///
 /// Returns `Ok(())` on success.
 pub fn pipe(pipefd: &mut [u32; 2]) -> SysResult<()> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_PIPE,
-            pipefd.as_mut_ptr() as usize,
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_PIPE, pipefd.as_mut_ptr() as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -225,7 +245,7 @@ pub fn vfs_poll(pollfds: &mut [PollFd], timeout_ms: u64) -> SysResult<usize> {
     }
     let ret = unsafe {
         raw_syscall6(
-            SYS_VFS_POLL,
+            SYS_FS_POLL,
             pollfds.as_mut_ptr() as usize,
             pollfds.len(),
             timeout_ms as usize,

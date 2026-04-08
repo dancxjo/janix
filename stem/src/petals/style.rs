@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::string::String;
 
 use crate::errors::Result;
-use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_set};
+use crate::thing::sys::{create_node, link, prop_set};
 use crate::thing::ThingId;
 use abi::schema::{keys, kinds, rels, ui_kind};
 
@@ -154,12 +154,5 @@ pub fn set_node_classes(node: ThingId, classes: &[&str]) -> Result<()> {
 }
 
 fn set_string_prop(id: ThingId, key_name: &str, value: &str) -> Result<()> {
-    if value.is_empty() {
-        return prop_set(id, key_name, 0).map_err(crate::errors::Error::Errno);
-    }
-    let bs_id = bytespace_create(value.len(), 0, 0).map_err(crate::errors::Error::Errno)?;
-    bytespace_write(bs_id, 0, value.as_bytes())
-        .map(|_| ())
-        .map_err(crate::errors::Error::Errno)?;
-    prop_set(id, key_name, bs_id.to_u64_lossy()).map_err(crate::errors::Error::Errno)
+    return Err(crate::errors::Error::Errno(abi::errors::Errno::ENOSYS));
 }

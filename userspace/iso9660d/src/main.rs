@@ -8,7 +8,7 @@
 //!
 //! 1. **Discovery** — scans the graph for DEV_STORAGE_BLOCK_DEVICE nodes.
 //! 2. **Probing** — reads each block device and looks for a valid ISO9660 PVD.
-//! 3. **Mounting** — calls `SYS_VFS_MOUNT(provider_port, "/boot/iso")` so the
+//! 3. **Mounting** — calls `SYS_FS_MOUNT(provider_port, "/boot/iso")` so the
 //!    kernel routes VFS operations here.
 //! 4. **Service loop** — waits for VFS RPC messages on its request port,
 //!    dispatches them to the [`IsoFs`] library, and sends responses back
@@ -450,7 +450,7 @@ fn main(_arg: usize) -> ! {
                 }
             };
 
-            // 4. Mount via SYS_VFS_MOUNT.
+            // 4. Mount via SYS_FS_MOUNT.
             //    We pass the *write* end to the kernel so it can send us RPCs.
             match vfs_mount(req_write, "/boot/iso") {
                 Ok(()) => {

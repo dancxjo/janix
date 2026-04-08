@@ -3,9 +3,9 @@
 //! This program demonstrates Act III of the janix de-graphing migration:
 //! the kernel VFS is alive when this program can:
 //!
-//! 1. `open("/dev/console")` via `SYS_VFS_OPEN`
-//! 2. `write(fd, "Hello from VFS!\n")` via `SYS_VFS_WRITE`
-//! 3. `close(fd)` via `SYS_VFS_CLOSE`
+//! 1. `open("/dev/console")` via `SYS_FS_OPEN`
+//! 2. `write(fd, "Hello from VFS!\n")` via `SYS_FS_WRITE`
+//! 3. `close(fd)` via `SYS_FS_CLOSE`
 //!
 //! A second pass verifies `/dev/null` and `/dev/zero` are also reachable.
 //!

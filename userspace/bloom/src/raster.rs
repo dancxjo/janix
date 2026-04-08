@@ -32,61 +32,73 @@ where
     f(guard.as_mut().unwrap())
 }
 
-struct MappedBytespace {
+struct MappedFile {
     ptr: *mut u8,
     len: usize,
 }
 
-struct BytespaceMapCache {
-    entries: BTreeMap<ThingId, MappedBytespace>,
+struct VmMapCache {
+    entries: BTreeMap<u32, MappedFile>,
 }
 
-impl BytespaceMapCache {
+impl VmMapCache {
     fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
         }
     }
 
-    fn get_or_map(&mut self, bs: ThingId, stride: u32, height: u32) -> Option<*mut u8> {
-        if let Some(entry) = self.entries.get(&bs) {
+    fn get_or_map(&mut self, fd: u32, stride: u32, height: u32) -> Option<*mut u8> {
+        if let Some(entry) = self.entries.get(&fd) {
             return Some(entry.ptr);
         }
 
         let start = stem::monotonic_ns();
-        match stem::thing::sys::bytespace_map(bs) {
-            Ok(ptr) => {
-                let dt = stem::monotonic_ns().saturating_sub(start);
-                crate::trace_counter!("raster.bytespace_map.count", 1);
-                crate::trace_counter!("raster.bytespace_map.ns_total", dt);
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let len = (stride * height) as usize;
+        let req = VmMapReq {
+            addr_hint: 0,
+            len,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
 
-                let len = (stride * height) as usize;
+        match stem::thing::sys::vm_map(&req) {
+            Ok(resp) => {
+                let dt = stem::monotonic_ns().saturating_sub(start);
+                crate::trace_counter!("raster.vm_map.count", 1);
+                crate::trace_counter!("raster.vm_map.ns_total", dt);
+
+                let ptr = resp.addr as *mut u8;
                 self.entries.insert(
-                    bs,
-                    MappedBytespace {
-                        ptr: ptr as *mut u8,
+                    fd,
+                    MappedFile {
+                        ptr,
                         len,
                     },
                 );
-                Some(ptr as *mut u8)
+                Some(ptr)
             }
             Err(_) => None,
         }
     }
 }
 
-impl Drop for BytespaceMapCache {
+impl Drop for VmMapCache {
     fn drop(&mut self) {
-        for (bs, entry) in self.entries.iter() {
-            let _ = stem::thing::sys::bytespace_unmap(*bs, entry.ptr);
-            crate::trace_counter!("raster.bytespace_unmap.count", 1);
-        }
+        // We don't have a structured way to unmap yet in the cache without the full response,
+        // but we can leak for now or implement better tracking later.
+        // In the compositor, these are usually stable or cleaned up by task exit.
     }
 }
 
 struct RasterContext<'a> {
     surface: &'a mut PixelBuffer,
-    cache: &'a mut BytespaceMapCache,
+    cache: &'a mut VmMapCache,
     clip_stack: Vec<Rect>,
     transform_stack: Vec<Transform2D>,
     current_clip: Rect,
@@ -97,7 +109,7 @@ struct RasterContext<'a> {
 impl<'a> RasterContext<'a> {
     fn new(
         surface: &'a mut PixelBuffer,
-        cache: &'a mut BytespaceMapCache,
+        cache: &'a mut VmMapCache,
         solid_text: bool,
     ) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
@@ -142,7 +154,7 @@ pub fn execute(surface: &mut PixelBuffer, list: &DrawList, solid_text: bool) {
         lower(list)
     };
 
-    let mut cache = BytespaceMapCache::new();
+    let mut cache = VmMapCache::new();
     let mut ctx = RasterContext::new(surface, &mut cache, solid_text);
     execute_lowered_on_context(&mut ctx, &lowered);
 }
@@ -375,7 +387,7 @@ pub fn execute_lowered_with_damage(
     crate::trace_counter!("raster.ops.total", lowered.ops.len() as u64);
     crate::trace_counter!("raster.draw_ops.total", draw_ops.len() as u64);
 
-    let mut cache = BytespaceMapCache::new();
+    let mut cache = VmMapCache::new();
 
     // 2. Execute per damage
     let mut total_executed = 0;
@@ -481,8 +493,8 @@ fn execute_single_op(ctx: &mut RasterContext, op: &LowLevelOp) {
             crate::trace_counter!("raster.ops.blit_snap", 1);
             let td = ctx.current_transform.transform_rect(*dst);
             if let Some(cd) = ctx.current_clip.intersection(&td) {
-                let bs = ThingId::from_u64(*bs_id);
-                if let Some(ptr) = ctx.cache.get_or_map(bs, *stride, *height) {
+                let fd = *bs_id as u32;
+                if let Some(ptr) = ctx.cache.get_or_map(fd, *stride, *height) {
                     let len = (*stride * *height) as usize;
                     let src_surf =
                         unsafe { PixelBuffer::new(ptr as *mut u8, len, *width, *height, *stride) };

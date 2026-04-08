@@ -12,7 +12,7 @@ querying a registry.
 A service provider is a normal userland process that:
 
 1. Creates a port pair.
-2. Calls `SYS_VFS_MOUNT(write_handle, "/services/<name>")` to register as the
+2. Calls `SYS_FS_MOUNT(write_handle, "/services/<name>")` to register as the
    filesystem provider for that subtree.
 3. Enters a service loop, receiving [`abi::vfs_rpc`] messages and dispatching
    them to its internal state.
@@ -89,7 +89,7 @@ Commands are single words (no arguments in v0).  A service may return
 ## Event stream convention
 
 Services that emit events expose an `events` file.  Readers block on it (via
-`SYS_VFS_READ` or `poll`) and receive newline-delimited records:
+`SYS_FS_READ` or `poll`) and receive newline-delimited records:
 
 ```
 link-up eth0

@@ -13,9 +13,9 @@ use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
 /// Cached raster variant metadata
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct CachedRaster {
-    pub bytespace_id: ThingId,
+    pub fd: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -103,11 +103,11 @@ impl BlossomClient {
         self.connected
     }
 
-    /// Request rasterization of an SVG from a bytespace
+    /// Request rasterization of an SVG from a memfd
     #[allow(dead_code)]
     pub fn rasterize(
         &mut self,
-        svg_bytespace: ThingId,
+        svg_fd: u32,
         width: u32,
         height: u32,
     ) -> Option<CachedRaster> {
@@ -115,17 +115,22 @@ impl BlossomClient {
             return None;
         }
 
-        // Check local memoization cache
-        let svg_hash = svg_bytespace.to_u64_lossy();
-        let variant_key = compute_local_cache_key(svg_hash, width, height);
+        // Check local memoization cache (use FD as key for now)
+        let variant_key = compute_local_cache_key(svg_fd as u64, width, height);
 
-        if let Some(cached) = self.cache.get(&variant_key) {
-            return Some(cached.clone());
+        if let Some(c) = self.cache.get(&variant_key) {
+            return Some(CachedRaster {
+                fd: c.fd,
+                width: c.width,
+                height: c.height,
+                stride: c.stride,
+                variant_hash: c.variant_hash,
+            });
         }
 
         // Build request
         let request = RasterizeSvgRequest {
-            source: SvgSource::Bytespace(svg_bytespace),
+            source: SvgSource::MemFd(svg_fd),
             width,
             height,
             pixel_format: 1, // BGRA8888
@@ -160,22 +165,28 @@ impl BlossomClient {
 
         // Cache locally
         let cached = CachedRaster {
-            bytespace_id: response.raster_bytespace,
+            fd: response.raster_fd,
             width: response.width,
             height: response.height,
             stride: response.stride_bytes,
             variant_hash: response.variant_hash,
         };
 
-        self.cache.insert(variant_key, cached.clone());
+        self.cache.insert(variant_key, cached);
 
-        Some(cached)
+        Some(CachedRaster {
+            fd: response.raster_fd,
+            width: response.width,
+            height: response.height,
+            stride: response.stride_bytes,
+            variant_hash: response.variant_hash,
+        })
     }
 
     /// Invalidate local cache (e.g., when SVG content changes)
     #[allow(dead_code)]
-    pub fn invalidate(&mut self, svg_bytespace: ThingId) {
-        let svg_hash = svg_bytespace.to_u64_lossy();
+    pub fn invalidate(&mut self, svg_fd: u32) {
+        let svg_hash = svg_fd as u64;
         self.cache.retain(|k, _| (k >> 32) != svg_hash);
     }
 }

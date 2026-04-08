@@ -162,7 +162,8 @@ impl BloomSim {
 
     fn send_bind(&self, link: &mut Link) {
         let bind = drvproto::BindPayload {
-            bytespace_id: 1,
+            fb_fd: 1,
+            _pad: 0,
             width: 800,
             height: 600,
             stride: 3200,

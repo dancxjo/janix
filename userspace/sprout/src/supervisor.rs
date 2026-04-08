@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
+use abi::ids::HandleId;
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
@@ -408,32 +409,46 @@ fn seed_asset_requests() {
 
 /// Spawn bloom compositor with display handles (minimal - no input events)
 fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandles) {
-    use stem::thing::sys::{bytespace_create, bytespace_map, bytespace_unmap};
+    use abi::vm::{VmBacking, VmMapReq, VmProt};
 
     let boot_size = 4096;
-    let boot_bs = bytespace_create(boot_size, 0, 0).unwrap_or(ThingId::default());
+    let boot_fd = thingsys::memfd_create("bloom.boot", boot_size).unwrap_or(0);
 
-    if boot_bs.to_u64_lossy() != 0 {
-        if let Ok(ptr) = bytespace_map(boot_bs) {
+    if boot_fd != 0 {
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: boot_size,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd: boot_fd,
+                offset: 0,
+            },
+        };
+        if let Ok(resp) = thingsys::vm_map(&req) {
+            let ptr = resp.addr;
             let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
             slice[0] = 0xB100AA01; // Magic
             slice[1] = dh.drv_req_write as u32;
             slice[2] = dh.drv_resp_read as u32;
             slice[3] = 0; // No bristle event handle (input disabled)
 
-            // Display bytespace id (u64 split into two u32s)
-            let bs = dh.bs_id.to_u64_lossy();
-            slice[4] = bs as u32;
-            slice[5] = (bs >> 32) as u32;
+            // Display bytespace id (128-bit)
+            let bs_thing = ThingId::from_u64(dh.bs_id as u64);
+            let bs_bytes = bs_thing.0;
+            slice[4] = u32::from_le_bytes(bs_bytes[0..4].try_into().unwrap());
+            slice[5] = u32::from_le_bytes(bs_bytes[4..8].try_into().unwrap());
+            slice[6] = u32::from_le_bytes(bs_bytes[8..12].try_into().unwrap());
+            slice[7] = u32::from_le_bytes(bs_bytes[12..16].try_into().unwrap());
 
-            let _ = bytespace_unmap(boot_bs, ptr);
+            // stem::thing::sys::vm_unmap(&resp).ok();
         }
     }
 
-    let bloom_arg = boot_bs.to_u64_lossy() as usize;
+    let bloom_arg = boot_fd as usize;
     info!(
-        "SPROUT: Bloom handles via BS={} backend={}",
-        boot_bs.to_u64_lossy(),
+        "SPROUT: Bloom handles via FD={} backend={}",
+        boot_fd,
         dh.backend_name
     );
 

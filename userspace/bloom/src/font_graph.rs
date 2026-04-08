@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-use stem::thing::sys::{bytespace_info, bytespace_read, find, intern, prop_get, prop_set};
+use stem::thing::sys::{find, intern, prop_get, prop_set, stat, read};
 use stem::thing::ThingId;
 
 /// Font epoch counter - increments when font availability changes.
@@ -74,7 +74,7 @@ struct FontFace {
 
 #[derive(Clone, Debug)]
 struct FontFile {
-    bytespace_id: ThingId,
+    fd: u32,
     size_bytes: usize,
     name: Arc<str>,
 }
@@ -236,7 +236,7 @@ impl FontGraph {
         let file = self.files.get(&face.file_id)?;
         if !self.font_cache.contains_key(&face.file_id) {
             if let Some(asset) = AssetBank::load_font_immediate(
-                file.bytespace_id,
+                file.fd,
                 file.size_bytes,
                 file.name.as_ref(),
             ) {
@@ -373,6 +373,7 @@ fn collect_nodes(kind: &str) -> Vec<ThingId> {
     let mut out = Vec::new();
     let mut buf = [ThingId::default(); 256];
     if let Ok(count) = find(kind, &mut buf) {
+        let count = count.min(buf.len());
         for id in buf.iter().take(count) {
             out.push(*id);
         }
@@ -385,16 +386,17 @@ fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
     if val == 0 {
         return None;
     }
-    read_bytespace_string(ThingId::from_u64(val))
+    read_fd_string(val as u32)
 }
 
-fn read_bytespace_string(id: ThingId) -> Option<String> {
-    let size = bytespace_info(id).ok()?;
+fn read_fd_string(fd: u32) -> Option<String> {
+    let (_, size_u64, _) = stat(fd).ok()?;
+    let size = size_u64 as usize;
     if size == 0 {
         return Some(String::new());
     }
     let mut buf = vec![0u8; size];
-    let len = bytespace_read(id, 0, &mut buf).ok()?;
+    let len = read(fd, &mut buf).ok()?;
     let text = core::str::from_utf8(&buf[..len]).unwrap_or("");
     Some(text.to_string())
 }

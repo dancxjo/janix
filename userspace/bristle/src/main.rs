@@ -212,92 +212,7 @@ fn matches_filter(filter: u64, event_kind: u64) -> bool {
 
 /// Kill all userspace tasks except Bristle, then respawn Sprout.
 fn reset_userspace_and_respawn_sprout() {
-    use abi::schema::{keys, kinds};
-    use stem::thing::ThingId;
-
-    // Find all proc.Thread nodes
-    let mut thread_buf = [ThingId::default(); 256];
-    let count = match thingsys::find(kinds::PROC_THREAD, &mut thread_buf) {
-        Ok(c) => c.min(256),
-        Err(_) => {
-            info!("bristle: failed to find proc.Thread nodes");
-            return;
-        }
-    };
-
-    let mut killed = 0u64;
-    for i in 0..count {
-        let node = thread_buf[i];
-
-        // Only target userspace tasks.
-        let is_user = match thingsys::prop_get(node, keys::PROC_IS_USER) {
-            Ok(v) => v != 0,
-            Err(_) => false,
-        };
-        if !is_user {
-            continue;
-        }
-
-        // Get the interned name symbol
-        let name_sym = match thingsys::prop_get(node, keys::PROC_NAME) {
-            Ok(v) => v,
-            Err(_) => {
-                // If name is missing, still kill userspace task.
-                let tid = match thingsys::prop_get(node, keys::PROC_TID) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                match stem::syscall::task_kill(tid) {
-                    Ok(()) => killed += 1,
-                    Err(e) => info!(
-                        "bristle: failed to kill unnamed userspace tid={}: {:?}",
-                        tid, e
-                    ),
-                }
-                continue;
-            }
-        };
-
-        // Resolve the symbol to a string
-        let mut name_buf = [0u8; 64];
-        let name_len = match thingsys::describe_symbol(name_sym as u32, &mut name_buf) {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-
-        let name = match core::str::from_utf8(&name_buf[..name_len]) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        // Keep Bristle alive so it can perform the respawn.
-        if name.ends_with("/bristle") || name == "bristle" {
-            continue;
-        }
-
-        // Get the TID
-        let tid = match thingsys::prop_get(node, keys::PROC_TID) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        info!("bristle: killing userspace task {} (tid={})", name, tid);
-        match stem::syscall::task_kill(tid) {
-            Ok(()) => killed += 1,
-            Err(e) => info!("bristle: failed to kill {}: {:?}", name, e),
-        }
-    }
-
-    match stem::syscall::spawn_process("/boot/sprout", 0) {
-        Ok(tid) => info!(
-            "bristle: userspace reset complete (killed {}), respawned sprout tid={}",
-            killed, tid
-        ),
-        Err(e) => info!(
-            "bristle: userspace reset killed {}, but failed to respawn sprout: {:?}",
-            killed, e
-        ),
-    }
+    info!("bristle: reset_userspace_and_respawn_sprout is deprecated and currently disabled.");
 }
 
 #[stem::main]
@@ -444,8 +359,7 @@ fn main(packed_handles: usize) -> ! {
                                                 stem::syscall::task_dump();
                                             }
                                             Key::F10 => {
-                                                info!("bristle: F10 pressed - dumping graph...");
-                                                let _ = thingsys::dump_graph(0);
+                                                info!("bristle: F10 pressed - graph dump is disabled.");
                                             }
                                             Key::Delete => {
                                                 if payload.mods().has_ctrl()

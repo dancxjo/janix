@@ -603,7 +603,8 @@ pub mod kinds {
     pub const FW_TABLE_DTB: &str = "fw.table.Dtb";
     pub const MEM_RANGE: &str = "mem.Range";
     pub const DEV_RTC_CMOS: &str = "dev.rtc.Cmos";
-    pub const BYTESPACE: &str = "Bytespace";
+    pub const MEMFD: &str = "MemFd";
+    pub const BYTESPACE: &str = "Bytespace"; // Legacy alias
     pub const RES_IO_PORT_RANGE: &str = "res.io.PortRange";
     pub const DEV_DISPLAY_FRAMEBUFFER: &str = "dev.display.Framebuffer";
     pub const PROC_KERNEL: &str = "proc.Kernel";

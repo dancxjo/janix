@@ -5,7 +5,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use stem::syscall::{port_create, port_send, port_try_recv, PortHandle};
-use stem::thing::sys::{bytespace_create, bytespace_write};
+use stem::thing::sys::{memfd_create, write, stat};
 use stem::thing::HandleId;
 use stem::thing::ThingId;
 
@@ -49,7 +49,7 @@ pub const XDG_TOPLEVEL_TITLEBAR: i32 = 28;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BufferMeta {
-    pub bs_id: u64,
+    pub fd: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -98,7 +98,7 @@ enum WaylandObject {
     Compositor,
     Shm,
     ShmPool {
-        bs_id: u64,
+        fd: u32,
         size: u32,
     },
     Buffer(BufferMeta),
@@ -866,18 +866,18 @@ impl WaylandServer {
                     Some(WaylandObject::Shm) => {
                         if opcode == 0 && payload.len() >= 12 {
                             let new_id = read_u32(payload, 0);
-                            let bs_id = read_u32(payload, 4) as u64;
+                            let fd = read_u32(payload, 4);
                             let size = read_u32(payload, 8);
                             client
                                 .objects
-                                .insert(new_id, WaylandObject::ShmPool { bs_id, size });
+                                .insert(new_id, WaylandObject::ShmPool { fd, size });
                         }
                     }
-                    Some(WaylandObject::ShmPool { bs_id, .. }) => {
+                    Some(WaylandObject::ShmPool { fd, .. }) => {
                         if opcode == 0 && payload.len() >= 24 {
                             let new_id = read_u32(payload, 0);
                             let meta = BufferMeta {
-                                bs_id,
+                                fd,
                                 width: read_u32(payload, 8),
                                 height: read_u32(payload, 12),
                                 stride: read_u32(payload, 16),
@@ -1191,11 +1191,11 @@ impl WaylandServer {
                             client.objects.insert(new_id, WaylandObject::Keyboard);
                             // Send keymap (XKB_V1 = 1, fd-as-bs_id, size)
                             let keymap = crate::ui_events::XKB_KEYMAP.as_bytes();
-                            if let Ok(bs) = bytespace_create(keymap.len() + 1, 0, 0) {
-                                let _ = bytespace_write(bs, 0, keymap);
+                            if let Ok(fd) = memfd_create("wl_keymap", 0) {
+                                let _ = write(fd, keymap);
                                 let mut mb = MessageBuilder::new(new_id, 0); // keymap
                                 mb.push_u32(1); // format XKB_V1
-                                mb.push_u32(bs.to_u64_lossy() as u32);
+                                mb.push_u32(fd);
                                 mb.push_u32((keymap.len() + 1) as u32);
                                 client.out_buf.extend_from_slice(&mb.build());
                             }

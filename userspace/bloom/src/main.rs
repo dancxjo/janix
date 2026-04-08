@@ -125,7 +125,19 @@ fn render_wayland_scene_surface(
         }
 
         if let Some(buffer) = snapshot.buffer {
-            if let Ok(ptr) = stem::thing::sys::bytespace_map(ThingId::from_u64(buffer.bs_id)) {
+            use abi::vm::{VmBacking, VmMapReq, VmProt};
+            let req = VmMapReq {
+                addr_hint: 0,
+                len: (buffer.stride as usize) * (buffer.height as usize),
+                prot: VmProt::READ | VmProt::USER,
+                flags: abi::vm::VmMapFlags::empty(),
+                backing: VmBacking::File {
+                    fd: buffer.fd,
+                    offset: 0,
+                },
+            };
+            if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+                let ptr = resp.addr;
                 let copy_w = snapshot.content_width.min(buffer.width as i32).max(0);
                 let copy_h = snapshot.content_height.min(buffer.height as i32).max(0);
                 unsafe {
@@ -141,7 +153,7 @@ fn render_wayland_scene_surface(
                         );
                     }
                 }
-                let _ = stem::thing::sys::bytespace_unmap(ThingId::from_u64(buffer.bs_id), ptr);
+                // stem::thing::sys::vm_unmap(&resp).ok();
             }
         }
     }
@@ -211,7 +223,7 @@ impl CursorMetrics {
 
 #[derive(Default)]
 struct CursorUnderlay {
-    bs_id: ThingId,
+    fd: u32,
     rect: crate::geometry::Rect,
     pixels: alloc::vec::Vec<u32>,
     valid: bool,
@@ -300,7 +312,7 @@ fn sync_input_from_graph(
 #[inline]
 fn capture_cursor_underlay(
     surface: &surface::PixelBuffer,
-    bs_id: ThingId,
+    fd: u32,
     rect: crate::geometry::Rect,
     underlay: &mut CursorUnderlay,
 ) {
@@ -333,7 +345,7 @@ fn capture_cursor_underlay(
         }
     }
 
-    underlay.bs_id = bs_id;
+    underlay.fd = fd;
     underlay.rect = clipped;
     underlay.valid = true;
 }
@@ -496,8 +508,8 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
     for win in windows.iter().take(count) {
         let mut title_buf = [0u8; 128];
         if let Ok(val) = stem::thing::sys::prop_get(*win, keys::UI_TITLE) {
-            let bs_id = ThingId::from_u64(val);
-            if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut title_buf) {
+            let fd = val as u32;
+            if let Ok(len) = stem::thing::sys::read(fd, &mut title_buf) {
                 let title = core::str::from_utf8(&title_buf[..len]).unwrap_or("");
                 if title.contains("Photosynthesis") {
                     photosynthesis = Some(*win);
@@ -693,24 +705,35 @@ fn main(arg: usize) -> ! {
     // Log SIMD backend selection for masked compositing
     log_simd_backend();
 
-    use stem::thing::sys::{bytespace_map, bytespace_unmap};
-    let bs_id = ThingId::from_u64(arg as u64);
-    let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);
-    let mut display_bs_id = stem::thing::ThingId::default();
-    if let Ok(ptr) = bytespace_map(bs_id) {
-        let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
-        if slice[0] == 0xB100AA01 {
-            arg_req = slice[1];
-            arg_resp = slice[2];
-            bristle_evt = slice[3];
-            let mut id_bytes = [0u8; 16];
-            id_bytes[0..4].copy_from_slice(&slice[4].to_le_bytes());
-            id_bytes[4..8].copy_from_slice(&slice[5].to_le_bytes());
-            id_bytes[8..12].copy_from_slice(&slice[6].to_le_bytes());
-            id_bytes[12..16].copy_from_slice(&slice[7].to_le_bytes());
-            display_bs_id = stem::thing::ThingId(id_bytes);
+    use abi::vm::{VmBacking, VmMapReq, VmProt};
+    let boot_fd = arg as u32;
+    let mut display_fd = 0u32;
+    let mut arg_req = 0u32;
+    let mut arg_resp = 0u32;
+    let mut bristle_evt = 0u32;
+
+    if boot_fd != 0 {
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd: boot_fd,
+                offset: 0,
+            },
+        };
+        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            let ptr = resp.addr;
+            let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
+            if slice[0] == 0xB100AA01 {
+                arg_req = slice[1];
+                arg_resp = slice[2];
+                bristle_evt = slice[3];
+                display_fd = slice[4];
+            }
+            // stem::thing::sys::vm_unmap(&resp).ok(); // If we had it
         }
-        let _ = bytespace_unmap(bs_id, ptr);
     } else {
         arg_req = unpack_handle(arg, 0) as u32;
         arg_resp = unpack_handle(arg, 1) as u32;
@@ -723,8 +746,8 @@ fn main(arg: usize) -> ! {
         arg_req,
         arg_resp
     );
-    let target = if display_bs_id.to_u64_lossy() != 0 {
-        CompositorTarget::map_from_bytespace(display_bs_id, (arg_req, arg_resp))
+    let target = if display_fd != 0 {
+        CompositorTarget::map_from_fd(display_fd, (arg_req, arg_resp))
             .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
     } else {
         CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
@@ -732,8 +755,8 @@ fn main(arg: usize) -> ! {
     .expect("compositor discover");
     let _ = target.backend;
 
-    // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
-    let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
+    // Buffer mapping cache for swapchain - maps file descriptors to their virtual addresses
+    let mut buffer_cache: BTreeMap<u32, *mut u8> = BTreeMap::new();
 
     let (
         mut final_ptr,
@@ -741,7 +764,7 @@ fn main(arg: usize) -> ! {
         mut final_width,
         mut final_height,
         mut final_stride,
-        mut final_bs_id,
+        mut final_fd,
         mut using_zero_copy,
         mut final_age,
     ) = (
@@ -750,7 +773,7 @@ fn main(arg: usize) -> ! {
         target.width,
         target.height,
         target.stride_bytes,
-        target.bs_id,
+        target.fd,
         false,
         0u32,
     );
@@ -760,14 +783,24 @@ fn main(arg: usize) -> ! {
     if let Some(fb_info) = read_fb_info() {
         if final_width != fb_info.width || final_height != fb_info.height || final_stride != fb_info.stride {
             let size = (fb_info.height as usize).saturating_mul(fb_info.stride as usize);
-            if let Ok(bs_id) = stem::thing::sys::bytespace_create(size, 0, fb_info.format as u64) {
-                if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-                    final_ptr = ptr;
+            if let Ok(fd) = stem::thing::sys::memfd_create("bloom.staging", size) {
+                let req = VmMapReq {
+                    addr_hint: 0,
+                    len: size,
+                    prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+                    flags: abi::vm::VmMapFlags::empty(),
+                    backing: VmBacking::File {
+                        fd,
+                        offset: 0,
+                    },
+                };
+                if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+                    final_ptr = resp.addr as *mut u8;
                     final_size = size;
                     final_width = fb_info.width;
                     final_height = fb_info.height;
                     final_stride = fb_info.stride;
-                    final_bs_id = bs_id;
+                    final_fd = fd;
                     screen_format = fb_info.format;
                     final_age = 0;
                     stem::info!(
@@ -798,24 +831,36 @@ fn main(arg: usize) -> ! {
         // Immediate acquire to satisfy driver's need for a bound context before first present
         let mut d_presenter = PresenterImpl::Driver(d);
         stem::info!("[bloom] Requesting initial driver buffer...");
-        let (acq_id, acq_w, acq_h, acq_s, acq_f, acq_age) = d_presenter.acquire_buffer();
-        stem::info!("[bloom] ACQUIRED RETURNED!");
+        let (acq_fd, acq_w, acq_h, acq_s, acq_f, acq_age) = d_presenter.acquire_buffer();
+        stem::info!("[bloom] ACQUIRED FD={} RETURNED!", acq_fd);
 
         // Map the initial buffer
-        if let Ok(ptr) = stem::thing::sys::bytespace_map(acq_id) {
-            buffer_cache.insert(acq_id, ptr);
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: (acq_s as usize) * (acq_h as usize),
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd: acq_fd,
+                offset: 0,
+            },
+        };
+
+        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            let ptr = resp.addr as *mut u8;
             final_ptr = ptr;
             final_size = (acq_h * acq_s) as usize;
             final_width = acq_w;
             final_height = acq_h;
             final_stride = acq_s;
-            final_bs_id = acq_id;
+            final_fd = acq_fd;
             screen_format = acq_f;
             final_age = acq_age;
             stem::info!(
-                "[bloom] ACQUIRED initial driver buffer: {:p} (bs_id={:?})",
+                "[bloom] ACQUIRED initial driver buffer: {:p} (fd={})",
                 ptr,
-                acq_id
+                acq_fd
             );
         } else {
             stem::error!("[bloom] FAILED to map initial driver buffer");
@@ -915,7 +960,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
-    let mut cursor_underlays: BTreeMap<ThingId, CursorUnderlay> = BTreeMap::new();
+    let mut cursor_underlays: BTreeMap<u32, CursorUnderlay> = BTreeMap::new();
     let mut drag_state: Option<DragState> = None;
 
     let mut debug_flags = DebugFlags::default();
@@ -1044,7 +1089,7 @@ fn main(arg: usize) -> ! {
     let mut first_frame_rendered = false;
     let mut last_loop_start_ns = stem::monotonic_ns();
 
-    let mut current_bs_id = final_bs_id;
+    let mut current_fd = final_fd;
     let mut current_age = final_age;
 
     loop {
@@ -1083,10 +1128,10 @@ fn main(arg: usize) -> ! {
 
         // 0. Update surface if buffer changed
         if let PresenterImpl::Driver(ref mut d) = presenter {
-            if current_bs_id != final_bs_id {
+            if current_fd != final_fd {
                 // Remap surface for new buffer
-                let (bs_id, w, h, s, _f, age) = (
-                    final_bs_id,
+                let (fd, w, h, s, _f, age) = (
+                    final_fd,
                     final_width,
                     final_height,
                     final_stride,
@@ -1095,16 +1140,29 @@ fn main(arg: usize) -> ! {
                 );
 
                 // Use cached pointer or map if new
-                let ptr = if let Some(&ptr) = buffer_cache.get(&bs_id) {
+                let ptr = if let Some(&ptr) = buffer_cache.get(&fd) {
                     ptr
                 } else {
-                    match stem::thing::sys::bytespace_map(bs_id) {
+                    use abi::vm::{VmBacking, VmMapReq, VmProt};
+                    let size = (h * s) as usize;
+                    let req = VmMapReq {
+                        addr_hint: 0,
+                        len: size,
+                        prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+                        flags: abi::vm::VmMapFlags::empty(),
+                        backing: VmBacking::File {
+                            fd,
+                            offset: 0,
+                        },
+                    };
+                    match stem::thing::sys::vm_map(&req) {
                         Ok(p) => {
-                            buffer_cache.insert(bs_id, p);
-                            p
+                            let ptr = p.addr as *mut u8;
+                            buffer_cache.insert(fd, ptr);
+                            ptr
                         }
                         Err(e) => {
-                            stem::error!("[bloom] FAILED to map buffer {:?}: {:?}", bs_id, e);
+                            stem::error!("[bloom] FAILED to map buffer {:?}: {:?}", fd, e);
                             // Fallback to current pointer if possible, though this may lead to corruption
                             surface.ptr
                         }
@@ -1113,7 +1171,7 @@ fn main(arg: usize) -> ! {
 
                 let size = (h * s) as usize;
                 surface = unsafe { surface::PixelBuffer::new(ptr, size, w, h, s) };
-                current_bs_id = bs_id;
+                current_fd = fd;
             }
         }
 
@@ -1966,7 +2024,7 @@ fn main(arg: usize) -> ! {
         // Cursor-only fast path: restore old cursor underlay and skip scene composition.
         // Only valid when the current buffer is stable (age=1) and we captured underlay for
         // this exact bytespace on the previous frame.
-        let cursor_underlay = cursor_underlays.entry(current_bs_id).or_default();
+        let cursor_underlay = cursor_underlays.entry(final_fd).or_default();
         let cursor_only_fast_path =
             is_cursor_only_frame && cursor_underlay.valid && list.commands_ref().is_empty();
 
@@ -1988,7 +2046,7 @@ fn main(arg: usize) -> ! {
                 }
 
                 if wp_asset_id != 0 {
-                    if let Some(wp) = ASSETS.get_image_by_id(ThingId::from_u64(wp_asset_id)) {
+                    if let Some(wp) = ASSETS.get_image_by_id(wp_asset_id as u32) {
                         wallpaper = Some(wp);
                     }
                 }
@@ -2127,7 +2185,7 @@ fn main(arg: usize) -> ! {
                     snapshot.image.height as i32,
                 )
                 .clip(cursor_bounds);
-                capture_cursor_underlay(&surface, current_bs_id, cursor_rect, cursor_underlay);
+                capture_cursor_underlay(&surface, final_fd, cursor_rect, cursor_underlay);
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
                 true
             } else {
@@ -2138,7 +2196,7 @@ fn main(arg: usize) -> ! {
         };
 
         if !cursor_drawn {
-            capture_cursor_underlay(&surface, current_bs_id, cursor_rect, cursor_underlay);
+            capture_cursor_underlay(&surface, final_fd, cursor_rect, cursor_underlay);
             raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);
         }
 
@@ -2156,22 +2214,25 @@ fn main(arg: usize) -> ! {
             // Acquire NEXT buffer for the next frame
             if let PresenterImpl::Driver(_) = presenter {
                 let acquire_start_ns = stem::monotonic_ns();
-                let (next_bs_id, next_w, next_h, next_s, next_f, next_age) =
+                let (next_fd, next_w, next_h, next_s, next_f, next_age) =
                     presenter.acquire_buffer();
-                let acquire_ns = stem::monotonic_ns().saturating_sub(acquire_start_ns);
-                if acquire_ns > 50_000_000 {
-                    stem::warn!(
-                        "[bloom] acquire_buffer took {:.3}ms",
-                        acquire_ns as f64 / 1_000_000.0
-                    );
-                }
-
                 // Use cached pointer or map if new
-                let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_bs_id) {
+                let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_fd) {
                     ptr
                 } else {
-                    let ptr = stem::thing::sys::bytespace_map(next_bs_id).unwrap();
-                    buffer_cache.insert(next_bs_id, ptr);
+                    use abi::vm::{VmBacking, VmMapReq, VmProt};
+                    let req = VmMapReq {
+                        addr_hint: 0,
+                        len: (next_s as usize) * (next_h as usize),
+                        prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+                        flags: abi::vm::VmMapFlags::empty(),
+                        backing: VmBacking::File {
+                            fd: next_fd,
+                            offset: 0,
+                        },
+                    };
+                    let ptr = stem::thing::sys::vm_map(&req).expect("map acquired frame").addr as *mut u8;
+                    buffer_cache.insert(next_fd, ptr);
                     ptr
                 };
                 let next_size = (next_h * next_s) as usize;
@@ -2181,7 +2242,7 @@ fn main(arg: usize) -> ! {
                     surface.update_buffer(next_ptr, next_size, next_w, next_h, next_s);
                 }
 
-                final_bs_id = next_bs_id;
+                final_fd = next_fd;
                 final_width = next_w;
                 final_height = next_h;
                 final_stride = next_s;

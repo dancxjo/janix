@@ -7,6 +7,9 @@ iso_root*/
 *.log
 *.pid
 
+temp_*.txt
+/*.py
+
 # Vendor dependencies (fetched by `just fetch`)
 /vendor/
 

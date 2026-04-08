@@ -80,7 +80,7 @@ fn main(arg: usize) -> ! {
         }
     };
 
-    // Mount at /dev/net/virtio0 via SYS_VFS_MOUNT.
+    // Mount at /dev/net/virtio0 via SYS_FS_MOUNT.
     // Pass the write end so the kernel can send us RPCs.
     match vfs_mount(req_write, "/dev/net/virtio0") {
         Ok(()) => {

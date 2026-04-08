@@ -5,7 +5,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::{WatchMode, WatchSpec};
 use alloc::string::String;
 use alloc::string::ToString;
-use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
+use stem::thing::sys::{describe_thing, find, prop_get, stat, read};
 use stem::thing::{HandleId, ThingId};
 use stem::{debug, info, syscall, warn};
 
@@ -62,15 +62,15 @@ pub extern "C" fn font_loader_entry() -> ! {
             || mod_name.ends_with(".otf")
             || mod_name.ends_with(".OTF")
         {
-            let bs_id = match prop_get(modules[i], "bytespace") {
-                Ok(id) => ThingId::from_u64(id),
+            let fd = match prop_get(modules[i], "bytespace") {
+                Ok(id) => id as u32,
                 Err(_) => continue,
             };
-            let size = match bytespace_info(bs_id) {
-                Ok(s) => s,
+            let size = match stat(fd) {
+                Ok((_, s, _)) => s,
                 Err(_) => continue,
             };
-            ASSETS.enqueue_font_load(bs_id, size as usize, mod_name);
+            ASSETS.enqueue_font_load(fd, size as usize, mod_name);
         }
     }
 

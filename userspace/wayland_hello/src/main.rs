@@ -2,6 +2,7 @@
 #![feature(restricted_std)]
 extern crate alloc;
 
+use abi::ids::HandleId;
 use abi::syscall::vfs_flags::O_RDWR;
 use alloc::vec::Vec;
 use stem::info;
@@ -213,18 +214,31 @@ fn ensure_buffer(
 
     let stride = width * 4;
     let size = stride * height;
-    let bs_id = thingsys::bytespace_create(size as usize, 0, 0).expect("create bytespace");
-    let ptr = thingsys::bytespace_map(bs_id).expect("map bytespace");
+    let fd_buf = thingsys::memfd_create("wl.buffer", size as usize).expect("create memfd");
+    
+    use abi::vm::{VmBacking, VmMapReq, VmProt};
+    let req = VmMapReq {
+        addr_hint: 0,
+        len: size as usize,
+        prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+        flags: abi::vm::VmMapFlags::empty(),
+        backing: VmBacking::File {
+            fd: fd_buf,
+            offset: 0,
+        },
+    };
+    let resp = thingsys::vm_map(&req).expect("map memfd");
+    let ptr = resp.addr as *mut u8;
 
     let pool_id = base_id;
     let buffer_id = base_id + 1;
-    create_pool(fd, shm_id, pool_id, bs_id.to_u64_lossy() as u32, size);
+    create_pool(fd, shm_id, pool_id, fd_buf, size);
     create_buffer(fd, pool_id, buffer_id, width, height, stride);
 
     let out = BufferState {
         pool_id,
         buffer_id,
-        bs_id,
+        bs_id: ThingId::from_u64(fd_buf as u64),
         ptr,
         width,
         height,

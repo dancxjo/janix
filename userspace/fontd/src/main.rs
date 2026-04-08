@@ -280,7 +280,7 @@ fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -
     let response = EnsureGlyphsResp {
         req_face_id: req.face_id,
         req_px_size: req.px_size,
-        atlas_bytespace: atlas.bytespace_id,
+        atlas_fd: atlas.atlas_fd,
         atlas_width: atlas.width,
         atlas_height: atlas.height,
         atlas_format: AtlasFormat::A8,

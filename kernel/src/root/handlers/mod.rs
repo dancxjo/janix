@@ -1,8 +1,5 @@
 //! Root service message handlers, organized by domain.
 
-pub mod bytespace;
-pub use bytespace::*;
-
 use crate::root::symbols::Interner;
 
 /// Common handler result type: (status, value)

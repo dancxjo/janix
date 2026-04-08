@@ -124,13 +124,11 @@ pub fn init() -> Result<DevTreeCtx, ()> {
 pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
     info!("SPROUT: build() called");
     // Attempt DTB parsing if available
-    if let Some(bs_id) = ctx.dtb_bytespace {
-        info!(
-            "SPROUT: Found DTB bytespace {}, parsing...",
-            bs_id.to_u64_lossy()
-        );
+    if let Some(fd_val) = ctx.dtb_bytespace {
+        let fd = fd_val.to_u64_lossy() as u32;
+        info!("SPROUT: Found DTB fd {}, parsing...", fd);
         let mut header = [0u8; 8];
-        if let Ok(_) = thingsys::bytespace_read(bs_id, 0, &mut header) {
+        if let Ok(_) = thingsys::read(fd, &mut header) {
             let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
             if magic == 0xd00dfeed {
                 let size =
@@ -140,7 +138,7 @@ pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
                     // Up to 2MB DTB
                     info!("SPROUT: Reading DTB size={}...", size);
                     let mut buf = vec![0u8; size];
-                    if let Ok(read_len) = thingsys::bytespace_read(bs_id, 0, &mut buf) {
+                    if let Ok(read_len) = thingsys::read(fd, &mut buf) {
                         if read_len == size {
                             if let Ok(fdt) = fdt::Fdt::new(&buf) {
                                 info!("SPROUT: Valid FDT found. Iterating nodes...");

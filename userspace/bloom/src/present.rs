@@ -145,8 +145,8 @@ pub trait Presenter {
     fn pump(&mut self);
 
     /// Acquire a buffer for the next frame.
-    /// Returns (bytespace_id, width, height, stride, format, buffer_age).
-    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32);
+    /// Returns (fd, width, height, stride, format, buffer_age).
+    fn acquire_buffer(&mut self) -> (u32, u32, u32, u32, u32, u32);
 
     /// Get negotiated display capabilities (if available).
     fn negotiation_info(&self) -> Option<DisplayNegotiation>;
@@ -166,8 +166,8 @@ impl Presenter for NullPresenter {
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 
-    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
-        (ThingId::default(), 0, 0, 0, 0, 0)
+    fn acquire_buffer(&mut self) -> (u32, u32, u32, u32, u32, u32) {
+        (0, 0, 0, 0, 0, 0)
     }
 
     fn negotiation_info(&self) -> Option<DisplayNegotiation> {
@@ -211,8 +211,8 @@ impl Presenter for FilePresenter {
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 
-    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
-        (ThingId::default(), 0, 0, 0, 0, 0)
+    fn acquire_buffer(&mut self) -> (u32, u32, u32, u32, u32, u32) {
+        (0, 0, 0, 0, 0, 0)
     }
 
     fn negotiation_info(&self) -> Option<DisplayNegotiation> {
@@ -232,7 +232,7 @@ pub struct DriverPresenter {
     frame_count: u64,
     /// Damage history for buffer age expansion (last 4 frames)
     damage_history: Vec<Vec<crate::geometry::Rect>>,
-    pending_acquired: Option<(ThingId, u32, u32, u32, u32, u32)>,
+    pending_acquired: Option<(u32, u32, u32, u32, u32, u32)>,
 }
 
 impl DriverPresenter {
@@ -483,11 +483,7 @@ impl DriverPresenter {
             drvproto::MSG_ACQUIRED => {
                 if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
                     self.pending_acquired = Some((
-                        ThingId({
-                            let mut b = [0u8; 16];
-                            b[0..8].copy_from_slice(&acq.bytespace_id.to_le_bytes());
-                            b
-                        }),
+                        acq.fd,
                         acq.width,
                         acq.height,
                         acq.stride,
@@ -720,7 +716,7 @@ impl Presenter for DriverPresenter {
         })
     }
 
-    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+    fn acquire_buffer(&mut self) -> (u32, u32, u32, u32, u32, u32) {
         let mut last_acquire_send_ns = 0u64;
         let mut last_stuck_log_ns = 0u64;
 
@@ -761,11 +757,7 @@ impl Presenter for DriverPresenter {
                     );
                     if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
                         return (
-                            ThingId({
-                                let mut b = [0u8; 16];
-                                b[0..8].copy_from_slice(&acq.bytespace_id.to_le_bytes());
-                                b
-                            }),
+                            acq.fd,
                             acq.width,
                             acq.height,
                             acq.stride,
@@ -849,7 +841,7 @@ impl PresenterImpl {
         }
     }
 
-    pub fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+    pub fn acquire_buffer(&mut self) -> (u32, u32, u32, u32, u32, u32) {
         match self {
             PresenterImpl::Null(inner) => inner.acquire_buffer(),
             PresenterImpl::File(inner) => inner.acquire_buffer(),

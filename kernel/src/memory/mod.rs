@@ -68,6 +68,11 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<u64> {
     FRAME_ALLOCATOR.with_lock(|a| a.alloc_contiguous(count))
 }
 
+/// Free `count` physically contiguous 4K frames starting at `phys`.
+pub fn free_contiguous_frames(phys: u64, count: usize) {
+    FRAME_ALLOCATOR.with_lock(|a| a.mark_free_range(phys, phys + (count as u64 * 4096)));
+}
+
 /// Global hook for mapping user pages. Set by scheduler init.
 static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), MapError>> = None;
 static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>> =

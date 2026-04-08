@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use crate::errors::{Error, Result};
-use crate::thing::sys::{bytespace_create, bytespace_write, prop_get, prop_set};
+use crate::thing::sys::{prop_get, prop_set};
 use crate::thing::ThingId;
 use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
 use abi::errors::Errno;
@@ -53,16 +53,7 @@ impl DrawList {
     /// This writes the drawlist bytes to a bytespace, updates the UI_DRAWLIST_BYTESPACE
     /// property, and increments the UI_DRAWLIST_GEN counter.
     pub fn publish(&mut self, builder: DrawListBuilder) -> Result<()> {
-        let bytes = builder.finish();
-        let bs = bytespace_create(bytes.len(), 0, 0).map_err(Error::Errno)?;
-        bytespace_write(bs, 0, &bytes).map_err(Error::Errno)?;
-        prop_set(self.target, keys::UI_DRAWLIST_BYTESPACE, bs.to_u64_lossy())
-            .map_err(Error::Errno)?;
-
-        let next_gen = self.next_gen();
-        prop_set(self.target, keys::UI_DRAWLIST_GEN, next_gen).map_err(Error::Errno)?;
-        self.gen = Some(next_gen);
-        Ok(())
+        return Err(Error::Errno(Errno::ENOSYS));
     }
 
     /// Set the owner property (optional).
@@ -72,22 +63,12 @@ impl DrawList {
 
     /// Set the bounds property (optional).
     pub fn set_bounds(&self, x: i32, y: i32, w: i32, h: i32) -> Result<()> {
-        let rect = RectI32Wire::new(x, y, w, h);
-        let bytes = rect.as_bytes();
-        let bs = bytespace_create(bytes.len(), 0, 0).map_err(Error::Errno)?;
-        bytespace_write(bs, 0, &bytes).map_err(Error::Errno)?;
-        prop_set(self.target, keys::UI_DRAWLIST_BOUNDS, bs.to_u64_lossy()).map_err(Error::Errno)
+        return Err(Error::Errno(Errno::ENOSYS));
     }
 
     /// Set the debug name property (optional).
     pub fn set_debug_name(&self, name: &str) -> Result<()> {
-        if name.is_empty() {
-            prop_set(self.target, keys::UI_DRAWLIST_DEBUG_NAME, 0).map_err(Error::Errno)?;
-            return Ok(());
-        }
-        let bs = bytespace_create(name.len(), 0, 0).map_err(Error::Errno)?;
-        bytespace_write(bs, 0, name.as_bytes()).map_err(Error::Errno)?;
-        prop_set(self.target, keys::UI_DRAWLIST_DEBUG_NAME, bs.to_u64_lossy()).map_err(Error::Errno)
+        return Err(Error::Errno(Errno::ENOSYS));
     }
 
     /// Get the current generation counter from the graph, or 0 if not set.

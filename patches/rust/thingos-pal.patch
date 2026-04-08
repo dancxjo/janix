@@ -1,3 +1,42 @@
+diff --git a/library/core/src/lib.rs b/library/core/src/lib.rs
+index 17cf6b37..aacc2d1a 100644
+--- a/library/core/src/lib.rs
++++ b/library/core/src/lib.rs
+@@ -246,7 +246,7 @@ pub mod autodiff {
+ #[unstable(feature = "contracts", issue = "128044")]
+ pub mod contracts;
+ 
+-#[unstable(feature = "cfg_select", issue = "115585")]
++#[stable(feature = "cfg_select", since = "CURRENT_RUSTC_VERSION")]
+ pub use crate::macros::cfg_select;
+ 
+ #[macro_use]
+diff --git a/library/core/src/macros/mod.rs b/library/core/src/macros/mod.rs
+index 3176f3c0..0aca1136 100644
+--- a/library/core/src/macros/mod.rs
++++ b/library/core/src/macros/mod.rs
+@@ -234,7 +234,7 @@ macro_rules! assert_ne {
+ ///     _ => { "Behind every successful diet is an unwatched pizza" }
+ /// };
+ /// ```
+-#[unstable(feature = "cfg_select", issue = "115585")]
++#[stable(feature = "cfg_select", since = "CURRENT_RUSTC_VERSION")]
+ #[rustc_diagnostic_item = "cfg_select"]
+ #[rustc_builtin_macro]
+ pub macro cfg_select($($tt:tt)*) {
+diff --git a/library/core/src/prelude/v1.rs b/library/core/src/prelude/v1.rs
+index 354be271..17928b1e 100644
+--- a/library/core/src/prelude/v1.rs
++++ b/library/core/src/prelude/v1.rs
+@@ -80,7 +80,7 @@ mod panic {}
+ #[doc(no_inline)]
+ pub use self::ambiguous_macros_only::{env, panic};
+ 
+-#[unstable(feature = "cfg_select", issue = "115585")]
++#[stable(feature = "cfg_select", since = "CURRENT_RUSTC_VERSION")]
+ #[doc(no_inline)]
+ pub use crate::cfg_select;
+ 
 diff --git a/library/std/Cargo.toml b/library/std/Cargo.toml
 index f4cc8edc..0d7466be 100644
 --- a/library/std/Cargo.toml
@@ -11,7 +50,7 @@ index f4cc8edc..0d7466be 100644
  alloc = { path = "../alloc", public = true }
  # std no longer uses cfg-if directly, but the included copy of backtrace does.
 diff --git a/library/std/src/lib.rs b/library/std/src/lib.rs
-index dcde208f..a44da24d 100644
+index dcde208f..dfb525d4 100644
 --- a/library/std/src/lib.rs
 +++ b/library/std/src/lib.rs
 @@ -436,6 +436,7 @@
@@ -22,6 +61,28 @@ index dcde208f..a44da24d 100644
  // Many compiler tests depend on libc being pulled in by std
  // so include it here even if it's unused.
  #[doc(masked)]
+@@ -696,7 +697,7 @@ pub mod arch {
+ #[allow(dead_code, unused_attributes, fuzzy_provenance_casts, unsafe_op_in_unsafe_fn)]
+ mod backtrace_rs;
+ 
+-#[unstable(feature = "cfg_select", issue = "115585")]
++#[stable(feature = "cfg_select", since = "CURRENT_RUSTC_VERSION")]
+ pub use core::cfg_select;
+ #[unstable(
+     feature = "concat_bytes",
+diff --git a/library/std/src/prelude/v1.rs b/library/std/src/prelude/v1.rs
+index af9d28eb..f17f11de 100644
+--- a/library/std/src/prelude/v1.rs
++++ b/library/std/src/prelude/v1.rs
+@@ -79,7 +79,7 @@ mod panic {}
+ #[doc(no_inline)]
+ pub use self::ambiguous_macros_only::{vec, panic};
+ 
+-#[unstable(feature = "cfg_select", issue = "115585")]
++#[stable(feature = "cfg_select", since = "CURRENT_RUSTC_VERSION")]
+ #[doc(no_inline)]
+ pub use core::prelude::v1::cfg_select;
+ 
 diff --git a/library/std/src/sys/alloc/mod.rs b/library/std/src/sys/alloc/mod.rs
 index f2f1d1c7..9cb7e7b6 100644
 --- a/library/std/src/sys/alloc/mod.rs
@@ -38,10 +99,10 @@ index f2f1d1c7..9cb7e7b6 100644
      }
 diff --git a/library/std/src/sys/alloc/thingos.rs b/library/std/src/sys/alloc/thingos.rs
 new file mode 100644
-index 00000000..5d2bec0e
+index 00000000..78981fba
 --- /dev/null
 +++ b/library/std/src/sys/alloc/thingos.rs
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,30 @@
 +//! Global Allocator for ThingOS.
 +//!
 +//! This is a stub — Thing-OS userspace apps use stem's `#[global_allocator]`
@@ -54,13 +115,22 @@ index 00000000..5d2bec0e
 +unsafe impl GlobalAlloc for System {
 +    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
 +        // stem's global allocator handles all allocations.
-+        // If this is ever called, something is wrong.
 +        let _ = layout;
 +        crate::ptr::null_mut()
 +    }
 +
 +    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
 +        // stem's global allocator handles all deallocations.
++    }
++
++    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++        self.alloc(layout)
++    }
++
++    unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
++        let _ = old_layout;
++        let _ = new_size;
++        ptr
 +    }
 +}
 diff --git a/library/std/src/sys/env_consts.rs b/library/std/src/sys/env_consts.rs
@@ -1035,18 +1105,19 @@ index 91f72d07..24e2f4a3 100644
  pub fn hashmap_random_keys() -> (u64, u64) {
      let mut buf = [0; 16];
 diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/thread_local/mod.rs
-index e88011aa..9c9dafae 100644
+index e88011aa..1dde5484 100644
 --- a/library/std/src/sys/thread_local/mod.rs
 +++ b/library/std/src/sys/thread_local/mod.rs
-@@ -30,6 +30,7 @@
+@@ -30,6 +30,8 @@
          target_os = "zkvm",
          target_os = "trusty",
          target_os = "vexos",
++            target_os = "thingos",
 +        target_os = "thingos",
      ) => {
          mod no_threads;
          pub use no_threads::{EagerStorage, LazyStorage, thread_local_inner};
-@@ -100,6 +101,7 @@ pub(crate) mod guard {
+@@ -100,6 +102,7 @@ pub(crate) mod guard {
              target_os = "zkvm",
              target_os = "trusty",
              target_os = "vexos",
@@ -1054,3 +1125,21 @@ index e88011aa..9c9dafae 100644
          ) => {
              pub(crate) fn enable() {
                  // FIXME: Right now there is no concept of "thread exit" on
+@@ -162,6 +165,17 @@ pub(crate) mod key {
+             pub(super) use unix::get;
+             use unix::{create, destroy};
+         }
++        any(
++            target_os = "uefi",
++            target_os = "zkvm",
++            target_os = "trusty",
++            target_os = "vexos",
++        ) => {
++            mod racy;
++            #[cfg(test)]
++            mod tests;
++            pub(super) use racy::LazyKey;
++        }
+         all(not(target_thread_local), target_os = "windows") => {
+             #[cfg(test)]
+             mod tests;

@@ -8,7 +8,7 @@ use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use stem::thing::sys::{
-    bytespace_create, bytespace_write, create_node, find, intern, prop_get, prop_set,
+    close, create_node, find, intern, open, prop_get, prop_set, read, stat,
 };
 use stem::thing::ThingId;
 use stem::{debug, info, thread, warn};
@@ -30,7 +30,7 @@ pub struct Image {
     pub gen: AssetGeneration,
     pub name: Arc<str>,
     #[serde(skip)]
-    pub id: Option<ThingId>,
+    pub id: Option<u32>,
 }
 
 impl Image {
@@ -83,7 +83,7 @@ pub struct FontAsset {
     pub name: Arc<str>,
     pub gen: AssetGeneration,
     pub glyph_cache: Arc<Mutex<BTreeMap<(u32, u16, usize), (fontdue::Metrics, Arc<[u8]>)>>>,
-    pub id: Option<ThingId>,
+    pub id: Option<u32>,
 }
 
 impl core::fmt::Debug for FontAsset {
@@ -157,15 +157,15 @@ impl FontAsset {
         };
 
         // 2. Read bitmap
-        let bs_val = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_BITMAP).ok()?;
-        let bs_id = ThingId::from_u64(bs_val);
-        let size = stem::thing::sys::bytespace_info(bs_id).ok()?;
+        let fd = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_BITMAP).ok()? as u32;
+        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
+        let size = size_u64 as usize;
         if size == 0 {
             return None;
         }
 
         let mut buf = alloc::vec![0u8; size];
-        let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
+        let bytes_read = stem::thing::sys::read(fd, &mut buf).ok()?;
         if bytes_read != size {
             return None;
         }
@@ -238,8 +238,8 @@ impl<T> PendingSlot<T> {
 // Ready assets (visible to rendering)
 static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
 static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
-static IMAGES_READY_BY_ID: Mutex<BTreeMap<ThingId, Image>> = Mutex::new(BTreeMap::new());
-static FONTS_READY_BY_ID: Mutex<BTreeMap<ThingId, FontAsset>> = Mutex::new(BTreeMap::new());
+static IMAGES_READY_BY_ID: Mutex<BTreeMap<u32, Image>> = Mutex::new(BTreeMap::new());
+static FONTS_READY_BY_ID: Mutex<BTreeMap<u32, FontAsset>> = Mutex::new(BTreeMap::new());
 static FONTS_READY: [AssetSlot<FontAsset>; 8] = [
     AssetSlot::new(),
     AssetSlot::new(),
@@ -277,7 +277,7 @@ static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// Asset load job for worker threads
 enum AssetLoadJob {
     Font {
-        id: ThingId,
+        id: u32,
         size: usize,
         display_name: Arc<str>,
     },
@@ -287,15 +287,15 @@ enum AssetLoadJob {
     Wallpaper {
         path: Arc<str>,
     },
-    WallpaperBs {
-        id: ThingId,
+    WallpaperFd {
+        fd: u32,
         name: Arc<str>,
     },
     Cursor {
         path: Arc<str>,
     },
-    CursorBs {
-        id: ThingId,
+    CursorFd {
+        fd: u32,
         name: Arc<str>,
     },
 }
@@ -334,8 +334,8 @@ extern "C" fn asset_worker_entry() -> ! {
                         AssetBank::new().publish_wallpaper(img);
                     }
                 }
-                AssetLoadJob::WallpaperBs { id, name } => {
-                    if let Some(img) = AssetBank::new().load_wallpaper_immediate_from_bs(id, &name)
+                AssetLoadJob::WallpaperFd { fd, name } => {
+                    if let Some(img) = AssetBank::new().load_wallpaper_immediate_from_fd(fd, &name)
                     {
                         AssetBank::new().publish_wallpaper(img);
                     }
@@ -345,8 +345,8 @@ extern "C" fn asset_worker_entry() -> ! {
                         AssetBank::new().publish_cursor(cursor);
                     }
                 }
-                AssetLoadJob::CursorBs { id, name } => {
-                    if let Some(cursor) = AssetBank::load_cursor_immediate_from_bs(id, &name) {
+                AssetLoadJob::CursorFd { fd, name } => {
+                    if let Some(cursor) = AssetBank::load_cursor_immediate_from_bs(fd, &name) {
                         AssetBank::new().publish_cursor(cursor);
                     }
                 }
@@ -420,7 +420,7 @@ impl AssetBank {
         }
     }
 
-    pub fn enqueue_font_load(&self, id: ThingId, size: usize, display_name: &str) {
+    pub fn enqueue_font_load(&self, id: u32, size: usize, display_name: &str) {
         // Deduplicate: check if already in queue or ready
         {
             let queue = JOB_QUEUE.lock();
@@ -459,26 +459,26 @@ impl AssetBank {
         }
     }
 
-    pub fn enqueue_wallpaper_load_bs(&self, id: ThingId, name: &str) {
+    pub fn enqueue_wallpaper_load_fd(&self, fd: u32, name: &str) {
         // Deduplicate
         {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
-                if let AssetLoadJob::WallpaperBs { id: jid, .. } = job {
-                    if *jid == id {
+                if let AssetLoadJob::WallpaperFd { fd: jfd, .. } = job {
+                    if *jfd == fd {
                         return;
                     }
                 }
             }
         }
-        if self.get_image_by_id(id).is_some() {
+        if self.get_image_by_id(fd).is_some() {
             return;
         }
 
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
-        queue.push_back(AssetLoadJob::WallpaperBs {
-            id,
+        queue.push_back(AssetLoadJob::WallpaperFd {
+            fd,
             name: Arc::from(name),
         });
         if was_empty {
@@ -497,13 +497,13 @@ impl AssetBank {
         }
     }
 
-    pub fn enqueue_cursor_load_bs(&self, id: ThingId, name: &str) {
+    pub fn enqueue_cursor_load_fd(&self, id: ThingId, name: &str) {
         // Deduplicate
         {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
-                if let AssetLoadJob::CursorBs { id: jid, .. } = job {
-                    if *jid == id {
+                if let AssetLoadJob::CursorFd { fd: jfd, .. } = job {
+                    if *jfd == id.to_u64_lossy() as u32 {
                         return;
                     }
                 }
@@ -517,8 +517,8 @@ impl AssetBank {
 
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
-        queue.push_back(AssetLoadJob::CursorBs {
-            id,
+        queue.push_back(AssetLoadJob::CursorFd {
+            fd: id.to_u64_lossy() as u32,
             name: Arc::from(name),
         });
         if was_empty {
@@ -737,12 +737,12 @@ impl AssetBank {
         unsafe { (*WALLPAPER_READY.value.get()).clone() }
     }
 
-    pub fn get_image_by_id(&self, id: ThingId) -> Option<Image> {
+    pub fn get_image_by_id(&self, id: u32) -> Option<Image> {
         let map = IMAGES_READY_BY_ID.lock();
         map.get(&id).cloned()
     }
 
-    pub fn get_font_by_id(&self, id: ThingId) -> Option<FontAsset> {
+    pub fn get_font_by_id(&self, id: u32) -> Option<FontAsset> {
         let map = FONTS_READY_BY_ID.lock();
         map.get(&id).cloned()
     }
@@ -790,11 +790,12 @@ impl AssetBank {
     }
 
     pub fn load_icon_immediate_from_bs(
-        bs_id: ThingId,
+        fd: u32,
     ) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
-        let size = stem::thing::sys::bytespace_info(bs_id).ok()?;
+        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
+        let size = size_u64 as usize;
         let mut buf = alloc::vec![0u8; size];
-        let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
+        let bytes_read = stem::thing::sys::read(fd, &mut buf).ok()?;
         if bytes_read != size {
             return None;
         }
@@ -808,7 +809,7 @@ impl AssetBank {
     /// Load an icon from a boot module path (e.g., "assets/icons/thingos/foo.svg")
     pub fn load_icon_immediate_from_path(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
         use abi::schema::kinds;
-        use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
+        use stem::thing::sys::{describe_thing, find, prop_get, stat};
 
         let mut modules = [ThingId::default(); 256];
         let count = find(kinds::BOOT_MODULE, &mut modules).ok()?;
@@ -823,8 +824,8 @@ impl AssetBank {
                 if let Some(end) = rest.find('"') {
                     let mod_name = &rest[..end];
                     if mod_name == path || mod_name.ends_with(path) || path.ends_with(mod_name) {
-                        let bs_id = ThingId::from_u64(prop_get(modules[i], "bytespace").ok()?);
-                        return Self::load_icon_immediate_from_bs(bs_id);
+                        let fd = prop_get(modules[i], "bytespace").ok()? as u32;
+                        return Self::load_icon_immediate_from_bs(fd);
                     }
                 }
             }
@@ -832,27 +833,41 @@ impl AssetBank {
         None
     }
 
-    pub fn load_wallpaper_immediate_from_bs(
+    pub fn load_wallpaper_immediate_from_fd(
         &self,
-        id: ThingId,
+        fd: u32,
         display_name: &str,
     ) -> Option<Image> {
-        let size = stem::thing::sys::bytespace_info(id).ok()?;
-        Self::load_wallpaper_immediate_from_bs_with_size(id, size, display_name)
+        let (_, size, _) = stem::thing::sys::stat(fd).ok()?;
+        Self::load_wallpaper_immediate_from_fd_with_size(fd, size as usize, display_name)
     }
 
-    pub fn load_wallpaper_immediate_from_bs_with_size(
-        id: ThingId,
+    pub fn load_wallpaper_immediate_from_fd_with_size(
+        fd: u32,
         size: usize,
         display_name: &str,
     ) -> Option<Image> {
         debug!(
-            "[asset_bank] mapping bytespace {} ({} bytes) for '{}'",
-            id.to_u64_lossy(),
+            "[asset_bank] mapping fd {} ({} bytes) for '{}'",
+            fd,
             size,
             display_name
         );
-        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: size,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let ptr = resp.addr as *mut u8;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
         debug!("[asset_bank] decoding BMP for '{}'...", display_name);
@@ -867,17 +882,32 @@ impl AssetBank {
                 pixels: Arc::from(bmp.pixels.as_slice()),
                 gen: AssetGeneration::ZERO, // Will be set on promotion
                 name: Arc::from(display_name),
-                id: Some(id),
+                id: Some(fd),
             }
         });
 
-        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+        let _ = stem::syscall::vm_unmap(ptr as usize, size);
         res
     }
-    pub fn load_cursor_immediate_from_bs(id: ThingId, name: &str) -> Option<CursorAsset> {
-        debug!("[asset_bank] load_cursor_immediate_from_bs: {}", name);
-        let size = stem::thing::sys::bytespace_info(id).ok()?;
-        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+    pub fn load_cursor_immediate_from_bs(fd: u32, name: &str) -> Option<CursorAsset> {
+        debug!("[asset_bank] load_cursor_immediate_from_fd: {}", name);
+        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
+        let size = size_u64 as usize;
+
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: size,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let ptr = resp.addr as *mut u8;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
         #[cfg(feature = "svg-cursors")]
@@ -894,7 +924,7 @@ impl AssetBank {
                         && slice[3] == b'g'))
             {
                 let result = Self::load_svg_cursor(slice, name);
-                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                let _ = stem::syscall::vm_unmap(ptr as usize, size);
                 return result;
             }
         }
@@ -907,7 +937,7 @@ impl AssetBank {
                     pixels: Arc::from(bmp.pixels.as_slice()),
                     gen: AssetGeneration::ZERO,
                     name: Arc::from(name),
-                    id: Some(id),
+                    id: Some(fd),
                 },
                 delay_ms: 0,
                 hotspot_x: 0,
@@ -915,7 +945,7 @@ impl AssetBank {
             })
         });
 
-        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+        let _ = stem::syscall::vm_unmap(ptr as usize, size);
         res
     }
 
@@ -1170,9 +1200,9 @@ impl AssetBank {
         Some(freed)
     }
 
-    fn probe_asset(name: &str) -> Option<(ThingId, usize)> {
+    fn probe_asset(name: &str) -> Option<(u32, usize)> {
         use stem::abi::schema::kinds;
-        use stem::thing::sys::{bytespace_info, describe_thing, find, prop_get};
+        use stem::thing::sys::{describe_thing, find, prop_get, stat};
 
         // Guard: reject empty search names
         if name.is_empty() {
@@ -1214,13 +1244,13 @@ impl AssetBank {
                 continue;
             }
 
-            let bs_id = match prop_get(mod_id, "bytespace") {
-                Ok(id) => ThingId::from_u64(id),
+            let fd = match prop_get(mod_id, "bytespace") {
+                Ok(id) => id as u32,
                 Err(_) => continue,
             };
 
-            if let Ok(size) = bytespace_info(bs_id) {
-                return Some((bs_id, size));
+            if let Ok((_, size, _)) = stat(fd) {
+                return Some((fd, size as usize));
             }
         }
         None
@@ -1232,8 +1262,8 @@ impl AssetBank {
 
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
         debug!("[asset_bank] load_wallpaper_immediate from boot modules: {}", path);
-        let (id, size) = Self::probe_asset(path)?;
-        Self::load_wallpaper_immediate_from_bs_with_size(id, size, path)
+        let (fd, size) = Self::probe_asset(path)?;
+        Self::load_wallpaper_immediate_from_fd_with_size(fd, size, path)
     }
 
     pub fn load_cursor_from_graph(path: &str) -> Option<CursorAsset> {
@@ -1294,14 +1324,27 @@ impl AssetBank {
 
     pub fn load_cursor_immediate(path: &str) -> Option<CursorAsset> {
         debug!("[asset_bank] load_cursor_immediate: {}", path);
-        let (id, size) = Self::probe_asset(path)?;
+        let (fd, size) = Self::probe_asset(path)?;
 
         debug!(
-            "[asset_bank] mapping bytespace {} ({} bytes)",
-            id.to_u64_lossy(),
+            "[asset_bank] mapping fd {} ({} bytes)",
+            fd,
             size
         );
-        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: size,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let ptr = resp.addr as *mut u8;
         debug!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
@@ -1322,7 +1365,7 @@ impl AssetBank {
             {
                 debug!("[asset_bank] detected SVG format");
                 let result = Self::load_svg_cursor(slice, path);
-                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                let _ = stem::syscall::vm_unmap(ptr as usize, size);
                 return result;
             }
         }
@@ -1346,31 +1389,31 @@ impl AssetBank {
             if slice.len() >= offset + img_size {
                 debug!("[asset_bank] decoding embedded DIB at offset {}...", offset);
                 // CUR files embed DIB (no BM header), use decode_dib
-                match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
-                    Ok(dib) => {
-                        debug!(
-                            "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
-                            dib.width, dib.height
-                        );
-                        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-                        return Some(CursorAsset::Static(CursorFrame {
-                            image: Image {
-                                width: dib.width,
-                                height: dib.height,
-                                pixels: Arc::from(dib.pixels.as_slice()),
-                                gen: AssetGeneration::ZERO,
-                                name: Arc::from(path),
-                                id: Some(id),
-                            },
-                            delay_ms: 0,
-                            hotspot_x: hx as u32,
-                            hotspot_y: hy as u32,
-                        }));
-                    }
-                    Err(e) => {
-                        warn!("[asset_bank] DIB decode FAILED: {:?}", e);
-                    }
-                }
+                        match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
+                            Ok(dib) => {
+                                debug!(
+                                    "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
+                                    dib.width, dib.height
+                                );
+                                let _ = stem::syscall::vm_unmap(ptr as usize, size);
+                                return Some(CursorAsset::Static(CursorFrame {
+                                    image: Image {
+                                        width: dib.width,
+                                        height: dib.height,
+                                        pixels: Arc::from(dib.pixels.as_slice()),
+                                        gen: AssetGeneration::ZERO,
+                                        name: Arc::from(path),
+                                        id: None,
+                                    },
+                                    delay_ms: 0,
+                                    hotspot_x: hx as u32,
+                                    hotspot_y: hy as u32,
+                                }));
+                            }
+                            Err(_) => {
+                                warn!("[asset_bank] CUR DIB decode failed");
+                            }
+                        }
             } else {
                 warn!(
                     "[asset_bank] CUR data truncated: need {} have {}",
@@ -1380,46 +1423,53 @@ impl AssetBank {
             }
         } else {
             debug!("[asset_bank] NOT a valid CUR file (magic bytes don't match)");
-            if slice.len() >= 4 {
-                debug!(
-                    "[asset_bank] header bytes: {:02x} {:02x} {:02x} {:02x}",
-                    slice[0], slice[1], slice[2], slice[3]
-                );
-            }
         }
 
-        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-        debug!("[asset_bank] bytespace unmapped, returning None");
+        let _ = stem::syscall::vm_unmap(ptr as usize, size);
+        debug!("[asset_bank] unmapped, returning None");
         None
     }
     /// Load a TTF font from the system graph
     pub fn load_font_from_graph_by_path(path: &str) -> Option<FontAsset> {
         debug!("[asset_bank] load_font_from_graph_by_path: {}", path);
-        let (id, size) = Self::probe_asset(path)?;
-        Self::load_font_from_node_id(id, size, path)
+        let (fd, size) = Self::probe_asset(path)?;
+        Self::load_font_from_fd(fd, size, path)
     }
 
-    pub fn load_font_from_node_id(
-        id: ThingId,
+    pub fn load_font_from_fd(
+        fd: u32,
         size: usize,
         display_name: &str,
     ) -> Option<FontAsset> {
-        Self::load_font_immediate(id, size, display_name)
+        Self::load_font_immediate(fd, size, display_name)
     }
 
-    pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
+    pub fn load_font_immediate(fd: u32, size: usize, display_name: &str) -> Option<FontAsset> {
         debug!(
-            "[asset_bank] mapping font bytespace {} ({} bytes)",
-            id.to_u64_lossy(),
+            "[asset_bank] mapping font fd {} ({} bytes)",
+            fd,
             size
         );
-        let ptr = match stem::thing::sys::bytespace_map(id) {
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: size,
+            prot: VmProt::READ | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd,
+                offset: 0,
+            },
+        };
+
+        let resp = match stem::thing::sys::vm_map(&req) {
             Ok(p) => p,
             Err(e) => {
-                warn!("[asset_bank] bytespace_map FAILED: {:?}", e);
+                warn!("[asset_bank] vm_map FAILED: {:?}", e);
                 return None;
             }
         };
+        let ptr = resp.addr as *mut u8;
         debug!("[asset_bank] mapped at {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
@@ -1450,12 +1500,12 @@ impl AssetBank {
                     name,
                     gen: AssetGeneration::ZERO,
                     glyph_cache: Arc::new(Mutex::new(BTreeMap::new())),
-                    id: Some(id),
+                    id: Some(fd),
                 })
             }
             Err(e) => {
                 warn!("[asset_bank] font parse FAILED: {}", e);
-                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                let _ = stem::syscall::vm_unmap(ptr as usize, size);
                 None
             }
         }
@@ -1483,8 +1533,8 @@ fn publish_font_family_node(name: &str) {
         Err(_) => return,
     };
     let _ = prop_set(node, keys::FONT_FAMILY_KEY, key);
-    if let Ok(bs) = bytespace_create(name.len(), 0, 0) {
-        let _ = bytespace_write(bs, 0, name.as_bytes());
-        let _ = prop_set(node, keys::FONT_NAME, bs.to_u64_lossy());
+    if let Ok(fd) = stem::syscall::memfd_create(name, 0) {
+        let _ = stem::thing::sys::write(fd, name.as_bytes());
+        let _ = prop_set(node, keys::FONT_NAME, fd as u64);
     }
 }

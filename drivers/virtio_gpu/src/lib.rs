@@ -3,11 +3,14 @@
 //! This module provides a reusable VirtioGpu driver that can be used by
 //! display_virtio_gpu or as a standalone program.
 
-#![feature(restricted_std)]
+#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(target_os = "thingos", feature(restricted_std))]
 
 extern crate alloc;
 
 use abi::errors::Errno;
+use core::cmp::Ord;
+use core::iter::Iterator;
 use core::ptr::{read_volatile, write_volatile};
 
 pub mod commands;

@@ -47,25 +47,21 @@ impl Registry {
             return;
         }
 
-        let mut bs_id = ThingId::default();
-
-        let mut registered = false;
-        if bs_id.to_u64_lossy() != 0 {
-            if let Some(header) = self.read_manifest(bs_id) {
+        let path = format!("/boot/{}", mod_name);
+        if let Ok(fd) = thingsys::open(&path, abi::syscall::vfs_flags::O_RDONLY) {
+            if let Some(header) = self.read_manifest(fd) {
                 if let ModuleKind::Driver = header.kind {
                     let raw = &header.device_kind;
                     let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
                     if let Ok(dk_str) = core::str::from_utf8(&raw[..end]) {
                         info!("SPROUT: Registering driver '{}' -> '{}'", dk_str, mod_name);
                         self.drivers.insert(dk_str.to_string(), mod_name.clone());
-                        registered = true;
                     }
                 }
             }
-        }
-
-        // Fallback for v0 if parsing fails
-        if !registered {
+            let _ = thingsys::close(fd);
+        } else {
+            // Fallback for v0 if parsing fails
             if mod_name.contains("rtc_cmos") {
                 info!(
                     "SPROUT: Registering driver 'dev.rtc.Cmos' -> '{}' (fallback)",
@@ -76,13 +72,15 @@ impl Registry {
         }
     }
 
-    fn read_manifest(&self, bs: ThingId) -> Option<ManifestHeader> {
+    fn read_manifest(&self, fd: u32) -> Option<ManifestHeader> {
         let mut hdr_buf = [0u8; 64];
-        if thingsys::bytespace_read(bs, 0, &mut hdr_buf).is_err() {
+        // Note: thingsys::read currently doesn't support offset, so we either need seek or just read sequentially.
+        // For ELF header (first 64 bytes), sequential is fine.
+        if thingsys::read(fd, &mut hdr_buf).is_err() {
             return None;
         }
 
-        if hdr_buf[0..4] != [0x7f, 0x45, 0x4c, 0x46] {
+        if &hdr_buf[0..4] != b"\x7fELF" {
             return None;
         }
 
@@ -91,19 +89,23 @@ impl Registry {
         let shnum = u16::from_le_bytes(hdr_buf[0x3C..0x3E].try_into().unwrap()) as usize;
         let shstrndx = u16::from_le_bytes(hdr_buf[0x3E..0x40].try_into().unwrap()) as usize;
 
+        // Since we don't have seek yet in thingsys wrapper (or maybe it's not implemented yet?), 
+        // we'll read the whole file or just the parts we need if they are close enough.
+        // Actually, let's add vfs_seek to thingsys for this.
+        
         let strtab_sh_off = shoff + (shstrndx as usize * shentsize);
-        let (strtab_off, _) = self.read_sh_info(bs, strtab_sh_off)?;
+        let (strtab_off, _) = self.read_sh_info(fd, strtab_sh_off)?;
 
         for i in 0..shnum {
             let off = shoff + (i * shentsize);
-            if let Some((sh_name_idx, sh_offset, sh_size)) = self.read_sh_entry(bs, off) {
-                if let Some(name) = self.read_string(bs, strtab_off, sh_name_idx as usize) {
+            if let Some((sh_name_idx, sh_offset, sh_size)) = self.read_sh_entry(fd, off) {
+                if let Some(name) = self.read_string(fd, strtab_off, sh_name_idx as usize) {
                     if name == SECTION_NAME {
                         let mut m_buf = [0u8; core::mem::size_of::<ManifestHeader>()];
                         if m_buf.len() > sh_size {
                             return None;
                         }
-                        if thingsys::bytespace_read(bs, sh_offset, &mut m_buf).is_ok() {
+                        if self.vfs_read_at(fd, sh_offset, &mut m_buf).is_ok() {
                             let m: ManifestHeader = unsafe { core::mem::transmute(m_buf) };
                             if m.magic == MANIFEST_MAGIC {
                                 return Some(m);
@@ -116,9 +118,14 @@ impl Registry {
         None
     }
 
-    fn read_sh_info(&self, bs: ThingId, offset: usize) -> Option<(usize, usize)> {
+    fn vfs_read_at(&self, fd: u32, offset: usize, buf: &mut [u8]) -> Result<usize, abi::errors::Errno> {
+        let _ = thingsys::seek(fd, offset as i64, 0)?; // 0 = SEEK_SET
+        thingsys::read(fd, buf)
+    }
+
+    fn read_sh_info(&self, fd: u32, offset: usize) -> Option<(usize, usize)> {
         let mut buf = [0u8; 64];
-        if thingsys::bytespace_read(bs, offset, &mut buf).is_err() {
+        if self.vfs_read_at(fd, offset, &mut buf).is_err() {
             return None;
         }
         let sh_offset = u64::from_le_bytes(buf[0x18..0x20].try_into().ok()?) as usize;
@@ -126,9 +133,9 @@ impl Registry {
         Some((sh_offset, sh_size))
     }
 
-    fn read_sh_entry(&self, bs: ThingId, offset: usize) -> Option<(u32, usize, usize)> {
+    fn read_sh_entry(&self, fd: u32, offset: usize) -> Option<(u32, usize, usize)> {
         let mut buf = [0u8; 64];
-        if thingsys::bytespace_read(bs, offset, &mut buf).is_err() {
+        if self.vfs_read_at(fd, offset, &mut buf).is_err() {
             return None;
         }
         let sh_name = u32::from_le_bytes(buf[0..4].try_into().ok()?);
@@ -137,9 +144,9 @@ impl Registry {
         Some((sh_name, sh_offset, sh_size))
     }
 
-    fn read_string(&self, bs: ThingId, strtab_off: usize, idx: usize) -> Option<String> {
+    fn read_string(&self, fd: u32, strtab_off: usize, idx: usize) -> Option<String> {
         let mut buf = [0u8; 32];
-        let _ = thingsys::bytespace_read(bs, strtab_off + idx, &mut buf);
+        let _ = self.vfs_read_at(fd, strtab_off + idx, &mut buf);
         let end = buf.iter().position(|&c| c == 0).unwrap_or(0);
         if end == 0 {
             return None;

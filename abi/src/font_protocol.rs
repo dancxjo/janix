@@ -74,7 +74,7 @@ pub struct GlyphPlacement {
 pub struct EnsureGlyphsResp {
     pub req_face_id: ThingId,
     pub req_px_size: u16,
-    pub atlas_bytespace: ThingId,
+    pub atlas_fd: u32,
     pub atlas_width: u32,
     pub atlas_height: u32,
     pub atlas_format: AtlasFormat,
@@ -249,11 +249,11 @@ impl GlyphPlacement {
 
 impl EnsureGlyphsResp {
     /// Encode EnsureGlyphsResp
-    /// Format: tag(1) + req_face(8) + req_px(2) + atlas_bs(8) + w(4) + h(4) + fmt(1) + ver(8) + ...
+    /// Format: tag(1) + req_face(8) + req_px(2) + atlas_fd(4) + w(4) + h(4) + fmt(1) + ver(8) + ...
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         let place_count = self.placements.len();
         let miss_count = self.missing.len();
-        let needed = 1 + 8 + 2 + 8 + 4 + 4 + 1 + 8 + 4 + place_count * 18 + 4 + miss_count * 4;
+        let needed = 1 + 8 + 2 + 4 + 4 + 4 + 1 + 8 + 4 + place_count * 18 + 4 + miss_count * 4;
         if buf.len() < needed {
             return None;
         }
@@ -261,14 +261,14 @@ impl EnsureGlyphsResp {
         buf[0] = FontResponseTag::EnsureGlyphsResp as u8;
         buf[1..9].copy_from_slice(&self.req_face_id.to_u64_lossy().to_le_bytes());
         buf[9..11].copy_from_slice(&self.req_px_size.to_le_bytes());
-        buf[11..19].copy_from_slice(&self.atlas_bytespace.to_u64_lossy().to_le_bytes());
-        buf[19..23].copy_from_slice(&self.atlas_width.to_le_bytes());
-        buf[23..27].copy_from_slice(&self.atlas_height.to_le_bytes());
-        buf[27] = self.atlas_format as u8;
-        buf[28..36].copy_from_slice(&self.atlas_version.to_le_bytes());
-        buf[36..40].copy_from_slice(&(place_count as u32).to_le_bytes());
+        buf[11..15].copy_from_slice(&self.atlas_fd.to_le_bytes());
+        buf[15..19].copy_from_slice(&self.atlas_width.to_le_bytes());
+        buf[19..23].copy_from_slice(&self.atlas_height.to_le_bytes());
+        buf[23] = self.atlas_format as u8;
+        buf[24..32].copy_from_slice(&self.atlas_version.to_le_bytes());
+        buf[32..36].copy_from_slice(&(place_count as u32).to_le_bytes());
 
-        let mut offset = 40;
+        let mut offset = 36;
         for p in &self.placements {
             p.encode(&mut buf[offset..])?;
             offset += 18;
@@ -285,19 +285,19 @@ impl EnsureGlyphsResp {
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < 40 {
+        if buf.len() < 36 {
             return None;
         }
         let req_face_id = ThingId::from_u64(u64::from_le_bytes(buf[0..8].try_into().ok()?));
         let req_px_size = u16::from_le_bytes(buf[8..10].try_into().ok()?);
-        let atlas_bytespace = ThingId::from_u64(u64::from_le_bytes(buf[10..18].try_into().ok()?));
-        let atlas_width = u32::from_le_bytes(buf[18..22].try_into().ok()?);
-        let atlas_height = u32::from_le_bytes(buf[22..26].try_into().ok()?);
-        let atlas_format = AtlasFormat::from(buf[26]);
-        let atlas_version = u64::from_le_bytes(buf[27..35].try_into().ok()?);
-        let place_count = u32::from_le_bytes(buf[35..39].try_into().ok()?) as usize;
+        let atlas_fd = u32::from_le_bytes(buf[10..14].try_into().ok()?);
+        let atlas_width = u32::from_le_bytes(buf[14..18].try_into().ok()?);
+        let atlas_height = u32::from_le_bytes(buf[18..22].try_into().ok()?);
+        let atlas_format = AtlasFormat::from(buf[22]);
+        let atlas_version = u64::from_le_bytes(buf[23..31].try_into().ok()?);
+        let place_count = u32::from_le_bytes(buf[31..35].try_into().ok()?) as usize;
 
-        let mut offset = 39;
+        let mut offset = 35;
         let mut placements = Vec::with_capacity(place_count);
         for _ in 0..place_count {
             if offset + 18 > buf.len() {
@@ -325,7 +325,7 @@ impl EnsureGlyphsResp {
         Some(Self {
             req_face_id,
             req_px_size,
-            atlas_bytespace,
+            atlas_fd,
             atlas_width,
             atlas_height,
             atlas_format,

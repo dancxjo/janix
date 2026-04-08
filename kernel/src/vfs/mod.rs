@@ -18,6 +18,7 @@
 pub mod bootfs;
 pub mod devfs;
 pub mod fd_table;
+pub mod memfd;
 pub mod mount;
 pub mod path;
 pub mod procfs;
@@ -133,6 +134,13 @@ pub trait VfsNode: Send + Sync {
     /// Only meaningful for directory nodes; regular files return `ENOTDIR`.
     fn readdir(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
         Err(Errno::ENOTDIR)
+    }
+
+    /// Return the exact physical memory backing this node, if it is directly memory-mapped.
+    /// Used for zero-copy userspace memory mapping of devices and shm buffers.
+    /// Returns physical base address and length in bytes.
+    fn phys_region(&self) -> SysResult<(u64, usize)> {
+        Err(Errno::ENOSYS)
     }
 }
 

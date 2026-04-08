@@ -10,11 +10,12 @@ use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn};
+use abi::ids::HandleId;
 
 pub struct DisplayHandles {
     pub drv_req_write: PortHandle,
     pub drv_resp_read: PortHandle,
-    pub bs_id: ThingId,
+    pub bs_id: u32,
     /// Which display backend was selected
     pub backend_name: &'static str,
 }
@@ -298,10 +299,10 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     );
 
     let size = (display_height as usize) * (display_stride as usize);
-    let bs_id = match thingsys::bytespace_create(size, 0, display_format as u64) {
-        Ok(id) => id,
+    let bs_id = match thingsys::memfd_create("display.buffer", size) {
+        Ok(fd) => fd,
         Err(e) => {
-            warn!("SPROUT: bytespace_create failed: {:?}", e);
+            warn!("SPROUT: memfd_create failed: {:?}", e);
             return None;
         }
     };
@@ -310,15 +311,16 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         Ok(sym) => sym,
         Err(_) => 0,
     };
-    let _ = thingsys::prop_set(bs_id, "display_role", role_sym as u64);
-    let _ = thingsys::prop_set(bs_id, keys::WIDTH, display_width as u64);
-    let _ = thingsys::prop_set(bs_id, keys::HEIGHT, display_height as u64);
-    let _ = thingsys::prop_set(bs_id, keys::STRIDE, display_stride as u64);
-    let _ = thingsys::prop_set(bs_id, keys::FORMAT, display_format as u64);
+    let bs_id_thing = ThingId::from_u64(bs_id as u64);
+    let _ = thingsys::prop_set(bs_id_thing, "display_role", role_sym as u64);
+    let _ = thingsys::prop_set(bs_id_thing, keys::WIDTH, display_width as u64);
+    let _ = thingsys::prop_set(bs_id_thing, keys::HEIGHT, display_height as u64);
+    let _ = thingsys::prop_set(bs_id_thing, keys::STRIDE, display_stride as u64);
+    let _ = thingsys::prop_set(bs_id_thing, keys::FORMAT, display_format as u64);
 
     // Store backend name as a property so Bloom can query it
     if let Ok(backend_sym) = thingsys::intern(backend_name) {
-        let _ = thingsys::prop_set(bs_id, "display_backend", backend_sym as u64);
+        let _ = thingsys::prop_set(bs_id_thing, "display_backend", backend_sym as u64);
     }
 
     let mut drv_req_write = 0;
@@ -342,8 +344,8 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 
         drv_req_write = drv_req.0;
         drv_resp_read = drv_resp.1;
-        let _ = thingsys::prop_set(bs_id, "display_drv_req", drv_req_write as u64);
-        let _ = thingsys::prop_set(bs_id, "display_drv_resp", drv_resp_read as u64);
+        let _ = thingsys::prop_set(bs_id_thing, "display_drv_req", drv_req_write as u64);
+        let _ = thingsys::prop_set(bs_id_thing, "display_drv_resp", drv_resp_read as u64);
 
         let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
 
@@ -372,7 +374,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 
             if let Ok(drv_node) = thingsys::create_node(drv_kind) {
                 let _ = thingsys::link(svc_display, "USES_DRIVER", drv_node);
-                let _ = thingsys::link(drv_node, "CONSUMES", bs_id);
+                let _ = thingsys::link(drv_node, "CONSUMES", bs_id_thing);
                 if let Some(dev) = display_device {
                     let _ = thingsys::link(drv_node, "PRESENTS_TO", dev);
                 }
@@ -517,7 +519,7 @@ pub fn setup_compositor(
     let (drv_req_write, drv_resp_read, display_bs_id) = display
         .as_ref()
         .map(|d| (d.drv_req_write, d.drv_resp_read, d.bs_id))
-        .unwrap_or((0, 0, ThingId::default()));
+        .unwrap_or((0, 0, 0));
 
     // Bloom Bootstrap
     // Create bytespace to hold args
@@ -530,11 +532,22 @@ pub fn setup_compositor(
     // 24: font_resp (read) -> font_resp.1
 
     let boot_size = 4096;
-    let boot_bs = thingsys::bytespace_create(boot_size, 0, 0).unwrap_or(ThingId::default());
+    let boot_fd = thingsys::memfd_create("bloom.boot", boot_size).unwrap_or(0);
 
-    if boot_bs.to_u64_lossy() != 0 {
-        use stem::thing::sys::{bytespace_map, bytespace_unmap};
-        if let Ok(ptr) = bytespace_map(boot_bs) {
+    if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: boot_size,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File {
+                fd: boot_fd,
+                offset: 0,
+            },
+        };
+        if let Ok(resp) = thingsys::vm_map(&req) {
+            let ptr = resp.addr;
             let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
             slice[0] = 0xB100AA01; // Magic
             slice[1] = drv_req_write as u32;
@@ -546,22 +559,23 @@ pub fn setup_compositor(
             );
 
             // Display bytespace id (128-bit)
-            let bs_bytes = display_bs_id.0;
+            let bs_thing = ThingId::from_u64(display_bs_id as u64);
+            let bs_bytes = bs_thing.0;
             slice[4] = u32::from_le_bytes(bs_bytes[0..4].try_into().unwrap());
             slice[5] = u32::from_le_bytes(bs_bytes[4..8].try_into().unwrap());
             slice[6] = u32::from_le_bytes(bs_bytes[8..12].try_into().unwrap());
             slice[7] = u32::from_le_bytes(bs_bytes[12..16].try_into().unwrap());
 
-            let _ = bytespace_unmap(boot_bs, ptr);
+            // We don't have vm_unmap yet, or it's fine to leave it mapped for now.
         }
     }
 
-    let bloom_arg = boot_bs.to_u64_lossy() as usize;
+    let bloom_arg = boot_fd as usize;
 
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
-        "SPROUT: Bloom handles via BS={} backend={}",
-        boot_bs.to_u64_lossy(),
+        "SPROUT: Bloom handles via FD={} backend={}",
+        boot_fd,
         backend_info
     );
 

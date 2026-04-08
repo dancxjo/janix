@@ -15,14 +15,14 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
-use stem::syscall::{monotonic_ns, port_send, port_try_recv, PortHandle};
-use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
+use stem::syscall::{monotonic_ns, port_send, port_try_recv, PortHandle, vm_map, vm_unmap};
+use stem::thing::sys::{find, prop_get, stat};
 use stem::thing::ThingId;
 
 /// Cached glyph entry with atlas location
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphEntry {
-    pub atlas_bytespace: ThingId,
+    pub atlas_fd: u32,
     pub atlas_version: u64,
     pub x: u16,
     pub y: u16,
@@ -36,7 +36,7 @@ pub struct GlyphEntry {
 impl From<&GlyphPlacement> for GlyphEntry {
     fn from(p: &GlyphPlacement) -> Self {
         Self {
-            atlas_bytespace: ThingId::default(), // Filled in by caller
+            atlas_fd: 0, // Filled in by caller
             atlas_version: 0,
             x: p.x,
             y: p.y,
@@ -51,7 +51,7 @@ impl From<&GlyphPlacement> for GlyphEntry {
 
 /// Atlas mapping state for a (face, size) combination
 pub struct AtlasMapping {
-    pub bytespace_id: ThingId,
+    pub atlas_fd: u32,
     pub version: u64,
     pub width: u32,
     pub height: u32,
@@ -60,9 +60,9 @@ pub struct AtlasMapping {
 }
 
 impl AtlasMapping {
-    pub fn new(bytespace_id: ThingId, version: u64, width: u32, height: u32) -> Self {
+    pub fn new(atlas_fd: u32, version: u64, width: u32, height: u32) -> Self {
         Self {
-            bytespace_id,
+            atlas_fd,
             version,
             width,
             height,
@@ -73,8 +73,20 @@ impl AtlasMapping {
     /// Map the atlas bytespace if not already mapped
     pub fn ensure_mapped(&mut self) -> Option<*const u8> {
         if self.ptr_val == 0 {
-            if let Ok(p) = bytespace_map(self.bytespace_id) {
-                self.ptr_val = p as usize;
+            use abi::vm::{VmBacking, VmMapReq, VmProt};
+            let (_, size, _) = stat(self.atlas_fd).ok()?;
+            let req = VmMapReq {
+                addr_hint: 0,
+                len: size as usize,
+                prot: VmProt::READ | VmProt::USER,
+                flags: abi::vm::VmMapFlags::empty(),
+                backing: VmBacking::File {
+                    fd: self.atlas_fd,
+                    offset: 0,
+                },
+            };
+            if let Ok(resp) = vm_map(&req) {
+                self.ptr_val = resp.addr as usize;
             }
         }
         if self.ptr_val != 0 {
@@ -96,7 +108,8 @@ impl AtlasMapping {
     /// Unmap and clear pointer
     pub fn unmap(&mut self) {
         if self.ptr_val != 0 {
-            let _ = bytespace_unmap(self.bytespace_id, self.ptr_val as *mut u8);
+            let (_, size, _) = stat(self.atlas_fd).unwrap();
+            let _ = vm_unmap(self.ptr_val, size as usize);
             self.ptr_val = 0;
         }
     }
@@ -300,7 +313,7 @@ impl FontClient {
                     let atlas_key = AtlasKey::new(resp.req_face_id, resp.req_px_size);
                     let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
                         AtlasMapping::new(
-                            resp.atlas_bytespace,
+                            resp.atlas_fd,
                             resp.atlas_version,
                             resp.atlas_width,
                             resp.atlas_height,
@@ -311,7 +324,7 @@ impl FontClient {
                     if mapping.version != resp.atlas_version {
                         // Unmap old atlas
                         mapping.unmap();
-                        mapping.bytespace_id = resp.atlas_bytespace;
+                        mapping.atlas_fd = resp.atlas_fd;
                         mapping.version = resp.atlas_version;
                         mapping.width = resp.atlas_width;
                         mapping.height = resp.atlas_height;
@@ -327,7 +340,7 @@ impl FontClient {
                     for p in &resp.placements {
                         let key = GlyphKey::new(resp.req_face_id, resp.req_px_size, p.glyph_id);
                         let mut entry = GlyphEntry::from(p);
-                        entry.atlas_bytespace = resp.atlas_bytespace;
+                        entry.atlas_fd = resp.atlas_fd;
                         entry.atlas_version = resp.atlas_version;
                         self.glyph_cache.insert(key, entry);
                         self.pending_requests.remove(&key);

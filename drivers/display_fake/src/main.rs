@@ -132,7 +132,7 @@ fn main(arg: usize) -> ! {
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
     let mut bound = false;
-    let mut bound_bs: Option<ThingId> = None;
+    let mut bound_fd: Option<u32> = None;
 
     let wait_handles = [drv_req_read];
     loop {
@@ -179,14 +179,14 @@ fn main(arg: usize) -> ! {
                 drvproto::MSG_BIND => {
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
                         bound = true;
-                        bound_bs = Some(ThingId::from_u64(bind.bytespace_id));
+                        bound_fd = Some(bind.fb_fd);
                         send_ack(drv_resp_write, config.burst);
                     } else {
                         send_err(drv_resp_write, 2);
                     }
                 }
                 drvproto::MSG_PRESENT => {
-                    if !bound || bound_bs.is_none() {
+                    if !bound || bound_fd.is_none() {
                         send_err(drv_resp_write, 1);
                         continue;
                     }

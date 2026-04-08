@@ -46,7 +46,8 @@ mod tests {
         assert_eq!(decoded_welcome.reserved, 0x0001);
 
         let bind = drvproto::BindPayload {
-            bytespace_id: 0x1122334455667788,
+            fb_fd: 0x55667788,
+            _pad: 0x11223344,
             width: 0xAABBCCDD,
             height: 0x01020304,
             stride: 0x05060708,
@@ -63,7 +64,7 @@ mod tests {
             ]
         );
         let decoded_bind = drvproto::decode_bind_payload_le(&bind_bytes).unwrap();
-        assert_eq!(decoded_bind.bytespace_id, 0x1122334455667788);
+        assert_eq!(decoded_bind.fb_fd, 0x55667788);
         assert_eq!(decoded_bind.width, 0xAABBCCDD);
         assert_eq!(decoded_bind.height, 0x01020304);
         assert_eq!(decoded_bind.stride, 0x05060708);

@@ -67,11 +67,45 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
+    if path == "/dev/fb0" {
+        crate::kinfo!("mount::lookup: entering path='{}'", path);
+    }
     let table = MOUNT_TABLE.lock();
     for entry in table.iter() {
         if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            return entry.driver.lookup(rel);
+            if path == "/dev/fb0" {
+                crate::kinfo!(
+                    "mount::lookup: matched prefix='{}' rel='{}'",
+                    entry.prefix,
+                    rel
+                );
+            }
+            match entry.driver.lookup(rel) {
+                Ok(node) => return Ok(node),
+                Err(Errno::ENOENT) if path == "/dev/fb0" && entry.prefix == "/dev" => {
+                    crate::kwarn!(
+                        "mount::lookup: mounted /dev driver returned ENOENT for fb0, trying builtin devfs fallback"
+                    );
+                    match crate::vfs::devfs::DevFs::new().lookup(rel) {
+                        Ok(node) => {
+                            crate::kinfo!("mount::lookup: builtin devfs fallback resolved fb0");
+                            return Ok(node);
+                        }
+                        Err(err) => {
+                            crate::kwarn!(
+                                "mount::lookup: builtin devfs fallback failed for fb0: {:?}",
+                                err
+                            );
+                            return Err(err);
+                        }
+                    }
+                }
+                Err(err) => return Err(err),
+            }
         }
+    }
+    if path == "/dev/fb0" {
+        crate::kwarn!("mount::lookup: no match for '{}'", path);
     }
     Err(Errno::ENOENT)
 }

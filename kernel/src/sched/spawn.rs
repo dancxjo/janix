@@ -11,6 +11,36 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 const KERNEL_STACK_SIZE: usize = 65536;
 
+fn current_parent_pid<R: BootRuntime>(sched: &Scheduler<R>) -> u32 {
+    let cpu_idx = super::current_cpu_index::<R>();
+    sched
+        .state
+        .per_cpu
+        .get(cpu_idx)
+        .and_then(|pc| pc.current)
+        .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
+        .and_then(|t| t.process_info.clone())
+        .map(|pi| pi.lock().pid)
+        .unwrap_or(0)
+}
+
+fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
+    let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
+        alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
+    let mut fd_table = crate::vfs::fd_table::FdTable::new();
+    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only());
+    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only());
+    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only());
+    alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
+        pid,
+        ppid,
+        argv: alloc::vec::Vec::new(),
+        env: alloc::collections::BTreeMap::new(),
+        fd_table,
+        namespace: crate::vfs::NamespaceRef::global(),
+    }))
+}
+
 // Global round-robin index for CPU selection
 pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
@@ -285,6 +315,8 @@ impl<R: BootRuntime> Scheduler<R> {
                 .init_kernel_context(user_thread_trampoline::<R>, stack_top, entry_ptr);
 
         let mapping_list = crate::memory::mappings::MappingList { regions };
+        let ppid = current_parent_pid::<R>(self);
+        let pinfo = default_process_info(id as u32, ppid);
 
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
         crate::kdebug!(
@@ -322,7 +354,7 @@ impl<R: BootRuntime> Scheduler<R> {
             last_cpu: Some(safe_cpu),
             name: [0; 32],
             name_len: 0,
-            process_info: None,
+            process_info: Some(pinfo),
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
         };
@@ -467,34 +499,14 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, affinity)?;
 
     // Determine parent PID from the current task's ProcessInfo
-    let cpu_idx = super::current_cpu_index::<R>();
-    let ppid = sched
-        .state
-        .per_cpu
-        .get(cpu_idx)
-        .and_then(|pc| pc.current)
-        .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
-        .and_then(|t| t.process_info.clone())
-        .map(|pi| pi.lock().pid)
-        .unwrap_or(0);
+    let ppid = current_parent_pid::<R>(sched);
 
     // Create per-process identity
-    let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
-        alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
-    let mut fd_table = crate::vfs::fd_table::FdTable::new();
-    // Pre-populate stdio: fd 0 = stdin (console), fd 1 = stdout (console), fd 2 = stderr (console)
-    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only());
-    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only());
-    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only());
-    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
-        pid: id as u32,
-        ppid,
-        argv: alloc::vec![module.name.as_bytes().to_vec()],
-        env: alloc::collections::BTreeMap::new(),
-
-        fd_table,
-        namespace: crate::vfs::NamespaceRef::global(),
-    }));
+    let pinfo = default_process_info(id as u32, ppid);
+    {
+        let mut lock = pinfo.lock();
+        lock.argv = alloc::vec![module.name.as_bytes().to_vec()];
+    }
 
     // Store name and process_info on the task struct
     if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {

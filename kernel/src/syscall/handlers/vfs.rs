@@ -33,6 +33,14 @@ pub fn sys_vfs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    if path == "/dev/fb0" {
+        crate::kinfo!(
+            "sys_vfs_open: path='{}' len={} flags=0x{:x}",
+            path,
+            path_len,
+            flags
+        );
+    }
 
     let open_flags = OpenFlags(flags as u32);
     let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
@@ -56,9 +64,45 @@ pub fn sys_vfs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult
         vfs::mount::lookup(path)?
     };
 
+    if path == "/dev/fb0" {
+        match node.stat() {
+            Ok(stat) => crate::kinfo!(
+                "sys_vfs_open: resolved node for /dev/fb0 mode=0o{:o} size={} ino={}",
+                stat.mode,
+                stat.size,
+                stat.ino
+            ),
+            Err(err) => crate::kwarn!(
+                "sys_vfs_open: resolved /dev/fb0 but stat failed: {:?}",
+                err
+            ),
+        }
+    }
+
     // Insert into the per-process fd table.
-    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let pinfo_arc = match crate::sched::process_info_current() {
+        Some(pinfo_arc) => pinfo_arc,
+        None => {
+            if path == "/dev/fb0" {
+                let tid = unsafe { crate::sched::current_tid_current() };
+                let direct = crate::sched::process_info_for_tid_current(tid).is_some();
+                crate::kwarn!(
+                    "sys_vfs_open: no process info for /dev/fb0 current_tid={} direct_lookup={}",
+                    tid,
+                    direct
+                );
+            }
+            return Err(Errno::ENOENT);
+        }
+    };
+    if path == "/dev/fb0" {
+        crate::kinfo!("sys_vfs_open: process info present for /dev/fb0");
+    }
     let fd = pinfo_arc.lock().fd_table.open(node, open_flags)?;
+
+    if path == "/dev/fb0" {
+        crate::kinfo!("sys_vfs_open: fd_table.open('/dev/fb0') -> {}", fd);
+    }
 
     Ok(fd as usize)
 }

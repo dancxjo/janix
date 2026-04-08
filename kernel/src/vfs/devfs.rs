@@ -65,6 +65,13 @@ pub fn unregister(name: &str) -> bool {
 }
 
 pub fn set_boot_fb(fb: crate::FramebufferInfo, graph_id: u64) {
+    crate::kinfo!(
+        "devfs: set_boot_fb width={} height={} pitch={} graph_id=0x{:x}",
+        fb.width,
+        fb.height,
+        fb.pitch,
+        graph_id
+    );
     *BOOT_FB_INFO.lock() = Some((fb, graph_id));
 }
 
@@ -87,6 +94,9 @@ impl Default for DevFs {
 
 impl VfsDriver for DevFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        if path == "fb0" || path.starts_with("fb") {
+            crate::kinfo!("devfs: lookup entry path='{}' len={}", path, path.len());
+        }
         // Empty path → the /dev directory node itself.
         if path.is_empty() {
             return Ok(Arc::new(DevDirNode));
@@ -97,6 +107,9 @@ impl VfsDriver for DevFs {
         {
             let reg = DEVICE_REGISTRY.lock();
             if let Some(node) = reg.get(path) {
+                if path == "fb0" || path.starts_with("fb") {
+                    crate::kinfo!("devfs: dynamic registry hit path='{}'", path);
+                }
                 return Ok(node.clone());
             }
         }
@@ -108,8 +121,15 @@ impl VfsDriver for DevFs {
             "zero" => Ok(Arc::new(ZeroNode)),
             "fb0" => {
                 if let Some((fb, graph_id)) = *BOOT_FB_INFO.lock() {
+                    crate::kinfo!(
+                        "devfs: lookup fb0 -> hit ({}x{} stride={})",
+                        fb.width,
+                        fb.height,
+                        fb.pitch
+                    );
                     Ok(Arc::new(FbNode::new(fb, graph_id)))
                 } else {
+                    crate::kwarn!("devfs: lookup fb0 -> missing boot fb state");
                     Err(Errno::ENOENT)
                 }
             }

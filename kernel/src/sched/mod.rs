@@ -1013,22 +1013,27 @@ pub fn process_info<R: BootRuntime>()
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let result = {
-        let lock = SCHEDULER.lock();
-        if let Some(ptr) = *lock {
-            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-            let cpu_idx = current_cpu_index::<R>();
-            sched
-                .state
-                .per_cpu
-                .get(cpu_idx)
-                .and_then(|pc| pc.current)
-                .and_then(|tid| crate::task::registry::get_task::<R>(tid))
-                .and_then(|t| t.process_info.clone())
-        } else {
-            None
-        }
-    };
+    // Prefer the runtime's current TID. During syscall/trap handling this stays
+    // authoritative even if the scheduler's per-CPU `current` view is transiently stale.
+    let runtime_tid = rt.current_tid();
+    let result = crate::task::registry::get_task::<R>(runtime_tid)
+        .and_then(|t| t.process_info.clone())
+        .or_else(|| {
+            let lock = SCHEDULER.lock();
+            if let Some(ptr) = *lock {
+                let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                let cpu_idx = current_cpu_index::<R>();
+                sched
+                    .state
+                    .per_cpu
+                    .get(cpu_idx)
+                    .and_then(|pc| pc.current)
+                    .and_then(|tid| crate::task::registry::get_task::<R>(tid))
+                    .and_then(|t| t.process_info.clone())
+            } else {
+                None
+            }
+        });
 
     rt.irq_restore(_irq);
     result

@@ -1,3 +1,27 @@
+diff --git a/library/std/Cargo.toml b/library/std/Cargo.toml
+index f4cc8edc..0d7466be 100644
+--- a/library/std/Cargo.toml
++++ b/library/std/Cargo.toml
+@@ -11,7 +11,6 @@ autobenches = false
+ 
+ [lib]
+ crate-type = ["dylib", "rlib"]
+-
+ [dependencies]
+ alloc = { path = "../alloc", public = true }
+ # std no longer uses cfg-if directly, but the included copy of backtrace does.
+diff --git a/library/std/src/lib.rs b/library/std/src/lib.rs
+index dcde208f..a44da24d 100644
+--- a/library/std/src/lib.rs
++++ b/library/std/src/lib.rs
+@@ -436,6 +436,7 @@
+ #[macro_use]
+ extern crate alloc as alloc_crate;
+ 
++
+ // Many compiler tests depend on libc being pulled in by std
+ // so include it here even if it's unused.
+ #[doc(masked)]
 diff --git a/library/std/src/sys/alloc/mod.rs b/library/std/src/sys/alloc/mod.rs
 index f2f1d1c7..9cb7e7b6 100644
 --- a/library/std/src/sys/alloc/mod.rs
@@ -138,10 +162,10 @@ index 2f064914..e16ea26b 100644
          pub use unsupported::*;
 diff --git a/library/std/src/sys/net/connection/thingos.rs b/library/std/src/sys/net/connection/thingos.rs
 new file mode 100644
-index 00000000..be0b7f96
+index 00000000..93bf392d
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,693 @@
+@@ -0,0 +1,624 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -149,6 +173,8 @@ index 00000000..be0b7f96
 +use crate::sync::{Arc, Mutex};
 +use crate::time::Duration;
 +use crate::{fmt, thread, vec};
++
++use crate::sys::pal::raw_syscall6;
 +
 +const SYS_SLEEP_NS: u32 = 0x11;
 +const SYS_TIME_MONOTONIC: u32 = 0x20;
@@ -273,21 +299,21 @@ index 00000000..be0b7f96
 +    }
 +
 +    pub fn set_read_timeout(&self, t: Option<Duration>) -> io::Result<()> {
-+        *self.read_timeout.lock().unwrap() = t;
++        self.read_timeout.set(t).unwrap();
 +        Ok(())
 +    }
 +
 +    pub fn set_write_timeout(&self, t: Option<Duration>) -> io::Result<()> {
-+        *self.write_timeout.lock().unwrap() = t;
++        self.write_timeout.set(t).unwrap();
 +        Ok(())
 +    }
 +
 +    pub fn read_timeout(&self) -> io::Result<Option<Duration>> {
-+        Ok(*self.read_timeout.lock().unwrap())
++        Ok(self.read_timeout.get_cloned().unwrap())
 +    }
 +
 +    pub fn write_timeout(&self) -> io::Result<Option<Duration>> {
-+        Ok(*self.write_timeout.lock().unwrap())
++        Ok(self.write_timeout.get_cloned().unwrap())
 +    }
 +
 +    pub fn peek(&self, _: &mut [u8]) -> io::Result<usize> {
@@ -299,8 +325,8 @@ index 00000000..be0b7f96
 +            return Ok(0);
 +        }
 +
-+        let nonblocking = *self.nonblocking.lock().unwrap();
-+        let timeout = *self.read_timeout.lock().unwrap();
++        let nonblocking = self.nonblocking.get_cloned().unwrap();
++        let timeout = self.read_timeout.get_cloned().unwrap();
 +        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
 +
 +        loop {
@@ -338,8 +364,8 @@ index 00000000..be0b7f96
 +            return Ok(0);
 +        }
 +
-+        let nonblocking = *self.nonblocking.lock().unwrap();
-+        let timeout = *self.write_timeout.lock().unwrap();
++        let nonblocking = self.nonblocking.get_cloned().unwrap();
++        let timeout = self.write_timeout.get_cloned().unwrap();
 +        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
 +
 +        loop {
@@ -420,7 +446,7 @@ index 00000000..be0b7f96
 +    }
 +
 +    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-+        *self.nonblocking.lock().unwrap() = nonblocking;
++        self.nonblocking.set(nonblocking).unwrap();
 +        Ok(())
 +    }
 +
@@ -764,7 +790,55 @@ index 00000000..be0b7f96
 +    }
 +}
 +
-+unsafe fn raw_syscall6(
+diff --git a/library/std/src/sys/pal/mod.rs b/library/std/src/sys/pal/mod.rs
+index 88d9d420..b9ec9655 100644
+--- a/library/std/src/sys/pal/mod.rs
++++ b/library/std/src/sys/pal/mod.rs
+@@ -60,6 +60,10 @@
+         mod zkvm;
+         pub use self::zkvm::*;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use self::thingos::*;
++    }
+     _ => {
+         mod unsupported;
+         pub use self::unsupported::*;
+diff --git a/library/std/src/sys/pal/thingos/common.rs b/library/std/src/sys/pal/thingos/common.rs
+new file mode 100644
+index 00000000..1fcbb23e
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/common.rs
+@@ -0,0 +1,112 @@
++//! ThingOS PAL — core platform primitives.
++//!
++//! This is a stub implementation. Functions will be fleshed out as the
++//! Thing-OS userspace runtime (stem) exposes the necessary syscalls.
++
++use crate::io as std_io;
++
++// SAFETY: must be called only once during runtime initialization.
++// NOTE: this is not guaranteed to run, for example when Rust code is called externally.
++pub unsafe fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {}
++
++// SAFETY: must be called only once during runtime cleanup.
++// NOTE: this is not guaranteed to run, for example when the program aborts.
++pub unsafe fn cleanup() {}
++
++pub fn unsupported<T>() -> std_io::Result<T> {
++    Err(unsupported_err())
++}
++
++pub fn unsupported_err() -> std_io::Error {
++    std_io::Error::UNSUPPORTED_PLATFORM
++}
++
++pub fn abort_internal() -> ! {
++    core::intrinsics::abort();
++}
++
++pub(crate) unsafe fn raw_syscall6(
 +    n: u32,
 +    a0: usize,
 +    a1: usize,
@@ -775,7 +849,21 @@ index 00000000..be0b7f96
 +) -> isize {
 +    #[cfg(target_arch = "x86_64")]
 +    {
-+        return abi::syscall_asm!(n, a0, a1, a2, a3, a4, a5);
++        let ret: isize;
++        core::arch::asm!(
++            "syscall",
++            inlateout("rax") n as usize => ret,
++            in("rdi") a0,
++            in("rsi") a1,
++            in("rdx") a2,
++            in("r10") a3,
++            in("r8") a4,
++            in("r9") a5,
++            out("rcx") _,
++            out("r11") _,
++            options(nostack, preserves_flags)
++        );
++        return ret;
 +    }
 +
 +    #[cfg(target_arch = "aarch64")]
@@ -832,55 +920,8 @@ index 00000000..be0b7f96
 +    #[allow(unreachable_code)]
 +    {
 +        let _ = (n, a0, a1, a2, a3, a4, a5);
-+        -ENOTSUP as isize
++        -95 // ENOTSUP fallback
 +    }
-+}
-diff --git a/library/std/src/sys/pal/mod.rs b/library/std/src/sys/pal/mod.rs
-index 88d9d420..b9ec9655 100644
---- a/library/std/src/sys/pal/mod.rs
-+++ b/library/std/src/sys/pal/mod.rs
-@@ -60,6 +60,10 @@
-         mod zkvm;
-         pub use self::zkvm::*;
-     }
-+    target_os = "thingos" => {
-+        mod thingos;
-+        pub use self::thingos::*;
-+    }
-     _ => {
-         mod unsupported;
-         pub use self::unsupported::*;
-diff --git a/library/std/src/sys/pal/thingos/common.rs b/library/std/src/sys/pal/thingos/common.rs
-new file mode 100644
-index 00000000..786681d5
---- /dev/null
-+++ b/library/std/src/sys/pal/thingos/common.rs
-@@ -0,0 +1,26 @@
-+//! ThingOS PAL — core platform primitives.
-+//!
-+//! This is a stub implementation. Functions will be fleshed out as the
-+//! Thing-OS userspace runtime (stem) exposes the necessary syscalls.
-+
-+use crate::io as std_io;
-+
-+// SAFETY: must be called only once during runtime initialization.
-+// NOTE: this is not guaranteed to run, for example when Rust code is called externally.
-+pub unsafe fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {}
-+
-+// SAFETY: must be called only once during runtime cleanup.
-+// NOTE: this is not guaranteed to run, for example when the program aborts.
-+pub unsafe fn cleanup() {}
-+
-+pub fn unsupported<T>() -> std_io::Result<T> {
-+    Err(unsupported_err())
-+}
-+
-+pub fn unsupported_err() -> std_io::Error {
-+    std_io::Error::UNSUPPORTED_PLATFORM
-+}
-+
-+pub fn abort_internal() -> ! {
-+    core::intrinsics::abort();
 +}
 diff --git a/library/std/src/sys/pal/thingos/mod.rs b/library/std/src/sys/pal/thingos/mod.rs
 new file mode 100644

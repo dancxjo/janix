@@ -332,7 +332,12 @@ pub struct WaylandServer {
 impl WaylandServer {
     pub fn new(screen_width: u32, screen_height: u32) -> Option<Self> {
         let (req_write, req_read) = port_create(65536).ok()?;
-        stem::syscall::vfs_mount(req_write, "/run/wayland-0").ok()?;
+        if let Err(e) = stem::syscall::vfs_mount(req_write, "/run/wayland-0") {
+            stem::warn!(
+                "bloom: failed to mount /run/wayland-0: {:?}; continuing without external Wayland clients",
+                e
+            );
+        }
 
         Some(Self {
             req_port: req_read,

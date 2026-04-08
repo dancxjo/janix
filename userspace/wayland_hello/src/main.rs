@@ -4,6 +4,7 @@ extern crate alloc;
 
 use abi::syscall::vfs_flags::O_RDWR;
 use alloc::vec::Vec;
+use stem::info;
 use stem::syscall::{sleep_ms, vfs_open, vfs_read, vfs_write};
 use stem::thing::{sys as thingsys, ThingId};
 
@@ -109,7 +110,8 @@ fn main(_arg: usize) -> ! {
                     }
                 }
                 (TOPLEVEL_ID, 1) => {
-                    return panic_forever("xdg_toplevel.close");
+                    info!("wayland_hello: compositor requested close; idling");
+                    idle_forever();
                 }
                 (POPUP_XDG_SURFACE_ID, 0) if payload.len() >= 4 => {
                     popup_pending.serial = Some(read_u32(payload, 0));
@@ -168,13 +170,26 @@ fn main(_arg: usize) -> ! {
 }
 
 fn connect_wayland() -> u32 {
-    for _ in 0..50 {
+    let mut attempts = 0u32;
+    loop {
         if let Ok(fd) = vfs_open("/run/wayland-0", O_RDWR) {
+            if attempts != 0 {
+                info!(
+                    "wayland_hello: connected to /run/wayland-0 after {} retries",
+                    attempts
+                );
+            }
             return fd;
+        }
+        attempts = attempts.saturating_add(1);
+        if attempts == 1 || attempts % 50 == 0 {
+            info!(
+                "wayland_hello: waiting for /run/wayland-0 (attempt {})",
+                attempts
+            );
         }
         sleep_ms(100);
     }
-    panic_forever("connect /run/wayland-0")
 }
 
 fn read_initial_globals(fd: u32) {
@@ -351,6 +366,10 @@ fn draw_glyph(
 
 fn panic_forever(msg: &str) -> ! {
     stem::error!("wayland_hello: {}", msg);
+    idle_forever()
+}
+
+fn idle_forever() -> ! {
     loop {
         sleep_ms(1000);
     }

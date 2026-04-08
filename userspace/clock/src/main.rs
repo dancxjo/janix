@@ -230,7 +230,13 @@ fn main() -> ! {
     // info!("starting clock publisher");
 
     // 1. Create Clock Thing (Publisher State)
-    let clock_thing = create_node(kinds::CLOCK).expect("create clock node");
+    let clock_thing = match create_node(kinds::CLOCK) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            info!("CLOCK: create clock node failed: {:?}", e);
+            None
+        }
+    };
     // info!("Clock thing created: {}", clock_thing.to_u64_lossy());
 
     let mut window_id: Option<ThingId> = None;
@@ -275,35 +281,44 @@ fn main() -> ! {
 
     if ui_crown.to_u64_lossy() != 0 {
         // Create Window
-        let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(win, rels::CHILD_OF, ui_crown).expect("link window");
-        link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
-        window_id = Some(win);
+        match create_node(kinds::UI_WINDOW) {
+            Ok(win) => {
+                let linked_child_of = link(win, rels::CHILD_OF, ui_crown);
+                let linked_has_child = link(ui_crown, rels::HAS_CHILD, win);
+                if linked_child_of.is_err() || linked_has_child.is_err() {
+                    info!(
+                        "CLOCK: UI link failed child_of={:?} has_child={:?}; running headless",
+                        linked_child_of.err(),
+                        linked_has_child.err()
+                    );
+                } else {
+                    window_id = Some(win);
 
-        // Window Style: White Background
-        prop_set(win, keys::UI_BG_COLOR, 0xFFFFFFFF).ok(); // White
-        set_string_prop(win, keys::UI_TITLE, "Clock");
+                    // Window Style: White Background
+                    prop_set(win, keys::UI_BG_COLOR, 0xFFFFFFFF).ok(); // White
+                    set_string_prop(win, keys::UI_TITLE, "Clock");
 
-        // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
-        prop_set(win, keys::UI_WIDTH, 400).ok();
-        prop_set(win, keys::UI_HEIGHT, 150).ok();
-        prop_set(win, keys::UI_X, 0).ok(); // Base at 0 (inset will override)
-        prop_set(win, keys::UI_Y, 0).ok(); // Base at 0 (inset will override)
-        prop_set(win, keys::UI_INSET_RIGHT, 20).ok(); // 20px from right edge
-        prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // 30px from bottom edge
+                    // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
+                    prop_set(win, keys::UI_WIDTH, 400).ok();
+                    prop_set(win, keys::UI_HEIGHT, 150).ok();
+                    prop_set(win, keys::UI_X, 0).ok(); // Base at 0 (inset will override)
+                    prop_set(win, keys::UI_Y, 0).ok(); // Base at 0 (inset will override)
+                    prop_set(win, keys::UI_INSET_RIGHT, 20).ok(); // 20px from right edge
+                    prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // 30px from bottom edge
 
-        // Window Icon
-        if let Some(icon_id) = search_for_icon("office-calendar.svg") {
-            // info!("Found clock icon: {}", icon_id.to_u64_lossy());
-            prop_set(win, keys::UI_WINDOW_ICON, icon_id.to_u64_lossy()).ok();
-        } else {
-            // info!("Clock icon not found");
-        }
+                    if let Some(icon_id) = search_for_icon("office-calendar.svg") {
+                        prop_set(win, keys::UI_WINDOW_ICON, icon_id.to_u64_lossy()).ok();
+                    }
 
-        // Initial scene publish
-        text_node_id = render_window_init(win, "--:--:--");
-        if text_node_id.is_none() {
-            info!("CLOCK: initial scene publish failed");
+                    text_node_id = render_window_init(win, "--:--:--");
+                    if text_node_id.is_none() {
+                        info!("CLOCK: initial scene publish failed");
+                    }
+                }
+            }
+            Err(e) => {
+                info!("CLOCK: create UI_WINDOW failed: {:?}", e);
+            }
         }
     }
 
@@ -365,7 +380,9 @@ fn main() -> ! {
         }
 
         // Update clock:tick regardless of wall-clock anchoring.
-        let _ = prop_set(clock_thing, keys::CLOCK_TICK, mono_ns);
+        if let Some(clock_thing) = clock_thing {
+            let _ = prop_set(clock_thing, keys::CLOCK_TICK, mono_ns);
+        }
 
         // 3. Sleep until the next whole second boundary
         let now_ns_recheck = stem::time::now_unix_nanos();

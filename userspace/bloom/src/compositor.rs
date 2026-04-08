@@ -1,3 +1,4 @@
+use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
@@ -69,6 +70,88 @@ pub enum CompositorError {
 }
 
 impl CompositorTarget {
+    fn probe_bootfb() -> Option<(u32, u32, u32, u32)> {
+        let fd = vfs::vfs_open("/dev/fb0", abi::syscall::vfs_flags::O_RDONLY).ok()?;
+        let mut payload = FbInfoPayload {
+            graph_id: 0,
+            width: 0,
+            height: 0,
+            stride: 0,
+            bpp: 0,
+            format: 0,
+        };
+        let buf = unsafe {
+            core::slice::from_raw_parts_mut(
+                &mut payload as *mut _ as *mut u8,
+                FB_INFO_PAYLOAD_SIZE,
+            )
+        };
+        let n = match vfs::vfs_read(fd, buf) {
+            Ok(n) => n,
+            Err(_) => {
+                let _ = vfs::vfs_close(fd);
+                return None;
+            }
+        };
+        let _ = vfs::vfs_close(fd);
+        if n < FB_INFO_PAYLOAD_SIZE
+            || payload.width == 0
+            || payload.height == 0
+            || payload.stride == 0
+        {
+            return None;
+        }
+        Some((
+            payload.width,
+            payload.height,
+            payload.stride,
+            payload.format,
+        ))
+    }
+
+    fn build_bootfb_staging_target(
+        width: u32,
+        height: u32,
+        stride: u32,
+        format: u32,
+    ) -> Result<Self, CompositorError> {
+        use abi::vm::{VmBacking, VmMapReq, VmProt};
+
+        let size = (height as usize).saturating_mul(stride as usize);
+        if size == 0 {
+            return Err(CompositorError::InvalidSize);
+        }
+
+        let fd = thingsys::memfd_create("bloom.bootfb", size)
+            .map_err(|_| CompositorError::MappingFailed)?;
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: size,
+            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+            flags: abi::vm::VmMapFlags::empty(),
+            backing: VmBacking::File { fd, offset: 0 },
+        };
+        let ptr = vm_map(&req)
+            .map(|resp| resp.addr as *mut u8)
+            .map_err(|_| CompositorError::MappingFailed)?;
+        if ptr.is_null() {
+            return Err(CompositorError::MappingFailed);
+        }
+
+        Ok(Self {
+            fd,
+            width,
+            height,
+            stride_bytes: stride,
+            format,
+            ptr,
+            size_bytes: size,
+            driver_req: 0,
+            driver_resp: 0,
+            backend: DisplayBackend::BootFB,
+        })
+    }
+
     pub fn map_from_fd(
         fd: u32,
         arg_ports: (ChannelHandle, ChannelHandle),
@@ -119,29 +202,12 @@ impl CompositorTarget {
         arg_ports: (ChannelHandle, ChannelHandle),
         timeout_ms: u32,
     ) -> Result<Self, CompositorError> {
-        let sym = Symbols::new();
+        let _ = arg_ports;
         let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64);
 
-        // Wait loop for discovery
-        #[allow(unused_assignments)]
-        let mut found_config: Option<(u32, u32, u32, u32, u32)> = None;
-
         loop {
-            // In the new world, VFS nodes represent displays.
-            // For now, let's look at /dev/fb0 and others via graph fallback if needed.
-            if let Ok(fd) = vfs::vfs_open("/dev/fb0", abi::syscall::vfs_flags::O_RDONLY) {
-                let w = thingsys::prop_get_fd(fd, keys::WIDTH).unwrap_or(0) as u32;
-                let h = thingsys::prop_get_fd(fd, keys::HEIGHT).unwrap_or(0) as u32;
-                let s = thingsys::prop_get_fd(fd, keys::STRIDE).unwrap_or(0) as u32;
-                let f = thingsys::prop_get_fd(fd, keys::FORMAT).unwrap_or(0) as u32;
-                if w != 0 && h != 0 && s != 0 {
-                    found_config = Some((fd, w, h, s, f));
-                } else {
-                    let _ = vfs::vfs_close(fd);
-                }
-            }
-            if found_config.is_some() {
-                break;
+            if let Some((width, height, stride, format)) = Self::probe_bootfb() {
+                return Self::build_bootfb_staging_target(width, height, stride, format);
             }
 
             if stem::time::now() > deadline {
@@ -151,14 +217,7 @@ impl CompositorTarget {
             stem::sleep_ms(50);
         }
 
-        let (fd, width, height, stride, format) = match found_config {
-            Some(config) => config,
-            None => {
-                return Err(CompositorError::DiscoveryTimeout);
-            }
-        };
-
-        Self::build_from_config(&sym, fd, width, height, stride, format, arg_ports)
+        Err(CompositorError::DiscoveryTimeout)
     }
 
     fn build_from_config(

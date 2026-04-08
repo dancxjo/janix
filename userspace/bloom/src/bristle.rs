@@ -1,5 +1,5 @@
 use abi::hid::{
-    BristleEventHeader, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
+    BristleEventHeader, Key, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use alloc::vec::Vec;
@@ -49,6 +49,16 @@ pub struct MouseAccelState {
 pub struct PollStats {
     pub had_key_event: bool,
     pub had_pointer_event: bool,
+    pub key_event_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyEvent {
+    pub key: Key,
+    pub pressed: bool,
+    pub mods: u8,
+    pub repeat: bool,
+    pub timestamp_ns: u64,
 }
 
 fn apply_mouse_accel(delta: (i16, i16), dt_s: f32, cfg: &MouseAccelConfig) -> (i16, i16) {
@@ -85,6 +95,7 @@ pub fn poll_bristle(
     handle: ChannelHandle,
     cursor: &mut CursorState,
     keys: &mut alloc::collections::BTreeSet<abi::hid::Key>,
+    key_events: &mut Vec<KeyEvent>,
     accel_cfg: &MouseAccelConfig,
     accel_state: &mut MouseAccelState,
     w: i32,
@@ -136,6 +147,14 @@ pub fn poll_bristle(
                         };
                         keys.insert(payload.key());
                         stats.had_key_event = true;
+                        stats.key_event_count += 1;
+                        key_events.push(KeyEvent {
+                            key: payload.key(),
+                            pressed: true,
+                            mods: payload.mods,
+                            repeat: payload.is_repeat(),
+                            timestamp_ns,
+                        });
                     }
                 }
                 2 => {
@@ -145,6 +164,14 @@ pub fn poll_bristle(
                         };
                         keys.remove(&payload.key());
                         stats.had_key_event = true;
+                        stats.key_event_count += 1;
+                        key_events.push(KeyEvent {
+                            key: payload.key(),
+                            pressed: false,
+                            mods: payload.mods,
+                            repeat: false,
+                            timestamp_ns,
+                        });
                     }
                 }
                 3 => {

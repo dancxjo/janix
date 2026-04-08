@@ -21,10 +21,10 @@ Registers a watch on a path. Returns a new `watch_fd`.
 ## Event Emission
 
 Events are emitted from canonical VFS mutation points in the kernel:
-- `SYS_FS_write` -> `MODIFY`
-- `SYS_FS_unlink` -> `REMOVE`
-- `SYS_FS_mkdir` -> `CREATE`
-- `SYS_FS_rename` -> `MOVE_FROM` / `MOVE_TO`
+- `sys_fs_write` -> `MODIFY`
+- `sys_fs_unlink` -> `REMOVE`
+- `sys_fs_mkdir` -> `CREATE`
+- `sys_fs_rename` -> `MOVE_FROM` / `MOVE_TO`
 
 ## Rename Pair Linking
 

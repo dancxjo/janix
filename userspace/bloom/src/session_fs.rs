@@ -14,6 +14,10 @@ pub const SESSION_ROOT: &str = "/session";
 pub const SEATS_ROOT: &str = "/session/seat0";
 pub const POINTER_ROOT: &str = "/session/seat0/pointer";
 pub const POINTER_STATE_ROOT: &str = "/session/seat0/pointer/state";
+pub const KEYBOARD_ROOT: &str = "/session/seat0/keyboard";
+pub const KEYBOARD_STATE_ROOT: &str = "/session/seat0/keyboard/state";
+pub const KEYBOARD_MODIFIERS_ROOT: &str = "/session/seat0/keyboard/state/modifiers";
+pub const TEXT_ROOT: &str = "/session/seat0/text";
 pub const WINDOWS_ROOT: &str = "/session/windows";
 pub const SURFACES_ROOT: &str = "/session/surfaces";
 
@@ -31,6 +35,10 @@ pub fn ensure_session_roots() {
     let _ = vfs_mkdir(SEATS_ROOT);
     let _ = vfs_mkdir(POINTER_ROOT);
     let _ = vfs_mkdir(POINTER_STATE_ROOT);
+    let _ = vfs_mkdir(KEYBOARD_ROOT);
+    let _ = vfs_mkdir(KEYBOARD_STATE_ROOT);
+    let _ = vfs_mkdir(KEYBOARD_MODIFIERS_ROOT);
+    let _ = vfs_mkdir(TEXT_ROOT);
     let _ = vfs_mkdir(WINDOWS_ROOT);
     let _ = vfs_mkdir(SURFACES_ROOT);
     ensure_file(&format!("{}/events", POINTER_ROOT), "");
@@ -40,6 +48,18 @@ pub fn ensure_session_roots() {
     ensure_file(&format!("{}/state/focus_surface", POINTER_ROOT), "");
     ensure_file(&format!("{}/state/sx", POINTER_ROOT), "0\n");
     ensure_file(&format!("{}/state/sy", POINTER_ROOT), "0\n");
+    ensure_file(&format!("{}/events", KEYBOARD_ROOT), "");
+    ensure_file(&format!("{}/layout", KEYBOARD_STATE_ROOT), "us\n");
+    ensure_file(&format!("{}/variant", KEYBOARD_STATE_ROOT), "\n");
+    ensure_file(&format!("{}/options", KEYBOARD_STATE_ROOT), "\n");
+    ensure_file(&format!("{}/focus_surface", KEYBOARD_STATE_ROOT), "");
+    ensure_file(&format!("{}/repeat_rate", KEYBOARD_STATE_ROOT), "30\n");
+    ensure_file(&format!("{}/repeat_delay", KEYBOARD_STATE_ROOT), "500\n");
+    ensure_file(&format!("{}/group", KEYBOARD_STATE_ROOT), "0\n");
+    ensure_file(&format!("{}/depressed", KEYBOARD_MODIFIERS_ROOT), "0\n");
+    ensure_file(&format!("{}/latched", KEYBOARD_MODIFIERS_ROOT), "0\n");
+    ensure_file(&format!("{}/locked", KEYBOARD_MODIFIERS_ROOT), "0\n");
+    ensure_file(&format!("{}/events", TEXT_ROOT), "");
 }
 
 pub fn ensure_window_tree(id: &str) {
@@ -257,6 +277,22 @@ pub fn pointer_state_path(name: &str) -> String {
     format!("{}/{}", POINTER_STATE_ROOT, name)
 }
 
+pub fn keyboard_events_path() -> String {
+    format!("{}/events", KEYBOARD_ROOT)
+}
+
+pub fn keyboard_state_path(name: &str) -> String {
+    format!("{}/{}", KEYBOARD_STATE_ROOT, name)
+}
+
+pub fn keyboard_modifiers_state_path(name: &str) -> String {
+    format!("{}/{}", KEYBOARD_MODIFIERS_ROOT, name)
+}
+
+pub fn text_events_path() -> String {
+    format!("{}/events", TEXT_ROOT)
+}
+
 pub fn encode_pointer_enter_event(surface_id: u64, sx_fp16: i32, sy_fp16: i32) -> String {
     format!(
         "{{\"type\":\"enter\",\"surface_id\":{},\"sx\":{},\"sy\":{}}}\n",
@@ -327,6 +363,57 @@ pub fn logical_to_fixed_16_16(value: i32) -> i32 {
     value.saturating_mul(1 << 16)
 }
 
+pub fn encode_keyboard_enter_event(surface_id: u64, serial: u64) -> String {
+    format!(
+        "{{\"type\":\"enter\",\"surface_id\":{},\"serial\":{}}}\n",
+        surface_id, serial
+    )
+}
+
+pub fn encode_keyboard_leave_event(surface_id: u64, serial: u64) -> String {
+    format!(
+        "{{\"type\":\"leave\",\"surface_id\":{},\"serial\":{}}}\n",
+        surface_id, serial
+    )
+}
+
+pub fn encode_keyboard_key_event(
+    serial: u64,
+    keycode: u32,
+    pressed: bool,
+    repeat: bool,
+    mods_depressed: u32,
+) -> String {
+    format!(
+        "{{\"type\":\"key\",\"serial\":{},\"keycode\":{},\"pressed\":{},\"repeat\":{},\"mods_depressed\":{}}}\n",
+        serial,
+        keycode,
+        if pressed { "true" } else { "false" },
+        if repeat { "true" } else { "false" },
+        mods_depressed
+    )
+}
+
+pub fn encode_keyboard_modifiers_event(
+    serial: u64,
+    depressed: u32,
+    latched: u32,
+    locked: u32,
+    group: u32,
+) -> String {
+    format!(
+        "{{\"type\":\"modifiers\",\"serial\":{},\"depressed\":{},\"latched\":{},\"locked\":{},\"group\":{}}}\n",
+        serial, depressed, latched, locked, group
+    )
+}
+
+pub fn encode_keyboard_repeat_info_event(rate: u32, delay_ms: u32) -> String {
+    format!(
+        "{{\"type\":\"repeat_info\",\"rate\":{},\"delay_ms\":{}}}\n",
+        rate, delay_ms
+    )
+}
+
 fn ensure_file(path: &str, default_text: &str) {
     if vfs_open(path, O_RDONLY).is_ok() {
         return;
@@ -392,6 +479,16 @@ mod tests {
     fn fixed_point_helper_scales_integers() {
         assert_eq!(logical_to_fixed_16_16(12), 12 << 16);
         assert_eq!(logical_to_fixed_16_16(-3), -3 << 16);
+    }
+
+    #[test]
+    fn keyboard_key_event_is_ndjson() {
+        let line = encode_keyboard_key_event(9, 30, true, false, 1);
+        assert!(line.ends_with('\n'));
+        assert!(line.contains("\"type\":\"key\""));
+        assert!(line.contains("\"serial\":9"));
+        assert!(line.contains("\"keycode\":30"));
+        assert!(line.contains("\"pressed\":true"));
     }
 
     #[test]

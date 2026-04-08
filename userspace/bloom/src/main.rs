@@ -63,7 +63,9 @@ use stem::syscall::vfs::{vfs_open, vfs_write};
 use stem::syscall::ChannelHandle;
 
 use crate::asset::AssetBank;
-use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
+use crate::bristle::{
+    poll_bristle, KeyEvent as BristleKeyEvent, MouseAccelConfig, MouseAccelState,
+};
 use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
@@ -93,6 +95,10 @@ struct PointerFocusState {
     local_x: i32,
     local_y: i32,
 }
+
+const KEYBOARD_REPEAT_RATE: u32 = 30;
+const KEYBOARD_REPEAT_DELAY_MS: u32 = 500;
+const KEYBOARD_GROUP: u32 = 0;
 
 fn wayland_button_code(button: u8) -> u32 {
     match button {
@@ -180,6 +186,60 @@ fn publish_pointer_state(cursor: &CursorState, focus: PointerFocusState) {
             "{}\n",
             crate::session_fs::logical_to_fixed_16_16(focus.local_y)
         ),
+    );
+}
+
+fn mods_from_pressed_keys(keys: &BTreeSet<Key>) -> u32 {
+    let mut mods = 0u32;
+    if keys.contains(&Key::LeftShift) || keys.contains(&Key::RightShift) {
+        mods |= abi::hid::Mods::SHIFT as u32;
+    }
+    if keys.contains(&Key::LeftCtrl) || keys.contains(&Key::RightCtrl) {
+        mods |= abi::hid::Mods::CTRL as u32;
+    }
+    if keys.contains(&Key::LeftAlt) || keys.contains(&Key::RightAlt) {
+        mods |= abi::hid::Mods::ALT as u32;
+    }
+    if keys.contains(&Key::LeftMeta) || keys.contains(&Key::RightMeta) {
+        mods |= abi::hid::Mods::META as u32;
+    }
+    if keys.contains(&Key::RightAlt) {
+        mods |= abi::hid::Mods::ALTGR as u32;
+    }
+    mods
+}
+
+fn publish_keyboard_state(focus_surface: Option<ThingId>, mods_depressed: u32) {
+    let focus_surface = focus_surface
+        .map(|id| format!("{}\n", id.to_u64_lossy()))
+        .unwrap_or_default();
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_state_path("focus_surface"),
+        &focus_surface,
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_state_path("repeat_rate"),
+        &format!("{}\n", KEYBOARD_REPEAT_RATE),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_state_path("repeat_delay"),
+        &format!("{}\n", KEYBOARD_REPEAT_DELAY_MS),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_state_path("group"),
+        &format!("{}\n", KEYBOARD_GROUP),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_modifiers_state_path("depressed"),
+        &format!("{}\n", mods_depressed),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_modifiers_state_path("latched"),
+        "0\n",
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::keyboard_modifiers_state_path("locked"),
+        "0\n",
     );
 }
 
@@ -1045,6 +1105,9 @@ fn main(arg: usize) -> ! {
     let mut prev_pointer_focus = PointerFocusState::default();
     let mut prev_wayland_pointer_focus = PointerFocusState::default();
     let mut prev_focus_window_for_wayland: Option<ThingId> = None;
+    let mut prev_keyboard_focus: Option<ThingId> = None;
+    let mut prev_keyboard_mods: u32 = 0;
+    let mut keyboard_serial: u64 = 1;
     let mut cursor_underlays: BTreeMap<u32, CursorUnderlay> = BTreeMap::new();
     let mut drag_state: Option<DragState> = None;
 
@@ -1057,6 +1120,14 @@ fn main(arg: usize) -> ! {
             .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
     publish_pointer_state(&cursor, prev_pointer_focus);
+    publish_keyboard_state(focused_window, prev_keyboard_mods);
+    let _ = crate::session_fs::append_line(
+        &crate::session_fs::keyboard_events_path(),
+        &crate::session_fs::encode_keyboard_repeat_info_event(
+            KEYBOARD_REPEAT_RATE,
+            KEYBOARD_REPEAT_DELAY_MS,
+        ),
+    );
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
@@ -1212,6 +1283,7 @@ fn main(arg: usize) -> ! {
         }
 
         let mut poll_stats = crate::bristle::PollStats::default();
+        let mut pending_key_events: alloc::vec::Vec<BristleKeyEvent> = alloc::vec::Vec::new();
         if bristle_evt_handle != 0 {
             prev_keys = pressed_keys.clone();
             poll_stats = {
@@ -1220,6 +1292,7 @@ fn main(arg: usize) -> ! {
                     bristle_evt_handle,
                     &mut cursor,
                     &mut pressed_keys,
+                    &mut pending_key_events,
                     &accel_cfg,
                     &mut accel_state,
                     screen_w,
@@ -1289,6 +1362,7 @@ fn main(arg: usize) -> ! {
                         bristle_evt_handle,
                         &mut cursor,
                         &mut pressed_keys,
+                        &mut pending_key_events,
                         &accel_cfg,
                         &mut accel_state,
                         screen_w,
@@ -1324,6 +1398,7 @@ fn main(arg: usize) -> ! {
                     bristle_evt_handle,
                     &mut cursor,
                     &mut pressed_keys,
+                    &mut pending_key_events,
                     &accel_cfg,
                     &mut accel_state,
                     screen_w,
@@ -1750,6 +1825,100 @@ fn main(arg: usize) -> ! {
 
             alt_prev_down = alt_down;
         }
+
+        let current_keyboard_focus = focused_window;
+        let current_keyboard_mods = mods_from_pressed_keys(&pressed_keys);
+
+        if current_keyboard_focus != prev_focus_window_for_wayland {
+            wayland_server.focus_surface(current_keyboard_focus);
+            prev_focus_window_for_wayland = current_keyboard_focus;
+        }
+
+        if current_keyboard_focus != prev_keyboard_focus {
+            if let Some(surface_id) = prev_keyboard_focus {
+                let serial = keyboard_serial;
+                keyboard_serial = keyboard_serial.wrapping_add(1);
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::keyboard_events_path(),
+                    &crate::session_fs::encode_keyboard_leave_event(
+                        surface_id.to_u64_lossy(),
+                        serial,
+                    ),
+                );
+            }
+            if let Some(surface_id) = current_keyboard_focus {
+                let serial = keyboard_serial;
+                keyboard_serial = keyboard_serial.wrapping_add(1);
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::keyboard_events_path(),
+                    &crate::session_fs::encode_keyboard_enter_event(
+                        surface_id.to_u64_lossy(),
+                        serial,
+                    ),
+                );
+            }
+        }
+
+        let mut delivered_keyboard_mods = prev_keyboard_mods;
+        for key_event in &pending_key_events {
+            let serial = keyboard_serial;
+            keyboard_serial = keyboard_serial.wrapping_add(1);
+            let _ = crate::session_fs::append_line(
+                &crate::session_fs::keyboard_events_path(),
+                &crate::session_fs::encode_keyboard_key_event(
+                    serial,
+                    key_event.key as u32,
+                    key_event.pressed,
+                    key_event.repeat,
+                    key_event.mods as u32,
+                ),
+            );
+
+            let evdev_code = crate::ui_events::hid_to_evdev(key_event.key);
+            if evdev_code != 0 {
+                wayland_server.deliver_keyboard_key(
+                    evdev_code,
+                    key_event.pressed,
+                    (key_event.timestamp_ns / 1_000_000) as u32,
+                );
+            }
+
+            if key_event.mods as u32 != delivered_keyboard_mods {
+                let serial = keyboard_serial;
+                keyboard_serial = keyboard_serial.wrapping_add(1);
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::keyboard_events_path(),
+                    &crate::session_fs::encode_keyboard_modifiers_event(
+                        serial,
+                        key_event.mods as u32,
+                        0,
+                        0,
+                        KEYBOARD_GROUP,
+                    ),
+                );
+                wayland_server.deliver_keyboard_modifiers(key_event.mods as u32, 0, 0);
+                delivered_keyboard_mods = key_event.mods as u32;
+            }
+        }
+
+        if pending_key_events.is_empty() && current_keyboard_mods != delivered_keyboard_mods {
+            let serial = keyboard_serial;
+            keyboard_serial = keyboard_serial.wrapping_add(1);
+            let _ = crate::session_fs::append_line(
+                &crate::session_fs::keyboard_events_path(),
+                &crate::session_fs::encode_keyboard_modifiers_event(
+                    serial,
+                    current_keyboard_mods,
+                    0,
+                    0,
+                    KEYBOARD_GROUP,
+                ),
+            );
+            wayland_server.deliver_keyboard_modifiers(current_keyboard_mods, 0, 0);
+        }
+        publish_keyboard_state(current_keyboard_focus, current_keyboard_mods);
+        prev_keyboard_focus = current_keyboard_focus;
+        prev_keyboard_mods = current_keyboard_mods;
 
         let pointer_focus = pointer_focus_at(&scene, &latest_wayland_snapshots, cursor.x, cursor.y);
         let pointer_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;

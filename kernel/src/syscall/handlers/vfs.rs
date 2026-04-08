@@ -3,16 +3,16 @@
 //!
 //! These handlers implement the janix VFS syscall interface:
 //!
-//! - [`SYS_FS_open`]   — open (or create) a path, return a file descriptor
-//! - [`SYS_FS_close`]  — release a file descriptor (all fds, including 0-2)
-//! - [`SYS_FS_read`]   — read from a file descriptor into a user buffer
-//! - [`SYS_FS_write`]  — write from a user buffer to a file descriptor
-//! - [`SYS_FS_unlink`] — remove a file or empty directory
-//! - [`SYS_FS_mkdir`]  — create a directory
+//! - [`sys_fs_open`]   — open (or create) a path, return a file descriptor
+//! - [`sys_fs_close`]  — release a file descriptor (all fds, including 0-2)
+//! - [`sys_fs_read`]   — read from a file descriptor into a user buffer
+//! - [`sys_fs_write`]  — write from a user buffer to a file descriptor
+//! - [`sys_fs_unlink`] — remove a file or empty directory
+//! - [`sys_fs_mkdir`]  — create a directory
 //! - [`SYS_FS_DUP`]        — duplicate a file descriptor to the lowest free slot
 //! - [`SYS_FS_DUP2`]       — duplicate a file descriptor to a specific slot
 //! - [`sys_pipe`]       — create an anonymous pipe, allocating two fds
-//! - [`SYS_FS_poll`]   — poll a set of fds for readiness (POSIX-style)
+//! - [`sys_fs_poll`]   — poll a set of fds for readiness (POSIX-style)
 
 use alloc::sync::Arc;
 use alloc::vec;
@@ -25,7 +25,7 @@ use crate::vfs::{self, OpenFlags};
 
 // ── open ────────────────────────────────────────────────────────────────────
 
-pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<usize> {
+pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {
         return Err(Errno::EINVAL);
@@ -37,7 +37,7 @@ pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
     if path == "/dev/fb0" {
         crate::kinfo!(
-            "SYS_FS_open: path='{}' len={} flags=0x{:x}",
+            "sys_fs_open: path='{}' len={} flags=0x{:x}",
             path,
             path_len,
             flags
@@ -69,12 +69,12 @@ pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     if path == "/dev/fb0" {
         match node.stat() {
             Ok(stat) => crate::kinfo!(
-                "SYS_FS_open: resolved node for /dev/fb0 mode=0o{:o} size={} ino={}",
+                "sys_fs_open: resolved node for /dev/fb0 mode=0o{:o} size={} ino={}",
                 stat.mode,
                 stat.size,
                 stat.ino
             ),
-            Err(err) => crate::kwarn!("SYS_FS_open: resolved /dev/fb0 but stat failed: {:?}", err),
+            Err(err) => crate::kwarn!("sys_fs_open: resolved /dev/fb0 but stat failed: {:?}", err),
         }
     }
 
@@ -86,7 +86,7 @@ pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
                 let tid = unsafe { crate::sched::current_tid_current() };
                 let direct = crate::sched::process_info_for_tid_current(tid).is_some();
                 crate::kwarn!(
-                    "SYS_FS_open: no process info for /dev/fb0 current_tid={} direct_lookup={}",
+                    "sys_fs_open: no process info for /dev/fb0 current_tid={} direct_lookup={}",
                     tid,
                     direct
                 );
@@ -95,12 +95,12 @@ pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
         }
     };
     if path == "/dev/fb0" {
-        crate::kinfo!("SYS_FS_open: process info present for /dev/fb0");
+        crate::kinfo!("sys_fs_open: process info present for /dev/fb0");
     }
     let fd = pinfo_arc.lock().fd_table.open(node, open_flags)?;
 
     if path == "/dev/fb0" {
-        crate::kinfo!("SYS_FS_open: fd_table.open('/dev/fb0') -> {}", fd);
+        crate::kinfo!("sys_fs_open: fd_table.open('/dev/fb0') -> {}", fd);
     }
 
     Ok(fd as usize)
@@ -108,7 +108,7 @@ pub fn SYS_FS_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
 
 // ── close ───────────────────────────────────────────────────────────────────
 
-pub fn SYS_FS_close(fd: usize) -> SysResult<usize> {
+pub fn sys_fs_close(fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     pinfo_arc.lock().fd_table.close(fd as u32)?;
     Ok(0)
@@ -116,7 +116,7 @@ pub fn SYS_FS_close(fd: usize) -> SysResult<usize> {
 
 // ── read ────────────────────────────────────────────────────────────────────
 
-pub fn SYS_FS_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     validate_user_range(buf_ptr, buf_len, true)?;
     if buf_len == 0 {
         return Ok(0);
@@ -148,7 +148,7 @@ pub fn SYS_FS_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
 
 // ── write ───────────────────────────────────────────────────────────────────
 
-pub fn SYS_FS_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+pub fn sys_fs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     validate_user_range(buf_ptr, buf_len, false)?;
     if buf_len == 0 {
         return Ok(0);
@@ -179,7 +179,7 @@ pub fn SYS_FS_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     Ok(n)
 }
 
-pub fn SYS_FS_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+pub fn sys_fs_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {
         return Err(Errno::EINVAL);
@@ -204,7 +204,7 @@ pub fn SYS_FS_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
 // ── mkdir ───────────────────────────────────────────────────────────────────
 
 /// Create a directory at `path`.
-pub fn SYS_FS_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+pub fn sys_fs_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {
         return Err(Errno::EINVAL);
@@ -304,7 +304,7 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
 /// The kernel creates a private response port and registers its write-handle
 /// in the global handle table so the provider can call `SYS_channel_send` to
 /// deliver replies.
-pub fn SYS_FS_mount(
+pub fn sys_fs_mount(
     provider_write_handle: usize,
     path_ptr: usize,
     path_len: usize,
@@ -360,7 +360,7 @@ pub fn SYS_FS_mount(
 // ── umount ──────────────────────────────────────────────────────────────────
 
 /// Unmount the VFS provider at the given path prefix.
-pub fn SYS_FS_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+pub fn sys_fs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {
         return Err(Errno::EINVAL);
@@ -390,7 +390,7 @@ pub fn SYS_FS_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
 ///
 /// # Returns
 /// The number of entries with non-zero `revents`, or an errno on error.
-pub fn SYS_FS_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysResult<usize> {
+pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysResult<usize> {
     const MAX_POLLFDS: usize = 256;
     if nfds == 0 {
         return Ok(0);
@@ -499,7 +499,7 @@ pub fn SYS_FS_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysRe
 }
 
 // ── seek ────────────────────────────────────────────────────────────────────
-pub fn SYS_FS_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> {
+pub fn sys_fs_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let mut lock = pinfo_arc.lock();
     let file = lock.fd_table.get_mut(fd as u32)?;
@@ -574,7 +574,7 @@ pub fn sys_watch_path(
 
 static NEXT_COOKIE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
 
-pub fn SYS_FS_rename(
+pub fn sys_fs_rename(
     _old_dirfd: usize,
     old_const_ptr: usize,
     old_len: usize,

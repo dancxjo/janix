@@ -89,22 +89,22 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
 
         // ── VFS (janix) ───────────────────────────────────────────────────
-        SYS_FS_OPEN => handlers::vfs::SYS_FS_open(args[0], args[1], args[2]),
-        SYS_FS_CLOSE => handlers::vfs::SYS_FS_close(args[0]),
-        SYS_FS_READ => handlers::vfs::SYS_FS_read(args[0], args[1], args[2]),
-        SYS_FS_WRITE => handlers::vfs::SYS_FS_write(args[0], args[1], args[2]),
+        SYS_FS_OPEN => handlers::vfs::sys_fs_open(args[0], args[1], args[2]),
+        SYS_FS_CLOSE => handlers::vfs::sys_fs_close(args[0]),
+        SYS_FS_READ => handlers::vfs::sys_fs_read(args[0], args[1], args[2]),
+        SYS_FS_WRITE => handlers::vfs::sys_fs_write(args[0], args[1], args[2]),
         SYS_FS_DUP => handlers::vfs::SYS_FS_DUP(args[0]),
         SYS_FS_DUP2 => handlers::vfs::SYS_FS_DUP2(args[0], args[1]),
         SYS_FS_RENAME => {
-            handlers::vfs::SYS_FS_rename(args[0], args[1], args[2], args[3], args[4], args[5])
+            handlers::vfs::sys_fs_rename(args[0], args[1], args[2], args[3], args[4], args[5])
         }
         SYS_PIPE => handlers::vfs::sys_pipe(args[0]),
-        SYS_FS_UNLINK => handlers::vfs::SYS_FS_unlink(args[0], args[1]),
-        SYS_FS_MKDIR => handlers::vfs::SYS_FS_mkdir(args[0], args[1]),
-        SYS_FS_MOUNT => handlers::vfs::SYS_FS_mount(args[0], args[1], args[2]),
-        SYS_FS_UMOUNT => handlers::vfs::SYS_FS_umount(args[0], args[1]),
-        SYS_FS_POLL => handlers::vfs::SYS_FS_poll(args[0], args[1], args[2]),
-        SYS_FS_SEEK => handlers::vfs::SYS_FS_seek(args[0], args[1], args[2]),
+        SYS_FS_UNLINK => handlers::vfs::sys_fs_unlink(args[0], args[1]),
+        SYS_FS_MKDIR => handlers::vfs::sys_fs_mkdir(args[0], args[1]),
+        SYS_FS_MOUNT => handlers::vfs::sys_fs_mount(args[0], args[1], args[2]),
+        SYS_FS_UMOUNT => handlers::vfs::sys_fs_umount(args[0], args[1]),
+        SYS_FS_POLL => handlers::vfs::sys_fs_poll(args[0], args[1], args[2]),
+        SYS_FS_SEEK => handlers::vfs::sys_fs_seek(args[0], args[1], args[2]),
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
         0x400F => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
 

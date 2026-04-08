@@ -184,8 +184,7 @@ impl SocketApi {
         }
     }
 
-    fn set_last_error(managed: &mut ManagedSocket, text: &str) {
-        let _ = text;
+    fn set_last_error(managed: &mut ManagedSocket, _text: &str) {
         managed.last_error_sym = 0;
     }
 

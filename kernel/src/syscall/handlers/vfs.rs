@@ -545,12 +545,17 @@ pub fn sys_watch_path(path_ptr: usize, path_len: usize, mask: usize, flags: usiz
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
+    crate::kinfo!("WATCH_PATH: looking up '{}' mask=0x{:x}", path, mask);
     let node = vfs::mount::lookup(path)?;
+    crate::kinfo!("WATCH_PATH: resolved node, registering watch");
+
     let watch = Arc::new(crate::vfs::watch::Watch::new(mask as u32, flags as u32));
     crate::vfs::watch::register_watch(&node, watch.clone())?;
+    crate::kinfo!("WATCH_PATH: registered watch, opening fd");
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let watch_fd = pinfo_arc.lock().fd_table.open(watch, crate::vfs::OpenFlags::read_only())?;
+    crate::kinfo!("WATCH_PATH: success fd={}", watch_fd);
     Ok(watch_fd as usize)
 }
 

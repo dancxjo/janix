@@ -179,6 +179,7 @@ pub fn register_watch(node: &Arc<dyn VfsNode>, watch: Arc<Watch>) -> SysResult<(
         watch,
         target_ino: stat.ino,
     });
+    crate::kinfo!("VFS: registered watch for ino={}", stat.ino);
     Ok(())
 }
 

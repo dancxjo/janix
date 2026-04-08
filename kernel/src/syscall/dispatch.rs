@@ -7,7 +7,16 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let tid = unsafe { crate::sched::current_tid_current() };
 
     if tid >= 15 {
-        crate::kinfo!("DISPATCH [tid={}]: n=0x{:x} args={:x?}", tid, syscall_id, args);
+        crate::kinfo!("DISPATCH [tid={}]: n=0x{:x} (WATCH_VAL=0x{:x}) args={:x?}", tid, syscall_id, SYS_FS_WATCH_PATH, args);
+    }
+
+    if syscall_id == 0x400F {
+        crate::kinfo!("DISPATCH: FORCED HIT 400F");
+        let res = handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]);
+        return match res {
+            Ok(v) => v as isize,
+            Err(e) => -(e as isize),
+        };
     }
 
     let result = match syscall_id {
@@ -129,7 +138,10 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_POLL => handlers::vfs::SYS_FS_poll(args[0], args[1], args[2]),
         SYS_FS_SEEK => handlers::vfs::SYS_FS_seek(args[0], args[1], args[2]),
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
-        SYS_FS_WATCH_PATH => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
+        0x400F => {
+            crate::kinfo!("DISPATCH: hitting LITERAL 400F arm");
+            handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3])
+        }
 
         _ => {
             if tid >= 15 {
@@ -139,8 +151,14 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         }
     };
 
-    match result {
+    let result_as_isize = match result {
         Ok(val) => val as isize,
         Err(e) => -(e as isize),
+    };
+
+    if tid == 18 {
+        crate::kinfo!("DISPATCH [tid=18]: n=0x{:x} -> ok={}", syscall_id, result_as_isize);
     }
+
+    result_as_isize
 }

@@ -97,15 +97,14 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
             Ok(Arc::new(DynamicTextNode::new(text.into_bytes(), 300 + pid as u64 * 10 + 1)))
         }
         "cmdline" => {
-            // argv separated by NUL bytes, terminated by NUL.
+            // Standard Linux /proc/<pid>/cmdline format: each argument is
+            // followed by a NUL byte (including the last), so the full content
+            // is "arg0\0arg1\0arg2\0".
             let mut data: Vec<u8> = Vec::new();
-            for (i, arg) in snap.argv.iter().enumerate() {
-                if i > 0 {
-                    data.push(0);
-                }
+            for arg in snap.argv.iter() {
                 data.extend_from_slice(arg);
+                data.push(0);
             }
-            data.push(0);
             Ok(Arc::new(DynamicTextNode::new(data, 300 + pid as u64 * 10 + 2)))
         }
         "fd" => Ok(Arc::new(ProcPidFdDirNode { pid })),

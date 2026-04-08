@@ -233,11 +233,11 @@ fn run_pipeline(cmds: &[Cmd]) {
 
         let _ = spawn_cmd(cmd, stdin_fd, stdout_fd);
 
-        // Close fds we no longer need in the shell process.
-        if stdin_fd != 0 && i > 0 {
-            // We just handed the previous read end to the child; close it here.
-            let _ = vfs_close(stdin_fd);
-        } else if stdin_fd != 0 && i == 0 && cmd.stdin_file.is_some() {
+        // Close fds that the shell opened but no longer needs after spawn.
+        // Any fd that is not the shell's own stdin (0) or stdout (1) was
+        // created specifically for this pipeline stage and must be closed here
+        // so file descriptors are not leaked.
+        if stdin_fd != 0 {
             let _ = vfs_close(stdin_fd);
         }
         if !is_last {

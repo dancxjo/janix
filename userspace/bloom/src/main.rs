@@ -36,6 +36,8 @@ mod render_state;
 pub mod snapshot;
 mod state;
 mod surface;
+mod scene_graph;
+mod window;
 mod svg;
 mod tessellate;
 mod text_cache;
@@ -225,7 +227,7 @@ fn sync_input_from_graph(
 
 #[inline]
 fn capture_cursor_underlay(
-    surface: &surface::Surface,
+    surface: &surface::PixelBuffer,
     bs_id: ThingId,
     rect: crate::geometry::Rect,
     underlay: &mut CursorUnderlay,
@@ -265,7 +267,7 @@ fn capture_cursor_underlay(
 }
 
 #[inline]
-fn restore_cursor_underlay(surface: &mut surface::Surface, underlay: &CursorUnderlay) {
+fn restore_cursor_underlay(surface: &mut surface::PixelBuffer, underlay: &CursorUnderlay) {
     if !underlay.valid {
         return;
     }
@@ -337,11 +339,11 @@ fn log_simd_backend() {
     }
 }
 
-fn clear_surface(surface: &mut surface::Surface, color: u32) {
+fn clear_surface(surface: &mut surface::PixelBuffer, color: u32) {
     raster::fill_rect_copy(surface, 0, 0, surface.width(), surface.height(), color);
 }
 
-fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
+fn clear_damage(surface: &mut surface::PixelBuffer, damage: &crate::damage::Damage, color: u32) {
     for rect in damage.iter() {
         raster::fill_rect_copy(
             surface,
@@ -699,7 +701,7 @@ fn main(arg: usize) -> ! {
 
     stem::info!("bloom: creating surface...");
     let mut surface = unsafe {
-        surface::Surface::new(
+        surface::PixelBuffer::new(
             final_ptr,
             final_size,
             final_width,
@@ -726,6 +728,7 @@ fn main(arg: usize) -> ! {
 
     let _ = ui_crown;
     let mut paint_pipeline = PaintPipeline::new();
+    let mut scene = crate::scene_graph::SceneGraph::new();
 
     // Spawn asset workers with diagnostic logging
     use stem::stack::{Stack, StackSpec};
@@ -953,7 +956,7 @@ fn main(arg: usize) -> ! {
                 };
 
                 let size = (h * s) as usize;
-                surface = unsafe { surface::Surface::new(ptr, size, w, h, s) };
+                surface = unsafe { surface::PixelBuffer::new(ptr, size, w, h, s) };
                 current_bs_id = bs_id;
             }
         }
@@ -1067,6 +1070,7 @@ fn main(arg: usize) -> ! {
             let refresh_paint =
                 !first_frame_rendered || requires_paint_refresh(&invalidation_causes);
             let res = paint_pipeline.process_updates(
+                &mut scene,
                 screen_w,
                 screen_h,
                 rescan_windows,
@@ -1348,37 +1352,42 @@ fn main(arg: usize) -> ! {
 
             if left_down && !left_prev {
                 crate::trace_counter!("bloom.win_cache.hittest.count", 1);
-                if let Some(hit) = paint_pipeline.top_window_at_point(cursor.x, cursor.y) {
+                if let Some(hit_id) = scene.hit_test(cursor.x, cursor.y) {
+                    let hit_rect = scene.get_surface(hit_id).map(|s| s.rect()).unwrap_or_default();
                     crate::trace_counter!("bloom.win_cache.avoided_find", 1);
-                    set_focus(&mut focused_window, Some(hit.id));
-                    if in_title_bar(hit.rect, cursor.x, cursor.y) {
+                    set_focus(&mut focused_window, Some(hit_id));
+                    
+                    use crate::window_manager::{hit_test, Hit};
+                    let hit_result = hit_test(cursor.x, cursor.y, hit_rect, false);
+                    
+                    if hit_result == Hit::TitleBar {
                         let inset_right =
-                            stem::thing::sys::prop_get(hit.id, keys::UI_INSET_RIGHT).unwrap_or(0);
+                            stem::thing::sys::prop_get(hit_id, keys::UI_INSET_RIGHT).unwrap_or(0);
                         let inset_bottom =
-                            stem::thing::sys::prop_get(hit.id, keys::UI_INSET_BOTTOM).unwrap_or(0);
+                            stem::thing::sys::prop_get(hit_id, keys::UI_INSET_BOTTOM).unwrap_or(0);
                         if inset_right == 0 && inset_bottom == 0 {
                             drag_state = Some(DragState {
-                                window_id: hit.id,
+                                window_id: hit_id,
                                 start_mouse: (cursor.x, cursor.y),
-                                start_rect: hit.rect,
+                                start_rect: hit_rect,
                             });
                             // Optimized raise: use cached max_z
-                            let max_z = paint_pipeline.max_z_excluding(hit.id);
+                            let max_z = paint_pipeline.max_z_excluding(hit_id);
                             crate::trace_counter!("bloom.win_cache.raise.count", 1);
                             crate::trace_counter!("bloom.win_cache.avoided_find", 1); // raise_window used to find
                             let _ = stem::thing::sys::prop_set(
-                                hit.id,
+                                hit_id,
                                 keys::UI_Z_INDEX,
                                 (max_z as u64).saturating_add(1),
                             );
                         }
-                    } else if in_client_area(hit.rect, cursor.x, cursor.y) {
+                    } else if hit_result == Hit::ClientArea {
                         // Optimized raise
-                        let max_z = paint_pipeline.max_z_excluding(hit.id);
+                        let max_z = paint_pipeline.max_z_excluding(hit_id);
                         crate::trace_counter!("bloom.win_cache.raise.count", 1);
                         crate::trace_counter!("bloom.win_cache.avoided_find", 1);
                         let _ = stem::thing::sys::prop_set(
-                            hit.id,
+                            hit_id,
                             keys::UI_Z_INDEX,
                             (max_z as u64).saturating_add(1),
                         );
@@ -1735,6 +1744,7 @@ fn main(arg: usize) -> ! {
             }
 
             paint_pipeline.compose(
+                &scene,
                 &mut surface,
                 &rects,
                 wallpaper.as_ref(),

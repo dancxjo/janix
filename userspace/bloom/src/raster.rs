@@ -7,7 +7,7 @@ use crate::font_client;
 use crate::font_graph::{self, FontStyle};
 use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
-use crate::surface::Surface;
+use crate::surface::PixelBuffer;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -85,7 +85,7 @@ impl Drop for BytespaceMapCache {
 }
 
 struct RasterContext<'a> {
-    surface: &'a mut Surface,
+    surface: &'a mut PixelBuffer,
     cache: &'a mut BytespaceMapCache,
     clip_stack: Vec<Rect>,
     transform_stack: Vec<Transform2D>,
@@ -95,7 +95,7 @@ struct RasterContext<'a> {
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(surface: &'a mut Surface, cache: &'a mut BytespaceMapCache, solid_text: bool) -> Self {
+    fn new(surface: &'a mut PixelBuffer, cache: &'a mut BytespaceMapCache, solid_text: bool) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,
@@ -132,7 +132,7 @@ impl<'a> RasterContext<'a> {
     }
 }
 
-pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
+pub fn execute(surface: &mut PixelBuffer, list: &DrawList, solid_text: bool) {
     let lowered = {
         crate::trace_span!("raster.lower");
         lower(list)
@@ -144,7 +144,7 @@ pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
 }
 
 pub fn execute_with_damage(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     list: &DrawList,
     damage: &Damage,
     solid_text: bool,
@@ -307,7 +307,7 @@ fn get_op_local_bounds(op: &LowLevelOp) -> Option<Rect> {
 }
 
 pub fn execute_lowered_with_damage(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     lowered: &LoweredDraw,
     damage: &Damage,
     solid_text: bool,
@@ -481,7 +481,7 @@ fn execute_single_op(ctx: &mut RasterContext, op: &LowLevelOp) {
                 if let Some(ptr) = ctx.cache.get_or_map(bs, *stride, *height) {
                     let len = (*stride * *height) as usize;
                     let src_surf =
-                        unsafe { Surface::new(ptr as *mut u8, len, *width, *height, *stride) };
+                        unsafe { PixelBuffer::new(ptr as *mut u8, len, *width, *height, *stride) };
                     blit_surface(ctx.surface, &src_surf, src, &td, &cd);
                 }
             }
@@ -693,7 +693,7 @@ fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
 /// out_a = sa + da * (1 - sa/255)
 /// out_rgb = s * sa/255 + d * (1 - sa/255)
 /// ```
-fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
+fn blend_pixel(surface: &mut PixelBuffer, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
     if sa == 0 {
         return;
     }
@@ -730,7 +730,7 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
 
 // Local blit functions removed in favor of crate::blit::*
 
-pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
+pub fn fill_rect_copy(surface: &mut PixelBuffer, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let x0 = x.max(0);
     let y0 = y.max(0);
     let x1 = (x + w).min(surface.width());
@@ -749,7 +749,7 @@ pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, col
 /// system since cursor movement should not trigger window repaints.
 ///
 /// The cursor snapshot is expected to have pre-composited shadow layers.
-pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32) {
+pub fn blit_cursor_overlay(surface: &mut PixelBuffer, cursor: &Image, x: i32, y: i32) {
     let sw = surface.width();
     let sh = surface.height();
 
@@ -790,7 +790,7 @@ pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32
 }
 
 /// Draw a simple crosshair cursor fallback (e.g. while asset is loading).
-pub fn draw_crosshair(surface: &mut Surface, x: i32, y: i32, color: u32) {
+pub fn draw_crosshair(surface: &mut PixelBuffer, x: i32, y: i32, color: u32) {
     let size = 8;
     let gap = 2;
     // Horizontal
@@ -812,7 +812,7 @@ pub fn draw_crosshair(surface: &mut Surface, x: i32, y: i32, color: u32) {
         }
     }
 }
-pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
+pub fn fill_rect_blend(surface: &mut PixelBuffer, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 255 {
         fill_rect_copy(surface, x, y, w, h, color);
@@ -837,7 +837,7 @@ pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, co
     }
 }
 pub fn fill_rect_linear_gradient(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     rect: &Rect,
     clip: &Rect,
     color1: Color,
@@ -879,7 +879,7 @@ pub fn fill_rect_linear_gradient(
     }
 }
 fn stroke_rect_clipped_blend(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     rect: &Rect,
     width: i32,
     color: u32,
@@ -907,7 +907,7 @@ fn stroke_rect_clipped_blend(
         }
     }
 }
-pub fn fill_circle_blend(surface: &mut Surface, cx: i32, cy: i32, r: i32, color: u32, clip: &Rect) {
+pub fn fill_circle_blend(surface: &mut PixelBuffer, cx: i32, cy: i32, r: i32, color: u32, clip: &Rect) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 0 {
         return;
@@ -934,7 +934,7 @@ pub fn fill_circle_blend(surface: &mut Surface, cx: i32, cy: i32, r: i32, color:
     }
 }
 pub fn fill_arc_clipped_blend(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     cx: i32,
     cy: i32,
     r: i32,
@@ -1002,7 +1002,7 @@ pub fn fill_arc_clipped_blend(
     }
 }
 pub fn line(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     x0: f32,
     y0: f32,
     x1: f32,
@@ -1090,7 +1090,7 @@ pub fn line(
     }
 }
 fn blit_opaque(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     image: &Image,
     src: &Rect,
     fd: &Rect,
@@ -1157,7 +1157,7 @@ fn blit_opaque(
     }
 }
 fn blit_alpha(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     image: &Image,
     src: &Rect,
     fd: &Rect,
@@ -1252,7 +1252,7 @@ fn blit_alpha(
 /// Render text using atlas-based fontd IPC (batch EnsureGlyphs).
 /// Returns true if rendering was successful, false to fallback to old path.
 fn rasterize_text_atlas(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     text: &str,
     x: f32,
     y: f32,
@@ -1372,7 +1372,7 @@ fn rasterize_text_atlas(
 /// SIMD-accelerated text rendering using stem::simd::text module.
 /// Returns true if rendering was successful, false to fallback to old path.
 fn rasterize_text_simd(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     text: &str,
     x: f32,
     y: f32,
@@ -1531,7 +1531,7 @@ fn rasterize_text_simd(
 }
 
 fn rasterize_text_locally(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     text: &str,
     x: f32,
     y: f32,
@@ -1841,7 +1841,7 @@ fn rasterize_text_to_a8(
 }
 
 fn blit_text_entry(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     entry: &TextCacheEntry,
     x: f32,
     y: f32,
@@ -1899,8 +1899,8 @@ fn blit_text_entry(
 }
 
 fn blit_surface(
-    dst_surface: &mut Surface,
-    src_surface: &Surface,
+    dst_surface: &mut PixelBuffer,
+    src_surface: &PixelBuffer,
     src_rect: &Rect,
     fd: &Rect,
     cd: &Rect,
@@ -1983,7 +1983,7 @@ fn blit_surface(
 }
 
 fn rasterize_text_fallback(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     text: &str,
     x: f32,
     y: f32,
@@ -2367,7 +2367,7 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
 }
 
 pub fn fill_path(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     path: &crate::isa::Path2D,
     transform: &Transform2D,
     color: u32,
@@ -2491,9 +2491,9 @@ pub fn fill_path(
 /// use crate::isa::{FillRule, Path2D, PathVerb, PointF};
 /// use crate::isa::EdgeAA;
 /// use crate::isa::Rect;
-/// use crate::surface::Surface;
+/// use crate::surface::PixelBuffer;
 /// let mut buffer = vec![0u8; 4 * 4 * 4];
-/// let mut surface = unsafe { Surface::zeroed(buffer.as_mut_ptr(), buffer.len(), 4, 4, 16) };
+/// let mut surface = unsafe { PixelBuffer::zeroed(buffer.as_mut_ptr(), buffer.len(), 4, 4, 16) };
 /// let path = Path2D {
 ///     verbs: vec![
 ///         PathVerb::MoveTo(PointF { x: 0.0, y: 0.0 }),
@@ -2513,7 +2513,7 @@ pub fn fill_path(
 /// );
 /// ```
 fn fill_path_aa(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     path: &crate::isa::Path2D,
     transform: &Transform2D,
     color: u32,
@@ -2717,7 +2717,7 @@ fn fill_path_aa(
 }
 
 pub fn stroke_path(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     path: &crate::isa::Path2D,
     transform: &Transform2D,
     color: u32,
@@ -2859,10 +2859,10 @@ mod tests {
     use super::*;
     use crate::isa::{FillRule, Path2D, PathVerb, PointF};
 
-    fn make_surface(width: u32, height: u32) -> (Surface, Vec<u8>) {
+    fn make_surface(width: u32, height: u32) -> (PixelBuffer, Vec<u8>) {
         let mut buffer = vec![0u8; (width * height * 4) as usize];
         let surface =
-            unsafe { Surface::zeroed(buffer.as_mut_ptr(), buffer.len(), width, height, width * 4) };
+            unsafe { PixelBuffer::zeroed(buffer.as_mut_ptr(), buffer.len(), width, height, width * 4) };
         (surface, buffer)
     }
 

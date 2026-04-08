@@ -5,6 +5,7 @@
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer, State as TcpState};
@@ -154,7 +155,6 @@ impl SocketApi {
         self.free_buffers.push(idx);
     }
 
-    /// Allocate a new handle ID
     fn alloc_handle(&mut self) -> u32 {
         let h = self.next_handle;
         self.next_handle = self.next_handle.wrapping_add(1);
@@ -162,6 +162,11 @@ impl SocketApi {
             self.next_handle = 1;
         }
         h
+    }
+
+    /// Public handle allocator — used by the VFS provider to pre-register socket ids.
+    pub fn alloc_handle_pub(&mut self) -> u32 {
+        self.alloc_handle()
     }
 
     fn alloc_socket_id(&mut self) -> u64 {
@@ -296,6 +301,291 @@ impl SocketApi {
 
     pub fn flush_graph<'a>(&mut self, _socket_set: &mut SocketSet<'a>, _now_ms: u64) {}
 
+    // ── VFS provider helpers ─────────────────────────────────────────────────
+
+    /// Register a pre-created TCP socket handle with the pool.
+    /// Returns the API handle (u32 id used in /net/tcp/<id>).
+    pub fn alloc_socket_raw(
+        &mut self,
+        socket_handle: SocketHandle,
+        buf_idx: usize,
+        is_listener: bool,
+        owner_tid: u64,
+    ) -> u32 {
+        let api_handle = self.alloc_handle();
+        let now_ms = Self::now_ms();
+        let managed = self.new_managed_socket(
+            socket_handle,
+            SocketType::Tcp,
+            is_listener,
+            None,
+            owner_tid,
+            api_handle,
+            now_ms,
+            Some(buf_idx),
+        );
+        self.sockets.insert(api_handle, managed);
+        api_handle
+    }
+
+    /// Create a new UDP socket and register it. Returns the API handle, or None on error.
+    pub fn alloc_udp_socket_raw<'a>(
+        &mut self,
+        socket_set: &mut SocketSet<'a>,
+        buf_idx: usize,
+    ) -> Option<u32> {
+        use smoltcp::socket::udp::{PacketBuffer, PacketMetadata};
+
+        let (rx_meta, rx_payload) = unsafe {
+            let meta_size = core::mem::size_of::<PacketMetadata>() * 8;
+            let (m, p) = CONN_RX[buf_idx].split_at_mut(meta_size);
+            let meta_ptr = m.as_mut_ptr() as *mut PacketMetadata;
+            for i in 0..8 {
+                *meta_ptr.add(i) = PacketMetadata::EMPTY;
+            }
+            (core::slice::from_raw_parts_mut(meta_ptr, 8), p)
+        };
+        let (tx_meta, tx_payload) = unsafe {
+            let meta_size = core::mem::size_of::<PacketMetadata>() * 8;
+            let (m, p) = CONN_TX[buf_idx].split_at_mut(meta_size);
+            let meta_ptr = m.as_mut_ptr() as *mut PacketMetadata;
+            for i in 0..8 {
+                *meta_ptr.add(i) = PacketMetadata::EMPTY;
+            }
+            (core::slice::from_raw_parts_mut(meta_ptr, 8), p)
+        };
+
+        let rx_buf = PacketBuffer::new(rx_meta, rx_payload);
+        let tx_buf = PacketBuffer::new(tx_meta, tx_payload);
+        let socket = smoltcp::socket::udp::Socket::new(rx_buf, tx_buf);
+        let socket_handle = socket_set.add(socket);
+
+        let api_handle = self.alloc_handle();
+        let now_ms = Self::now_ms();
+        let managed = self.new_managed_socket(
+            socket_handle,
+            SocketType::Udp,
+            false,
+            None,
+            0,
+            api_handle,
+            now_ms,
+            Some(buf_idx),
+        );
+        self.sockets.insert(api_handle, managed);
+        Some(api_handle)
+    }
+
+    /// Return the API handles of all active TCP sockets.
+    pub fn tcp_socket_ids(&self) -> Vec<u32> {
+        self.sockets
+            .iter()
+            .filter(|(_, s)| s.kind == SocketType::Tcp)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Return the API handles of all active UDP sockets.
+    pub fn udp_socket_ids(&self) -> Vec<u32> {
+        self.sockets
+            .iter()
+            .filter(|(_, s)| s.kind == SocketType::Udp)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Returns `true` if an API handle exists in the socket pool.
+    pub fn has_socket(&self, api_handle: u32) -> bool {
+        self.sockets.contains_key(&api_handle)
+    }
+
+    /// Return a human-readable status string for a TCP socket.
+    pub fn tcp_status_text(&self, api_handle: u32, socket_set: &mut SocketSet) -> String {
+        let managed = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Tcp => s,
+            _ => return "error: unknown\n".into(),
+        };
+        let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+        let state = socket.state();
+        let local = match socket.local_endpoint() {
+            Some(ep) => format!("{}:{}", ep.addr, ep.port),
+            None => "none".into(),
+        };
+        let remote = match socket.remote_endpoint() {
+            Some(ep) => format!("{}:{}", ep.addr, ep.port),
+            None => "none".into(),
+        };
+        format!(
+            "state: {}\nlocal: {}\nremote: {}\n",
+            Self::tcp_state_label(state),
+            local,
+            remote
+        )
+    }
+
+    /// Return a pollable events string for a TCP socket.
+    pub fn tcp_events_text(&self, api_handle: u32, socket_set: &mut SocketSet) -> String {
+        let managed = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Tcp => s,
+            _ => return "error\n".into(),
+        };
+        let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+        let state = socket.state();
+        match state {
+            TcpState::Established => "connected\n".into(),
+            TcpState::CloseWait | TcpState::TimeWait => "peer_closed\n".into(),
+            TcpState::Closed => "closed\n".into(),
+            _ => "connecting\n".into(),
+        }
+    }
+
+    /// Return a human-readable status string for a UDP socket.
+    pub fn udp_status_text(&self, api_handle: u32) -> String {
+        let managed = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Udp => s,
+            _ => return "error: unknown\n".into(),
+        };
+        let local_str = match managed.local {
+            Some(ep) => {
+                let b = ep.ip.as_bytes();
+                format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
+            }
+            None => "unbound".into(),
+        };
+        let remote_str = match managed.remote {
+            Some(ep) => {
+                let b = ep.ip.as_bytes();
+                format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
+            }
+            None => "none".into(),
+        };
+        format!("local: {}\nremote: {}\n", local_str, remote_str)
+    }
+
+    /// Return the stored remote endpoint for a UDP socket (used by write_udp in provider).
+    pub fn udp_remote(&self, api_handle: u32) -> Option<(Ipv4Address, u16)> {
+        let managed = self.sockets.get(&api_handle)?;
+        let remote = managed.remote?;
+        Some((remote.ip, remote.port))
+    }
+
+    /// Check poll readiness for a TCP socket's sub-file.
+    pub fn tcp_poll_ready(&self, api_handle: u32, sf: u8, socket_set: &mut SocketSet) -> u32 {
+        // SF constants: DIR=0, CTL=1, DATA=2, STATUS=3, EVENTS=4
+        const SF_DATA: u8 = 2;
+        const SF_EVENTS: u8 = 4;
+        let managed = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Tcp => s,
+            _ => return 0,
+        };
+        let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+        match sf {
+            SF_DATA => {
+                let mut ready = 0u32;
+                if socket.can_recv() {
+                    ready |= 0x0001; // POLLIN
+                }
+                if socket.can_send() {
+                    ready |= 0x0004; // POLLOUT
+                }
+                ready
+            }
+            SF_EVENTS => {
+                let state = socket.state();
+                if state == TcpState::Established
+                    || state == TcpState::CloseWait
+                    || state == TcpState::Closed
+                {
+                    0x0001 // POLLIN — there is something to read from events
+                } else {
+                    0
+                }
+            }
+            _ => 0x0001, // status/ctl always readable/writable
+        }
+    }
+
+    /// Check poll readiness for a UDP socket's sub-file.
+    pub fn udp_poll_ready(&self, api_handle: u32, sf: u8, socket_set: &mut SocketSet) -> u32 {
+        // SF constants: DIR=0, CTL=1, DATA=2, STATUS=3
+        const SF_DATA: u8 = 2;
+        let managed = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Udp => s,
+            _ => return 0,
+        };
+        match sf {
+            SF_DATA => {
+                let socket =
+                    socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
+                let mut ready = 0u32;
+                if socket.can_recv() {
+                    ready |= 0x0001;
+                }
+                if socket.can_send() {
+                    ready |= 0x0004;
+                }
+                ready
+            }
+            _ => 0x0001, // status/ctl always readable/writable
+        }
+    }
+
+    /// Connect an *already-allocated* TCP socket (handle points to a socket in
+    /// the pool created via `alloc_socket_raw`).
+    pub fn handle_connect_existing<'a>(
+        &mut self,
+        iface: &mut Interface,
+        socket_set: &mut SocketSet<'a>,
+        api_handle: u32,
+        remote_ip: Ipv4Address,
+        remote_port: u16,
+    ) -> bool {
+        let socket_handle = match self.sockets.get(&api_handle) {
+            Some(s) if s.kind == SocketType::Tcp => s.handle,
+            _ => return false,
+        };
+
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(remote_ip), remote_port);
+        let local_port = 49152 + (self.next_handle as u16 % 16384);
+
+        let socket = socket_set.get_mut::<TcpSocket>(socket_handle);
+        match socket.connect(iface.context(), endpoint, local_port) {
+            Ok(()) => {
+                if let Some(m) = self.sockets.get_mut(&api_handle) {
+                    m.remote = Some(EndpointV4 { ip: remote_ip, port: remote_port });
+                    m.local = Some(EndpointV4 {
+                        ip: Ipv4Address::new(0, 0, 0, 0),
+                        port: local_port,
+                    });
+                }
+                info!("SOCKET_API: connect_existing handle={} to {}:{}", api_handle, remote_ip, remote_port);
+                true
+            }
+            Err(e) => {
+                warn!("SOCKET_API: connect_existing failed: {:?}", e);
+                false
+            }
+        }
+    }
+
+    /// Connect an *already-allocated* UDP socket to a remote address (sets
+    /// the default send destination).
+    pub fn handle_udp_connect<'a>(
+        &mut self,
+        _socket_set: &mut SocketSet<'a>,
+        api_handle: u32,
+        remote_ip: Ipv4Address,
+        remote_port: u16,
+    ) -> bool {
+        if let Some(m) = self.sockets.get_mut(&api_handle) {
+            if m.kind == SocketType::Udp {
+                m.remote = Some(EndpointV4 { ip: remote_ip, port: remote_port });
+                return true;
+            }
+        }
+        false
+    }
+
     /// Handle a TCP_LISTEN request
     pub fn handle_listen<'a>(
         &mut self,
@@ -425,9 +715,11 @@ impl SocketApi {
     }
 
     /// Handle a DNS query
-    pub fn handle_dns_query(
+    #[allow(dead_code)]
+    pub fn handle_dns_query<D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
+        device: &mut D,
         device: &mut VfsNicDevice,
         dns_server: Ipv4Address,
         hostname: &str,
@@ -735,6 +1027,7 @@ impl SocketApi {
     }
 
     /// Handle a NET_JOIN_MULTICAST request
+    #[allow(dead_code)]
     pub fn handle_multicast_join<'a, D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
@@ -911,10 +1204,17 @@ impl SocketApi {
         }
     }
 
+    /// Return the number of currently tracked sockets
+    pub fn socket_count(&self) -> usize {
+        self.sockets.len()
+    }
+
     /// Process an incoming API message
-    pub fn process_message<'a>(
+    #[allow(dead_code)]
+    pub fn process_message<'a, D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
+        device: &mut D,
         device: &mut VfsNicDevice,
         socket_set: &mut SocketSet<'a>,
         msg: &[u8],

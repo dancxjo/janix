@@ -19,7 +19,7 @@ pub fn render_to_buffer(xml: &str, width: i32, height: i32, scale: f32) -> alloc
     let mut pixels = alloc::vec![0u32; (width * height) as usize];
     let ptr = pixels.as_mut_ptr() as *mut u8;
     let mut surface = unsafe {
-        crate::surface::Surface::new(
+        crate::surface::PixelBuffer::new(
             ptr,
             (width * height * 4) as usize,
             width as u32,

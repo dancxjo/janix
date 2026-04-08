@@ -64,7 +64,7 @@ pub struct GpuTexture {
     pub height: u32,
     /// Generation counter for cache invalidation
     pub generation: u64,
-    /// Surface handle for framebuffer binding
+    /// PixelBuffer handle for framebuffer binding
     pub surface_handle: u32,
 }
 
@@ -346,7 +346,7 @@ impl GpuCompositor {
         Self {
             ctx_id: 1, // Use context ID 1 for compositor
             scanout_resource: 0,
-            scanout_surface: 1, // Surface handle 1 for scanout
+            scanout_surface: 1, // PixelBuffer handle 1 for scanout
             width: 0,
             height: 0,
             format: 2, // PIPE_FORMAT_B8G8R8X8_UNORM

@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
 use stem::thing::{HandleId, ThingId};
 
-use crate::surface::Surface;
+use crate::surface::PixelBuffer;
 use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,7 +173,7 @@ fn compute_geometry_generation(x: i32, y: i32, width: u32, height: u32) -> u64 {
     gen
 }
 
-pub fn composite_windows(surface: &mut Surface, windows: &[WindowSnapshot]) {
+pub fn composite_windows(surface: &mut PixelBuffer, windows: &[WindowSnapshot]) {
     for win in windows {
         match &win.snapshot {
             Some(snapshot) => composite_snapshot(surface, win, snapshot),
@@ -182,7 +182,7 @@ pub fn composite_windows(surface: &mut Surface, windows: &[WindowSnapshot]) {
     }
 }
 
-fn composite_snapshot(surface: &mut Surface, win: &WindowSnapshot, snapshot: &SnapshotMeta) {
+fn composite_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot, snapshot: &SnapshotMeta) {
     let Ok(ptr) = bytespace_map(snapshot.bytespace) else {
         return;
     };
@@ -204,7 +204,7 @@ fn composite_snapshot(surface: &mut Surface, win: &WindowSnapshot, snapshot: &Sn
     let _ = bytespace_unmap(snapshot.bytespace, ptr);
 }
 
-fn draw_missing_snapshot(surface: &mut Surface, win: &WindowSnapshot) {
+fn draw_missing_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot) {
     fill_rect(
         surface,
         win.x,
@@ -235,7 +235,7 @@ fn draw_missing_snapshot(surface: &mut Surface, win: &WindowSnapshot) {
 }
 
 fn blit_rgba(
-    surface: &mut Surface,
+    surface: &mut PixelBuffer,
     src: &[u8],
     src_stride: usize,
     width: i32,
@@ -261,7 +261,7 @@ fn blit_rgba(
     }
 }
 
-fn blend_pixel(surface: &mut Surface, x: i32, y: i32, rgba: u32) {
+fn blend_pixel(surface: &mut PixelBuffer, x: i32, y: i32, rgba: u32) {
     let a = (rgba >> 24) & 0xFF;
     if a == 0 {
         return;
@@ -284,7 +284,7 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, rgba: u32) {
     surface.put_px(x, y, 0xFF00_0000 | (r << 16) | (g << 8) | b);
 }
 
-fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, rgba: u32) {
+fn fill_rect(surface: &mut PixelBuffer, x: i32, y: i32, w: i32, h: i32, rgba: u32) {
     for dy in 0..h {
         for dx in 0..w {
             surface.put_px(x + dx, y + dy, rgba);

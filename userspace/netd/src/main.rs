@@ -1,14 +1,18 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
-//! # Network Service (netd)
+//! # Network Service (netd) — Phase 3: /net/ VFS provider
 //!
+//! Replaces the graph-based driver IPC and port-based socket API with:
+//! - Driver access via `/dev/net/virtio0/{rx,tx,mac,mtu}` VFS files (issue #540)
+//! - Application socket API via `/net/` VFS tree (issue #541)
 //! Provides networking capabilities using smoltcp TCP/IP stack.
 //! - Connects to virtio_netd for frame I/O via VFS (/dev/net/virtio0/)
 //! - Runs DHCP to acquire IP address
 //! - Provides DNS resolver
 //! - Exposes socket API for applications
 
+#[macro_use]
 extern crate alloc;
 extern crate stem;
 
@@ -16,11 +20,16 @@ mod dhcp;
 mod dns;
 mod socket_api;
 mod vfs_device;
+mod vfs_provider;
+
 use abi::schema::keys;
 use abi::syscall::vfs_flags::{O_NONBLOCK, O_RDONLY, O_WRONLY};
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
-use smoltcp::wire::{EthernetAddress, IpCidr};
+use smoltcp::wire::EthernetAddress;
 use socket_api::SocketApi;
+use stem::{info, warn};
+use vfs_device::VfsNicDevice;
+use vfs_provider::NetVfsProvider;
 use stem::syscall::port::{port_create, port_recv, port_send_all, PortHandle};
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::thing::sys as thingsys;
@@ -32,17 +41,27 @@ const VIRTIO0_PATH: &str = "/dev/net/virtio0";
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("NETD: Starting network stack service...");
+    info!("NETD: Starting network service (Phase 3 — /net/ VFS provider)");
 
+    // ── Open the driver VFS tree ──────────────────────────────────────────────
+    // VfsNicDevice retries until virtio_netd has mounted /dev/net/virtio0/.
+    info!("NETD: Waiting for /dev/net/virtio0 to appear...");
+    let mut device = VfsNicDevice::open();
+
+    let mac = device.mac();
+    let mtu = device.mtu();
+    let initial_link_up = device.link_up();
     // Open /dev/net/virtio0/{rx,tx,events} — retry until virtio_netd is ready.
     info!("NETD: Waiting for virtio_netd VFS provider at {}...", VIRTIO0_PATH);
     let (rx_fd, tx_fd, events_fd, mac, iface_mtu, initial_link_up) = open_nic_device();
 
     info!(
-        "NETD: Connected to driver - MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        "NETD: Driver online — MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}  MTU {}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+        mtu
     );
 
+    // ── Build smoltcp interface ───────────────────────────────────────────────
     // Create VFS-backed smoltcp device
     let mut device = VfsNicDevice::new(rx_fd, tx_fd, events_fd, mac, iface_mtu as usize, initial_link_up);
 
@@ -51,6 +70,13 @@ fn main(_arg: usize) -> ! {
     let config = Config::new(mac_addr.into());
     let mut iface = Interface::new(config, &mut device, VfsNicDevice::now());
 
+    // ── Mount /net/ VFS provider ──────────────────────────────────────────────
+    let mut net_provider = loop {
+        match NetVfsProvider::new(mac, mtu, initial_link_up) {
+            Some(p) => break p,
+            None => {
+                warn!("NETD: Failed to mount /net/, retrying...");
+                stem::time::sleep_ms(200);
     // Create socket API port early so it's available in the graph immediately
     let (api_write_port, api_read_port) = match port_create(32768) {
         Ok((w, r)) => {
@@ -65,34 +91,12 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // Publish network stack node early
-    let net_id =
-        thingsys::create_node("svc.net.Stack").expect("NETD: Failed to create svc.net.Stack node");
-
-    let mac_packed = {
-        (mac[0] as u64)
-            | ((mac[1] as u64) << 8)
-            | ((mac[2] as u64) << 16)
-            | ((mac[3] as u64) << 24)
-            | ((mac[4] as u64) << 32)
-            | ((mac[5] as u64) << 40)
-    };
-    thingsys::prop_set(net_id, "net.mac", mac_packed).ok();
-    thingsys::prop_set(net_id, keys::WRITE_PORT_HANDLE, api_write_port as u64).ok();
-    thingsys::prop_set(net_id, "net.ip", 0).ok(); // Offline initially
-    thingsys::prop_set(net_id, "net.link_up", if initial_link_up { 1 } else { 0 }).ok();
-    thingsys::prop_set(net_id, "net.mtu", iface_mtu as u64).ok();
-
-    info!("NETD: Published initial stack node {:?} to graph", net_id);
-
-    let mut _last_link_state = device.link_up();
-
-    // Start DHCP
-    info!("NETD: Starting DHCP...");
+    // ── Run DHCP ──────────────────────────────────────────────────────────────
+    info!("NETD: Running DHCP...");
     let dhcp_config = match dhcp::run_dhcp(&mut iface, &mut device) {
         Ok(cfg) => {
             info!(
-                "NETD: DHCP complete - IP: {}, Gateway: {}, DNS: {}",
+                "NETD: DHCP — IP: {}, GW: {}, DNS: {}",
                 cfg.ip, cfg.gateway, cfg.dns
             );
             cfg
@@ -105,72 +109,41 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // Update network configuration in graph
-    let ip_packed = {
-        let octets = dhcp_config.ip.as_bytes();
-        (octets[0] as u64)
-            | ((octets[1] as u64) << 8)
-            | ((octets[2] as u64) << 16)
-            | ((octets[3] as u64) << 24)
-    };
-    let gw_packed = {
-        let octets = dhcp_config.gateway.as_bytes();
-        (octets[0] as u64)
-            | ((octets[1] as u64) << 8)
-            | ((octets[2] as u64) << 16)
-            | ((octets[3] as u64) << 24)
-    };
-    let dns_packed = {
-        let octets = dhcp_config.dns.as_bytes();
-        (octets[0] as u64)
-            | ((octets[1] as u64) << 8)
-            | ((octets[2] as u64) << 16)
-            | ((octets[3] as u64) << 24)
-    };
-    // Publish IP/gateway/DNS to graph immediately after DHCP.
-    // This is a one-time cost; DHCP itself already blocked.
-    thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
-    thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
-    thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
+    // ── Publish IP config to /net/ provider ───────────────────────────────────
+    net_provider.set_ip_config(dhcp_config.ip, dhcp_config.prefix_len, dhcp_config.gateway);
 
-    info!(
-        "NETD: DHCP configured — IP: {}, GW: {}, DNS: {}",
-        dhcp_config.ip, dhcp_config.gateway, dhcp_config.dns
-    );
+    info!("NETD: Network ready — entering VFS service loop");
 
-
-    info!("NETD: Network stack ready, entering service loop");
-
-    // Initialize socket API
+    // ── Socket state ──────────────────────────────────────────────────────────
     let mut socket_api = SocketApi::new();
 
-    // Sockets storage handles 64 dynamic buffers managed entirely by `SocketApi`
-    let mut api_msg_buf = [0u8; 16384];
-    let mut api_buffered = 0usize;
-
-    // Socket storage for smoltcp - support up to 256 sockets
-    // This needs to be large enough to handle:
-    // - Multiple listener sockets (respawned on each accept)
-    // - Concurrent active connections
-    // - Sockets in TIME_WAIT or FIN_WAIT states waiting for cleanup
+    // Static socket storage for up to 256 concurrent smoltcp sockets.
     let mut sockets_storage: [SocketStorage; 256] = [SocketStorage::EMPTY; 256];
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
-    // Main service loop
+    let mut last_link_state = device.link_up();
+
+    // ── Main service loop ─────────────────────────────────────────────────────
     //
-    // Critical design constraints:
-    // 1. Network I/O (iface.poll + rx_port + API messages) MUST run every iteration
-    //    without being gated by graph operations.
-    // 2. Graph operations (net_mirror.apply, flush_graph, prop_set) make BLOCKING
-    //    IPC calls to the Root service which can stall for 100s+ of ms. These MUST
-    //    be placed AFTER the network hot path and throttled aggressively.
-    // 3. API messages are capped per pass to prevent client flooding from starving
-    //    network frame processing.
-    let mut loop_iter: u64 = 0;
+    // Design:
+    // 1. iface.poll() drives smoltcp (calls device.receive() which non-blockingly
+    //    drains the /dev/net/virtio0/rx VFS fd).
+    // 2. net_provider.drain_rpcs() handles all pending /net/ VFS RPC messages from
+    //    user applications (socket creates, connects, reads, writes, etc.).
+    // 3. A second iface.poll() flushes any packets generated by RPC processing.
+    // 4. port_wait on the /net/ provider port blocks until new RPCs arrive, keeping
+    //    CPU usage low between application requests.
+    //    NOTE: There is inherent polling latency for new Ethernet frames (~1 ms
+    //    worst-case) since we can't port_wait on a VFS fd.  Future work: use a
+    //    separate thread or an event-fd mechanism.
     loop {
-        loop_iter += 1;
         let mut did_work = false;
 
+        // ── Phase 1: Poll smoltcp (ingests frames from /dev/net/virtio0/rx) ───
+        let now = VfsNicDevice::now();
+        iface.poll(now, &mut device, &mut socket_set);
+
+        // ── Phase 2: Drain /net/ VFS RPC messages ────────────────────────────
         // ===== HOT PATH: Network I/O (must never block) =====
 
         // Always poll the interface first to process pending packets
@@ -195,84 +168,14 @@ fn main(_arg: usize) -> ! {
         while api_msgs_this_pass < MAX_API_MSGS_PER_PASS
             && stem::syscall::port::port_len(api_read_port).unwrap_or(0) > 0
         {
-            let space = api_msg_buf.len().saturating_sub(api_buffered);
-            if space == 0 {
-                warn!("NETD: Socket API buffer full (16KB), dropping messages to avoid stall");
-                api_buffered = 0; // Emergency clear
-                break;
-            }
-
-            match stem::syscall::port::port_recv(api_read_port, &mut api_msg_buf[api_buffered..]) {
-                Ok(n) if n > 0 => {
-                    api_buffered += n;
-                    did_work = true;
-
-                    let mut offset = 0;
-                    while api_buffered.saturating_sub(offset) >= 16 {
-                        match decode_socket_api_envelope(&api_msg_buf[offset..api_buffered]) {
-                            EnvelopeDecode::Complete {
-                                client_response_port,
-                                caller_tid,
-                                msg_body,
-                                msg_type: _,
-                                consumed,
-                            } => {
-                                api_msgs_this_pass += 1;
-
-                                let response = socket_api.process_message(
-                                    &mut iface,
-                                    &mut device,
-                                    &mut socket_set,
-                                    msg_body,
-                                    caller_tid,
-                                    Some(dhcp_config.dns),
-                                );
-
-                                // Non-blocking response send: never stall the main loop
-                                // waiting for a client's response port to drain.
-                                match port_send_all(client_response_port, &response) {
-                                    Ok(n) if n == response.len() => {} // success
-                                    Ok(n) => {
-                                        warn!(
-                                            "NETD: short Socket API response to port {} ({}/{})",
-                                            client_response_port,
-                                            n,
-                                            response.len()
-                                        );
-                                    }
-                                    Err(_) => {
-                                        // Response port full — drop silently to avoid log spam.
-                                        // Client will retry or timeout.
-                                    }
-                                }
-
-                                offset += consumed;
-                            }
-                            EnvelopeDecode::NeedMore => {
-                                // Valid header but incomplete payload.
-                                break;
-                            }
-                            EnvelopeDecode::Malformed => {
-                                let dropped = api_buffered - offset;
-                                warn!(
-                                    "NETD: Dropping {} buffered Socket API bytes after malformed frame",
-                                    dropped
-                                );
-                                offset = api_buffered;
-                                break;
-                            }
-                        }
-                    }
-
-                    if offset > 0 {
-                        api_msg_buf.copy_within(offset..api_buffered, 0);
-                        api_buffered -= offset;
-                    }
-                }
-                _ => break,
+            let before_len = socket_api.socket_count();
+            net_provider.drain_rpcs(&mut iface, &mut device, &mut socket_set, &mut socket_api);
+            if socket_api.socket_count() != before_len {
+                did_work = true;
             }
         }
 
+        // ── Phase 3: Re-poll to flush packets created by RPCs ────────────────
         // --- Phase 3: Re-poll interface after API processing ---
         // This is critical: API messages may have triggered socket operations
         // (e.g., TCP_SEND), and we need to flush those packets to the wire.
@@ -281,40 +184,30 @@ fn main(_arg: usize) -> ! {
         let now = VfsNicDevice::now();
         iface.poll(now, &mut device, &mut socket_set);
 
-        if api_buffered > 8192 {
-            warn!(
-                "NETD: API buffer overflow ({} bytes), clearing",
-                api_buffered
-            );
-            api_buffered = 0;
-        }
-
-        // ===== COLD PATH =====
-        // IMPORTANT: No blocking Root service IPC allowed here!
-        // net_mirror.apply(), thingsys::prop_set(), and flush_graph() all
-        // make synchronous IPC calls that can block for 100s+ ms (or indefinitely),
-        // which freezes the entire network stack and prevents TCP frame processing.
-        // These graph operations are DISABLED until a non-blocking graph IPC
-        // mechanism is available. Network state is published at boot via
-        // thingsys::prop_set in the initialization block and is sufficient for
-        // service discovery.
-
-        let current_link_state = device.link_up();
-        if current_link_state != _last_link_state {
-            _last_link_state = current_link_state;
-            let _ = thingsys::prop_set_async(
-                net_id,
-                "net.link_up",
-                if current_link_state { 1 } else { 0 },
-            );
+        // ── Phase 4: Sync link state ──────────────────────────────────────────
+        let current_link = device.link_up();
+        if current_link != last_link_state {
+            last_link_state = current_link;
+            net_provider.link_up = current_link;
             info!(
-                "NETD: Link state changed {} -> async updated graph",
-                if current_link_state { "UP" } else { "DOWN" }
+                "NETD: Link state changed → {}",
+                if current_link { "UP" } else { "DOWN" }
             );
         }
 
-        // Garbage collect closed sockets (local operation, fast, no IPC)
+        // ── Phase 5: Garbage-collect closed sockets ───────────────────────────
         socket_api.gc_closed_sockets(&mut socket_set);
+
+        // ── Phase 6: Yield / wait ─────────────────────────────────────────────
+        if !did_work {
+            let wait_ports = [net_provider.req_read_port()];
+            let _ = stem::syscall::port::port_wait(
+                &wait_ports,
+                abi::syscall::port_wait::READABLE,
+            );
+        }
+    }
+}
 
         // Only wait if no work was done, otherwise spin back immediately
         // to process remaining network frames or API messages.

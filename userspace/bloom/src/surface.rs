@@ -1,4 +1,4 @@
-//! Bloom Surface - Framebuffer pixel manipulation.
+//! Bloom PixelBuffer - Framebuffer pixel manipulation.
 //!
 //! # Pixel Format
 //!
@@ -16,9 +16,9 @@
 //! # Memory Initialization
 //!
 //! All surfaces should be explicitly initialized before use. Use:
-//! - [`Surface::zeroed()`] for transparent surfaces
-//! - [`Surface::poisoned()`] for debug mode (bright magenta)
-//! - [`Surface::clear()`] to reset an existing surface
+//! - [`PixelBuffer::zeroed()`] for transparent surfaces
+//! - [`PixelBuffer::poisoned()`] for debug mode (bright magenta)
+//! - [`PixelBuffer::clear()`] to reset an existing surface
 
 use abi::pixel::PixelFormat;
 
@@ -27,7 +27,7 @@ use abi::pixel::PixelFormat;
 pub const POISON_COLOR: u32 = 0xFFCD00CD;
 
 /// A surface backed by a raw pixel buffer.
-pub struct Surface {
+pub struct PixelBuffer {
     pub ptr: *mut u8,
     pub len: usize,
     pub width: i32,
@@ -37,13 +37,13 @@ pub struct Surface {
     pub format: PixelFormat,
 }
 
-impl Surface {
+impl PixelBuffer {
     /// Create a new surface from raw framebuffer memory.
     ///
     /// # Safety
     ///
     /// - `ptr` must point to valid, writable memory of at least `len` bytes.
-    /// - The memory must remain valid for the lifetime of the Surface.
+    /// - The memory must remain valid for the lifetime of the PixelBuffer.
     /// - **Memory is NOT initialized.** Call `clear()` or use `zeroed()` instead.
     pub unsafe fn new(
         ptr: *mut u8,
@@ -92,7 +92,7 @@ impl Surface {
     /// # Safety
     ///
     /// - `ptr` must point to valid, writable memory of at least `len` bytes.
-    /// - The memory must remain valid for the lifetime of the Surface.
+    /// - The memory must remain valid for the lifetime of the PixelBuffer.
     pub unsafe fn zeroed(
         ptr: *mut u8,
         len: usize,
@@ -148,13 +148,13 @@ impl Surface {
 
     /// Update the backing buffer of this surface.
     ///
-    /// Used for swapchain buffer rotation where we reuse the Surface struct
+    /// Used for swapchain buffer rotation where we reuse the PixelBuffer struct
     /// but point it to a different buffer.
     ///
     /// # Safety
     ///
     /// - `ptr` must point to valid, writable memory of at least `size` bytes.
-    /// - The new memory must remain valid for the lifetime of the Surface.
+    /// - The new memory must remain valid for the lifetime of the PixelBuffer.
     pub unsafe fn update_buffer(
         &mut self,
         ptr: *mut u8,
@@ -222,6 +222,96 @@ impl Surface {
     }
 }
 
+use crate::geometry::Rect;
+use alloc::vec::Vec;
+
+/// A composition surface containing an owned pixel buffer, screen coordinates,
+/// z-order, visibility state, and accumulated damage.
+///
+/// This is a protocol-independent primitive. It knows nothing about windows,
+/// titles, or shell roles.
+pub struct Surface {
+    pub buffer: Vec<u8>,
+    pub width: i32,
+    pub height: i32,
+    pub stride_bytes: usize,
+    pub format: PixelFormat,
+    
+    pub x: i32,
+    pub y: i32,
+    pub z_index: i32,
+    pub visible: bool,
+    pub damage: Vec<Rect>,
+}
+
+impl Surface {
+    pub fn new(width: i32, height: i32, format: PixelFormat) -> Self {
+        let stride_bytes = (width * 4) as usize; // Assuming 4 bytes per pixel for BGRA8888
+        let len = stride_bytes * (height as usize);
+        Self {
+            buffer: vec![0; len],
+            width,
+            height,
+            stride_bytes,
+            format,
+            x: 0,
+            y: 0,
+            z_index: 0,
+            visible: true,
+            damage: Vec::new(),
+        }
+    }
+
+    /// Resize the owned buffer, resetting its contents to transparent black.
+    pub fn resize(&mut self, width: i32, height: i32) {
+        if self.width == width && self.height == height {
+            return;
+        }
+        self.width = width;
+        self.height = height;
+        self.stride_bytes = (width * 4) as usize;
+        let len = self.stride_bytes * (height as usize);
+        self.buffer.resize(len, 0);
+        self.buffer.fill(0);
+    }
+
+    /// Get a mutable `PixelBuffer` reference for rasterizing into this surface.
+    pub fn pixel_buffer(&mut self) -> PixelBuffer {
+        unsafe {
+            PixelBuffer::new(
+                self.buffer.as_mut_ptr(),
+                self.buffer.len(),
+                self.width as u32,
+                self.height as u32,
+                self.stride_bytes as u32,
+            )
+        }
+    }
+
+    /// Get an immutable `PixelBuffer` reference for compositing from this surface.
+    pub fn pixel_buffer_ro(&self) -> PixelBuffer {
+        unsafe {
+            PixelBuffer::new(
+                self.buffer.as_ptr() as *mut u8,
+                self.buffer.len(),
+                self.width as u32,
+                self.height as u32,
+                self.stride_bytes as u32,
+            )
+        }
+    }
+
+    pub fn rect(&self) -> Rect {
+        Rect::new(self.x, self.y, self.width, self.height)
+    }
+
+    pub fn add_damage(&mut self, rect: Rect) {
+        if let Some(clipped) = Rect::intersection(&rect, &Rect::new(0, 0, self.width, self.height)) {
+            self.damage.push(clipped);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,7 +320,7 @@ mod tests {
     #[test]
     fn surface_zeroed_is_transparent() {
         let mut buf = vec![0xFFu8; 100 * 100 * 4]; // Start with opaque white
-        let surface = unsafe { Surface::zeroed(buf.as_mut_ptr(), buf.len(), 100, 100, 400) };
+        let surface = unsafe { PixelBuffer::zeroed(buf.as_mut_ptr(), buf.len(), 100, 100, 400) };
 
         // All pixels should be transparent black (0x00000000)
         for y in 0..100i32 {
@@ -249,7 +339,7 @@ mod tests {
     #[test]
     fn surface_clear_resets_to_transparent() {
         let mut buf = vec![0xFFu8; 10 * 10 * 4];
-        let mut surface = unsafe { Surface::new(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
+        let mut surface = unsafe { PixelBuffer::new(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
 
         // Write some pixels
         surface.put_px(0, 0, 0xFFFF0000);
@@ -266,7 +356,7 @@ mod tests {
     #[test]
     fn surface_poisoned_has_poison_pattern() {
         let mut buf = vec![0u8; 10 * 10 * 4];
-        let _surface = unsafe { Surface::poisoned(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
+        let _surface = unsafe { PixelBuffer::poisoned(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
 
         // Memory should be filled with 0xCD bytes
         for byte in &buf {

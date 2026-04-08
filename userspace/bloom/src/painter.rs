@@ -1,6 +1,6 @@
 use crate::asset::AssetBank;
 use crate::drawlist::DrawList;
-use crate::surface::Surface;
+use crate::surface::PixelBuffer;
 use stem::thing::ThingId;
 use abi::schema::keys;
 
@@ -26,7 +26,7 @@ impl<'a> Painter<'a> {
         let stride = stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_STRIDE).unwrap_or(w * 4);
         
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             surf.clear(); // Ensure surface is zeroed before painting
             
             // Paint the list using the unified rasterizer
@@ -51,7 +51,7 @@ impl<'a> Painter<'a> {
         let stride = stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_STRIDE).unwrap_or(w * 4);
         
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             surf.clear(); // Ensure surface is zeroed before painting
             let color_top = 0xFF303038u32;
             let color_bot = 0xFF101018u32;
@@ -89,7 +89,7 @@ impl<'a> Painter<'a> {
         let stride = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_STRIDE).unwrap_or(w * 4);
 
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
-            let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+            let mut surf = unsafe { PixelBuffer::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             
             // Fill with transparency
             surf.clear();

@@ -8,17 +8,17 @@ use crate::drawlist::DrawList;
 use crate::lowered::lower;
 use crate::present::PresenterImpl;
 use crate::raster::execute_lowered;
-use crate::surface::Surface;
+use crate::surface::PixelBuffer;
 use crate::target::CompositorTarget;
 
 /// CPU-based compositor target using software rasterization
 pub struct CpuFramebufferTarget<'a> {
-    surface: &'a mut Surface,
+    surface: &'a mut PixelBuffer,
     presenter: &'a mut PresenterImpl,
 }
 
 impl<'a> CpuFramebufferTarget<'a> {
-    pub fn new(surface: &'a mut Surface, presenter: &'a mut PresenterImpl) -> Self {
+    pub fn new(surface: &'a mut PixelBuffer, presenter: &'a mut PresenterImpl) -> Self {
         Self { surface, presenter }
     }
 }

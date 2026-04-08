@@ -13,8 +13,13 @@ Bloom is responsible for:
 
 Bloom runs as a userspace service. It:
 1.  **Owns the Framebuffer**: It is the only process allowed to write to the physical screen.
-2.  **Watches the Graph**: It monitors the Root graph for nodes representing windows (`ui.Window`, `ui.Surface`).
-3.  **Composes**: It reads the pixel buffers (bytespaces) associated with those windows and blends them.
+2.  **Uses the Namespace**: It binds to display devices and runtime/session state through the VFS namespace (`/dev`, `/services`, `/run`, `/session`).
+3.  **Composes**: It reads the pixel buffers associated with those surfaces and blends them.
+4.  **Reads Desktop State**: It treats `/session/desktop/{wallpaper,mode,background_color}` as the source of truth for the background layer.
+
+## Bring-up Rule
+
+Bloom must be able to reach first paint without any Root graph, `ThingId`, or `UI_CROWN` bootstrap. Legacy graph-backed experiments are optional only and must not be part of the compositor's critical startup path.
 
 ## Interaction with Blossom
 

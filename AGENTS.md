@@ -3,7 +3,8 @@
 This file is a quick map of the repository so agents (and humans) can orient fast.
 
 ## What this repo is
-- Thing-OS is a Rust workspace that builds a graph-based OS kernel plus userland apps.
+- Thing-OS is a Rust workspace that builds a VFS-first OS kernel plus userland apps.
+- The old kernel graph/ThingId model is legacy. Do not introduce new boot, display, or UI dependencies on `stem::thing`, `ThingId`, `UI_CROWN`, or graph discovery for core system bring-up.
 - Build/test automation lives in `xtask` and is surfaced via `just`.
 
 ## Common commands
@@ -32,6 +33,14 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Syscall surface: `abi/src/syscall.rs`
 - User apps: `userspace/`
 - Build/config: `justfile`, `xtask/`, `targets/`
+
+## UI / Display Contract
+
+- Display discovery and presentation are filesystem-driven.
+- The kernel exposes the boot framebuffer at `/dev/fb0`; display drivers and the compositor must bind through files and file descriptors, not graph nodes.
+- Bloom should boot and paint with only VFS/device state available. Do not require `UI_CROWN`, graph watches, or `ThingId` lookups to reach first paint.
+- Runtime UI coordination should happen through mounted services and session/runtime files such as `/services`, `/run`, and `/session`.
+- Desktop background configuration lives at `/session/desktop/{wallpaper,mode,background_color}` and Bloom is expected to watch and react to those files.
 
 ## Platform Layer Contract ("stem is our std")
 

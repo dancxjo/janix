@@ -7,31 +7,71 @@ pub struct UiBuilder;
 
 impl UiBuilder {
     pub fn create_root() -> ThingId {
-        let id = create_node(kinds::UI_CROWN).expect("create UI_CROWN");
-        crate::info!("UiBuilder: created root {}", id.to_u64_lossy());
-        id
+        match create_node(kinds::UI_CROWN) {
+            Ok(id) => {
+                crate::info!("UiBuilder: created root {}", id.to_u64_lossy());
+                id
+            }
+            Err(err) => {
+                crate::warn!("UiBuilder: create_root unavailable: {:?}", err);
+                ThingId::default()
+            }
+        }
     }
 
     pub fn create_window(parent: ThingId, title: &str) -> ThingId {
-        let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(win, rels::CHILD_OF, parent).expect("link window child_of");
-        link(parent, rels::HAS_CHILD, win).expect("link window has_child");
+        let win = match create_node(kinds::UI_WINDOW) {
+            Ok(id) => id,
+            Err(err) => {
+                crate::warn!("UiBuilder: create_window unavailable: {:?}", err);
+                return ThingId::default();
+            }
+        };
+
+        if let Err(err) = link(win, rels::CHILD_OF, parent) {
+            crate::warn!("UiBuilder: create_window child_of link failed: {:?}", err);
+        }
+        if let Err(err) = link(parent, rels::HAS_CHILD, win) {
+            crate::warn!("UiBuilder: create_window has_child link failed: {:?}", err);
+        }
 
         Self::set_string_prop(win, keys::UI_TITLE, title);
         win
     }
 
     pub fn create_panel(parent: ThingId) -> ThingId {
-        let panel = create_node(kinds::UI_PANEL).expect("create UI_PANEL");
-        link(panel, rels::CHILD_OF, parent).expect("link panel child_of");
-        link(parent, rels::HAS_CHILD, panel).expect("link panel has_child");
+        let panel = match create_node(kinds::UI_PANEL) {
+            Ok(id) => id,
+            Err(err) => {
+                crate::warn!("UiBuilder: create_panel unavailable: {:?}", err);
+                return ThingId::default();
+            }
+        };
+
+        if let Err(err) = link(panel, rels::CHILD_OF, parent) {
+            crate::warn!("UiBuilder: create_panel child_of link failed: {:?}", err);
+        }
+        if let Err(err) = link(parent, rels::HAS_CHILD, panel) {
+            crate::warn!("UiBuilder: create_panel has_child link failed: {:?}", err);
+        }
         panel
     }
 
     pub fn create_text(parent: ThingId, text: &str) -> ThingId {
-        let node = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-        link(node, rels::CHILD_OF, parent).expect("link text child_of");
-        link(parent, rels::HAS_CHILD, node).expect("link text has_child");
+        let node = match create_node(kinds::UI_TEXT) {
+            Ok(id) => id,
+            Err(err) => {
+                crate::warn!("UiBuilder: create_text unavailable: {:?}", err);
+                return ThingId::default();
+            }
+        };
+
+        if let Err(err) = link(node, rels::CHILD_OF, parent) {
+            crate::warn!("UiBuilder: create_text child_of link failed: {:?}", err);
+        }
+        if let Err(err) = link(parent, rels::HAS_CHILD, node) {
+            crate::warn!("UiBuilder: create_text has_child link failed: {:?}", err);
+        }
         Self::set_string_prop(node, keys::UI_TEXT, text);
         node
     }

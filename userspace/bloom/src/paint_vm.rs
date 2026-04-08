@@ -12,6 +12,7 @@ use stem::syscall::vfs::{vfs_close, vfs_read, vfs_watch_path};
 use stem::thing::ThingId;
 
 use crate::asset::Image;
+use crate::desktop::WallpaperMode;
 use crate::geometry::{Color, Rect};
 use crate::scene_graph::SceneGraph;
 use crate::session_fs::{self, AttachedBuffer};
@@ -329,6 +330,7 @@ impl PaintPipeline {
         surface: &mut PixelBuffer,
         damage: &[Rect],
         wallpaper: Option<&Image>,
+        wallpaper_mode: WallpaperMode,
         bg_color: Color,
     ) {
         let mut ordered_surfaces = scene.ordered_surfaces.clone();
@@ -388,10 +390,9 @@ impl PaintPipeline {
             }
 
             for r in remaining {
+                fill_rect(surface, r, bg_color);
                 if let Some(wp) = wallpaper {
-                    blit_wallpaper_tiled(surface, r, wp);
-                } else {
-                    fill_rect(surface, r, bg_color);
+                    blit_wallpaper(surface, r, wp, wallpaper_mode);
                 }
             }
         }
@@ -1021,6 +1022,99 @@ fn blit_wallpaper_tiled(dst: &mut PixelBuffer, rect: Rect, wp: &Image) {
             let wx = x % ww;
             let p = pixels[(wy * ww + wx) as usize];
             dst.put_px(x, y, p);
+        }
+    }
+}
+
+fn blit_wallpaper(dst: &mut PixelBuffer, clip: Rect, wp: &Image, mode: WallpaperMode) {
+    match mode {
+        WallpaperMode::Tile => blit_wallpaper_tiled(dst, clip, wp),
+        WallpaperMode::Stretch => {
+            let dest = Rect::new(0, 0, dst.width(), dst.height());
+            blit_image_scaled(dst, clip, wp, dest);
+        }
+        WallpaperMode::Center => {
+            let dest = Rect::new(
+                (dst.width() - wp.width as i32) / 2,
+                (dst.height() - wp.height as i32) / 2,
+                wp.width as i32,
+                wp.height as i32,
+            );
+            blit_image_scaled(dst, clip, wp, dest);
+        }
+        WallpaperMode::Fit => {
+            let dest = compute_aspect_rect(dst.width(), dst.height(), wp.width, wp.height, false);
+            blit_image_scaled(dst, clip, wp, dest);
+        }
+        WallpaperMode::Fill => {
+            let dest = compute_aspect_rect(dst.width(), dst.height(), wp.width, wp.height, true);
+            blit_image_scaled(dst, clip, wp, dest);
+        }
+    }
+}
+
+fn compute_aspect_rect(
+    screen_w: i32,
+    screen_h: i32,
+    image_w: u32,
+    image_h: u32,
+    fill: bool,
+) -> Rect {
+    let iw = image_w.max(1) as i64;
+    let ih = image_h.max(1) as i64;
+    let sw = screen_w.max(1) as i64;
+    let sh = screen_h.max(1) as i64;
+
+    let scale_w_num = sw;
+    let scale_w_den = iw;
+    let scale_h_num = sh;
+    let scale_h_den = ih;
+
+    let use_width = if fill {
+        scale_w_num * scale_h_den >= scale_h_num * scale_w_den
+    } else {
+        scale_w_num * scale_h_den <= scale_h_num * scale_w_den
+    };
+
+    let (num, den) = if use_width {
+        (scale_w_num, scale_w_den)
+    } else {
+        (scale_h_num, scale_h_den)
+    };
+
+    let width = ((iw * num) / den).max(1) as i32;
+    let height = ((ih * num) / den).max(1) as i32;
+
+    Rect::new(
+        (screen_w - width) / 2,
+        (screen_h - height) / 2,
+        width,
+        height,
+    )
+}
+
+fn blit_image_scaled(dst: &mut PixelBuffer, clip: Rect, image: &Image, dest: Rect) {
+    let bounds = Rect::new(0, 0, dst.width(), dst.height());
+    let clipped = clip.clip(bounds).intersect(dest.clip(bounds));
+    if clipped.is_empty() || dest.width() <= 0 || dest.height() <= 0 {
+        return;
+    }
+
+    let pixels: &[u32] = unsafe { core::mem::transmute(&*image.pixels) };
+    let src_w = image.width as i32;
+    let src_h = image.height as i32;
+    if src_w <= 0 || src_h <= 0 {
+        return;
+    }
+
+    for y in clipped.y()..clipped.y() + clipped.height() {
+        let src_y = ((y - dest.y()) as i64 * src_h as i64) / dest.height() as i64;
+        let src_y = src_y.clamp(0, (src_h - 1) as i64) as i32;
+        for x in clipped.x()..clipped.x() + clipped.width() {
+            let src_x = ((x - dest.x()) as i64 * src_w as i64) / dest.width() as i64;
+            let src_x = src_x.clamp(0, (src_w - 1) as i64) as i32;
+            let pixel = pixels[(src_y as usize) * (src_w as usize) + (src_x as usize)];
+            dst.put_px(x, y, pixel);
         }
     }
 }

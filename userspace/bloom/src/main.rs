@@ -14,6 +14,7 @@ mod cursor;
 mod cursor_rasterizer;
 mod damage;
 mod damage_accumulator;
+mod desktop;
 mod drawlist;
 mod font_client;
 mod font_graph;
@@ -69,6 +70,7 @@ use crate::bristle::{
 use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
+use crate::desktop::DesktopState;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::paint_vm::{PaintPipeline, WindowHit};
@@ -1034,28 +1036,15 @@ fn main(arg: usize) -> ! {
     };
     stem::info!("bloom: surface created!");
 
-    // UI Root
-    let mut roots = [ThingId::default(); 1];
-    stem::info!("bloom: finding UI CROWN...");
-    let ui_crown = match stem::thing::sys::find(abi::schema::kinds::UI_CROWN, &mut roots) {
-        Ok(count) if count > 0 => {
-            stem::info!("bloom: found existing UI CROWN");
-            roots[0]
-        }
-        _ => {
-            stem::info!("bloom: creating new UI CROWN");
-            stem::ui::UiBuilder::create_root()
-        }
-    };
-    stem::info!("bloom: UI CROWN initialized!");
-
-    let _ = ui_crown;
+    // Bloom is VFS-directed now. Do not bootstrap legacy graph UI roots here.
+    stem::info!("bloom: skipping legacy UI_CROWN bootstrap; compositor is VFS-directed");
 
     // Initialize IPC client to connect to fontd service
     crate::font_client::init();
 
     let mut paint_pipeline = PaintPipeline::new();
     let mut scene = crate::scene_graph::SceneGraph::new();
+    let mut desktop_state = DesktopState::new();
 
     // Spawn asset workers with diagnostic logging
     use stem::stack::{Stack, StackSpec};
@@ -1233,6 +1222,9 @@ fn main(arg: usize) -> ! {
         invalidation_causes.clear();
         let updates = ASSETS.publish_pending();
         if updates.wallpaper_changed {
+            invalidation_causes.push(SnapshotInvalidation::WallpaperChanged);
+        }
+        if desktop_state.poll_watch_activity() {
             invalidation_causes.push(SnapshotInvalidation::WallpaperChanged);
         }
 
@@ -2059,15 +2051,6 @@ fn main(arg: usize) -> ! {
             cursor_metrics.record_move();
         }
 
-        // If no cursor asset but we have a reactive cursor assigned, try to get it
-        if cursor_asset.is_none() {
-            if let Ok(root_id) = find(kinds::UI_CROWN, &mut [ThingId::default(); 1]) {
-                if let Ok(cursor_id) = prop_get(ThingId::from_u64(root_id as u64), "ui.cursor") {
-                    // The watcher should have enqueued it, but we check here too
-                }
-            }
-        }
-
         // Count cursor damage rects before processing
         let cursor_damage_start = damage.rect_count();
 
@@ -2305,33 +2288,15 @@ fn main(arg: usize) -> ! {
         if !cursor_only_fast_path {
             // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
-
-            // Reactive wallpaper selection
-            let mut wallpaper = ASSETS.get_wallpaper();
-            if let Some(focused) = focused_window {
-                let mut wp_asset_id = prop_get(focused, "ui.wallpaper").unwrap_or(0);
-
-                // If window doesn't have it, check its task parent
-                if wp_asset_id == 0 {
-                    if let Ok(task_id) = prop_get(focused, abi::schema::rels::RUNS_ON) {
-                        wp_asset_id =
-                            prop_get(ThingId::from_u64(task_id), "ui.wallpaper").unwrap_or(0);
-                    }
-                }
-
-                if wp_asset_id != 0 {
-                    if let Some(wp) = ASSETS.get_image_by_id(wp_asset_id as u32) {
-                        wallpaper = Some(wp);
-                    }
-                }
-            }
+            let desktop_layer = desktop_state.layer();
 
             paint_pipeline.compose(
                 &scene,
                 &mut surface,
                 &rects,
-                wallpaper.as_ref(),
-                crate::geometry::Color::from_u32(0xFF101018),
+                desktop_layer.image.as_ref(),
+                desktop_layer.mode,
+                desktop_layer.color,
             );
 
             crate::trace_span!("bloom.loop.raster");

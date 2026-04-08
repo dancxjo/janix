@@ -81,10 +81,7 @@ impl CompositorTarget {
             format: 0,
         };
         let buf = unsafe {
-            core::slice::from_raw_parts_mut(
-                &mut payload as *mut _ as *mut u8,
-                FB_INFO_PAYLOAD_SIZE,
-            )
+            core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, FB_INFO_PAYLOAD_SIZE)
         };
         let n = match vfs::vfs_read(fd, buf) {
             Ok(n) => n,

@@ -18,6 +18,7 @@ pub const KEYBOARD_ROOT: &str = "/session/seat0/keyboard";
 pub const KEYBOARD_STATE_ROOT: &str = "/session/seat0/keyboard/state";
 pub const KEYBOARD_MODIFIERS_ROOT: &str = "/session/seat0/keyboard/state/modifiers";
 pub const TEXT_ROOT: &str = "/session/seat0/text";
+pub const DESKTOP_ROOT: &str = "/session/desktop";
 pub const WINDOWS_ROOT: &str = "/session/windows";
 pub const SURFACES_ROOT: &str = "/session/surfaces";
 
@@ -39,6 +40,7 @@ pub fn ensure_session_roots() {
     let _ = vfs_mkdir(KEYBOARD_STATE_ROOT);
     let _ = vfs_mkdir(KEYBOARD_MODIFIERS_ROOT);
     let _ = vfs_mkdir(TEXT_ROOT);
+    let _ = vfs_mkdir(DESKTOP_ROOT);
     let _ = vfs_mkdir(WINDOWS_ROOT);
     let _ = vfs_mkdir(SURFACES_ROOT);
     ensure_file(&format!("{}/events", POINTER_ROOT), "");
@@ -60,6 +62,12 @@ pub fn ensure_session_roots() {
     ensure_file(&format!("{}/latched", KEYBOARD_MODIFIERS_ROOT), "0\n");
     ensure_file(&format!("{}/locked", KEYBOARD_MODIFIERS_ROOT), "0\n");
     ensure_file(&format!("{}/events", TEXT_ROOT), "");
+    ensure_file(
+        &format!("{}/wallpaper", DESKTOP_ROOT),
+        "/assets/wallpapers/clouds.bmp\n",
+    );
+    ensure_file(&format!("{}/mode", DESKTOP_ROOT), "fill\n");
+    ensure_file(&format!("{}/background_color", DESKTOP_ROOT), "#101018\n");
 }
 
 pub fn ensure_window_tree(id: &str) {
@@ -120,6 +128,10 @@ pub fn window_path(id: &str) -> String {
 
 pub fn surface_path(id: &str) -> String {
     format!("{}/{}", SURFACES_ROOT, id)
+}
+
+pub fn desktop_path(name: &str) -> String {
+    format!("{}/{}", DESKTOP_ROOT, name)
 }
 
 pub fn scene_id_from_name(name: &str) -> ThingId {

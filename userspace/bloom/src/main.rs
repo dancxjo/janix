@@ -55,16 +55,18 @@ use abi::ids::HandleId;
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
-use abi::display_driver_protocol::BindPayload;
+use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
+use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
 use abi::schema::input::{
     FILTER_BUTTON, FILTER_POINTER, SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER,
 };
 use abi::schema::{hid, keys, kinds};
 use stem::syscall::{port_create, topic_subscribe, PortHandle};
+use stem::syscall::vfs::{vfs_open, vfs_write};
 
 use crate::asset::AssetBank;
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
-use crate::compositor::CompositorTarget;
+use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::frame::FrameBuilder;
@@ -426,6 +428,35 @@ fn clear_damage(surface: &mut surface::PixelBuffer, damage: &crate::damage::Dama
     }
 }
 
+fn present_via_fb_file(fd: u32, surface: &surface::PixelBuffer) -> Result<usize, abi::errors::Errno> {
+    let bytes = unsafe { core::slice::from_raw_parts(surface.ptr as *const u8, surface.len) };
+    vfs_write(fd, bytes)
+}
+
+fn read_fb_info() -> Option<FbInfoPayload> {
+    let fd = vfs_open("/dev/fb0", O_RDONLY).ok()?;
+    let mut payload = FbInfoPayload {
+        graph_id: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        bpp: 0,
+        format: 0,
+    };
+    let buf = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut payload as *mut _ as *mut u8,
+            FB_INFO_PAYLOAD_SIZE,
+        )
+    };
+    let n = stem::syscall::vfs::vfs_read(fd, buf).ok()?;
+    let _ = stem::syscall::vfs::vfs_close(fd);
+    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0 {
+        return None;
+    }
+    Some(payload)
+}
+
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
@@ -725,7 +756,36 @@ fn main(arg: usize) -> ! {
     );
     let mut screen_format = target.format;
 
-    let mut presenter = if target.driver_req != 0 {
+    let mut bootfb_fd: Option<u32> = None;
+    if let Some(fb_info) = read_fb_info() {
+        if final_width != fb_info.width || final_height != fb_info.height || final_stride != fb_info.stride {
+            let size = (fb_info.height as usize).saturating_mul(fb_info.stride as usize);
+            if let Ok(bs_id) = stem::thing::sys::bytespace_create(size, 0, fb_info.format as u64) {
+                if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
+                    final_ptr = ptr;
+                    final_size = size;
+                    final_width = fb_info.width;
+                    final_height = fb_info.height;
+                    final_stride = fb_info.stride;
+                    final_bs_id = bs_id;
+                    screen_format = fb_info.format;
+                    final_age = 0;
+                    stem::info!(
+                        "[bloom] rebound staging surface to /dev/fb0 geometry {}x{} stride={}",
+                        final_width,
+                        final_height,
+                        final_stride
+                    );
+                }
+            }
+        }
+    }
+
+    let mut presenter = if let Ok(fd) = vfs_open("/dev/fb0", O_WRONLY) {
+        bootfb_fd = Some(fd);
+        stem::info!("[bloom] using /dev/fb0 file presenter");
+        PresenterImpl::File(present::FilePresenter::new())
+    } else if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
 
@@ -2085,6 +2145,11 @@ fn main(arg: usize) -> ! {
             crate::trace_span!("bloom.loop.present");
             let token = builder.finish();
             presenter.present_frame(token);
+            if let Some(fd) = bootfb_fd {
+                if let Err(e) = present_via_fb_file(fd, &surface) {
+                    stem::error!("[bloom] /dev/fb0 present failed: {:?}", e);
+                }
+            }
             presenter.pump();
 
             // Acquire NEXT buffer for the next frame

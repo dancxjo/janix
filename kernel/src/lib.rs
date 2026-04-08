@@ -563,6 +563,51 @@ fn _irq_restore_wrapper<R: BootRuntime>(state: IrqState) {
     runtime::<R>().irq_restore(state);
 }
 
+fn paint_bootfb_probe(fb: FramebufferInfo) {
+    if fb.width == 0 || fb.height == 0 || fb.pitch < 4 || fb.byte_len < fb.pitch as usize {
+        return;
+    }
+
+    let width = fb.width as usize;
+    let height = fb.height as usize;
+    let stride_px = (fb.pitch as usize) / 4;
+    let rows = core::cmp::min(height, fb.byte_len / fb.pitch as usize);
+
+    let ptr = fb.addr as *mut u32;
+    if ptr.is_null() || stride_px == 0 || rows == 0 {
+        return;
+    }
+
+    unsafe {
+        for y in 0..rows {
+            let row = core::slice::from_raw_parts_mut(ptr.add(y * stride_px), width.min(stride_px));
+            let band = (y * 4) / rows.max(1);
+            let color = match band {
+                0 => 0x00_30_30_A0,
+                1 => 0x00_30_A0_30,
+                2 => 0x00_A0_30_30,
+                _ => 0x00_80_80_80,
+            };
+            for pixel in row.iter_mut() {
+                *pixel = color;
+            }
+        }
+
+        let marker_h = rows.min(96);
+        let marker_w = width.min(stride_px).min(256);
+        for y in 0..marker_h {
+            let row = core::slice::from_raw_parts_mut(ptr.add(y * stride_px), width.min(stride_px));
+            for x in 0..marker_w {
+                row[x] = if ((x / 16) + (y / 16)) % 2 == 0 {
+                    0x00_FF_FF_FF
+                } else {
+                    0x00_00_00_00
+                };
+            }
+        }
+    }
+}
+
 pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     crate::irq::IRQ_DISABLE_HOOK.store(
         _irq_disable_wrapper::<R> as *mut (),
@@ -585,6 +630,8 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             fb.bpp,
             fb.format
         );
+        paint_bootfb_probe(fb);
+        crate::kinfo!("BOOTFB: probe pattern painted");
     }
 
     contract!("thing-os kernel starting...");

@@ -332,8 +332,25 @@ impl VfsNode for FbNode {
         Ok(n)
     }
 
-    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
-        Err(Errno::EROFS)
+    fn write(&self, offset: u64, buf: &[u8]) -> SysResult<usize> {
+        let off = offset as usize;
+        if off >= self.fb.byte_len {
+            return Ok(0);
+        }
+
+        let n = buf.len().min(self.fb.byte_len.saturating_sub(off));
+        if n == 0 {
+            return Ok(0);
+        }
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                buf.as_ptr(),
+                (self.fb.addr as usize + off) as *mut u8,
+                n,
+            );
+        }
+        Ok(n)
     }
 
     fn stat(&self) -> SysResult<VfsStat> {

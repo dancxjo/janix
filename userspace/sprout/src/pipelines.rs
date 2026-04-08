@@ -1,9 +1,12 @@
 use crate::task::{ManagedTask, TaskKind};
+use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
+use abi::syscall::vfs_flags::O_RDONLY;
 use abi::schema::{keys, kinds};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use stem::abi::driver_ctx::DriverCtx;
 use stem::syscall::{port_create, PortHandle};
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn};
@@ -33,6 +36,48 @@ fn has_ahci_controller() -> bool {
         }
     }
     false
+}
+
+fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
+    let fd = match vfs_open("/dev/fb0", O_RDONLY) {
+        Ok(fd) => fd,
+        Err(e) => {
+            warn!("SPROUT: open(/dev/fb0) failed: {:?}", e);
+            return None;
+        }
+    };
+    let mut payload = FbInfoPayload {
+        graph_id: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        bpp: 0,
+        format: 0,
+    };
+    let slice = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut payload as *mut _ as *mut u8,
+            FB_INFO_PAYLOAD_SIZE,
+        )
+    };
+    let n = match vfs_read(fd, slice) {
+        Ok(n) => n,
+        Err(e) => {
+            let _ = vfs_close(fd);
+            warn!("SPROUT: read(/dev/fb0) failed: {:?}", e);
+            return None;
+        }
+    };
+    let _ = vfs_close(fd);
+    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0
+    {
+        warn!(
+            "SPROUT: /dev/fb0 payload invalid: n={} width={} height={} stride={} format={}",
+            n, payload.width, payload.height, payload.stride, payload.format
+        );
+        return None;
+    }
+    Some((payload.width, payload.height, payload.stride, payload.format))
 }
 
 pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
@@ -164,10 +209,25 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut display_device: Option<ThingId> = None;
     let mut backend_name: &'static str = "unknown";
 
+    // Janix-style BootFB probe: if /dev/fb0 exists, trust that as the canonical display.
+    if let Some((w, h, stride, format)) = probe_bootfb_vfs() {
+        display_width = w;
+        display_height = h;
+        display_stride = stride;
+        display_format = format;
+        driver_name = None;
+        backend_name = "BootFB";
+        info!(
+            "SPROUT: Using /dev/fb0 boot framebuffer ({}x{} stride={})",
+            display_width, display_height, display_stride
+        );
+    }
+
     // Check for VirtIO GPU first (preferred for accelerated display)
     let mut gpu_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
-        if count > 0 {
+    if driver_name.is_none() && backend_name != "BootFB" {
+        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
+            if count > 0 {
             display_device = Some(gpu_buf[0]);
 
             // Read native resolution from boot framebuffer if available
@@ -186,19 +246,20 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
                 display_height = 768;
             }
 
-            display_stride = display_width * 4;
-            display_format = 1;
-            driver_name = Some("/display_virtio_gpu");
-            backend_name = "VirtIO-GPU";
-            info!(
-                "SPROUT: Using VirtIO GPU at {}x{}",
-                display_width, display_height
-            );
+                display_stride = display_width * 4;
+                display_format = 1;
+                driver_name = Some("/display_virtio_gpu");
+                backend_name = "VirtIO-GPU";
+                info!(
+                    "SPROUT: Using VirtIO GPU at {}x{}",
+                    display_width, display_height
+                );
+            }
         }
     }
 
     // Fallback to BootFB if no VirtIO GPU found
-    if driver_name.is_none() {
+    if driver_name.is_none() && backend_name != "BootFB" {
         let mut fb_buf = [ThingId::default(); 1];
         if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
             if count > 0 {
@@ -216,7 +277,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     }
 
     // Fallback to display_fake if no other display found (ensures Bloom launches)
-    if driver_name.is_none() {
+    if driver_name.is_none() && backend_name != "BootFB" {
         warn!("SPROUT: No display device found! Using display_fake (headless mode)");
         display_width = 1024;
         display_height = 768;
@@ -225,14 +286,6 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         driver_name = Some("/display_fake");
         backend_name = "Fake";
     }
-
-    let driver_name = match driver_name {
-        Some(name) => name,
-        None => {
-            warn!("SPROUT: No display device found, skipping display pipeline");
-            return None;
-        }
-    };
 
     if display_width == 0 || display_height == 0 || display_stride == 0 {
         warn!("SPROUT: Invalid display geometry, skipping display pipeline");
@@ -268,61 +321,68 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         let _ = thingsys::prop_set(bs_id, "display_backend", backend_sym as u64);
     }
 
-    let drv_req = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            warn!("SPROUT: drv_req port_create failed: {:?}", e);
-            return None;
-        }
-    };
-    let drv_resp = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            warn!("SPROUT: drv_resp port_create failed: {:?}", e);
-            return None;
-        }
-    };
+    let mut drv_req_write = 0;
+    let mut drv_resp_read = 0;
 
-    let _ = thingsys::prop_set(bs_id, "display_drv_req", drv_req.0 as u64);
-    let _ = thingsys::prop_set(bs_id, "display_drv_resp", drv_resp.1 as u64);
-
-    let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
-
-    if let Ok(pid) = stem::syscall::spawn_process(driver_name, driver_arg as usize) {
-        info!(
-            "SPROUT: Spawned display driver '{}' (PID={})",
-            driver_name, pid
-        );
-        let _ = stem::thread::set_priority(pid, 2);
-        tasks.push(ManagedTask {
-            name: driver_name.to_string(),
-            kind: TaskKind::Driver("dev.display".to_string()),
-            module_path: driver_name.to_string(),
-            pid: Some(pid),
-            restarts: 0,
-            spawn_arg: driver_arg as usize,
-        });
-    }
-
-    if let Ok(svc_display) = thingsys::create_node("svc.Display") {
-        let drv_kind = match driver_name {
-            "/display_bootfb" => "drv.DisplayBootFB",
-            "/display_virtio_gpu" => "drv.DisplayVirtioGPU",
-            _ => "drv.Display",
+    if let Some(driver_name) = driver_name {
+        let drv_req = match port_create(4096) {
+            Ok(handles) => handles,
+            Err(e) => {
+                warn!("SPROUT: drv_req port_create failed: {:?}", e);
+                return None;
+            }
+        };
+        let drv_resp = match port_create(4096) {
+            Ok(handles) => handles,
+            Err(e) => {
+                warn!("SPROUT: drv_resp port_create failed: {:?}", e);
+                return None;
+            }
         };
 
-        if let Ok(drv_node) = thingsys::create_node(drv_kind) {
-            let _ = thingsys::link(svc_display, "USES_DRIVER", drv_node);
-            let _ = thingsys::link(drv_node, "CONSUMES", bs_id);
-            if let Some(dev) = display_device {
-                let _ = thingsys::link(drv_node, "PRESENTS_TO", dev);
+        drv_req_write = drv_req.0;
+        drv_resp_read = drv_resp.1;
+        let _ = thingsys::prop_set(bs_id, "display_drv_req", drv_req_write as u64);
+        let _ = thingsys::prop_set(bs_id, "display_drv_resp", drv_resp_read as u64);
+
+        let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
+
+        if let Ok(pid) = stem::syscall::spawn_process(driver_name, driver_arg as usize) {
+            info!(
+                "SPROUT: Spawned display driver '{}' (PID={})",
+                driver_name, pid
+            );
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: driver_name.to_string(),
+                kind: TaskKind::Driver("dev.display".to_string()),
+                module_path: driver_name.to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: driver_arg as usize,
+            });
+        }
+
+        if let Ok(svc_display) = thingsys::create_node("svc.Display") {
+            let drv_kind = match driver_name {
+                "/display_bootfb" => "drv.DisplayBootFB",
+                "/display_virtio_gpu" => "drv.DisplayVirtioGPU",
+                _ => "drv.Display",
+            };
+
+            if let Ok(drv_node) = thingsys::create_node(drv_kind) {
+                let _ = thingsys::link(svc_display, "USES_DRIVER", drv_node);
+                let _ = thingsys::link(drv_node, "CONSUMES", bs_id);
+                if let Some(dev) = display_device {
+                    let _ = thingsys::link(drv_node, "PRESENTS_TO", dev);
+                }
             }
         }
     }
 
     Some(DisplayHandles {
-        drv_req_write: drv_req.0,
-        drv_resp_read: drv_resp.1,
+        drv_req_write,
+        drv_resp_read,
         bs_id,
         backend_name,
     })

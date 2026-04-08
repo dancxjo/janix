@@ -175,6 +175,51 @@ impl Presenter for NullPresenter {
     }
 }
 
+pub struct FilePresenter {
+    frame_count: u64,
+}
+
+impl FilePresenter {
+    pub const fn new() -> Self {
+        Self { frame_count: 0 }
+    }
+}
+
+impl Presenter for FilePresenter {
+    fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
+        self.frame_count += 1;
+        reclaimer::register_in_flight(self.frame_count, asset_gen);
+        FrameToken::new(self.frame_count, asset_gen, spec)
+    }
+
+    fn present_frame(&mut self, token: FrameToken) -> PresentStats {
+        let ops_count = token.ops.iter().count();
+        let frame_id = token.frame_id;
+        let asset_gen = token.asset_gen;
+        let damage_rect_count = token.present_damage.len();
+        reclaimer::complete_in_flight(frame_id);
+
+        PresentStats {
+            frame_id,
+            asset_gen,
+            ops_count,
+            damage_rect_count,
+            fast_path_taken: token.damage.is_empty(),
+        }
+    }
+
+    fn present(&mut self, _damage: &Damage) {}
+    fn pump(&mut self) {}
+
+    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+        (ThingId::default(), 0, 0, 0, 0, 0)
+    }
+
+    fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        None
+    }
+}
+
 pub struct DriverPresenter {
     req_write: PortHandle,
     resp_read: PortHandle,
@@ -758,6 +803,7 @@ impl Presenter for DriverPresenter {
 
 pub enum PresenterImpl {
     Null(NullPresenter),
+    File(FilePresenter),
     Driver(DriverPresenter),
 }
 
@@ -765,6 +811,7 @@ impl PresenterImpl {
     pub fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         match self {
             PresenterImpl::Null(inner) => inner.acquire_frame(spec, asset_gen),
+            PresenterImpl::File(inner) => inner.acquire_frame(spec, asset_gen),
             PresenterImpl::Driver(inner) => inner.acquire_frame(spec, asset_gen),
         }
     }
@@ -772,6 +819,7 @@ impl PresenterImpl {
     pub fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         match self {
             PresenterImpl::Null(inner) => inner.present_frame(token),
+            PresenterImpl::File(inner) => inner.present_frame(token),
             PresenterImpl::Driver(inner) => inner.present_frame(token),
         }
     }
@@ -780,6 +828,7 @@ impl PresenterImpl {
     pub fn present(&mut self, damage: &Damage) {
         match self {
             PresenterImpl::Null(inner) => inner.present(damage),
+            PresenterImpl::File(inner) => inner.present(damage),
             PresenterImpl::Driver(inner) => inner.present(damage),
         }
     }
@@ -787,6 +836,7 @@ impl PresenterImpl {
     pub fn pump(&mut self) {
         match self {
             PresenterImpl::Null(inner) => inner.pump(),
+            PresenterImpl::File(inner) => inner.pump(),
             PresenterImpl::Driver(inner) => inner.pump(),
         }
     }
@@ -794,6 +844,7 @@ impl PresenterImpl {
     pub fn has_3d_cap(&self) -> bool {
         match self {
             PresenterImpl::Null(_) => false,
+            PresenterImpl::File(_) => false,
             PresenterImpl::Driver(inner) => inner.has_3d_cap(),
         }
     }
@@ -801,6 +852,7 @@ impl PresenterImpl {
     pub fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
         match self {
             PresenterImpl::Null(inner) => inner.acquire_buffer(),
+            PresenterImpl::File(inner) => inner.acquire_buffer(),
             PresenterImpl::Driver(inner) => inner.acquire_buffer(),
         }
     }
@@ -808,6 +860,7 @@ impl PresenterImpl {
     pub fn negotiation_info(&self) -> Option<DisplayNegotiation> {
         match self {
             PresenterImpl::Null(inner) => inner.negotiation_info(),
+            PresenterImpl::File(inner) => inner.negotiation_info(),
             PresenterImpl::Driver(inner) => inner.negotiation_info(),
         }
     }

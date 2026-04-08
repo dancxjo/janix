@@ -8,17 +8,17 @@ Feature: Network VFS Provider (/net/)
   @wip
   Scenario: Interface status is readable via /net/
     Given the machine is running
-    When I wait for netd to mount /net/
+    When I wait for the /net/ VFS tree to be mounted
     Then reading /net/interfaces/eth0/status should return output containing "state:"
 
   @wip
   Scenario: Allocating a TCP socket via /net/tcp/new
     Given the machine is running
-    When I wait for netd to mount /net/
-    Then reading /net/tcp/new should return a fresh socket ID
+    When I wait for the /net/ VFS tree to be mounted
+    Then reading /net/tcp/new should return a numeric socket ID
 
   @wip
   Scenario: Routing table is readable via /net/routes
     Given the machine is running
-    When I wait for netd to mount /net/
+    When I wait for the /net/ VFS tree to be mounted
     Then reading /net/routes should return non-empty output

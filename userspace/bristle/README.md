@@ -180,7 +180,7 @@ Require explicit capability to receive:
 ### Phase 0: Skeleton
 - Bristle receives `RawKeyEdge` from PS/2 keyboard driver
 - Maintains pressed/mod state
-- Routes events to one subscribed app (echo)
+- Routes events to one subscribed app (`input_echo`)
 
 ### Phase 1: Mouse + Focus
 - Add PS/2 mouse (pointer move + buttons)
@@ -201,6 +201,6 @@ Require explicit capability to receive:
 |------|------|
 | **Bristle** | Input broker + normalizer + router |
 | **Thigmonasty** | Keyboard-state engine inside Bristle (pressed set, repeat, mods) |
-| **Echo** | Test app that subscribes to Bristle and prints events |
+| **Input Echo** | Test app that subscribes to Bristle and prints events |
 
 *Plant pun: Bristle = the "outer" tactile system; Thigmonasty = the "reflex arc" for keys.*

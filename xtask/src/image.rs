@@ -1,7 +1,7 @@
 //! Image creation tasks - ISO and HDD.
 
-use crate::common::{Result, image_name};
-use xshell::{Shell, cmd};
+use crate::common::{image_name, Result};
+use xshell::{cmd, Shell};
 
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -79,6 +79,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "echo",
             is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "input_echo",
+            is_init: false,
             boot_module: true,
             features: vec![],
         },

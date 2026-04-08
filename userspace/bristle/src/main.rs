@@ -7,11 +7,11 @@
 #![no_main]
 
 use abi::hid::{
-    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
-    KeyEventPayload, PointerButtonPayload, PointerMovePayload,
+    BristleEventHeader, EventType, Key, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use stem::info;
-use stem::syscall::{PortHandle, port_recv, port_send_all, port_wait, topic_create, topic_publish};
+use stem::syscall::{port_recv, port_send_all, port_wait, topic_create, topic_publish, PortHandle};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
@@ -302,18 +302,18 @@ fn reset_userspace_and_respawn_sprout() {
 
 #[stem::main]
 fn main(packed_handles: usize) -> ! {
-    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_input_echo_write[15:0]
     let packed = packed_handles as u64;
     let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
     let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
     let legacy_evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
-    let legacy_evt_echo_write = (packed & 0xFFFF) as PortHandle;
+    let legacy_evt_input_echo_write = (packed & 0xFFFF) as PortHandle;
 
     stem::info!("BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY");
 
     info!(
-        "bristle: online (kbd={}, mouse={}, evt={}, echo={})",
-        kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write
+        "bristle: online (kbd={}, mouse={}, evt={}, input_echo={})",
+        kbd_read, mouse_read, legacy_evt_write, legacy_evt_input_echo_write
     );
 
     // Create the broadcast topic
@@ -544,8 +544,8 @@ fn main(packed_handles: usize) -> ! {
                                         drop_counter += 1;
                                     }
 
-                                    if legacy_evt_echo_write != 0
-                                        && port_send_all(legacy_evt_echo_write, event_bytes)
+                                    if legacy_evt_input_echo_write != 0
+                                        && port_send_all(legacy_evt_input_echo_write, event_bytes)
                                             .is_err()
                                     {
                                         drop_counter += 1;

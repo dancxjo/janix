@@ -40,6 +40,7 @@ members = [
     "userspace/clock",
     "userspace/bristle",
     "userspace/echo",
+    "userspace/input_echo",
     "userspace/sh",
     "userspace/smallsh",
     "userspace/ls",

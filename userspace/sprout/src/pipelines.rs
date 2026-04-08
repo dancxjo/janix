@@ -330,7 +330,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 
 pub struct InputHandles {
     pub evt_read: PortHandle,
-    pub evt_echo_read: PortHandle,
+    pub evt_input_echo_read: PortHandle,
 }
 
 pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
@@ -346,7 +346,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
             stem::error!("SPROUT: Failed to create kbd_raw port: {:?}", e);
             return InputHandles {
                 evt_read: 0,
-                evt_echo_read: 0,
+                evt_input_echo_read: 0,
             };
         }
     };
@@ -364,7 +364,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
             stem::error!("SPROUT: Failed to create mouse_raw port: {:?}", e);
             return InputHandles {
                 evt_read: 0,
-                evt_echo_read: 0,
+                evt_input_echo_read: 0,
             };
         }
     };
@@ -412,14 +412,14 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 
     // Event ports (legacy fan-out)
     let evt = stem::syscall::port_create(8192).unwrap_or((0, 0));
-    let evt_echo = stem::syscall::port_create(8192).unwrap_or((0, 0));
+    let evt_input_echo = stem::syscall::port_create(8192).unwrap_or((0, 0));
 
     // Spawn bristle with packed handles:
-    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_input_echo_write[15:0]
     let bristle_arg = ((kbd_raw.1 as u64) << 48)
         | ((mouse_raw.1 as u64) << 32)
         | ((evt.0 as u64) << 16)
-        | (evt_echo.0 as u64);
+        | (evt_input_echo.0 as u64);
 
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
         Ok(pid) => {
@@ -444,7 +444,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     info!("SPROUT: Input broker ready (keyboard + mouse)");
     InputHandles {
         evt_read: evt.1,
-        evt_echo_read: evt_echo.1,
+        evt_input_echo_read: evt_input_echo.1,
     }
 }
 
@@ -524,22 +524,22 @@ pub fn setup_compositor(
         }
     }
 
-    // Spawn echo with wired Bristle event handle.
-    match stem::syscall::spawn_process("/echo", input.evt_echo_read as usize) {
+    // Spawn input_echo with wired Bristle event handle.
+    match stem::syscall::spawn_process("/input_echo", input.evt_input_echo_read as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned echo (PID={})", pid);
+            info!("SPROUT: Spawned input_echo (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/echo".to_string(),
+                name: "/input_echo".to_string(),
                 kind: TaskKind::App,
-                module_path: "/echo".to_string(),
+                module_path: "/input_echo".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: input.evt_echo_read as usize,
+                spawn_arg: input.evt_input_echo_read as usize,
             });
         }
         Err(e) => {
-            stem::error!("SPROUT: Failed to spawn echo: {:?}", e);
+            stem::error!("SPROUT: Failed to spawn input_echo: {:?}", e);
         }
     }
 

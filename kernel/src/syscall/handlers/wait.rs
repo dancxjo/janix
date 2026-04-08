@@ -2,8 +2,8 @@ use super::root_call;
 use crate::syscall::validate::validate_user_range;
 use abi::errors::{Errno, SysResult};
 use abi::wait::{self, WaitKind, WaitResult, WaitSpec};
-use core::mem::size_of;
 use alloc::sync::Arc;
+use core::mem::size_of;
 
 #[derive(Clone)]
 enum Registration {
@@ -233,16 +233,23 @@ fn poll_fd(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let node = {
         let lock = pinfo_arc.lock();
-        let file = lock.fd_table.get(spec.object as u32).map_err(|_| Errno::EBADF)?;
+        let file = lock
+            .fd_table
+            .get(spec.object as u32)
+            .map_err(|_| Errno::EBADF)?;
         file.node.clone()
     };
 
     let revents = node.poll();
     let mut ready_flags = 0u32;
-    if (spec.flags & wait::interest::READABLE) != 0 && (revents & abi::syscall::poll_flags::POLLIN) != 0 {
+    if (spec.flags & wait::interest::READABLE) != 0
+        && (revents & abi::syscall::poll_flags::POLLIN) != 0
+    {
         ready_flags |= wait::ready::READABLE;
     }
-    if (spec.flags & wait::interest::WRITABLE) != 0 && (revents & abi::syscall::poll_flags::POLLOUT) != 0 {
+    if (spec.flags & wait::interest::WRITABLE) != 0
+        && (revents & abi::syscall::poll_flags::POLLOUT) != 0
+    {
         ready_flags |= wait::ready::WRITABLE;
     }
 
@@ -332,7 +339,10 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
                 let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
                 let node = {
                     let lock = pinfo_arc.lock();
-                    lock.fd_table.get(spec.object as u32).ok().map(|f| f.node.clone())
+                    lock.fd_table
+                        .get(spec.object as u32)
+                        .ok()
+                        .map(|f| f.node.clone())
                 };
 
                 if let Some(node) = node {
@@ -373,8 +383,7 @@ fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> Sy
             Registration::Fd(node) => {
                 node.remove_waiter(tid);
             }
-            Registration::GraphOp(_id) => {
-            }
+            Registration::GraphOp(_id) => {}
             Registration::TaskExit(target) => {
                 let _ = unsafe { crate::sched::unregister_task_exit_waiter_current(*target, tid) };
             }

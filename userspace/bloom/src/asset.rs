@@ -7,9 +7,7 @@ use abi::ids::HandleId;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use stem::thing::sys::{
-    close, create_node, find, intern, open, prop_get, prop_set, read, stat,
-};
+use stem::thing::sys::{close, create_node, find, intern, open, prop_get, prop_set, read, stat};
 use stem::thing::ThingId;
 use stem::{debug, info, thread, warn};
 
@@ -789,9 +787,7 @@ impl AssetBank {
         }
     }
 
-    pub fn load_icon_immediate_from_bs(
-        fd: u32,
-    ) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+    pub fn load_icon_immediate_from_bs(fd: u32) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
         let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
         let size = size_u64 as usize;
         let mut buf = alloc::vec![0u8; size];
@@ -833,11 +829,7 @@ impl AssetBank {
         None
     }
 
-    pub fn load_wallpaper_immediate_from_fd(
-        &self,
-        fd: u32,
-        display_name: &str,
-    ) -> Option<Image> {
+    pub fn load_wallpaper_immediate_from_fd(&self, fd: u32, display_name: &str) -> Option<Image> {
         let (_, size, _) = stem::thing::sys::stat(fd).ok()?;
         Self::load_wallpaper_immediate_from_fd_with_size(fd, size as usize, display_name)
     }
@@ -849,9 +841,7 @@ impl AssetBank {
     ) -> Option<Image> {
         debug!(
             "[asset_bank] mapping fd {} ({} bytes) for '{}'",
-            fd,
-            size,
-            display_name
+            fd, size, display_name
         );
 
         use abi::vm::{VmBacking, VmMapReq, VmProt};
@@ -860,10 +850,7 @@ impl AssetBank {
             len: size,
             prot: VmProt::READ | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
 
         let resp = stem::thing::sys::vm_map(&req).ok()?;
@@ -900,10 +887,7 @@ impl AssetBank {
             len: size,
             prot: VmProt::READ | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
 
         let resp = stem::thing::sys::vm_map(&req).ok()?;
@@ -1261,7 +1245,10 @@ impl AssetBank {
     }
 
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
-        debug!("[asset_bank] load_wallpaper_immediate from boot modules: {}", path);
+        debug!(
+            "[asset_bank] load_wallpaper_immediate from boot modules: {}",
+            path
+        );
         let (fd, size) = Self::probe_asset(path)?;
         Self::load_wallpaper_immediate_from_fd_with_size(fd, size, path)
     }
@@ -1326,21 +1313,14 @@ impl AssetBank {
         debug!("[asset_bank] load_cursor_immediate: {}", path);
         let (fd, size) = Self::probe_asset(path)?;
 
-        debug!(
-            "[asset_bank] mapping fd {} ({} bytes)",
-            fd,
-            size
-        );
+        debug!("[asset_bank] mapping fd {} ({} bytes)", fd, size);
         use abi::vm::{VmBacking, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: size,
             prot: VmProt::READ | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
 
         let resp = stem::thing::sys::vm_map(&req).ok()?;
@@ -1389,31 +1369,31 @@ impl AssetBank {
             if slice.len() >= offset + img_size {
                 debug!("[asset_bank] decoding embedded DIB at offset {}...", offset);
                 // CUR files embed DIB (no BM header), use decode_dib
-                        match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
-                            Ok(dib) => {
-                                debug!(
-                                    "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
-                                    dib.width, dib.height
-                                );
-                                let _ = stem::syscall::vm_unmap(ptr as usize, size);
-                                return Some(CursorAsset::Static(CursorFrame {
-                                    image: Image {
-                                        width: dib.width,
-                                        height: dib.height,
-                                        pixels: Arc::from(dib.pixels.as_slice()),
-                                        gen: AssetGeneration::ZERO,
-                                        name: Arc::from(path),
-                                        id: None,
-                                    },
-                                    delay_ms: 0,
-                                    hotspot_x: hx as u32,
-                                    hotspot_y: hy as u32,
-                                }));
-                            }
-                            Err(_) => {
-                                warn!("[asset_bank] CUR DIB decode failed");
-                            }
-                        }
+                match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
+                    Ok(dib) => {
+                        debug!(
+                            "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
+                            dib.width, dib.height
+                        );
+                        let _ = stem::syscall::vm_unmap(ptr as usize, size);
+                        return Some(CursorAsset::Static(CursorFrame {
+                            image: Image {
+                                width: dib.width,
+                                height: dib.height,
+                                pixels: Arc::from(dib.pixels.as_slice()),
+                                gen: AssetGeneration::ZERO,
+                                name: Arc::from(path),
+                                id: None,
+                            },
+                            delay_ms: 0,
+                            hotspot_x: hx as u32,
+                            hotspot_y: hy as u32,
+                        }));
+                    }
+                    Err(_) => {
+                        warn!("[asset_bank] CUR DIB decode failed");
+                    }
+                }
             } else {
                 warn!(
                     "[asset_bank] CUR data truncated: need {} have {}",
@@ -1436,30 +1416,19 @@ impl AssetBank {
         Self::load_font_from_fd(fd, size, path)
     }
 
-    pub fn load_font_from_fd(
-        fd: u32,
-        size: usize,
-        display_name: &str,
-    ) -> Option<FontAsset> {
+    pub fn load_font_from_fd(fd: u32, size: usize, display_name: &str) -> Option<FontAsset> {
         Self::load_font_immediate(fd, size, display_name)
     }
 
     pub fn load_font_immediate(fd: u32, size: usize, display_name: &str) -> Option<FontAsset> {
-        debug!(
-            "[asset_bank] mapping font fd {} ({} bytes)",
-            fd,
-            size
-        );
+        debug!("[asset_bank] mapping font fd {} ({} bytes)", fd, size);
         use abi::vm::{VmBacking, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: size,
             prot: VmProt::READ | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
 
         let resp = match stem::thing::sys::vm_map(&req) {

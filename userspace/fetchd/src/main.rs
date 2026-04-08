@@ -78,7 +78,10 @@ fn ensure_session_objects() {
     write_text(&format!("{}/shell/app_id", window_root), "fetchd\n");
     write_text(&format!("{}/shell/current/x", window_root), "20\n");
     write_text(&format!("{}/shell/current/y", window_root), "20\n");
-    write_text(&format!("{}/shell/current/width", window_root), &format!("{}\n", WIDTH));
+    write_text(
+        &format!("{}/shell/current/width", window_root),
+        &format!("{}\n", WIDTH),
+    );
     write_text(
         &format!("{}/shell/current/height", window_root),
         &format!("{}\n", HEIGHT),
@@ -89,13 +92,22 @@ fn ensure_session_objects() {
     write_text(&format!("{}/shell/current/fullscreen", window_root), "0\n");
     write_text(&format!("{}/shell/current/resizing", window_root), "0\n");
     write_text(&format!("{}/shell/requested/maximize", window_root), "0\n");
-    write_text(&format!("{}/shell/requested/fullscreen", window_root), "0\n");
+    write_text(
+        &format!("{}/shell/requested/fullscreen", window_root),
+        "0\n",
+    );
     write_text(&format!("{}/shell/requested/minimize", window_root), "0\n");
-    write_text(&format!("{}/bind/surface", window_root), &format!("{}\n", SURFACE_ID));
+    write_text(
+        &format!("{}/bind/surface", window_root),
+        &format!("{}\n", SURFACE_ID),
+    );
     write_text(&format!("{}/events", window_root), "");
     write_text(&format!("{}/status/mapped", window_root), "0\n");
     write_text(&format!("{}/status/focused", window_root), "0\n");
-    write_text(&format!("{}/status/last_configure_serial", window_root), "0\n");
+    write_text(
+        &format!("{}/status/last_configure_serial", window_root),
+        "0\n",
+    );
     write_text(&format!("{}/status/client_pid", window_root), "0\n");
     write_text(&format!("{}/status/closing", window_root), "0\n");
 
@@ -107,8 +119,14 @@ fn ensure_session_objects() {
     write_text(&format!("{}/status/mapped", surface_root), "0\n");
     write_text(&format!("{}/status/last_commit", surface_root), "0\n");
     write_text(&format!("{}/status/configured_serial", surface_root), "0\n");
-    write_text(&format!("{}/status/width", surface_root), &format!("{}\n", WIDTH));
-    write_text(&format!("{}/status/height", surface_root), &format!("{}\n", HEIGHT));
+    write_text(
+        &format!("{}/status/width", surface_root),
+        &format!("{}\n", WIDTH),
+    );
+    write_text(
+        &format!("{}/status/height", surface_root),
+        &format!("{}\n", HEIGHT),
+    );
     write_text(&format!("{}/status/buffer_attached", surface_root), "0\n");
 }
 
@@ -136,8 +154,14 @@ fn publish_surface(buffer: &BufferState, commit: u64) {
         buffer.fd, WIDTH, HEIGHT, STRIDE
     );
     write_text(&format!("{}/attach", surface_root), &attach);
-    write_text(&format!("{}/damage", surface_root), &format!("0 0 {} {}\n", WIDTH, HEIGHT));
-    write_text(&format!("{}/commit", surface_root), &format!("{}\n", commit));
+    write_text(
+        &format!("{}/damage", surface_root),
+        &format!("0 0 {} {}\n", WIDTH, HEIGHT),
+    );
+    write_text(
+        &format!("{}/commit", surface_root),
+        &format!("{}\n", commit),
+    );
 }
 
 fn sync_configure_status() {
@@ -145,7 +169,10 @@ fn sync_configure_status() {
     let surface_root = format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
     let serial = read_text(&format!("{}/status/last_configure_serial", window_root));
     if !serial.is_empty() {
-        write_text(&format!("{}/status/configured_serial", surface_root), &format!("{}\n", serial));
+        write_text(
+            &format!("{}/status/configured_serial", surface_root),
+            &format!("{}\n", serial),
+        );
     }
 }
 
@@ -189,16 +216,8 @@ fn draw_segment_digit(
     color: u32,
 ) {
     const SEGMENTS: [u8; 10] = [
-        0b1111110,
-        0b0110000,
-        0b1101101,
-        0b1111001,
-        0b0110011,
-        0b1011011,
-        0b1011111,
-        0b1110000,
-        0b1111111,
-        0b1111011,
+        0b1111110, 0b0110000, 0b1101101, 0b1111001, 0b0110011, 0b1011011, 0b1011111, 0b1110000,
+        0b1111111, 0b1111011,
     ];
     let Some(n) = digit.to_digit(10) else {
         return;

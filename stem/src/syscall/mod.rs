@@ -75,7 +75,8 @@ pub use channel::{
 };
 pub use vfs::{
     dup, dup2, pipe, vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,
-    vfs_rename, vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path, vfs_write,
+    vfs_rename, vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path,
+    vfs_write,
 };
 pub use wait::wait_many;
 
@@ -544,9 +545,7 @@ pub fn vm_map(req: &abi::vm::VmMapReq) -> Result<abi::vm::VmMapResp, Errno> {
     let mut resp = abi::vm::VmMapResp { addr: 0, len: 0 };
     let req_ptr = req as *const _ as usize;
     let resp_ptr = &mut resp as *mut _ as usize;
-    let ret = unsafe {
-        raw_syscall6(SYS_VM_MAP, req_ptr, resp_ptr, 0, 0, 0, 0)
-    };
+    let ret = unsafe { raw_syscall6(SYS_VM_MAP, req_ptr, resp_ptr, 0, 0, 0, 0) };
     if ret < 0 {
         Err(unsafe { core::mem::transmute(-(ret as i32)) })
     } else {

@@ -139,7 +139,14 @@ fn main(_arg: usize) -> ! {
 
         if top_pending.dirty {
             let title = "THING-OS XDG";
-            let buffer = ensure_buffer(fd, SHM_ID, &mut top_buffer, TOP_SURFACE_ID + 100, top_pending.width, top_pending.height);
+            let buffer = ensure_buffer(
+                fd,
+                SHM_ID,
+                &mut top_buffer,
+                TOP_SURFACE_ID + 100,
+                top_pending.width,
+                top_pending.height,
+            );
             render_window(buffer, title);
             ack_configure(fd, TOP_XDG_SURFACE_ID, top_pending.serial.unwrap_or(0));
             attach_buffer(fd, TOP_SURFACE_ID, buffer.buffer_id);
@@ -154,13 +161,26 @@ fn main(_arg: usize) -> ! {
                 positioner_set_size(fd, POSITIONER_ID, 160, 96);
                 positioner_set_anchor_rect(fd, POSITIONER_ID, 24, 24, 100, 24);
                 positioner_set_offset(fd, POSITIONER_ID, 0, 6);
-                get_popup(fd, TOP_XDG_SURFACE_ID, POPUP_XDG_SURFACE_ID, POPUP_ID, POSITIONER_ID);
+                get_popup(
+                    fd,
+                    TOP_XDG_SURFACE_ID,
+                    POPUP_XDG_SURFACE_ID,
+                    POPUP_ID,
+                    POSITIONER_ID,
+                );
                 commit_surface(fd, POPUP_SURFACE_ID);
             }
         }
 
         if popup_created && popup_pending.dirty {
-            let buffer = ensure_buffer(fd, SHM_ID, &mut popup_buffer, POPUP_SURFACE_ID + 100, popup_pending.width, popup_pending.height);
+            let buffer = ensure_buffer(
+                fd,
+                SHM_ID,
+                &mut popup_buffer,
+                POPUP_SURFACE_ID + 100,
+                popup_pending.width,
+                popup_pending.height,
+            );
             render_popup(buffer, "POPUP");
             ack_configure(fd, POPUP_XDG_SURFACE_ID, popup_pending.serial.unwrap_or(0));
             attach_buffer(fd, POPUP_SURFACE_ID, buffer.buffer_id);
@@ -211,7 +231,7 @@ fn ensure_buffer(
     let stride = width * 4;
     let size = stride * height;
     let fd_buf = thingsys::memfd_create("wl.buffer", size as usize).expect("create memfd");
-    
+
     use abi::vm::{VmBacking, VmMapReq, VmProt};
     let req = VmMapReq {
         addr_hint: 0,
@@ -246,23 +266,17 @@ fn ensure_buffer(
 
 fn render_window(buffer: BufferState, title: &str) {
     unsafe {
-        let pixels =
-            core::slice::from_raw_parts_mut(buffer.ptr as *mut u32, (buffer.width * buffer.height) as usize);
+        let pixels = core::slice::from_raw_parts_mut(
+            buffer.ptr as *mut u32,
+            (buffer.width * buffer.height) as usize,
+        );
         for y in 0..buffer.height as usize {
             for x in 0..buffer.width as usize {
                 let color = if y < 40 { 0xFF3A4452 } else { 0xFF14181E };
                 pixels[y * buffer.width as usize + x] = color;
             }
         }
-        draw_text(
-            pixels,
-            buffer.width as usize,
-            16,
-            12,
-            title,
-            0xFFFFFFFF,
-            3,
-        );
+        draw_text(pixels, buffer.width as usize, 16, 12, title, 0xFFFFFFFF, 3);
         draw_text(
             pixels,
             buffer.width as usize,
@@ -286,23 +300,21 @@ fn render_window(buffer: BufferState, title: &str) {
 
 fn render_popup(buffer: BufferState, label: &str) {
     unsafe {
-        let pixels =
-            core::slice::from_raw_parts_mut(buffer.ptr as *mut u32, (buffer.width * buffer.height) as usize);
+        let pixels = core::slice::from_raw_parts_mut(
+            buffer.ptr as *mut u32,
+            (buffer.width * buffer.height) as usize,
+        );
         for y in 0..buffer.height as usize {
             for x in 0..buffer.width as usize {
-                let border = x < 2 || y < 2 || x + 2 >= buffer.width as usize || y + 2 >= buffer.height as usize;
-                pixels[y * buffer.width as usize + x] = if border { 0xFFFFFFFF } else { 0xFF202830 };
+                let border = x < 2
+                    || y < 2
+                    || x + 2 >= buffer.width as usize
+                    || y + 2 >= buffer.height as usize;
+                pixels[y * buffer.width as usize + x] =
+                    if border { 0xFFFFFFFF } else { 0xFF202830 };
             }
         }
-        draw_text(
-            pixels,
-            buffer.width as usize,
-            14,
-            18,
-            label,
-            0xFFFFFFFF,
-            2,
-        );
+        draw_text(pixels, buffer.width as usize, 14, 18, label, 0xFFFFFFFF, 2);
     }
 }
 
@@ -455,7 +467,14 @@ fn positioner_set_size(fd: u32, positioner_id: u32, width: i32, height: i32) {
     let _ = vfs_write(fd, &buf);
 }
 
-fn positioner_set_anchor_rect(fd: u32, positioner_id: u32, x: i32, y: i32, width: i32, height: i32) {
+fn positioner_set_anchor_rect(
+    fd: u32,
+    positioner_id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) {
     let mut buf = Vec::new();
     encode_header(positioner_id, 2, 24, &mut buf);
     buf.extend_from_slice(&x.to_ne_bytes());

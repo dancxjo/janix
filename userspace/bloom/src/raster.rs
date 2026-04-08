@@ -61,10 +61,7 @@ impl VmMapCache {
             len,
             prot: VmProt::READ | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
 
         match stem::thing::sys::vm_map(&req) {
@@ -74,13 +71,7 @@ impl VmMapCache {
                 crate::trace_counter!("raster.vm_map.ns_total", dt);
 
                 let ptr = resp.addr as *mut u8;
-                self.entries.insert(
-                    fd,
-                    MappedFile {
-                        ptr,
-                        len,
-                    },
-                );
+                self.entries.insert(fd, MappedFile { ptr, len });
                 Some(ptr)
             }
             Err(_) => None,
@@ -107,11 +98,7 @@ struct RasterContext<'a> {
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(
-        surface: &'a mut PixelBuffer,
-        cache: &'a mut VmMapCache,
-        solid_text: bool,
-    ) -> Self {
+    fn new(surface: &'a mut PixelBuffer, cache: &'a mut VmMapCache, solid_text: bool) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,

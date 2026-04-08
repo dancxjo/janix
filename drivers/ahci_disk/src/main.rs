@@ -707,15 +707,14 @@ fn main(_arg: usize) -> ! {
     // Main service loop
     loop {
         // Wait for a request on any port (blocking)
-        let ready_handle =
-            match channel_wait(&handles, abi::syscall::channel_wait::READABLE) {
-                Ok(h) => h,
-                Err(e) => {
-                    error!("AHCI: channel_wait failed: {:?}", e);
-                    stem::sleep(Duration::from_millis(100));
-                    continue;
-                }
-            };
+        let ready_handle = match channel_wait(&handles, abi::syscall::channel_wait::READABLE) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("AHCI: channel_wait failed: {:?}", e);
+                stem::sleep(Duration::from_millis(100));
+                continue;
+            }
+        };
 
         // Find the port that has data
         for port in &mut ports {

@@ -5,7 +5,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::{WatchMode, WatchSpec};
 use alloc::string::String;
 use alloc::string::ToString;
-use stem::thing::sys::{describe_thing, find, prop_get, stat, read};
+use stem::thing::sys::{describe_thing, find, prop_get, read, stat};
 use stem::thing::{HandleId, ThingId};
 use stem::{debug, info, syscall, warn};
 

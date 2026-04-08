@@ -39,7 +39,9 @@ use alloc::vec::Vec;
 use iso9660::{IsoFs, ISO_SECTOR_SIZE};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
-use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle};
+use stem::syscall::{
+    channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
+};
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 use stem::{info, warn};

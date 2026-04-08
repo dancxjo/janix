@@ -9,7 +9,6 @@ mod numbers {
 }
 pub use numbers::*;
 
-
 // pollfds entry and other types remain here because they might need serde
 /// Entry in the `pollfds` array passed to [`SYS_FS_POLL`].
 ///

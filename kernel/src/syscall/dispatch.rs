@@ -95,7 +95,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_WRITE => handlers::vfs::SYS_FS_write(args[0], args[1], args[2]),
         SYS_FS_DUP => handlers::vfs::SYS_FS_DUP(args[0]),
         SYS_FS_DUP2 => handlers::vfs::SYS_FS_DUP2(args[0], args[1]),
-        SYS_FS_RENAME => handlers::vfs::SYS_FS_rename(args[0], args[1], args[2], args[3], args[4], args[5]),
+        SYS_FS_RENAME => {
+            handlers::vfs::SYS_FS_rename(args[0], args[1], args[2], args[3], args[4], args[5])
+        }
         SYS_PIPE => handlers::vfs::sys_pipe(args[0]),
         SYS_FS_UNLINK => handlers::vfs::SYS_FS_unlink(args[0], args[1]),
         SYS_FS_MKDIR => handlers::vfs::SYS_FS_mkdir(args[0], args[1]),

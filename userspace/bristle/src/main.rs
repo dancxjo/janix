@@ -7,11 +7,11 @@
 #![no_main]
 
 use abi::hid::{
-    BristleEventHeader, EventType, Key, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
-    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
+    KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use stem::info;
-use stem::syscall::{channel_recv, channel_send_all, ChannelHandle};
+use stem::syscall::{ChannelHandle, channel_recv, channel_send_all};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
@@ -292,7 +292,9 @@ fn main(packed_handles: usize) -> ! {
                                                 stem::syscall::task_dump();
                                             }
                                             Key::F10 => {
-                                                info!("bristle: F10 pressed - graph dump is disabled.");
+                                                info!(
+                                                    "bristle: F10 pressed - graph dump is disabled."
+                                                );
                                             }
                                             Key::Delete => {
                                                 if payload.mods().has_ctrl()

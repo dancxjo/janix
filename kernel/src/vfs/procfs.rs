@@ -94,7 +94,10 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
                 snap.pid,
                 snap.ppid,
             );
-            Ok(Arc::new(DynamicTextNode::new(text.into_bytes(), 300 + pid as u64 * 10 + 1)))
+            Ok(Arc::new(DynamicTextNode::new(
+                text.into_bytes(),
+                300 + pid as u64 * 10 + 1,
+            )))
         }
         "cmdline" => {
             // Standard Linux /proc/<pid>/cmdline format: each argument is
@@ -105,7 +108,10 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
                 data.extend_from_slice(arg);
                 data.push(0);
             }
-            Ok(Arc::new(DynamicTextNode::new(data, 300 + pid as u64 * 10 + 2)))
+            Ok(Arc::new(DynamicTextNode::new(
+                data,
+                300 + pid as u64 * 10 + 2,
+            )))
         }
         "fd" => Ok(Arc::new(ProcPidFdDirNode { pid })),
         _ => Err(Errno::ENOENT),
@@ -133,7 +139,13 @@ impl VfsNode for ProcDirNode {
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         // Build the directory listing: static entries + one entry per live PID.
         let mut entries: Vec<u8> = Vec::new();
-        for name in &[b"version\0" as &[u8], b"mounts\0", b"meminfo\0", b"cpuinfo\0", b"uptime\0"] {
+        for name in &[
+            b"version\0" as &[u8],
+            b"mounts\0",
+            b"meminfo\0",
+            b"cpuinfo\0",
+            b"uptime\0",
+        ] {
             entries.extend_from_slice(name);
         }
         for snap in crate::sched::list_processes_current() {
@@ -325,7 +337,8 @@ impl VfsNode for MemInfoNode {
         let total_kb = (crate::memory::layout::KHEAP_SIZE / 1024) as u64;
         let text = alloc::format!(
             "MemTotal:    {:8} kB\nMemFree:     {:8} kB\n",
-            total_kb, 0u64,
+            total_kb,
+            0u64,
         );
         let data = text.as_bytes();
         let off = offset as usize;

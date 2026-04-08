@@ -1,8 +1,8 @@
+use super::symbol::IntoSymbolRef;
 use super::{HandleId, ThingId, ThingKind};
 use crate::errors::Errno;
-use super::symbol::IntoSymbolRef;
-use abi::symbols::SymbolId;
 use crate::syscall::arch::raw_syscall6;
+use abi::symbols::SymbolId;
 use abi::syscall::*;
 
 pub fn get_kind(_id: ThingId) -> Result<ThingKind, Errno> {
@@ -37,9 +37,7 @@ pub fn create_node<S: IntoSymbolRef>(_kind: S) -> Result<ThingId, Errno> {
 #[derive(Debug)]
 pub struct KindMismatch(pub usize);
 
-pub fn try_typed<T: super::Thing>(
-    id: ThingId,
-) -> Result<super::ThingRef<T>, KindMismatch> {
+pub fn try_typed<T: super::Thing>(id: ThingId) -> Result<super::ThingRef<T>, KindMismatch> {
     let kind = get_kind(id).map_err(|_| KindMismatch(0))?;
     if kind == T::KIND {
         Ok(unsafe { super::ThingRef::new(id) })
@@ -73,7 +71,10 @@ pub fn describe_symbol(_sym: SymbolId, _out: &mut [u8]) -> Result<usize, Errno> 
     Err(Errno::ENOSYS)
 }
 
-pub fn root_stream_poll(_handle: u32, _out: &mut abi::types::RootWatchEvent) -> Result<usize, Errno> {
+pub fn root_stream_poll(
+    _handle: u32,
+    _out: &mut abi::types::RootWatchEvent,
+) -> Result<usize, Errno> {
     Err(Errno::ENOSYS)
 }
 

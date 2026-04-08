@@ -14,8 +14,8 @@
 //! - [`sys_pipe`]       — create an anonymous pipe, allocating two fds
 //! - [`SYS_FS_poll`]   — poll a set of fds for readiness (POSIX-style)
 
-use alloc::vec;
 use alloc::sync::Arc;
+use alloc::vec;
 
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{PollFd, poll_flags, vfs_flags};
@@ -187,7 +187,7 @@ pub fn SYS_FS_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
-    
+
     // Resolve parent to emit event
     let (parent_path, name) = split_parent(path);
     let parent_node = vfs::mount::lookup(parent_path).ok();
@@ -212,7 +212,7 @@ pub fn SYS_FS_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
-    
+
     // Resolve parent to emit event
     let (parent_path, name) = split_parent(path);
     let parent_node = vfs::mount::lookup(parent_path).ok();
@@ -503,19 +503,19 @@ pub fn SYS_FS_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let mut lock = pinfo_arc.lock();
     let file = lock.fd_table.get_mut(fd as u32)?;
-    
+
     let node = file.node.clone();
     let stat = node.stat()?;
     let size = stat.size;
-    
+
     let mut current_offset = *file.offset.lock();
     let new_offset = match whence {
-        0 => offset as u64, // SEEK_SET
+        0 => offset as u64,                                // SEEK_SET
         1 => current_offset.saturating_add(offset as u64), // SEEK_CUR
-        2 => size.saturating_add(offset as u64), // SEEK_END
+        2 => size.saturating_add(offset as u64),           // SEEK_END
         _ => return Err(Errno::EINVAL),
     };
-    
+
     *file.offset.lock() = new_offset;
     Ok(new_offset as usize)
 }
@@ -524,7 +524,7 @@ pub fn SYS_FS_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> 
 
 pub fn sys_watch_fd(fd: usize, mask: usize, flags: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    
+
     let node = {
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
@@ -535,11 +535,19 @@ pub fn sys_watch_fd(fd: usize, mask: usize, flags: usize) -> SysResult<usize> {
     crate::vfs::watch::register_watch(&node, watch.clone())?;
 
     // Return the watch as a new file descriptor
-    let watch_fd = pinfo_arc.lock().fd_table.open(watch, crate::vfs::OpenFlags::read_only())?;
+    let watch_fd = pinfo_arc
+        .lock()
+        .fd_table
+        .open(watch, crate::vfs::OpenFlags::read_only())?;
     Ok(watch_fd as usize)
 }
 
-pub fn sys_watch_path(path_ptr: usize, path_len: usize, mask: usize, flags: usize) -> SysResult<usize> {
+pub fn sys_watch_path(
+    path_ptr: usize,
+    path_len: usize,
+    mask: usize,
+    flags: usize,
+) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
@@ -554,7 +562,10 @@ pub fn sys_watch_path(path_ptr: usize, path_len: usize, mask: usize, flags: usiz
     crate::kinfo!("WATCH_PATH: registered watch, opening fd");
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    let watch_fd = pinfo_arc.lock().fd_table.open(watch, crate::vfs::OpenFlags::read_only())?;
+    let watch_fd = pinfo_arc
+        .lock()
+        .fd_table
+        .open(watch, crate::vfs::OpenFlags::read_only())?;
     crate::kinfo!("WATCH_PATH: success fd={}", watch_fd);
     Ok(watch_fd as usize)
 }
@@ -595,10 +606,20 @@ pub fn SYS_FS_rename(
     // Emit MOVE events
     let cookie = NEXT_COOKIE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     if let Some(parent) = old_parent_node {
-        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::MOVE_FROM, Some(old_name), cookie);
+        crate::vfs::watch::emit_event(
+            &*parent,
+            abi::vfs_watch::mask::MOVE_FROM,
+            Some(old_name),
+            cookie,
+        );
     }
     if let Some(parent) = new_parent_node {
-        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::MOVE_TO, Some(new_name), cookie);
+        crate::vfs::watch::emit_event(
+            &*parent,
+            abi::vfs_watch::mask::MOVE_TO,
+            Some(new_name),
+            cookie,
+        );
     }
 
     Ok(0)

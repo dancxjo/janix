@@ -9,9 +9,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
+use super::{VfsNode, VfsStat};
 use abi::errors::{Errno, SysResult};
 use abi::vfs_watch::{self, WatchEvent};
-use super::{VfsNode, VfsStat};
 
 /// A ring buffer of VFS events.
 pub struct EventQueue {
@@ -46,11 +46,13 @@ impl EventQueue {
             return;
         }
         lock.push_back((event, name.map(|s| s.into())));
-        
+
         // Wake up waiters
         let waiters = self.waiters.lock();
         for &tid in waiters.iter() {
-            unsafe { crate::sched::wake_task_erased(tid); }
+            unsafe {
+                crate::sched::wake_task_erased(tid);
+            }
         }
     }
 
@@ -146,11 +148,7 @@ impl VfsNode for Watch {
 
     fn poll(&self) -> u16 {
         use abi::syscall::poll_flags::*;
-        if self.queue.is_empty() {
-            0
-        } else {
-            POLLIN
-        }
+        if self.queue.is_empty() { 0 } else { POLLIN }
     }
 
     fn add_waiter(&self, tid: u64) {

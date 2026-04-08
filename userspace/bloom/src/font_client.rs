@@ -15,7 +15,9 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
-use stem::syscall::{monotonic_ns, channel_send, channel_try_recv, ChannelHandle, vm_map, vm_unmap};
+use stem::syscall::{
+    channel_send, channel_try_recv, monotonic_ns, vm_map, vm_unmap, ChannelHandle,
+};
 use stem::thing::sys::{find, prop_get, stat};
 use stem::thing::ThingId;
 

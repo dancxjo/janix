@@ -14,7 +14,9 @@ use alloc::format;
 use alloc::vec::Vec;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
-use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle};
+use stem::syscall::{
+    channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
+};
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 

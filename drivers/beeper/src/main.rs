@@ -82,7 +82,8 @@ fn main(_arg: usize) -> ! {
                 }
                 _ => {
                     // Port full, wait for space
-                    let _ = channel_wait(&[write_port_handle], abi::syscall::channel_wait::WRITABLE);
+                    let _ =
+                        channel_wait(&[write_port_handle], abi::syscall::channel_wait::WRITABLE);
                 }
             }
         }

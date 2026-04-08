@@ -90,21 +90,25 @@ fn program_msi(location: PciLocation, msi: MsiCapability, vector: u8) -> Result<
     ctrl_new |= 0x1;
 
     unsafe {
-        runtime_base().pci_cfg_write32(
-            location.bus,
-            location.dev,
-            location.func,
-            msi.offset + 0x4,
-            addr,
-        ).ok();
-        if msi.is_64bit {
-            runtime_base().pci_cfg_write32(
+        runtime_base()
+            .pci_cfg_write32(
                 location.bus,
                 location.dev,
                 location.func,
-                msi.offset + 0x8,
-                0,
-            ).ok();
+                msi.offset + 0x4,
+                addr,
+            )
+            .ok();
+        if msi.is_64bit {
+            runtime_base()
+                .pci_cfg_write32(
+                    location.bus,
+                    location.dev,
+                    location.func,
+                    msi.offset + 0x8,
+                    0,
+                )
+                .ok();
             pci_write_config_u16(location, msi.offset + 0xC, data as u16);
         } else {
             pci_write_config_u16(location, msi.offset + 0x8, data as u16);
@@ -166,17 +170,23 @@ fn build_msi_message(vector: u8) -> (u32, u32) {
 fn pci_read_config_u16(location: PciLocation, offset: u8) -> u16 {
     let aligned = offset & !0x3;
     let shift = (offset & 0x2) * 8;
-    let val = runtime_base().pci_cfg_read32(location.bus, location.dev, location.func, aligned).unwrap_or(0);
+    let val = runtime_base()
+        .pci_cfg_read32(location.bus, location.dev, location.func, aligned)
+        .unwrap_or(0);
     ((val >> shift) & 0xFFFF) as u16
 }
 
 fn pci_write_config_u16(location: PciLocation, offset: u8, value: u16) {
     let aligned = offset & !0x3;
     let shift = (offset & 0x2) * 8;
-    let mut val = runtime_base().pci_cfg_read32(location.bus, location.dev, location.func, aligned).unwrap_or(0);
+    let mut val = runtime_base()
+        .pci_cfg_read32(location.bus, location.dev, location.func, aligned)
+        .unwrap_or(0);
     val &= !(0xFFFF << shift);
     val |= (value as u32) << shift;
-    runtime_base().pci_cfg_write32(location.bus, location.dev, location.func, aligned, val).ok();
+    runtime_base()
+        .pci_cfg_write32(location.bus, location.dev, location.func, aligned, val)
+        .ok();
 }
 
 fn update_graph_irq(_graph_id: u64, _mode: IrqMode, _vector: u8) {

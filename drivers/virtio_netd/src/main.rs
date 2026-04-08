@@ -19,8 +19,8 @@ mod vfs_provider;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::VirtioNetDriver;
-use stem::syscall::{channel_create, channel_try_recv};
 use stem::syscall::vfs_mount;
+use stem::syscall::{channel_create, channel_try_recv};
 use stem::{error, info, warn};
 use vfs_provider::{handle_vfs_rpc, NetVfsState};
 

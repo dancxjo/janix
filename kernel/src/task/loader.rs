@@ -18,7 +18,11 @@ pub fn load_module<R: BootRuntime>(
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
 ) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>)> {
-    crate::kinfo!("LOADER: Loading module '{}' (len={})", module.name, module.bytes.len());
+    crate::kinfo!(
+        "LOADER: Loading module '{}' (len={})",
+        module.name,
+        module.bytes.len()
+    );
     if module.bytes.len() >= 16 {
         crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
     }

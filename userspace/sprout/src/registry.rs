@@ -89,10 +89,10 @@ impl Registry {
         let shnum = u16::from_le_bytes(hdr_buf[0x3C..0x3E].try_into().unwrap()) as usize;
         let shstrndx = u16::from_le_bytes(hdr_buf[0x3E..0x40].try_into().unwrap()) as usize;
 
-        // Since we don't have seek yet in thingsys wrapper (or maybe it's not implemented yet?), 
+        // Since we don't have seek yet in thingsys wrapper (or maybe it's not implemented yet?),
         // we'll read the whole file or just the parts we need if they are close enough.
         // Actually, let's add vfs_seek to thingsys for this.
-        
+
         let strtab_sh_off = shoff + (shstrndx as usize * shentsize);
         let (strtab_off, _) = self.read_sh_info(fd, strtab_sh_off)?;
 
@@ -118,7 +118,12 @@ impl Registry {
         None
     }
 
-    fn vfs_read_at(&self, fd: u32, offset: usize, buf: &mut [u8]) -> Result<usize, abi::errors::Errno> {
+    fn vfs_read_at(
+        &self,
+        fd: u32,
+        offset: usize,
+        buf: &mut [u8],
+    ) -> Result<usize, abi::errors::Errno> {
         let _ = thingsys::seek(fd, offset as i64, 0)?; // 0 = SEEK_SET
         thingsys::read(fd, buf)
     }

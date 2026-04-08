@@ -245,10 +245,7 @@ impl PaintPipeline {
             .iter()
             .filter(|(_, state)| !state.hidden && state.rect.contains(x, y))
             .max_by(|(id_a, state_a), (id_b, state_b)| {
-                state_a
-                    .z
-                    .cmp(&state_b.z)
-                    .then_with(|| id_b.cmp(id_a))
+                state_a.z.cmp(&state_b.z).then_with(|| id_b.cmp(id_a))
             })
             .map(|(id, state)| WindowHit {
                 id: *id,
@@ -419,7 +416,8 @@ impl PaintPipeline {
             let id = session_fs::scene_id_from_name(&name);
             active.insert(id);
 
-            let mut loaded = load_window_state(&name, screen_w, screen_h, self.windows.len() as i32);
+            let mut loaded =
+                load_window_state(&name, screen_w, screen_h, self.windows.len() as i32);
             loaded.focused = self.focused == Some(id);
             self.install_window_watches(id, &name);
             if let Some(surface_name) = loaded.surface_name.as_ref() {
@@ -547,7 +545,10 @@ impl PaintPipeline {
                 }
                 let max_pixels = surf.width as usize * surf.height as usize;
                 let copy_pixels = max_pixels.min(pixels.len());
-                for (dst, src) in surf.buffer[..copy_pixels].chunks_exact_mut(4).zip(pixels[..copy_pixels].iter()) {
+                for (dst, src) in surf.buffer[..copy_pixels]
+                    .chunks_exact_mut(4)
+                    .zip(pixels[..copy_pixels].iter())
+                {
                     dst.copy_from_slice(&src.to_le_bytes());
                 }
                 surf.visible = true;
@@ -576,7 +577,8 @@ impl PaintPipeline {
                 &format!("{}/status/height", surface_base),
                 &format!("{}\n", height),
             );
-            let _ = session_fs::write_text(&format!("{}/status/buffer_attached", surface_base), "1\n");
+            let _ =
+                session_fs::write_text(&format!("{}/status/buffer_attached", surface_base), "1\n");
             return Some(window.rect);
         }
 
@@ -624,7 +626,6 @@ impl PaintPipeline {
             self.surface_watches.insert(surface_name.to_string(), fd);
         }
     }
-
 }
 
 impl Drop for PaintPipeline {
@@ -739,12 +740,17 @@ fn load_window_state(name: &str, screen_w: i32, screen_h: i32, ordinal: i32) -> 
     let y = read_i32(&format!("{}/shell/current/y", base))
         .unwrap_or(48 + (ordinal % 6) * 28)
         .clamp(0, screen_h.saturating_sub(64));
-    let width = read_i32(&format!("{}/shell/current/width", base)).unwrap_or(640).max(1);
-    let height = read_i32(&format!("{}/shell/current/height", base)).unwrap_or(480).max(1);
+    let width = read_i32(&format!("{}/shell/current/width", base))
+        .unwrap_or(640)
+        .max(1);
+    let height = read_i32(&format!("{}/shell/current/height", base))
+        .unwrap_or(480)
+        .max(1);
     let z = read_i32(&format!("{}/shell/current/z", base)).unwrap_or(ordinal + 1);
     let title = session_fs::read_text(&format!("{}/shell/title", base)).unwrap_or_default();
     let app_id = session_fs::read_text(&format!("{}/shell/app_id", base)).unwrap_or_default();
-    let surface_name = session_fs::read_text(&format!("{}/bind/surface", base)).filter(|s| !s.is_empty());
+    let surface_name =
+        session_fs::read_text(&format!("{}/bind/surface", base)).filter(|s| !s.is_empty());
     let maximized = session_fs::read_bool(&format!("{}/shell/requested/maximize", base));
     let fullscreen = session_fs::read_bool(&format!("{}/shell/requested/fullscreen", base));
     let hidden = session_fs::read_bool(&format!("{}/status/closing", base));

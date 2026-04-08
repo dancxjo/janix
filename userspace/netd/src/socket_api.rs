@@ -122,7 +122,6 @@ impl SocketApi {
         self.alloc_handle()
     }
 
-
     fn now_ms() -> u64 {
         stem::time::now().as_millis() as u64
     }

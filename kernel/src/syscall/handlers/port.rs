@@ -96,7 +96,12 @@ pub fn sys_channel_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<
     }
 }
 
-fn sys_channel_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> SysResult<usize> {
+fn sys_channel_recv_impl(
+    handle: usize,
+    ptr: usize,
+    len: usize,
+    blocking: bool,
+) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
         return Ok(0);

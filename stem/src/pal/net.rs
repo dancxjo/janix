@@ -4,10 +4,10 @@
 //! - The primary NIC via raw syscalls (legacy path).
 //! - The `/net/` VFS TCP socket API used by the libc socket shim (issue #542).
 
+use super::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
 use crate::syscall;
 use crate::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
 use abi::errors::{errno, Errno, SysResult};
-use super::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
 
 /// A VFS file descriptor returned by [`vfs_open`].
 pub type Fd = u32;
@@ -165,22 +165,17 @@ pub fn tcp_connect(addr: &str, port: u16, deadline_ns: u64) -> SysResult<TcpHand
         crate::syscall::sleep_ns(CONNECT_POLL_NS);
     }
 
-    Ok(TcpHandle { id, data_fd, ctl_fd })
+    Ok(TcpHandle {
+        id,
+        data_fd,
+        ctl_fd,
+    })
 }
 
 /// Get the MAC address of the primary NIC.
 pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
-    let result = unsafe {
-        syscall::syscall6(
-            super::SYS_NIC_MAC,
-            out.as_mut_ptr() as usize,
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let result =
+        unsafe { syscall::syscall6(super::SYS_NIC_MAC, out.as_mut_ptr() as usize, 0, 0, 0, 0, 0) };
 
     errno(result).map(|_| ())
 }

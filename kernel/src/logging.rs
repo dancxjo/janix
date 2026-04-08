@@ -212,13 +212,7 @@ pub fn _log_event(
 
 // Backward compatibility shim for kinfo! etc
 pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
-    _log_event(
-        meta.clone(),
-        meta.module,
-        args,
-        &[],
-        &[],
-    );
+    _log_event(meta.clone(), meta.module, args, &[], &[]);
 }
 
 /// Contract-level logging - ALWAYS outputs regardless of log level filter.

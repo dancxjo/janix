@@ -38,8 +38,8 @@ pub mod svg_protocol;
 pub mod macros;
 pub mod packed;
 pub mod thing;
-pub mod vfs_watch;
 pub mod vfs_rpc;
+pub mod vfs_watch;
 pub mod wire;
 pub mod wire_schema;
 

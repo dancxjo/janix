@@ -65,11 +65,8 @@ fn log_event(buf: &[u8]) {
         }
         Ok(kind) => {
             let payload_len = header.payload_len;
-            info!(
-                "input_echo: event={:?} payload_len={}",
-                kind, payload_len
-            )
-        },
+            info!("input_echo: event={:?} payload_len={}", kind, payload_len)
+        }
         Err(err) => info!("input_echo: bad event type: {:?}", err),
     }
 }

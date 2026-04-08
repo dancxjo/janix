@@ -91,7 +91,13 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         while virt < end {
             let phys = if let Some((phys_base, total_size)) = zero_copy_region {
                 // 0-copy path
-                let VmBacking::File { offset: file_offset, .. } = req.backing else { unreachable!() };
+                let VmBacking::File {
+                    offset: file_offset,
+                    ..
+                } = req.backing
+                else {
+                    unreachable!()
+                };
                 let current_offset = file_offset + (virt - addr as u64);
                 if current_offset >= total_size as u64 {
                     // Out of bounds for the region
@@ -110,8 +116,12 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
                             }
                         }
                     }
-                    VmBacking::File { fd, offset: file_offset } => {
-                        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+                    VmBacking::File {
+                        fd,
+                        offset: file_offset,
+                    } => {
+                        let pinfo_arc =
+                            crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
                         let node = {
                             let lock = pinfo_arc.lock();
                             let file = lock.fd_table.get(fd)?;
@@ -119,8 +129,9 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
                         };
 
                         let hhdm_virt = allocated_phys + hhdm;
-                        let slice =
-                            unsafe { core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size) };
+                        let slice = unsafe {
+                            core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size)
+                        };
 
                         let current_offset = file_offset + (virt - addr as u64);
                         let bytes_read = node.read(current_offset, slice)?;
@@ -247,27 +258,29 @@ pub fn sys_vm_query(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
 
 pub fn sys_memfd_create(name_ptr: usize, name_len: usize, size: usize) -> SysResult<usize> {
     use crate::syscall::validate::{copyin, validate_user_range};
-    
+
     // Validate name
     if name_len > 64 {
         return Err(Errno::EINVAL);
     }
     validate_user_range(name_ptr, name_len, false)?;
-    
+
     let mut name_buf = [0u8; 64];
     unsafe {
         copyin(&mut name_buf[..name_len], name_ptr)?;
     }
     let name = core::str::from_utf8(&name_buf[..name_len]).map_err(|_| Errno::EINVAL)?;
-    
+
     // Create node
     let node = crate::vfs::memfd::MemFdNode::new(name, size)?;
     let node_arc: alloc::sync::Arc<dyn crate::vfs::VfsNode> = alloc::sync::Arc::new(node);
-    
+
     // Install in FD table
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let mut pinfo = pinfo_arc.lock();
-    let fd = pinfo.fd_table.open(node_arc, crate::vfs::OpenFlags::read_write())?;
+    let fd = pinfo
+        .fd_table
+        .open(node_arc, crate::vfs::OpenFlags::read_write())?;
     Ok(fd as usize)
 }
 
@@ -278,7 +291,7 @@ pub fn sys_memfd_phys(fd: usize) -> SysResult<usize> {
         let file = lock.fd_table.get(fd as u32)?;
         file.node.clone()
     };
-    
+
     let (phys, _len) = node.phys_region()?;
     Ok(phys as usize)
 }

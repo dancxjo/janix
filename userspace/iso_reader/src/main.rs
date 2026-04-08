@@ -397,8 +397,7 @@ fn publish_iso_file(
 
     // Create memfd and write data only if we have content
     let bs = if let Some(ref data_vec) = data {
-        let fd = thingsys::memfd_create(path, 0)
-            .map_err(|_| "memfd_create failed")?;
+        let fd = thingsys::memfd_create(path, 0).map_err(|_| "memfd_create failed")?;
         thingsys::write(fd, data_vec).map_err(|_| "write failed")?;
 
         stats.bytes_read += size;

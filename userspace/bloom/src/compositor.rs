@@ -1,10 +1,10 @@
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
-use stem::syscall::ChannelHandle;
-use stem::thing::{sys as thingsys, ThingId};
 use stem::syscall::vfs;
+use stem::syscall::ChannelHandle;
 use stem::syscall::{vm_map, vm_unmap};
+use stem::thing::{sys as thingsys, ThingId};
 
 pub struct Symbols {
     pub display_compositor: u64,
@@ -73,10 +73,7 @@ impl CompositorTarget {
         fd: u32,
         arg_ports: (ChannelHandle, ChannelHandle),
     ) -> Result<Self, CompositorError> {
-        stem::info!(
-            "bloom: map_from_fd start fd={}",
-            fd
-        );
+        stem::info!("bloom: map_from_fd start fd={}", fd);
         let sym = Symbols::new();
         stem::info!("bloom: symbols loaded");
         let deadline = stem::time::now() + stem::time::Duration::from_millis(2000);
@@ -102,9 +99,7 @@ impl CompositorTarget {
 
             if width != 0 && height != 0 && stride != 0 {
                 stem::info!("bloom: properties OK, building from config...");
-                return Self::build_from_config(
-                    &sym, fd, width, height, stride, format, arg_ports,
-                );
+                return Self::build_from_config(&sym, fd, width, height, stride, format, arg_ports);
             }
 
             if stem::time::now() > deadline {
@@ -205,11 +200,7 @@ impl CompositorTarget {
         crate::log!(
             "mapped size={} (source={})",
             size,
-            if info_res.is_ok() {
-                "stat"
-            } else {
-                "fallback"
-            }
+            if info_res.is_ok() { "stat" } else { "fallback" }
         );
 
         // Mapping (updated to use MemFD/vm_map)
@@ -219,10 +210,7 @@ impl CompositorTarget {
             len: size,
             prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
             flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd,
-                offset: 0,
-            },
+            backing: VmBacking::File { fd, offset: 0 },
         };
         let ptr = match vm_map(&req_map) {
             Ok(resp) => resp.addr as *mut u8,

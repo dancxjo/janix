@@ -57,10 +57,10 @@ use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
 use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
-use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
 use abi::schema::{hid, keys, kinds};
-use stem::syscall::ChannelHandle;
+use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
 use stem::syscall::vfs::{vfs_open, vfs_write};
+use stem::syscall::ChannelHandle;
 
 use crate::asset::AssetBank;
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
@@ -87,6 +87,102 @@ struct DragState {
     kind: crate::window_manager::DragKind,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PointerFocusState {
+    scene_id: Option<ThingId>,
+    local_x: i32,
+    local_y: i32,
+}
+
+fn wayland_button_code(button: u8) -> u32 {
+    match button {
+        0 => crate::wayland::server::BTN_LEFT,
+        1 => crate::wayland::server::BTN_RIGHT,
+        2 => crate::wayland::server::BTN_MIDDLE,
+        _ => crate::wayland::server::BTN_LEFT + button as u32,
+    }
+}
+
+fn pointer_focus_at(
+    scene: &crate::scene_graph::SceneGraph,
+    wayland_snapshots: &[crate::wayland::server::WaylandWindowSnapshot],
+    cursor_x: i32,
+    cursor_y: i32,
+) -> PointerFocusState {
+    let scene_id = scene.hit_test(cursor_x, cursor_y);
+    let Some(scene_id) = scene_id else {
+        return PointerFocusState::default();
+    };
+
+    if let Some(snapshot) = wayland_snapshots
+        .iter()
+        .find(|snapshot| snapshot.scene_id == scene_id)
+    {
+        let local_x = cursor_x - snapshot.x - snapshot.content_x;
+        let local_y = cursor_y - snapshot.y - snapshot.content_y;
+        if local_x >= 0
+            && local_y >= 0
+            && local_x < snapshot.content_width
+            && local_y < snapshot.content_height
+        {
+            return PointerFocusState {
+                scene_id: Some(scene_id),
+                local_x,
+                local_y,
+            };
+        }
+        return PointerFocusState::default();
+    }
+
+    if let Some(surface) = scene.get_surface(scene_id) {
+        let rect = surface.rect();
+        return PointerFocusState {
+            scene_id: Some(scene_id),
+            local_x: cursor_x - rect.x(),
+            local_y: cursor_y - rect.y(),
+        };
+    }
+
+    PointerFocusState::default()
+}
+
+fn publish_pointer_state(cursor: &CursorState, focus: PointerFocusState) {
+    let focus_surface = focus
+        .scene_id
+        .map(|id| format!("{}\n", id.to_u64_lossy()))
+        .unwrap_or_default();
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("x"),
+        &format!("{}\n", crate::session_fs::logical_to_fixed_16_16(cursor.x)),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("y"),
+        &format!("{}\n", crate::session_fs::logical_to_fixed_16_16(cursor.y)),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("buttons"),
+        &format!("{}\n", cursor.buttons()),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("focus_surface"),
+        &focus_surface,
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("sx"),
+        &format!(
+            "{}\n",
+            crate::session_fs::logical_to_fixed_16_16(focus.local_x)
+        ),
+    );
+    let _ = crate::session_fs::write_text(
+        &crate::session_fs::pointer_state_path("sy"),
+        &format!(
+            "{}\n",
+            crate::session_fs::logical_to_fixed_16_16(focus.local_y)
+        ),
+    );
+}
+
 fn render_wayland_scene_surface(
     scene: &mut crate::scene_graph::SceneGraph,
     snapshot: &crate::wayland::server::WaylandWindowSnapshot,
@@ -96,7 +192,11 @@ fn render_wayland_scene_surface(
     if scene.get_surface(snapshot.scene_id).is_none() {
         scene.insert_surface(
             snapshot.scene_id,
-            crate::surface::Surface::new(snapshot.width.max(1), snapshot.height.max(1), PixelFormat::Bgra8888),
+            crate::surface::Surface::new(
+                snapshot.width.max(1),
+                snapshot.height.max(1),
+                PixelFormat::Bgra8888,
+            ),
         );
     }
     if let Some(surf) = scene.get_surface_mut(snapshot.scene_id) {
@@ -111,7 +211,14 @@ fn render_wayland_scene_surface(
 
         if snapshot.decorated {
             raster::fill_rect_copy(&mut pb, 0, 0, snapshot.width, snapshot.height, 0xFF20242A);
-            raster::fill_rect_copy(&mut pb, 0, 0, snapshot.width, snapshot.content_y, 0xFF353B45);
+            raster::fill_rect_copy(
+                &mut pb,
+                0,
+                0,
+                snapshot.width,
+                snapshot.content_y,
+                0xFF353B45,
+            );
             raster::fill_rect_copy(
                 &mut pb,
                 snapshot.content_x,
@@ -420,7 +527,10 @@ fn clear_damage(surface: &mut surface::PixelBuffer, damage: &crate::damage::Dama
     }
 }
 
-fn present_via_fb_file(fd: u32, surface: &surface::PixelBuffer) -> Result<usize, abi::errors::Errno> {
+fn present_via_fb_file(
+    fd: u32,
+    surface: &surface::PixelBuffer,
+) -> Result<usize, abi::errors::Errno> {
     let bytes = unsafe { core::slice::from_raw_parts(surface.ptr as *const u8, surface.len) };
     vfs_write(fd, bytes)
 }
@@ -436,14 +546,12 @@ fn read_fb_info() -> Option<FbInfoPayload> {
         format: 0,
     };
     let buf = unsafe {
-        core::slice::from_raw_parts_mut(
-            &mut payload as *mut _ as *mut u8,
-            FB_INFO_PAYLOAD_SIZE,
-        )
+        core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, FB_INFO_PAYLOAD_SIZE)
     };
     let n = stem::syscall::vfs::vfs_read(fd, buf).ok()?;
     let _ = stem::syscall::vfs::vfs_close(fd);
-    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0 {
+    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0
+    {
         return None;
     }
     Some(payload)
@@ -761,7 +869,10 @@ fn main(arg: usize) -> ! {
 
     let mut bootfb_fd: Option<u32> = None;
     if let Some(fb_info) = read_fb_info() {
-        if final_width != fb_info.width || final_height != fb_info.height || final_stride != fb_info.stride {
+        if final_width != fb_info.width
+            || final_height != fb_info.height
+            || final_stride != fb_info.stride
+        {
             let size = (fb_info.height as usize).saturating_mul(fb_info.stride as usize);
             if let Ok(fd) = stem::thing::sys::memfd_create("bloom.staging", size) {
                 let req = VmMapReq {
@@ -769,10 +880,7 @@ fn main(arg: usize) -> ! {
                     len: size,
                     prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
                     flags: abi::vm::VmMapFlags::empty(),
-                    backing: VmBacking::File {
-                        fd,
-                        offset: 0,
-                    },
+                    backing: VmBacking::File { fd, offset: 0 },
                 };
                 if let Ok(resp) = stem::thing::sys::vm_map(&req) {
                     final_ptr = resp.addr as *mut u8;
@@ -882,7 +990,7 @@ fn main(arg: usize) -> ! {
     stem::info!("bloom: UI CROWN initialized!");
 
     let _ = ui_crown;
-    
+
     // Initialize IPC client to connect to fontd service
     crate::font_client::init();
 
@@ -934,6 +1042,9 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
+    let mut prev_pointer_focus = PointerFocusState::default();
+    let mut prev_wayland_pointer_focus = PointerFocusState::default();
+    let mut prev_focus_window_for_wayland: Option<ThingId> = None;
     let mut cursor_underlays: BTreeMap<u32, CursorUnderlay> = BTreeMap::new();
     let mut drag_state: Option<DragState> = None;
 
@@ -945,6 +1056,7 @@ fn main(arg: usize) -> ! {
         crate::wayland::server::WaylandServer::new(screen_w as u32, screen_h as u32)
             .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
+    publish_pointer_state(&cursor, prev_pointer_focus);
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
@@ -1077,10 +1189,7 @@ fn main(arg: usize) -> ! {
                         len: size,
                         prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
                         flags: abi::vm::VmMapFlags::empty(),
-                        backing: VmBacking::File {
-                            fd,
-                            offset: 0,
-                        },
+                        backing: VmBacking::File { fd, offset: 0 },
                     };
                     match stem::thing::sys::vm_map(&req) {
                         Ok(p) => {
@@ -1471,7 +1580,6 @@ fn main(arg: usize) -> ! {
             let current_buttons = cursor.buttons();
             let left_down = (current_buttons & 1) != 0;
             let left_prev = (prev_cursor_buttons & 1) != 0;
-            prev_cursor_buttons = current_buttons;
             let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
 
             if left_down && !left_prev {
@@ -1505,7 +1613,9 @@ fn main(arg: usize) -> ! {
                                     start_mouse: (cursor.x, cursor.y),
                                     start_rect: hit_rect,
                                     kind: crate::window_manager::DragKind::Resize {
-                                        anchor: crate::window_manager::ResizeAnchor::from_edge(edge),
+                                        anchor: crate::window_manager::ResizeAnchor::from_edge(
+                                            edge,
+                                        ),
                                     },
                                 });
                             }
@@ -1515,11 +1625,16 @@ fn main(arg: usize) -> ! {
                                     start_mouse: (cursor.x, cursor.y),
                                     start_rect: hit_rect,
                                     kind: crate::window_manager::DragKind::Resize {
-                                        anchor: crate::window_manager::ResizeAnchor::from_corner(corner),
+                                        anchor: crate::window_manager::ResizeAnchor::from_corner(
+                                            corner,
+                                        ),
                                     },
                                 });
                             }
-                            Hit::ClientArea | Hit::ButtonMaximize | Hit::ButtonShade | Hit::None => {}
+                            Hit::ClientArea
+                            | Hit::ButtonMaximize
+                            | Hit::ButtonShade
+                            | Hit::None => {}
                         }
                     } else if hit_result == Hit::TitleBar {
                         let inset_right =
@@ -1596,9 +1711,7 @@ fn main(arg: usize) -> ! {
                                     next_rect.size.height += delta_y;
                                 }
                                 next_rect = crate::window_manager::clamp_window_rect(
-                                    next_rect,
-                                    screen_w,
-                                    screen_h,
+                                    next_rect, screen_w, screen_h,
                                 );
                                 let content_w = (next_rect.width()
                                     - crate::wayland::server::XDG_TOPLEVEL_BORDER * 2)
@@ -1622,8 +1735,11 @@ fn main(arg: usize) -> ! {
                             drag.start_rect.height(),
                         );
                         next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
-                        let _ =
-                            paint_pipeline.move_window(drag.window_id, next_rect.x(), next_rect.y());
+                        let _ = paint_pipeline.move_window(
+                            drag.window_id,
+                            next_rect.x(),
+                            next_rect.y(),
+                        );
                     }
                 }
             }
@@ -1634,6 +1750,112 @@ fn main(arg: usize) -> ! {
 
             alt_prev_down = alt_down;
         }
+
+        let pointer_focus = pointer_focus_at(&scene, &latest_wayland_snapshots, cursor.x, cursor.y);
+        let pointer_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+        let button_edges = cursor.buttons() ^ prev_cursor_buttons;
+        let mut emitted_pointer_event = false;
+
+        if prev_pointer_focus.scene_id != pointer_focus.scene_id {
+            if let Some(scene_id) = prev_pointer_focus.scene_id {
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::pointer_events_path(),
+                    &crate::session_fs::encode_pointer_leave_event(scene_id.to_u64_lossy()),
+                );
+                emitted_pointer_event = true;
+            }
+            if let Some(scene_id) = pointer_focus.scene_id {
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::pointer_events_path(),
+                    &crate::session_fs::encode_pointer_enter_event(
+                        scene_id.to_u64_lossy(),
+                        crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
+                        crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
+                    ),
+                );
+                emitted_pointer_event = true;
+            }
+        }
+
+        if pointer_moved {
+            let _ = crate::session_fs::append_line(
+                &crate::session_fs::pointer_events_path(),
+                &crate::session_fs::encode_pointer_motion_event(
+                    crate::session_fs::logical_to_fixed_16_16(cursor.x),
+                    crate::session_fs::logical_to_fixed_16_16(cursor.y),
+                    crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
+                    crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
+                    pointer_focus.scene_id.map(|id| id.to_u64_lossy()),
+                ),
+            );
+            emitted_pointer_event = true;
+        }
+
+        if button_edges != 0 {
+            for button in 0..32u8 {
+                let mask = 1u32 << button;
+                if button_edges & mask == 0 {
+                    continue;
+                }
+                let pressed = (cursor.buttons() & mask) != 0;
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::pointer_events_path(),
+                    &crate::session_fs::encode_pointer_button_event(
+                        button,
+                        pressed,
+                        crate::session_fs::logical_to_fixed_16_16(cursor.x),
+                        crate::session_fs::logical_to_fixed_16_16(cursor.y),
+                        crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
+                        crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
+                        pointer_focus.scene_id.map(|id| id.to_u64_lossy()),
+                    ),
+                );
+                emitted_pointer_event = true;
+                if pointer_focus != prev_wayland_pointer_focus {
+                    wayland_server.update_pointer_focus(
+                        pointer_focus.scene_id,
+                        pointer_focus.local_x,
+                        pointer_focus.local_y,
+                    );
+                    prev_wayland_pointer_focus = pointer_focus;
+                }
+                wayland_server.deliver_pointer_button(
+                    wayland_button_code(button),
+                    pressed,
+                    (loop_start_ns / 1_000_000) as u32,
+                );
+            }
+        }
+
+        if pointer_focus != prev_wayland_pointer_focus {
+            wayland_server.update_pointer_focus(
+                pointer_focus.scene_id,
+                pointer_focus.local_x,
+                pointer_focus.local_y,
+            );
+            prev_wayland_pointer_focus = pointer_focus;
+        } else if pointer_moved && pointer_focus.scene_id.is_some() {
+            wayland_server.update_pointer_focus(
+                pointer_focus.scene_id,
+                pointer_focus.local_x,
+                pointer_focus.local_y,
+            );
+        }
+
+        if focused_window != prev_focus_window_for_wayland {
+            wayland_server.focus_surface(focused_window);
+            prev_focus_window_for_wayland = focused_window;
+        }
+
+        if emitted_pointer_event {
+            let _ = crate::session_fs::append_line(
+                &crate::session_fs::pointer_events_path(),
+                &crate::session_fs::encode_pointer_frame_event(),
+            );
+        }
+        publish_pointer_state(&cursor, pointer_focus);
+        prev_pointer_focus = pointer_focus;
+        prev_cursor_buttons = cursor.buttons();
 
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
@@ -2114,7 +2336,9 @@ fn main(arg: usize) -> ! {
                             offset: 0,
                         },
                     };
-                    let ptr = stem::thing::sys::vm_map(&req).expect("map acquired frame").addr as *mut u8;
+                    let ptr = stem::thing::sys::vm_map(&req)
+                        .expect("map acquired frame")
+                        .addr as *mut u8;
                     buffer_cache.insert(next_fd, ptr);
                     ptr
                 };

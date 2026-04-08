@@ -37,7 +37,9 @@ use alloc::vec::Vec;
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer, State as TcpState};
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address};
-use stem::syscall::channel::{channel_send, channel_create, channel_recv, channel_try_recv, ChannelHandle};
+use stem::syscall::channel::{
+    channel_create, channel_recv, channel_send, channel_try_recv, ChannelHandle,
+};
 use stem::syscall::vfs::vfs_mount;
 use stem::{info, warn};
 

@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-use stem::thing::sys::{find, intern, prop_get, prop_set, stat, read};
+use stem::thing::sys::{find, intern, prop_get, prop_set, read, stat};
 use stem::thing::ThingId;
 
 /// Font epoch counter - increments when font availability changes.
@@ -235,11 +235,9 @@ impl FontGraph {
         let face = self.faces.get(&face_id)?;
         let file = self.files.get(&face.file_id)?;
         if !self.font_cache.contains_key(&face.file_id) {
-            if let Some(asset) = AssetBank::load_font_immediate(
-                file.fd,
-                file.size_bytes,
-                file.name.as_ref(),
-            ) {
+            if let Some(asset) =
+                AssetBank::load_font_immediate(file.fd, file.size_bytes, file.name.as_ref())
+            {
                 self.font_cache.insert(face.file_id, asset);
             }
         }

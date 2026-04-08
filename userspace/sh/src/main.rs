@@ -2,12 +2,10 @@
 #![no_main]
 
 extern crate alloc;
+use abi::syscall::vfs_flags;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::syscall::{
-    dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write,
-};
-use abi::syscall::vfs_flags;
+use stem::syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write};
 
 fn prompt() {
     let _ = vfs_write(1, b"petals> ");
@@ -172,10 +170,7 @@ fn run_pipeline(cmds: &[Cmd]) {
     if cmds.len() == 1 {
         // Simple case: single command, possibly with redirects.
         let cmd = &cmds[0];
-        let stdin_fd = cmd
-            .stdin_file
-            .and_then(|p| open_stdin_file(p))
-            .unwrap_or(0);
+        let stdin_fd = cmd.stdin_file.and_then(|p| open_stdin_file(p)).unwrap_or(0);
         let stdout_fd = cmd
             .stdout_file
             .and_then(|p| open_stdout_file(p, cmd.stdout_append))
@@ -202,9 +197,7 @@ fn run_pipeline(cmds: &[Cmd]) {
         // Determine stdin for this stage.
         let stdin_fd = if i == 0 {
             // First stage: honour < redirection, else use shell stdin.
-            cmd.stdin_file
-                .and_then(|p| open_stdin_file(p))
-                .unwrap_or(0)
+            cmd.stdin_file.and_then(|p| open_stdin_file(p)).unwrap_or(0)
         } else {
             // Middle/last stage: read from the previous pipe.
             prev_read_fd.unwrap_or(0)
@@ -285,10 +278,7 @@ fn main(_arg: usize) -> ! {
         segments.push(current);
 
         // Parse each segment into a Cmd.
-        let cmds: Vec<Cmd> = segments
-            .iter()
-            .filter_map(|seg| Cmd::parse(seg))
-            .collect();
+        let cmds: Vec<Cmd> = segments.iter().filter_map(|seg| Cmd::parse(seg)).collect();
 
         run_pipeline(&cmds);
     }

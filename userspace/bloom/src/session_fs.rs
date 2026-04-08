@@ -5,10 +5,15 @@ use abi::syscall::vfs_flags::{O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir, vfs_seek, vfs_stat, vfs_write};
+use stem::syscall::vfs::{
+    vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir, vfs_seek, vfs_stat, vfs_write,
+};
 use stem::thing::ThingId;
 
 pub const SESSION_ROOT: &str = "/session";
+pub const SEATS_ROOT: &str = "/session/seat0";
+pub const POINTER_ROOT: &str = "/session/seat0/pointer";
+pub const POINTER_STATE_ROOT: &str = "/session/seat0/pointer/state";
 pub const WINDOWS_ROOT: &str = "/session/windows";
 pub const SURFACES_ROOT: &str = "/session/surfaces";
 
@@ -23,8 +28,18 @@ pub struct AttachedBuffer {
 
 pub fn ensure_session_roots() {
     let _ = vfs_mkdir(SESSION_ROOT);
+    let _ = vfs_mkdir(SEATS_ROOT);
+    let _ = vfs_mkdir(POINTER_ROOT);
+    let _ = vfs_mkdir(POINTER_STATE_ROOT);
     let _ = vfs_mkdir(WINDOWS_ROOT);
     let _ = vfs_mkdir(SURFACES_ROOT);
+    ensure_file(&format!("{}/events", POINTER_ROOT), "");
+    ensure_file(&format!("{}/state/x", POINTER_ROOT), "0\n");
+    ensure_file(&format!("{}/state/y", POINTER_ROOT), "0\n");
+    ensure_file(&format!("{}/state/buttons", POINTER_ROOT), "0\n");
+    ensure_file(&format!("{}/state/focus_surface", POINTER_ROOT), "");
+    ensure_file(&format!("{}/state/sx", POINTER_ROOT), "0\n");
+    ensure_file(&format!("{}/state/sy", POINTER_ROOT), "0\n");
 }
 
 pub fn ensure_window_tree(id: &str) {
@@ -168,7 +183,10 @@ pub fn read_u64(path: &str) -> Option<u64> {
 }
 
 pub fn read_bool(path: &str) -> bool {
-    matches!(read_text(path).as_deref(), Some("1") | Some("true") | Some("yes"))
+    matches!(
+        read_text(path).as_deref(),
+        Some("1") | Some("true") | Some("yes")
+    )
 }
 
 pub fn parse_attach_payload(text: &str) -> Option<AttachedBuffer> {
@@ -208,12 +226,7 @@ pub fn parse_attach_payload(text: &str) -> Option<AttachedBuffer> {
     })
 }
 
-pub fn encode_configure_event(
-    serial: u64,
-    width: i32,
-    height: i32,
-    states: &[&str],
-) -> String {
+pub fn encode_configure_event(serial: u64, width: i32, height: i32, states: &[&str]) -> String {
     let mut out = format!(
         "{{\"type\":\"configure\",\"serial\":{},\"width\":{},\"height\":{},\"states\":[",
         serial,
@@ -234,6 +247,84 @@ pub fn encode_configure_event(
 
 pub fn encode_close_event() -> String {
     "{\"type\":\"close\"}\n".to_string()
+}
+
+pub fn pointer_events_path() -> String {
+    format!("{}/events", POINTER_ROOT)
+}
+
+pub fn pointer_state_path(name: &str) -> String {
+    format!("{}/{}", POINTER_STATE_ROOT, name)
+}
+
+pub fn encode_pointer_enter_event(surface_id: u64, sx_fp16: i32, sy_fp16: i32) -> String {
+    format!(
+        "{{\"type\":\"enter\",\"surface_id\":{},\"sx\":{},\"sy\":{}}}\n",
+        surface_id, sx_fp16, sy_fp16
+    )
+}
+
+pub fn encode_pointer_leave_event(surface_id: u64) -> String {
+    format!("{{\"type\":\"leave\",\"surface_id\":{}}}\n", surface_id)
+}
+
+pub fn encode_pointer_motion_event(
+    x_fp16: i32,
+    y_fp16: i32,
+    sx_fp16: i32,
+    sy_fp16: i32,
+    surface_id: Option<u64>,
+) -> String {
+    match surface_id {
+        Some(surface_id) => format!(
+            "{{\"type\":\"motion\",\"x\":{},\"y\":{},\"sx\":{},\"sy\":{},\"surface_id\":{}}}\n",
+            x_fp16, y_fp16, sx_fp16, sy_fp16, surface_id
+        ),
+        None => format!(
+            "{{\"type\":\"motion\",\"x\":{},\"y\":{},\"sx\":{},\"sy\":{}}}\n",
+            x_fp16, y_fp16, sx_fp16, sy_fp16
+        ),
+    }
+}
+
+pub fn encode_pointer_button_event(
+    button: u8,
+    pressed: bool,
+    x_fp16: i32,
+    y_fp16: i32,
+    sx_fp16: i32,
+    sy_fp16: i32,
+    surface_id: Option<u64>,
+) -> String {
+    match surface_id {
+        Some(surface_id) => format!(
+            "{{\"type\":\"button\",\"button\":{},\"pressed\":{},\"x\":{},\"y\":{},\"sx\":{},\"sy\":{},\"surface_id\":{}}}\n",
+            button,
+            if pressed { "true" } else { "false" },
+            x_fp16,
+            y_fp16,
+            sx_fp16,
+            sy_fp16,
+            surface_id
+        ),
+        None => format!(
+            "{{\"type\":\"button\",\"button\":{},\"pressed\":{},\"x\":{},\"y\":{},\"sx\":{},\"sy\":{}}}\n",
+            button,
+            if pressed { "true" } else { "false" },
+            x_fp16,
+            y_fp16,
+            sx_fp16,
+            sy_fp16
+        ),
+    }
+}
+
+pub fn encode_pointer_frame_event() -> String {
+    "{\"type\":\"frame\"}\n".to_string()
+}
+
+pub fn logical_to_fixed_16_16(value: i32) -> i32 {
+    value.saturating_mul(1 << 16)
 }
 
 fn ensure_file(path: &str, default_text: &str) {
@@ -286,6 +377,21 @@ mod tests {
         assert!(line.contains("\"serial\":42"));
         assert!(line.contains("\"activated\""));
         assert!(line.contains("\"resizing\""));
+    }
+
+    #[test]
+    fn pointer_motion_event_uses_fixed_point_fields() {
+        let line = encode_pointer_motion_event(1 << 16, 2 << 16, 3 << 16, 4 << 16, Some(7));
+        assert!(line.ends_with('\n'));
+        assert!(line.contains("\"type\":\"motion\""));
+        assert!(line.contains("\"x\":65536"));
+        assert!(line.contains("\"surface_id\":7"));
+    }
+
+    #[test]
+    fn fixed_point_helper_scales_integers() {
+        assert_eq!(logical_to_fixed_16_16(12), 12 << 16);
+        assert_eq!(logical_to_fixed_16_16(-3), -3 << 16);
     }
 
     #[test]

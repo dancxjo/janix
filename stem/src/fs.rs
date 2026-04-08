@@ -1,9 +1,9 @@
 //! High-level VFS utilities.
 
-use alloc::vec;
+use crate::syscall::{vfs_close, vfs_read, vfs_watch_path};
 use abi::errors::{Errno, SysResult};
-use abi::vfs_watch::{WatchEvent, mask, flags};
-use crate::syscall::{vfs_read, vfs_watch_path, vfs_close};
+use abi::vfs_watch::{flags, mask, WatchEvent};
+use alloc::vec;
 
 /// A file system event watcher.
 pub struct Watcher {
@@ -33,7 +33,7 @@ impl Watcher {
         let event = unsafe { *(buf.as_ptr() as *const WatchEvent) };
         let name_start = core::mem::size_of::<WatchEvent>();
         let name_end = name_start + event.name_len as usize;
-        
+
         let name = if event.name_len > 0 && name_end <= n {
             alloc::string::String::from_utf8_lossy(&buf[name_start..name_end]).into_owned()
         } else {
@@ -67,7 +67,7 @@ pub fn wait_until_exists(path: &str) -> SysResult<()> {
         if idx == 0 {
             ("/", &path[1..])
         } else {
-            (&path[..idx], &path[idx+1..])
+            (&path[..idx], &path[idx + 1..])
         }
     } else {
         (".", path)

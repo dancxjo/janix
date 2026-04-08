@@ -8,16 +8,16 @@ extern crate stem;
 mod atlas;
 
 use abi::font_protocol::{
-    decode_request_tag, encode_error, encode_pong, AtlasFormat, EnsureGlyphs, EnsureGlyphsResp,
-    FaceMetrics, FontError, FontRequestTag, GetFaceMetrics, GlyphPlacement,
+    AtlasFormat, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics, FontError, FontRequestTag,
+    GetFaceMetrics, GlyphPlacement, decode_request_tag, encode_error, encode_pong,
 };
-use abi::wait::{interest, ready, WaitKind, WaitResult, WaitSpec};
+use abi::wait::{WaitKind, WaitResult, WaitSpec, interest, ready};
 use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
-use stem::{error, info, warn};
 use stem::syscall;
-use stem::thing::sys::{create_node, prop_set};
 use stem::thing::ThingId;
+use stem::thing::sys::{create_node, prop_set};
+use stem::{error, info, warn};
 
 use alloc::collections::BTreeMap;
 use atlas::{AtlasCache, AtlasKey};
@@ -52,9 +52,11 @@ impl FontD {
         let path = "/boot/NotoSans-Regular.ttf";
         info!("FONTD: Loading default font from {}", path);
 
-        let data = std::fs::read(path).map_err(|e| {
-            error!("FONTD: Failed to read font file {}: {}", path, e);
-        }).ok()?;
+        let data = std::fs::read(path)
+            .map_err(|e| {
+                error!("FONTD: Failed to read font file {}: {}", path, e);
+            })
+            .ok()?;
 
         let static_slice: &'static [u8] = Vec::leak(data);
 
@@ -80,20 +82,24 @@ fn main() -> ! {
     // Open IPC ports for font service
     // Clients send to fontd_req (write), fontd reads from fontd_req (read)
     // Fontd sends to fontd_resp (write), clients read from fontd_resp (read)
-    let (fontd_req, fontd_resp) = match (syscall::channel_create(8192), syscall::channel_create(8192)) {
-        (Ok(req), Ok(resp)) => {
-            if let Ok(svc_node) = create_node("svc.FontD") {
-                let _ = prop_set(svc_node, "fontd.req", req.0 as u64);
-                let _ = prop_set(svc_node, "fontd.resp", resp.1 as u64);
-                info!("FONTD: Service node created, req={}, resp={}", req.0, resp.1);
+    let (fontd_req, fontd_resp) =
+        match (syscall::channel_create(8192), syscall::channel_create(8192)) {
+            (Ok(req), Ok(resp)) => {
+                if let Ok(svc_node) = create_node("svc.FontD") {
+                    let _ = prop_set(svc_node, "fontd.req", req.0 as u64);
+                    let _ = prop_set(svc_node, "fontd.resp", resp.1 as u64);
+                    info!(
+                        "FONTD: Service node created, req={}, resp={}",
+                        req.0, resp.1
+                    );
+                }
+                (req.1, resp.0)
             }
-            (req.1, resp.0)
-        }
-        _ => {
-            warn!("FONTD: Failed to create IPC ports");
-            (0, 0)
-        }
-    };
+            _ => {
+                warn!("FONTD: Failed to create IPC ports");
+                (0, 0)
+            }
+        };
 
     info!("FONTD: Service ready");
 
@@ -120,7 +126,8 @@ fn main() -> ! {
             continue;
         }
 
-        let ready_count = match syscall::wait_many(&wait_specs[..wait_count], &mut ready_buf, None) {
+        let ready_count = match syscall::wait_many(&wait_specs[..wait_count], &mut ready_buf, None)
+        {
             Ok(n) => n,
             Err(err) => {
                 warn!("FONTD: wait_many failed: {:?}", err);
@@ -134,7 +141,9 @@ fn main() -> ! {
                 1 if (ready_result.flags & ready::READABLE) != 0 => loop {
                     match syscall::channel_try_recv(fontd_req, &mut ipc_buf) {
                         Ok(len) if len > 0 => {
-                            if let Some(resp_len) = handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state) {
+                            if let Some(resp_len) =
+                                handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state)
+                            {
                                 let _ = syscall::channel_send(fontd_resp, &resp_buf[..resp_len]);
                             }
                         }

@@ -5,7 +5,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use stem::syscall::{channel_create, channel_send, channel_try_recv, ChannelHandle};
-use stem::thing::sys::{memfd_create, write, stat};
+use stem::thing::sys::{memfd_create, stat, write};
 use stem::thing::HandleId;
 use stem::thing::ThingId;
 
@@ -97,10 +97,7 @@ enum WaylandObject {
     Registry,
     Compositor,
     Shm,
-    ShmPool {
-        fd: u32,
-        size: u32,
-    },
+    ShmPool { fd: u32, size: u32 },
     Buffer(BufferMeta),
     Surface(SurfaceState),
     XdgWmBase,
@@ -373,7 +370,8 @@ impl WaylandServer {
             let Some(client) = self.clients.get_mut(&handle) else {
                 continue;
             };
-            if client.pending_ping_serial.is_some() && now_ns.saturating_sub(client.last_ping_ns) < 5_000_000_000
+            if client.pending_ping_serial.is_some()
+                && now_ns.saturating_sub(client.last_ping_ns) < 5_000_000_000
             {
                 continue;
             }
@@ -408,8 +406,7 @@ impl WaylandServer {
     }
 
     pub fn is_scene_surface(&self, scene_id: ThingId) -> bool {
-        self.scene_index.contains_key(&scene_id)
-            || self.layer_scene_index.contains_key(&scene_id)
+        self.scene_index.contains_key(&scene_id) || self.layer_scene_index.contains_key(&scene_id)
     }
 
     pub fn move_surface(&mut self, scene_id: ThingId, x: i32, y: i32) -> bool {
@@ -422,7 +419,8 @@ impl WaylandServer {
         let Some(client) = self.clients.get_mut(&handle) else {
             return false;
         };
-        let Some(WaylandObject::XdgToplevel(mut toplevel)) = client.objects.get(&object_id).cloned()
+        let Some(WaylandObject::XdgToplevel(mut toplevel)) =
+            client.objects.get(&object_id).cloned()
         else {
             return false;
         };
@@ -432,7 +430,8 @@ impl WaylandServer {
         client
             .objects
             .insert(object_id, WaylandObject::XdgToplevel(toplevel));
-        self.events.push(WaylandServerEvent::WindowChanged(scene_id));
+        self.events
+            .push(WaylandServerEvent::WindowChanged(scene_id));
         self.update_popups_for_parent(handle, parent_xdg_surface_id);
         true
     }
@@ -453,7 +452,15 @@ impl WaylandServer {
         };
         let w = width.max(64) as u32;
         let h = height.max(48) as u32;
-        Self::send_toplevel_configure(client, object_id, w, h, true, toplevel.maximized, toplevel.fullscreen);
+        Self::send_toplevel_configure(
+            client,
+            object_id,
+            w,
+            h,
+            true,
+            toplevel.maximized,
+            toplevel.fullscreen,
+        );
         true
     }
 
@@ -467,7 +474,8 @@ impl WaylandServer {
         let Some(client) = self.clients.get_mut(&handle) else {
             return false;
         };
-        let Some(WaylandObject::XdgToplevel(mut toplevel)) = client.objects.get(&object_id).cloned()
+        let Some(WaylandObject::XdgToplevel(mut toplevel)) =
+            client.objects.get(&object_id).cloned()
         else {
             return false;
         };
@@ -493,7 +501,15 @@ impl WaylandServer {
         client
             .objects
             .insert(object_id, WaylandObject::XdgToplevel(toplevel.clone()));
-        Self::send_toplevel_configure(client, object_id, width, height, false, toplevel.maximized, toplevel.fullscreen);
+        Self::send_toplevel_configure(
+            client,
+            object_id,
+            width,
+            height,
+            false,
+            toplevel.maximized,
+            toplevel.fullscreen,
+        );
         true
     }
 
@@ -512,16 +528,26 @@ impl WaylandServer {
             return false;
         };
         if is_popup {
-            if let Some(WaylandObject::XdgPopup(mut popup)) = client.objects.get(&object_id).cloned() {
+            if let Some(WaylandObject::XdgPopup(mut popup)) =
+                client.objects.get(&object_id).cloned()
+            {
                 popup.z_index = next_z;
-                client.objects.insert(object_id, WaylandObject::XdgPopup(popup));
-                self.events.push(WaylandServerEvent::WindowChanged(scene_id));
+                client
+                    .objects
+                    .insert(object_id, WaylandObject::XdgPopup(popup));
+                self.events
+                    .push(WaylandServerEvent::WindowChanged(scene_id));
                 return true;
             }
-        } else if let Some(WaylandObject::XdgToplevel(mut top)) = client.objects.get(&object_id).cloned() {
+        } else if let Some(WaylandObject::XdgToplevel(mut top)) =
+            client.objects.get(&object_id).cloned()
+        {
             top.z_index = next_z;
-            client.objects.insert(object_id, WaylandObject::XdgToplevel(top));
-            self.events.push(WaylandServerEvent::WindowChanged(scene_id));
+            client
+                .objects
+                .insert(object_id, WaylandObject::XdgToplevel(top));
+            self.events
+                .push(WaylandServerEvent::WindowChanged(scene_id));
             return true;
         }
         false
@@ -536,7 +562,12 @@ impl WaylandServer {
                         let decorated = !top.fullscreen;
                         let content_x = if decorated { XDG_TOPLEVEL_BORDER } else { 0 };
                         let content_y = if decorated { XDG_TOPLEVEL_TITLEBAR } else { 0 };
-                        let width = top.content_width as i32 + if decorated { XDG_TOPLEVEL_BORDER * 2 } else { 0 };
+                        let width = top.content_width as i32
+                            + if decorated {
+                                XDG_TOPLEVEL_BORDER * 2
+                            } else {
+                                0
+                            };
                         let height = top.content_height as i32
                             + if decorated {
                                 XDG_TOPLEVEL_TITLEBAR + XDG_TOPLEVEL_BORDER
@@ -678,15 +709,18 @@ impl WaylandServer {
             match obj {
                 WaylandObject::XdgToplevel(top) => {
                     self.scene_index.remove(&top.scene_id);
-                    self.events.push(WaylandServerEvent::WindowRemoved(top.scene_id));
+                    self.events
+                        .push(WaylandServerEvent::WindowRemoved(top.scene_id));
                 }
                 WaylandObject::XdgPopup(popup) => {
                     self.scene_index.remove(&popup.scene_id);
-                    self.events.push(WaylandServerEvent::WindowRemoved(popup.scene_id));
+                    self.events
+                        .push(WaylandServerEvent::WindowRemoved(popup.scene_id));
                 }
                 WaylandObject::LayerSurface(ls) => {
                     self.layer_scene_index.remove(&ls.scene_id);
-                    self.events.push(WaylandServerEvent::WindowRemoved(ls.scene_id));
+                    self.events
+                        .push(WaylandServerEvent::WindowRemoved(ls.scene_id));
                 }
                 _ => {}
             }
@@ -717,681 +751,904 @@ impl WaylandServer {
             return;
         };
         while client.in_buf.len().saturating_sub(consumed) >= 8 {
-                let buf = &client.in_buf[consumed..];
-                let (obj_id, opcode, size) = decode_header(buf);
-                if size < 8 || buf.len() < size as usize {
-                    break;
+            let buf = &client.in_buf[consumed..];
+            let (obj_id, opcode, size) = decode_header(buf);
+            if size < 8 || buf.len() < size as usize {
+                break;
+            }
+            let payload = &buf[8..size as usize];
+            let obj = client.objects.get(&obj_id).cloned();
+            match obj {
+                Some(WaylandObject::Display) => {
+                    if opcode == 1 && payload.len() >= 4 {
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(new_id, WaylandObject::Registry);
+
+                        let mut compositor = MessageBuilder::new(new_id, 0);
+                        compositor.push_u32(GLOBAL_WL_COMPOSITOR);
+                        compositor.push_string("wl_compositor");
+                        compositor.push_u32(4);
+                        client.out_buf.extend_from_slice(&compositor.build());
+
+                        let mut shm = MessageBuilder::new(new_id, 0);
+                        shm.push_u32(GLOBAL_WL_SHM);
+                        shm.push_string("wl_shm");
+                        shm.push_u32(1);
+                        client.out_buf.extend_from_slice(&shm.build());
+
+                        let mut xdg = MessageBuilder::new(new_id, 0);
+                        xdg.push_u32(GLOBAL_XDG_WM_BASE);
+                        xdg.push_string("xdg_wm_base");
+                        xdg.push_u32(1);
+                        client.out_buf.extend_from_slice(&xdg.build());
+
+                        let mut subcomp = MessageBuilder::new(new_id, 0);
+                        subcomp.push_u32(GLOBAL_WL_SUBCOMPOSITOR);
+                        subcomp.push_string("wl_subcompositor");
+                        subcomp.push_u32(1);
+                        client.out_buf.extend_from_slice(&subcomp.build());
+
+                        let mut output = MessageBuilder::new(new_id, 0);
+                        output.push_u32(GLOBAL_WL_OUTPUT);
+                        output.push_string("wl_output");
+                        output.push_u32(4);
+                        client.out_buf.extend_from_slice(&output.build());
+
+                        let mut seat = MessageBuilder::new(new_id, 0);
+                        seat.push_u32(GLOBAL_WL_SEAT);
+                        seat.push_string("wl_seat");
+                        seat.push_u32(7);
+                        client.out_buf.extend_from_slice(&seat.build());
+
+                        let mut layer = MessageBuilder::new(new_id, 0);
+                        layer.push_u32(GLOBAL_LAYER_SHELL);
+                        layer.push_string("zwlr_layer_shell_v1");
+                        layer.push_u32(4);
+                        client.out_buf.extend_from_slice(&layer.build());
+
+                        let mut activation = MessageBuilder::new(new_id, 0);
+                        activation.push_u32(GLOBAL_XDG_ACTIVATION);
+                        activation.push_string("xdg_activation_v1");
+                        activation.push_u32(1);
+                        client.out_buf.extend_from_slice(&activation.build());
+                    }
                 }
-                let payload = &buf[8..size as usize];
-                let obj = client.objects.get(&obj_id).cloned();
-                match obj {
-                    Some(WaylandObject::Display) => {
-                        if opcode == 1 && payload.len() >= 4 {
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(new_id, WaylandObject::Registry);
-
-                            let mut compositor = MessageBuilder::new(new_id, 0);
-                            compositor.push_u32(GLOBAL_WL_COMPOSITOR);
-                            compositor.push_string("wl_compositor");
-                            compositor.push_u32(4);
-                            client.out_buf.extend_from_slice(&compositor.build());
-
-                            let mut shm = MessageBuilder::new(new_id, 0);
-                            shm.push_u32(GLOBAL_WL_SHM);
-                            shm.push_string("wl_shm");
-                            shm.push_u32(1);
-                            client.out_buf.extend_from_slice(&shm.build());
-
-                            let mut xdg = MessageBuilder::new(new_id, 0);
-                            xdg.push_u32(GLOBAL_XDG_WM_BASE);
-                            xdg.push_string("xdg_wm_base");
-                            xdg.push_u32(1);
-                            client.out_buf.extend_from_slice(&xdg.build());
-
-                            let mut subcomp = MessageBuilder::new(new_id, 0);
-                            subcomp.push_u32(GLOBAL_WL_SUBCOMPOSITOR);
-                            subcomp.push_string("wl_subcompositor");
-                            subcomp.push_u32(1);
-                            client.out_buf.extend_from_slice(&subcomp.build());
-
-                            let mut output = MessageBuilder::new(new_id, 0);
-                            output.push_u32(GLOBAL_WL_OUTPUT);
-                            output.push_string("wl_output");
-                            output.push_u32(4);
-                            client.out_buf.extend_from_slice(&output.build());
-
-                            let mut seat = MessageBuilder::new(new_id, 0);
-                            seat.push_u32(GLOBAL_WL_SEAT);
-                            seat.push_string("wl_seat");
-                            seat.push_u32(7);
-                            client.out_buf.extend_from_slice(&seat.build());
-
-                            let mut layer = MessageBuilder::new(new_id, 0);
-                            layer.push_u32(GLOBAL_LAYER_SHELL);
-                            layer.push_string("zwlr_layer_shell_v1");
-                            layer.push_u32(4);
-                            client.out_buf.extend_from_slice(&layer.build());
-
-                            let mut activation = MessageBuilder::new(new_id, 0);
-                            activation.push_u32(GLOBAL_XDG_ACTIVATION);
-                            activation.push_string("xdg_activation_v1");
-                            activation.push_u32(1);
-                            client.out_buf.extend_from_slice(&activation.build());
-                        }
-                    }
-                    Some(WaylandObject::Registry) => {
-                        if opcode == 0 && payload.len() >= 12 {
-                            let name = read_u32(payload, 0);
-                            let new_id = read_u32(payload, payload.len() - 4);
-                            let sw = self.screen_width;
-                            let sh = self.screen_height;
-                            match name {
-                                GLOBAL_WL_COMPOSITOR => {
-                                    client.objects.insert(new_id, WaylandObject::Compositor);
-                                }
-                                GLOBAL_WL_SHM => {
-                                    client.objects.insert(new_id, WaylandObject::Shm);
-                                    let mut mb = MessageBuilder::new(new_id, 0);
-                                    mb.push_u32(0);
-                                    client.out_buf.extend_from_slice(&mb.build());
-                                }
-                                GLOBAL_XDG_WM_BASE => {
-                                    client.objects.insert(new_id, WaylandObject::XdgWmBase);
-                                }
-                                GLOBAL_WL_SUBCOMPOSITOR => {
-                                    client.objects.insert(new_id, WaylandObject::Subcompositor);
-                                }
-                                GLOBAL_WL_OUTPUT => {
-                                    client.objects.insert(new_id, WaylandObject::Output);
-                                    // geometry(x,y,pw_mm,ph_mm,subpixel,make,model,transform)
-                                    let mut geo = MessageBuilder::new(new_id, 0);
-                                    geo.push_i32(0); geo.push_i32(0);
-                                    geo.push_i32(0); geo.push_i32(0);
-                                    geo.push_u32(0);
-                                    geo.push_string("Thing-OS");
-                                    geo.push_string("Virtual");
-                                    geo.push_u32(0);
-                                    client.out_buf.extend_from_slice(&geo.build());
-                                    // mode(flags, width, height, refresh)
-                                    let mut mode = MessageBuilder::new(new_id, 1);
-                                    mode.push_u32(3); // current + preferred
-                                    mode.push_i32(sw as i32);
-                                    mode.push_i32(sh as i32);
-                                    mode.push_i32(60_000);
-                                    client.out_buf.extend_from_slice(&mode.build());
-                                    // scale(factor)
-                                    let mut scale = MessageBuilder::new(new_id, 3);
-                                    scale.push_i32(1);
-                                    client.out_buf.extend_from_slice(&scale.build());
-                                    // done()
-                                    let done = MessageBuilder::new(new_id, 2);
-                                    client.out_buf.extend_from_slice(&done.build());
-                                }
-                                GLOBAL_WL_SEAT => {
-                                    client.objects.insert(new_id, WaylandObject::Seat);
-                                    // capabilities(pointer=1 | keyboard=2 = 3)
-                                    let mut caps = MessageBuilder::new(new_id, 0);
-                                    caps.push_u32(3);
-                                    client.out_buf.extend_from_slice(&caps.build());
-                                    // name("seat0")
-                                    let mut name_msg = MessageBuilder::new(new_id, 1);
-                                    name_msg.push_string("seat0");
-                                    client.out_buf.extend_from_slice(&name_msg.build());
-                                }
-                                GLOBAL_LAYER_SHELL => {
-                                    client.objects.insert(new_id, WaylandObject::LayerShell);
-                                }
-                                GLOBAL_XDG_ACTIVATION => {
-                                    client.objects.insert(new_id, WaylandObject::XdgActivation);
-                                }
-                                _ => {}
+                Some(WaylandObject::Registry) => {
+                    if opcode == 0 && payload.len() >= 12 {
+                        let name = read_u32(payload, 0);
+                        let new_id = read_u32(payload, payload.len() - 4);
+                        let sw = self.screen_width;
+                        let sh = self.screen_height;
+                        match name {
+                            GLOBAL_WL_COMPOSITOR => {
+                                client.objects.insert(new_id, WaylandObject::Compositor);
                             }
-                        }
-                    }
-                    Some(WaylandObject::Compositor) => {
-                        if opcode == 0 && payload.len() >= 4 {
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(
-                                new_id,
-                                WaylandObject::Surface(SurfaceState {
-                                    buffer_id: None,
-                                    xdg_surface_id: None,
-                                    subsurface_id: None,
-                                    layer_surface_id: None,
-                                    frame_callbacks: Vec::new(),
-                                }),
-                            );
-                        }
-                    }
-                    Some(WaylandObject::Shm) => {
-                        if opcode == 0 && payload.len() >= 12 {
-                            let new_id = read_u32(payload, 0);
-                            let fd = read_u32(payload, 4);
-                            let size = read_u32(payload, 8);
-                            client
-                                .objects
-                                .insert(new_id, WaylandObject::ShmPool { fd, size });
-                        }
-                    }
-                    Some(WaylandObject::ShmPool { fd, .. }) => {
-                        if opcode == 0 && payload.len() >= 24 {
-                            let new_id = read_u32(payload, 0);
-                            let meta = BufferMeta {
-                                fd,
-                                width: read_u32(payload, 8),
-                                height: read_u32(payload, 12),
-                                stride: read_u32(payload, 16),
-                                format: read_u32(payload, 20),
-                            };
-                            client.objects.insert(new_id, WaylandObject::Buffer(meta));
-                        }
-                    }
-                    Some(WaylandObject::Surface(mut surface)) => match opcode {
-                        0 => {
-                            client.objects.remove(&obj_id);
-                        }
-                        1 if payload.len() >= 4 => {
-                            let buffer_id = read_u32(payload, 0);
-                            surface.buffer_id = if buffer_id == 0 { None } else { Some(buffer_id) };
-                            client.objects.insert(obj_id, WaylandObject::Surface(surface));
-                        }
-                        // damage / damage_buffer: ignored (we re-composite the full surface on commit)
-                        2 | 9 => {
-                            client.objects.insert(obj_id, WaylandObject::Surface(surface));
-                        }
-                        // frame: register a wl_callback to fire after the next present
-                        3 if payload.len() >= 4 => {
-                            let cb_id = read_u32(payload, 0);
-                            client.objects.insert(cb_id, WaylandObject::Callback);
-                            surface.frame_callbacks.push(cb_id);
-                            client.objects.insert(obj_id, WaylandObject::Surface(surface));
-                        }
-                        // set_buffer_scale: ignored
-                        8 => {
-                            client.objects.insert(obj_id, WaylandObject::Surface(surface));
-                        }
-                        6 => {
-                            client.objects.insert(obj_id, WaylandObject::Surface(surface));
-                            self.handle_surface_commit(handle, &mut client, obj_id, &mut deferred_events);
-                        }
-                        _ => {}
-                    },
-                    Some(WaylandObject::XdgWmBase) => match opcode {
-                        1 if payload.len() >= 4 => {
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(new_id, WaylandObject::XdgPositioner(PositionerState::default()));
-                        }
-                        2 if payload.len() >= 8 => {
-                            let new_id = read_u32(payload, 0);
-                            let wl_surface_id = read_u32(payload, 4);
-                            if let Some(WaylandObject::Surface(mut surface)) =
-                                client.objects.get(&wl_surface_id).cloned()
-                            {
-                                surface.xdg_surface_id = Some(new_id);
-                                client.objects.insert(wl_surface_id, WaylandObject::Surface(surface));
-                                client.objects.insert(
-                                    new_id,
-                                    WaylandObject::XdgSurface(XdgSurfaceState {
-                                        wl_surface_id,
-                                        role: XdgRole::None,
-                                        pending_configure: None,
-                                        last_acked_configure: None,
-                                        applied_configure: None,
-                                        window_geometry: None,
-                                    }),
-                                );
+                            GLOBAL_WL_SHM => {
+                                client.objects.insert(new_id, WaylandObject::Shm);
+                                let mut mb = MessageBuilder::new(new_id, 0);
+                                mb.push_u32(0);
+                                client.out_buf.extend_from_slice(&mb.build());
                             }
-                        }
-                        3 if payload.len() >= 4 => {
-                            let serial = read_u32(payload, 0);
-                            if client.pending_ping_serial == Some(serial) {
-                                client.pending_ping_serial = None;
+                            GLOBAL_XDG_WM_BASE => {
+                                client.objects.insert(new_id, WaylandObject::XdgWmBase);
                             }
-                        }
-                        _ => {}
-                    },
-                    Some(WaylandObject::XdgPositioner(mut pos)) => {
-                        match opcode {
-                            0 => {
-                                client.objects.remove(&obj_id);
+                            GLOBAL_WL_SUBCOMPOSITOR => {
+                                client.objects.insert(new_id, WaylandObject::Subcompositor);
                             }
-                            1 if payload.len() >= 8 => {
-                                pos.width = read_i32(payload, 0).max(1) as u32;
-                                pos.height = read_i32(payload, 4).max(1) as u32;
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
+                            GLOBAL_WL_OUTPUT => {
+                                client.objects.insert(new_id, WaylandObject::Output);
+                                // geometry(x,y,pw_mm,ph_mm,subpixel,make,model,transform)
+                                let mut geo = MessageBuilder::new(new_id, 0);
+                                geo.push_i32(0);
+                                geo.push_i32(0);
+                                geo.push_i32(0);
+                                geo.push_i32(0);
+                                geo.push_u32(0);
+                                geo.push_string("Thing-OS");
+                                geo.push_string("Virtual");
+                                geo.push_u32(0);
+                                client.out_buf.extend_from_slice(&geo.build());
+                                // mode(flags, width, height, refresh)
+                                let mut mode = MessageBuilder::new(new_id, 1);
+                                mode.push_u32(3); // current + preferred
+                                mode.push_i32(sw as i32);
+                                mode.push_i32(sh as i32);
+                                mode.push_i32(60_000);
+                                client.out_buf.extend_from_slice(&mode.build());
+                                // scale(factor)
+                                let mut scale = MessageBuilder::new(new_id, 3);
+                                scale.push_i32(1);
+                                client.out_buf.extend_from_slice(&scale.build());
+                                // done()
+                                let done = MessageBuilder::new(new_id, 2);
+                                client.out_buf.extend_from_slice(&done.build());
                             }
-                            2 if payload.len() >= 16 => {
-                                pos.anchor_rect = Geometry {
-                                    x: read_i32(payload, 0),
-                                    y: read_i32(payload, 4),
-                                    width: read_i32(payload, 8),
-                                    height: read_i32(payload, 12),
-                                };
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
+                            GLOBAL_WL_SEAT => {
+                                client.objects.insert(new_id, WaylandObject::Seat);
+                                // capabilities(pointer=1 | keyboard=2 = 3)
+                                let mut caps = MessageBuilder::new(new_id, 0);
+                                caps.push_u32(3);
+                                client.out_buf.extend_from_slice(&caps.build());
+                                // name("seat0")
+                                let mut name_msg = MessageBuilder::new(new_id, 1);
+                                name_msg.push_string("seat0");
+                                client.out_buf.extend_from_slice(&name_msg.build());
                             }
-                            3 if payload.len() >= 4 => {
-                                pos.anchor = read_u32(payload, 0);
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
+                            GLOBAL_LAYER_SHELL => {
+                                client.objects.insert(new_id, WaylandObject::LayerShell);
                             }
-                            4 if payload.len() >= 4 => {
-                                pos.gravity = read_u32(payload, 0);
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
-                            }
-                            5 if payload.len() >= 4 => {
-                                pos.constraint_adjustment = read_u32(payload, 0);
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
-                            }
-                            6 if payload.len() >= 8 => {
-                                pos.offset_x = read_i32(payload, 0);
-                                pos.offset_y = read_i32(payload, 4);
-                                client.objects.insert(obj_id, WaylandObject::XdgPositioner(pos));
+                            GLOBAL_XDG_ACTIVATION => {
+                                client.objects.insert(new_id, WaylandObject::XdgActivation);
                             }
                             _ => {}
                         }
                     }
-                    Some(WaylandObject::XdgSurface(mut xdg_surface)) => match opcode {
-                        0 => {
-                            self.destroy_xdg_surface(handle, &mut client, obj_id, &mut deferred_events);
-                        }
-                        1 if payload.len() >= 4 => {
-                            let new_id = read_u32(payload, 0);
-                            if matches!(xdg_surface.role, XdgRole::None) {
-                                let scene_id = scene_id_for(handle, new_id);
-                                let toplevel = XdgToplevelState {
-                                    xdg_surface_id: obj_id,
-                                    scene_id,
-                                    title: "Wayland Window".to_string(),
-                                    app_id: String::new(),
-                                    min_width: 0,
-                                    min_height: 0,
-                                    max_width: 0,
-                                    max_height: 0,
-                                    x: 80,
-                                    y: 80,
-                                    content_width: 480,
-                                    content_height: 320,
-                                    pending_width: 480,
-                                    pending_height: 320,
-                                    pending_serial: None,
-                                    mapped: false,
-                                    maximized: false,
-                                    fullscreen: false,
-                                    minimized: false,
-                                    z_index: 100,
-                                    buffer: None,
-                                };
-                                xdg_surface.role = XdgRole::Toplevel(new_id);
-                                client.objects.insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
-                                client.objects.insert(new_id, WaylandObject::XdgToplevel(toplevel));
-                                self.scene_index.insert(scene_id, (handle, new_id, false));
-                                Self::send_toplevel_configure(&mut client, new_id, 480, 320, false, false, false);
-                            }
-                        }
-                        2 if payload.len() >= 12 => {
-                            let new_id = read_u32(payload, 0);
-                            let parent_xdg_surface_id = read_u32(payload, 4);
-                            let positioner_id = read_u32(payload, 8);
-                            if matches!(xdg_surface.role, XdgRole::None) {
-                                let scene_id = scene_id_for(handle, new_id);
-                                let (rel_x, rel_y, width, height) =
-                                    Self::compute_popup_geometry(&client, parent_xdg_surface_id, positioner_id);
-                                let popup = XdgPopupState {
-                                    xdg_surface_id: obj_id,
-                                    scene_id,
-                                    parent_xdg_surface_id,
-                                    positioner_id,
-                                    rel_x,
-                                    rel_y,
-                                    width,
-                                    height,
-                                    pending_rel_x: rel_x,
-                                    pending_rel_y: rel_y,
-                                    pending_width: width,
-                                    pending_height: height,
-                                    pending_serial: None,
-                                    grab: false,
-                                    mapped: false,
-                                    z_index: 200,
-                                    buffer: None,
-                                };
-                                xdg_surface.role = XdgRole::Popup(new_id);
-                                client.objects.insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
-                                client.objects.insert(new_id, WaylandObject::XdgPopup(popup));
-                                self.scene_index.insert(scene_id, (handle, new_id, true));
-                                Self::send_popup_configure(&mut client, new_id, rel_x, rel_y, width, height);
-                            }
-                        }
-                        3 if payload.len() >= 16 => {
-                            xdg_surface.window_geometry = Some(Geometry {
-                                x: read_i32(payload, 0),
-                                y: read_i32(payload, 4),
-                                width: read_i32(payload, 8),
-                                height: read_i32(payload, 12),
-                            });
-                            client.objects.insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
-                        }
-                        4 if payload.len() >= 4 => {
-                            xdg_surface.last_acked_configure = Some(read_u32(payload, 0));
-                            client.objects.insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
-                        }
-                        _ => {}
-                    },
-                    Some(WaylandObject::XdgToplevel(mut top)) => match opcode {
-                        0 => {
-                            self.destroy_role_object(handle, &mut client, obj_id, false, &mut deferred_events);
-                        }
-                        2 => {
-                            top.title = read_string(payload);
-                            let scene_id = top.scene_id;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top));
-                            deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
-                        }
-                        3 => {
-                            top.app_id = read_string(payload);
-                            let scene_id = top.scene_id;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top));
-                            deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
-                        }
-                        7 if payload.len() >= 8 => {
-                            top.max_width = read_i32(payload, 0);
-                            top.max_height = read_i32(payload, 4);
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top));
-                        }
-                        8 if payload.len() >= 8 => {
-                            top.min_width = read_i32(payload, 0);
-                            top.min_height = read_i32(payload, 4);
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top));
-                        }
-                        9 => {
-                            top.maximized = true;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
-                            Self::send_toplevel_configure(&mut client, obj_id, top.content_width.max(480), top.content_height.max(320), false, true, top.fullscreen);
-                        }
-                        10 => {
-                            top.maximized = false;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
-                            Self::send_toplevel_configure(&mut client, obj_id, top.content_width.max(480), top.content_height.max(320), false, false, top.fullscreen);
-                        }
-                        11 => {
-                            top.fullscreen = true;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
-                            Self::send_toplevel_configure(&mut client, obj_id, top.content_width.max(640), top.content_height.max(360), false, top.maximized, true);
-                        }
-                        12 => {
-                            top.fullscreen = false;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
-                            Self::send_toplevel_configure(&mut client, obj_id, top.content_width.max(480), top.content_height.max(320), false, top.maximized, false);
-                        }
-                        13 => {
-                            top.minimized = true;
-                            client.objects.insert(obj_id, WaylandObject::XdgToplevel(top));
-                        }
-                        _ => {}
-                    },
-                    Some(WaylandObject::XdgPopup(mut popup)) => match opcode {
-                        0 => {
-                            self.destroy_role_object(handle, &mut client, obj_id, true, &mut deferred_events);
-                        }
-                        1 if payload.len() >= 4 => {
-                            let _seat = read_u32(payload, 0);
-                            popup.grab = true;
-                            client.objects.insert(obj_id, WaylandObject::XdgPopup(popup));
-                        }
-                        _ => {}
-                    },
-                    // ── wl_subcompositor ─────────────────────────────────────────────────
-                    Some(WaylandObject::Subcompositor) => {
-                        if opcode == 1 && payload.len() >= 12 {
-                            let new_id               = read_u32(payload, 0);
-                            let wl_surface_id        = read_u32(payload, 4);
-                            let parent_wl_surface_id = read_u32(payload, 8);
-                            if let Some(WaylandObject::Surface(mut surf)) =
-                                client.objects.get(&wl_surface_id).cloned()
-                            {
-                                surf.subsurface_id = Some(new_id);
-                                client.objects.insert(wl_surface_id, WaylandObject::Surface(surf));
-                            }
-                            client.objects.insert(new_id, WaylandObject::Subsurface(SubsurfaceState {
-                                wl_surface_id,
-                                parent_wl_surface_id,
-                                x: 0, y: 0, pending_x: 0, pending_y: 0,
-                                synchronized: true,
-                            }));
+                }
+                Some(WaylandObject::Compositor) => {
+                    if opcode == 0 && payload.len() >= 4 {
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(
+                            new_id,
+                            WaylandObject::Surface(SurfaceState {
+                                buffer_id: None,
+                                xdg_surface_id: None,
+                                subsurface_id: None,
+                                layer_surface_id: None,
+                                frame_callbacks: Vec::new(),
+                            }),
+                        );
+                    }
+                }
+                Some(WaylandObject::Shm) => {
+                    if opcode == 0 && payload.len() >= 12 {
+                        let new_id = read_u32(payload, 0);
+                        let fd = read_u32(payload, 4);
+                        let size = read_u32(payload, 8);
+                        client
+                            .objects
+                            .insert(new_id, WaylandObject::ShmPool { fd, size });
+                    }
+                }
+                Some(WaylandObject::ShmPool { fd, .. }) => {
+                    if opcode == 0 && payload.len() >= 24 {
+                        let new_id = read_u32(payload, 0);
+                        let meta = BufferMeta {
+                            fd,
+                            width: read_u32(payload, 8),
+                            height: read_u32(payload, 12),
+                            stride: read_u32(payload, 16),
+                            format: read_u32(payload, 20),
+                        };
+                        client.objects.insert(new_id, WaylandObject::Buffer(meta));
+                    }
+                }
+                Some(WaylandObject::Surface(mut surface)) => match opcode {
+                    0 => {
+                        client.objects.remove(&obj_id);
+                    }
+                    1 if payload.len() >= 4 => {
+                        let buffer_id = read_u32(payload, 0);
+                        surface.buffer_id = if buffer_id == 0 {
+                            None
+                        } else {
+                            Some(buffer_id)
+                        };
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Surface(surface));
+                    }
+                    // damage / damage_buffer: ignored (we re-composite the full surface on commit)
+                    2 | 9 => {
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Surface(surface));
+                    }
+                    // frame: register a wl_callback to fire after the next present
+                    3 if payload.len() >= 4 => {
+                        let cb_id = read_u32(payload, 0);
+                        client.objects.insert(cb_id, WaylandObject::Callback);
+                        surface.frame_callbacks.push(cb_id);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Surface(surface));
+                    }
+                    // set_buffer_scale: ignored
+                    8 => {
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Surface(surface));
+                    }
+                    6 => {
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Surface(surface));
+                        self.handle_surface_commit(
+                            handle,
+                            &mut client,
+                            obj_id,
+                            &mut deferred_events,
+                        );
+                    }
+                    _ => {}
+                },
+                Some(WaylandObject::XdgWmBase) => match opcode {
+                    1 if payload.len() >= 4 => {
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(
+                            new_id,
+                            WaylandObject::XdgPositioner(PositionerState::default()),
+                        );
+                    }
+                    2 if payload.len() >= 8 => {
+                        let new_id = read_u32(payload, 0);
+                        let wl_surface_id = read_u32(payload, 4);
+                        if let Some(WaylandObject::Surface(mut surface)) =
+                            client.objects.get(&wl_surface_id).cloned()
+                        {
+                            surface.xdg_surface_id = Some(new_id);
+                            client
+                                .objects
+                                .insert(wl_surface_id, WaylandObject::Surface(surface));
+                            client.objects.insert(
+                                new_id,
+                                WaylandObject::XdgSurface(XdgSurfaceState {
+                                    wl_surface_id,
+                                    role: XdgRole::None,
+                                    pending_configure: None,
+                                    last_acked_configure: None,
+                                    applied_configure: None,
+                                    window_geometry: None,
+                                }),
+                            );
                         }
                     }
-                    // ── wl_subsurface ────────────────────────────────────────────────────
-                    Some(WaylandObject::Subsurface(mut sub)) => match opcode {
-                        0 => { client.objects.remove(&obj_id); }
-                        1 if payload.len() >= 8 => {
-                            sub.pending_x = read_i32(payload, 0);
-                            sub.pending_y = read_i32(payload, 4);
-                            client.objects.insert(obj_id, WaylandObject::Subsurface(sub));
-                        }
-                        2 | 3 => { /* place_above / place_below: z-ordering ignored */ }
-                        4 => { // set_sync
-                            sub.synchronized = true;
-                            client.objects.insert(obj_id, WaylandObject::Subsurface(sub));
-                        }
-                        5 => { // set_desync: apply position immediately
-                            sub.x = sub.pending_x;
-                            sub.y = sub.pending_y;
-                            sub.synchronized = false;
-                            client.objects.insert(obj_id, WaylandObject::Subsurface(sub));
-                        }
-                        _ => {}
-                    },
-                    // ── wl_seat ──────────────────────────────────────────────────────────
-                    Some(WaylandObject::Seat) => match opcode {
-                        0 if payload.len() >= 4 => { // get_pointer
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(new_id, WaylandObject::Pointer);
-                        }
-                        1 if payload.len() >= 4 => { // get_keyboard
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(new_id, WaylandObject::Keyboard);
-                            // Send keymap (XKB_V1 = 1, fd-as-bs_id, size)
-                            let keymap = crate::ui_events::XKB_KEYMAP.as_bytes();
-                            if let Ok(fd) = memfd_create("wl_keymap", 0) {
-                                let _ = write(fd, keymap);
-                                let mut mb = MessageBuilder::new(new_id, 0); // keymap
-                                mb.push_u32(1); // format XKB_V1
-                                mb.push_u32(fd);
-                                mb.push_u32((keymap.len() + 1) as u32);
-                                client.out_buf.extend_from_slice(&mb.build());
-                            }
-                        }
-                        3 => { /* release */ client.objects.remove(&obj_id); }
-                        _ => {}
-                    },
-                    // ── wl_pointer ───────────────────────────────────────────────────────
-                    Some(WaylandObject::Pointer) => match opcode {
-                        0 if payload.len() >= 16 => { // set_cursor
-                            let surface_id  = read_u32(payload, 4);
-                            let hotspot_x   = read_i32(payload, 8);
-                            let hotspot_y   = read_i32(payload, 12);
-                            if surface_id == 0 {
-                                self.cursor_surface = None;
-                            } else {
-                                self.cursor_surface = Some(CursorSurface {
-                                    client_handle: handle,
-                                    wl_surface_id: surface_id,
-                                    hotspot_x,
-                                    hotspot_y,
-                                });
-                            }
-                        }
-                        1 => { /* release */ client.objects.remove(&obj_id); }
-                        _ => {}
-                    },
-                    // ── wl_keyboard ──────────────────────────────────────────────────────
-                    Some(WaylandObject::Keyboard) => {
-                        if opcode == 0 { // release
-                            client.objects.remove(&obj_id);
+                    3 if payload.len() >= 4 => {
+                        let serial = read_u32(payload, 0);
+                        if client.pending_ping_serial == Some(serial) {
+                            client.pending_ping_serial = None;
                         }
                     }
-                    // ── zwlr_layer_shell_v1 ──────────────────────────────────────────────
-                    Some(WaylandObject::LayerShell) => {
-                        // get_layer_surface(id, surface, output, layer, namespace)
-                        if opcode == 0 && payload.len() >= 16 {
-                            let new_id         = read_u32(payload, 0);
-                            let wl_surface_id  = read_u32(payload, 4);
-                            let _output        = read_u32(payload, 8);
-                            let layer          = read_u32(payload, 12);
-                            // namespace string starts at offset 16 (optional, ignore value)
+                    _ => {}
+                },
+                Some(WaylandObject::XdgPositioner(mut pos)) => match opcode {
+                    0 => {
+                        client.objects.remove(&obj_id);
+                    }
+                    1 if payload.len() >= 8 => {
+                        pos.width = read_i32(payload, 0).max(1) as u32;
+                        pos.height = read_i32(payload, 4).max(1) as u32;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    2 if payload.len() >= 16 => {
+                        pos.anchor_rect = Geometry {
+                            x: read_i32(payload, 0),
+                            y: read_i32(payload, 4),
+                            width: read_i32(payload, 8),
+                            height: read_i32(payload, 12),
+                        };
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    3 if payload.len() >= 4 => {
+                        pos.anchor = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    4 if payload.len() >= 4 => {
+                        pos.gravity = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    5 if payload.len() >= 4 => {
+                        pos.constraint_adjustment = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    6 if payload.len() >= 8 => {
+                        pos.offset_x = read_i32(payload, 0);
+                        pos.offset_y = read_i32(payload, 4);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPositioner(pos));
+                    }
+                    _ => {}
+                },
+                Some(WaylandObject::XdgSurface(mut xdg_surface)) => match opcode {
+                    0 => {
+                        self.destroy_xdg_surface(handle, &mut client, obj_id, &mut deferred_events);
+                    }
+                    1 if payload.len() >= 4 => {
+                        let new_id = read_u32(payload, 0);
+                        if matches!(xdg_surface.role, XdgRole::None) {
                             let scene_id = scene_id_for(handle, new_id);
-                            let ls = LayerSurfaceState {
-                                wl_surface_id,
-                                layer,
-                                anchor: 0,
-                                exclusive_zone: 0,
-                                margin_top: 0, margin_right: 0,
-                                margin_bottom: 0, margin_left: 0,
-                                desired_width: 0,
-                                desired_height: 0,
-                                keyboard_interactivity: 0,
-                                pending_serial: None,
-                                acked_serial: None,
+                            let toplevel = XdgToplevelState {
+                                xdg_surface_id: obj_id,
                                 scene_id,
+                                title: "Wayland Window".to_string(),
+                                app_id: String::new(),
+                                min_width: 0,
+                                min_height: 0,
+                                max_width: 0,
+                                max_height: 0,
+                                x: 80,
+                                y: 80,
+                                content_width: 480,
+                                content_height: 320,
+                                pending_width: 480,
+                                pending_height: 320,
+                                pending_serial: None,
                                 mapped: false,
+                                maximized: false,
+                                fullscreen: false,
+                                minimized: false,
+                                z_index: 100,
                                 buffer: None,
                             };
-                            // Associate the wl_surface with this layer surface.
-                            if let Some(WaylandObject::Surface(mut surf)) =
-                                client.objects.get(&wl_surface_id).cloned()
-                            {
-                                surf.layer_surface_id = Some(new_id);
-                                client.objects.insert(wl_surface_id, WaylandObject::Surface(surf));
-                            }
-                            client.objects.insert(new_id, WaylandObject::LayerSurface(ls));
-                            self.layer_scene_index.insert(scene_id, (handle, new_id));
-                            // Send initial configure(serial, 0, 0)
-                            let serial = next_serial();
-                            let mut mb = MessageBuilder::new(new_id, 0);
-                            mb.push_u32(serial);
-                            mb.push_u32(0); // width  (client decides)
-                            mb.push_u32(0); // height
-                            client.out_buf.extend_from_slice(&mb.build());
-                            // Update pending_serial
-                            if let Some(WaylandObject::LayerSurface(ref mut lss)) =
-                                client.objects.get_mut(&new_id)
-                            {
-                                lss.pending_serial = Some(serial);
-                            }
-                        }
-                        if opcode == 1 { // destroy
-                            client.objects.remove(&obj_id);
+                            xdg_surface.role = XdgRole::Toplevel(new_id);
+                            client
+                                .objects
+                                .insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
+                            client
+                                .objects
+                                .insert(new_id, WaylandObject::XdgToplevel(toplevel));
+                            self.scene_index.insert(scene_id, (handle, new_id, false));
+                            Self::send_toplevel_configure(
+                                &mut client,
+                                new_id,
+                                480,
+                                320,
+                                false,
+                                false,
+                                false,
+                            );
                         }
                     }
-                    // ── zwlr_layer_surface_v1 ────────────────────────────────────────────
-                    Some(WaylandObject::LayerSurface(mut ls)) => match opcode {
-                        0 => { // destroy
-                            self.layer_scene_index.remove(&ls.scene_id);
-                            client.objects.remove(&obj_id);
-                            deferred_events.push(WaylandServerEvent::WindowRemoved(ls.scene_id));
+                    2 if payload.len() >= 12 => {
+                        let new_id = read_u32(payload, 0);
+                        let parent_xdg_surface_id = read_u32(payload, 4);
+                        let positioner_id = read_u32(payload, 8);
+                        if matches!(xdg_surface.role, XdgRole::None) {
+                            let scene_id = scene_id_for(handle, new_id);
+                            let (rel_x, rel_y, width, height) = Self::compute_popup_geometry(
+                                &client,
+                                parent_xdg_surface_id,
+                                positioner_id,
+                            );
+                            let popup = XdgPopupState {
+                                xdg_surface_id: obj_id,
+                                scene_id,
+                                parent_xdg_surface_id,
+                                positioner_id,
+                                rel_x,
+                                rel_y,
+                                width,
+                                height,
+                                pending_rel_x: rel_x,
+                                pending_rel_y: rel_y,
+                                pending_width: width,
+                                pending_height: height,
+                                pending_serial: None,
+                                grab: false,
+                                mapped: false,
+                                z_index: 200,
+                                buffer: None,
+                            };
+                            xdg_surface.role = XdgRole::Popup(new_id);
+                            client
+                                .objects
+                                .insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
+                            client
+                                .objects
+                                .insert(new_id, WaylandObject::XdgPopup(popup));
+                            self.scene_index.insert(scene_id, (handle, new_id, true));
+                            Self::send_popup_configure(
+                                &mut client,
+                                new_id,
+                                rel_x,
+                                rel_y,
+                                width,
+                                height,
+                            );
                         }
-                        1 if payload.len() >= 8 => { // set_size
-                            ls.desired_width  = read_u32(payload, 0);
-                            ls.desired_height = read_u32(payload, 4);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    3 if payload.len() >= 16 => {
+                        xdg_surface.window_geometry = Some(Geometry {
+                            x: read_i32(payload, 0),
+                            y: read_i32(payload, 4),
+                            width: read_i32(payload, 8),
+                            height: read_i32(payload, 12),
+                        });
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
+                    }
+                    4 if payload.len() >= 4 => {
+                        xdg_surface.last_acked_configure = Some(read_u32(payload, 0));
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgSurface(xdg_surface));
+                    }
+                    _ => {}
+                },
+                Some(WaylandObject::XdgToplevel(mut top)) => match opcode {
+                    0 => {
+                        self.destroy_role_object(
+                            handle,
+                            &mut client,
+                            obj_id,
+                            false,
+                            &mut deferred_events,
+                        );
+                    }
+                    2 => {
+                        top.title = read_string(payload);
+                        let scene_id = top.scene_id;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top));
+                        deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
+                    }
+                    3 => {
+                        top.app_id = read_string(payload);
+                        let scene_id = top.scene_id;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top));
+                        deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
+                    }
+                    7 if payload.len() >= 8 => {
+                        top.max_width = read_i32(payload, 0);
+                        top.max_height = read_i32(payload, 4);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top));
+                    }
+                    8 if payload.len() >= 8 => {
+                        top.min_width = read_i32(payload, 0);
+                        top.min_height = read_i32(payload, 4);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top));
+                    }
+                    9 => {
+                        top.maximized = true;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
+                        Self::send_toplevel_configure(
+                            &mut client,
+                            obj_id,
+                            top.content_width.max(480),
+                            top.content_height.max(320),
+                            false,
+                            true,
+                            top.fullscreen,
+                        );
+                    }
+                    10 => {
+                        top.maximized = false;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
+                        Self::send_toplevel_configure(
+                            &mut client,
+                            obj_id,
+                            top.content_width.max(480),
+                            top.content_height.max(320),
+                            false,
+                            false,
+                            top.fullscreen,
+                        );
+                    }
+                    11 => {
+                        top.fullscreen = true;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
+                        Self::send_toplevel_configure(
+                            &mut client,
+                            obj_id,
+                            top.content_width.max(640),
+                            top.content_height.max(360),
+                            false,
+                            top.maximized,
+                            true,
+                        );
+                    }
+                    12 => {
+                        top.fullscreen = false;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top.clone()));
+                        Self::send_toplevel_configure(
+                            &mut client,
+                            obj_id,
+                            top.content_width.max(480),
+                            top.content_height.max(320),
+                            false,
+                            top.maximized,
+                            false,
+                        );
+                    }
+                    13 => {
+                        top.minimized = true;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgToplevel(top));
+                    }
+                    _ => {}
+                },
+                Some(WaylandObject::XdgPopup(mut popup)) => match opcode {
+                    0 => {
+                        self.destroy_role_object(
+                            handle,
+                            &mut client,
+                            obj_id,
+                            true,
+                            &mut deferred_events,
+                        );
+                    }
+                    1 if payload.len() >= 4 => {
+                        let _seat = read_u32(payload, 0);
+                        popup.grab = true;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::XdgPopup(popup));
+                    }
+                    _ => {}
+                },
+                // ── wl_subcompositor ─────────────────────────────────────────────────
+                Some(WaylandObject::Subcompositor) => {
+                    if opcode == 1 && payload.len() >= 12 {
+                        let new_id = read_u32(payload, 0);
+                        let wl_surface_id = read_u32(payload, 4);
+                        let parent_wl_surface_id = read_u32(payload, 8);
+                        if let Some(WaylandObject::Surface(mut surf)) =
+                            client.objects.get(&wl_surface_id).cloned()
+                        {
+                            surf.subsurface_id = Some(new_id);
+                            client
+                                .objects
+                                .insert(wl_surface_id, WaylandObject::Surface(surf));
                         }
-                        2 if payload.len() >= 4 => { // set_anchor
-                            ls.anchor = read_u32(payload, 0);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        3 if payload.len() >= 4 => { // set_exclusive_zone
-                            ls.exclusive_zone = read_i32(payload, 0);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        4 if payload.len() >= 16 => { // set_margin
-                            ls.margin_top    = read_i32(payload, 0);
-                            ls.margin_right  = read_i32(payload, 4);
-                            ls.margin_bottom = read_i32(payload, 8);
-                            ls.margin_left   = read_i32(payload, 12);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        5 if payload.len() >= 4 => { // set_keyboard_interactivity
-                            ls.keyboard_interactivity = read_u32(payload, 0);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        6 => { /* get_popup: ignore */ }
-                        7 if payload.len() >= 4 => { // ack_configure
-                            ls.acked_serial = Some(read_u32(payload, 0));
-                            ls.pending_serial = None;
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        8 if payload.len() >= 4 => { // set_layer
-                            ls.layer = read_u32(payload, 0);
-                            client.objects.insert(obj_id, WaylandObject::LayerSurface(ls));
-                        }
-                        _ => {}
-                    },
-                    // ── xdg_activation_v1 ────────────────────────────────────────────────
-                    Some(WaylandObject::XdgActivation) => match opcode {
-                        0 => { /* destroy */ }
-                        1 if payload.len() >= 4 => { // get_activation_token
-                            let new_id = read_u32(payload, 0);
-                            client.objects.insert(new_id, WaylandObject::ActivationToken(
-                                ActivationTokenState { surface_id: None, app_id: String::new(), token: String::new() }
-                            ));
-                        }
-                        2 if payload.len() >= 8 => { // activate(token_str, surface)
-                            // surface is last u32; find scene surface and raise it
-                            let surface_id = read_u32(payload, payload.len() - 4);
-                            // locate the scene id for this surface in any client
-                            let scene_id_opt: Option<ThingId> = self.scene_index.iter()
-                                .find_map(|(sid, (h, obj_id, _))| {
-                                    if let Some(c) = self.clients.get(h) {
-                                        let wl_sid = match c.objects.get(obj_id) {
-                                            Some(WaylandObject::XdgToplevel(top)) =>
-                                                c.objects.get(&top.xdg_surface_id)
-                                                    .and_then(|xdg| if let WaylandObject::XdgSurface(xs) = xdg { Some(xs.wl_surface_id) } else { None }),
-                                            _ => None,
-                                        };
-                                        if wl_sid == Some(surface_id) { Some(*sid) } else { None }
-                                    } else { None }
-                                });
-                            if let Some(scene_id) = scene_id_opt {
-                                deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
-                            }
-                        }
-                        _ => {}
-                    },
-                    // ── xdg_activation_token_v1 ──────────────────────────────────────────
-                    Some(WaylandObject::ActivationToken(mut tok)) => match opcode {
-                        0 => { /* set_serial: ignore */ }
-                        1 => { // set_app_id
-                            tok.app_id = read_string(payload);
-                            client.objects.insert(obj_id, WaylandObject::ActivationToken(tok));
-                        }
-                        2 if payload.len() >= 4 => { // set_surface
-                            tok.surface_id = Some(read_u32(payload, 0));
-                            client.objects.insert(obj_id, WaylandObject::ActivationToken(tok));
-                        }
-                        3 => { // commit: generate token and send done event
-                            let n = NEXT_ACTIVATION_TOKEN.fetch_add(1, Ordering::SeqCst);
-                            let mut s = String::from("xdg-token-");
-                            // simple u32 to string without std
-                            let mut digits = [0u8; 10];
-                            let mut idx = 10usize;
-                            let mut v = n;
-                            if v == 0 { idx -= 1; digits[idx] = b'0'; }
-                            while v > 0 { idx -= 1; digits[idx] = b'0' + (v % 10) as u8; v /= 10; }
-                            s.push_str(core::str::from_utf8(&digits[idx..]).unwrap_or("0"));
-                            tok.token = s.clone();
-                            client.objects.insert(obj_id, WaylandObject::ActivationToken(tok));
-                            let mut mb = MessageBuilder::new(obj_id, 0); // done(token)
-                            mb.push_string(&s);
+                        client.objects.insert(
+                            new_id,
+                            WaylandObject::Subsurface(SubsurfaceState {
+                                wl_surface_id,
+                                parent_wl_surface_id,
+                                x: 0,
+                                y: 0,
+                                pending_x: 0,
+                                pending_y: 0,
+                                synchronized: true,
+                            }),
+                        );
+                    }
+                }
+                // ── wl_subsurface ────────────────────────────────────────────────────
+                Some(WaylandObject::Subsurface(mut sub)) => match opcode {
+                    0 => {
+                        client.objects.remove(&obj_id);
+                    }
+                    1 if payload.len() >= 8 => {
+                        sub.pending_x = read_i32(payload, 0);
+                        sub.pending_y = read_i32(payload, 4);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Subsurface(sub));
+                    }
+                    2 | 3 => { /* place_above / place_below: z-ordering ignored */ }
+                    4 => {
+                        // set_sync
+                        sub.synchronized = true;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Subsurface(sub));
+                    }
+                    5 => {
+                        // set_desync: apply position immediately
+                        sub.x = sub.pending_x;
+                        sub.y = sub.pending_y;
+                        sub.synchronized = false;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::Subsurface(sub));
+                    }
+                    _ => {}
+                },
+                // ── wl_seat ──────────────────────────────────────────────────────────
+                Some(WaylandObject::Seat) => match opcode {
+                    0 if payload.len() >= 4 => {
+                        // get_pointer
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(new_id, WaylandObject::Pointer);
+                    }
+                    1 if payload.len() >= 4 => {
+                        // get_keyboard
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(new_id, WaylandObject::Keyboard);
+                        // Send keymap (XKB_V1 = 1, fd-as-bs_id, size)
+                        let keymap = crate::ui_events::XKB_KEYMAP.as_bytes();
+                        if let Ok(fd) = memfd_create("wl_keymap", 0) {
+                            let _ = write(fd, keymap);
+                            let mut mb = MessageBuilder::new(new_id, 0); // keymap
+                            mb.push_u32(1); // format XKB_V1
+                            mb.push_u32(fd);
+                            mb.push_u32((keymap.len() + 1) as u32);
                             client.out_buf.extend_from_slice(&mb.build());
                         }
-                        4 => { // destroy
-                            client.objects.remove(&obj_id);
-                        }
-                        _ => {}
-                    },
+                    }
+                    3 => {
+                        /* release */
+                        client.objects.remove(&obj_id);
+                    }
                     _ => {}
+                },
+                // ── wl_pointer ───────────────────────────────────────────────────────
+                Some(WaylandObject::Pointer) => match opcode {
+                    0 if payload.len() >= 16 => {
+                        // set_cursor
+                        let surface_id = read_u32(payload, 4);
+                        let hotspot_x = read_i32(payload, 8);
+                        let hotspot_y = read_i32(payload, 12);
+                        if surface_id == 0 {
+                            self.cursor_surface = None;
+                        } else {
+                            self.cursor_surface = Some(CursorSurface {
+                                client_handle: handle,
+                                wl_surface_id: surface_id,
+                                hotspot_x,
+                                hotspot_y,
+                            });
+                        }
+                    }
+                    1 => {
+                        /* release */
+                        client.objects.remove(&obj_id);
+                    }
+                    _ => {}
+                },
+                // ── wl_keyboard ──────────────────────────────────────────────────────
+                Some(WaylandObject::Keyboard) => {
+                    if opcode == 0 {
+                        // release
+                        client.objects.remove(&obj_id);
+                    }
                 }
+                // ── zwlr_layer_shell_v1 ──────────────────────────────────────────────
+                Some(WaylandObject::LayerShell) => {
+                    // get_layer_surface(id, surface, output, layer, namespace)
+                    if opcode == 0 && payload.len() >= 16 {
+                        let new_id = read_u32(payload, 0);
+                        let wl_surface_id = read_u32(payload, 4);
+                        let _output = read_u32(payload, 8);
+                        let layer = read_u32(payload, 12);
+                        // namespace string starts at offset 16 (optional, ignore value)
+                        let scene_id = scene_id_for(handle, new_id);
+                        let ls = LayerSurfaceState {
+                            wl_surface_id,
+                            layer,
+                            anchor: 0,
+                            exclusive_zone: 0,
+                            margin_top: 0,
+                            margin_right: 0,
+                            margin_bottom: 0,
+                            margin_left: 0,
+                            desired_width: 0,
+                            desired_height: 0,
+                            keyboard_interactivity: 0,
+                            pending_serial: None,
+                            acked_serial: None,
+                            scene_id,
+                            mapped: false,
+                            buffer: None,
+                        };
+                        // Associate the wl_surface with this layer surface.
+                        if let Some(WaylandObject::Surface(mut surf)) =
+                            client.objects.get(&wl_surface_id).cloned()
+                        {
+                            surf.layer_surface_id = Some(new_id);
+                            client
+                                .objects
+                                .insert(wl_surface_id, WaylandObject::Surface(surf));
+                        }
+                        client
+                            .objects
+                            .insert(new_id, WaylandObject::LayerSurface(ls));
+                        self.layer_scene_index.insert(scene_id, (handle, new_id));
+                        // Send initial configure(serial, 0, 0)
+                        let serial = next_serial();
+                        let mut mb = MessageBuilder::new(new_id, 0);
+                        mb.push_u32(serial);
+                        mb.push_u32(0); // width  (client decides)
+                        mb.push_u32(0); // height
+                        client.out_buf.extend_from_slice(&mb.build());
+                        // Update pending_serial
+                        if let Some(WaylandObject::LayerSurface(ref mut lss)) =
+                            client.objects.get_mut(&new_id)
+                        {
+                            lss.pending_serial = Some(serial);
+                        }
+                    }
+                    if opcode == 1 {
+                        // destroy
+                        client.objects.remove(&obj_id);
+                    }
+                }
+                // ── zwlr_layer_surface_v1 ────────────────────────────────────────────
+                Some(WaylandObject::LayerSurface(mut ls)) => match opcode {
+                    0 => {
+                        // destroy
+                        self.layer_scene_index.remove(&ls.scene_id);
+                        client.objects.remove(&obj_id);
+                        deferred_events.push(WaylandServerEvent::WindowRemoved(ls.scene_id));
+                    }
+                    1 if payload.len() >= 8 => {
+                        // set_size
+                        ls.desired_width = read_u32(payload, 0);
+                        ls.desired_height = read_u32(payload, 4);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    2 if payload.len() >= 4 => {
+                        // set_anchor
+                        ls.anchor = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    3 if payload.len() >= 4 => {
+                        // set_exclusive_zone
+                        ls.exclusive_zone = read_i32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    4 if payload.len() >= 16 => {
+                        // set_margin
+                        ls.margin_top = read_i32(payload, 0);
+                        ls.margin_right = read_i32(payload, 4);
+                        ls.margin_bottom = read_i32(payload, 8);
+                        ls.margin_left = read_i32(payload, 12);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    5 if payload.len() >= 4 => {
+                        // set_keyboard_interactivity
+                        ls.keyboard_interactivity = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    6 => { /* get_popup: ignore */ }
+                    7 if payload.len() >= 4 => {
+                        // ack_configure
+                        ls.acked_serial = Some(read_u32(payload, 0));
+                        ls.pending_serial = None;
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    8 if payload.len() >= 4 => {
+                        // set_layer
+                        ls.layer = read_u32(payload, 0);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::LayerSurface(ls));
+                    }
+                    _ => {}
+                },
+                // ── xdg_activation_v1 ────────────────────────────────────────────────
+                Some(WaylandObject::XdgActivation) => match opcode {
+                    0 => { /* destroy */ }
+                    1 if payload.len() >= 4 => {
+                        // get_activation_token
+                        let new_id = read_u32(payload, 0);
+                        client.objects.insert(
+                            new_id,
+                            WaylandObject::ActivationToken(ActivationTokenState {
+                                surface_id: None,
+                                app_id: String::new(),
+                                token: String::new(),
+                            }),
+                        );
+                    }
+                    2 if payload.len() >= 8 => {
+                        // activate(token_str, surface)
+                        // surface is last u32; find scene surface and raise it
+                        let surface_id = read_u32(payload, payload.len() - 4);
+                        // locate the scene id for this surface in any client
+                        let scene_id_opt: Option<ThingId> =
+                            self.scene_index.iter().find_map(|(sid, (h, obj_id, _))| {
+                                if let Some(c) = self.clients.get(h) {
+                                    let wl_sid = match c.objects.get(obj_id) {
+                                        Some(WaylandObject::XdgToplevel(top)) => {
+                                            c.objects.get(&top.xdg_surface_id).and_then(|xdg| {
+                                                if let WaylandObject::XdgSurface(xs) = xdg {
+                                                    Some(xs.wl_surface_id)
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                        }
+                                        _ => None,
+                                    };
+                                    if wl_sid == Some(surface_id) {
+                                        Some(*sid)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            });
+                        if let Some(scene_id) = scene_id_opt {
+                            deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
+                        }
+                    }
+                    _ => {}
+                },
+                // ── xdg_activation_token_v1 ──────────────────────────────────────────
+                Some(WaylandObject::ActivationToken(mut tok)) => match opcode {
+                    0 => { /* set_serial: ignore */ }
+                    1 => {
+                        // set_app_id
+                        tok.app_id = read_string(payload);
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::ActivationToken(tok));
+                    }
+                    2 if payload.len() >= 4 => {
+                        // set_surface
+                        tok.surface_id = Some(read_u32(payload, 0));
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::ActivationToken(tok));
+                    }
+                    3 => {
+                        // commit: generate token and send done event
+                        let n = NEXT_ACTIVATION_TOKEN.fetch_add(1, Ordering::SeqCst);
+                        let mut s = String::from("xdg-token-");
+                        // simple u32 to string without std
+                        let mut digits = [0u8; 10];
+                        let mut idx = 10usize;
+                        let mut v = n;
+                        if v == 0 {
+                            idx -= 1;
+                            digits[idx] = b'0';
+                        }
+                        while v > 0 {
+                            idx -= 1;
+                            digits[idx] = b'0' + (v % 10) as u8;
+                            v /= 10;
+                        }
+                        s.push_str(core::str::from_utf8(&digits[idx..]).unwrap_or("0"));
+                        tok.token = s.clone();
+                        client
+                            .objects
+                            .insert(obj_id, WaylandObject::ActivationToken(tok));
+                        let mut mb = MessageBuilder::new(obj_id, 0); // done(token)
+                        mb.push_string(&s);
+                        client.out_buf.extend_from_slice(&mb.build());
+                    }
+                    4 => {
+                        // destroy
+                        client.objects.remove(&obj_id);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
 
-                consumed += size as usize;
+            consumed += size as usize;
         }
         client.in_buf.drain(0..consumed);
         client.flush_read_if_pending();
@@ -1407,19 +1664,20 @@ impl WaylandServer {
         wl_surface_id: u32,
         deferred_events: &mut Vec<WaylandServerEvent>,
     ) {
-        let Some(WaylandObject::Surface(surface)) = client.objects.get(&wl_surface_id).cloned() else {
+        let Some(WaylandObject::Surface(surface)) = client.objects.get(&wl_surface_id).cloned()
+        else {
             return;
         };
 
         // Apply synchronized subsurface pending position.
         if let Some(sub_id) = surface.subsurface_id {
-            if let Some(WaylandObject::Subsurface(mut sub)) =
-                client.objects.get(&sub_id).cloned()
-            {
+            if let Some(WaylandObject::Subsurface(mut sub)) = client.objects.get(&sub_id).cloned() {
                 if sub.synchronized {
                     sub.x = sub.pending_x;
                     sub.y = sub.pending_y;
-                    client.objects.insert(sub_id, WaylandObject::Subsurface(sub));
+                    client
+                        .objects
+                        .insert(sub_id, WaylandObject::Subsurface(sub));
                 }
             }
         }
@@ -1436,7 +1694,9 @@ impl WaylandServer {
                         ls.buffer = Some(buf);
                         ls.mapped = true;
                         let scene_id = ls.scene_id;
-                        client.objects.insert(layer_id, WaylandObject::LayerSurface(ls));
+                        client
+                            .objects
+                            .insert(layer_id, WaylandObject::LayerSurface(ls));
                         deferred_events.push(WaylandServerEvent::WindowChanged(scene_id));
                     }
                 }
@@ -1466,9 +1726,10 @@ impl WaylandServer {
             }
             xdg_surface.applied_configure = Some(serial);
             xdg_surface.pending_configure = None;
-            client
-                .objects
-                .insert(xdg_surface_id, WaylandObject::XdgSurface(xdg_surface.clone()));
+            client.objects.insert(
+                xdg_surface_id,
+                WaylandObject::XdgSurface(xdg_surface.clone()),
+            );
         }
 
         match xdg_surface.role {
@@ -1554,8 +1815,12 @@ impl WaylandServer {
             return;
         };
         match surface.role {
-            XdgRole::Toplevel(role_id) => self.destroy_role_object(handle, client, role_id, false, deferred_events),
-            XdgRole::Popup(role_id) => self.destroy_role_object(handle, client, role_id, true, deferred_events),
+            XdgRole::Toplevel(role_id) => {
+                self.destroy_role_object(handle, client, role_id, false, deferred_events)
+            }
+            XdgRole::Popup(role_id) => {
+                self.destroy_role_object(handle, client, role_id, true, deferred_events)
+            }
             XdgRole::None => {}
         }
         if let Some(WaylandObject::Surface(mut wl_surface)) =
@@ -1740,7 +2005,10 @@ impl WaylandServer {
         (rel_x.max(0), rel_y.max(0), width, height)
     }
 
-    fn parent_content_size(client: &ClientConnection, parent_xdg_surface_id: u32) -> Option<(i32, i32)> {
+    fn parent_content_size(
+        client: &ClientConnection,
+        parent_xdg_surface_id: u32,
+    ) -> Option<(i32, i32)> {
         let parent_role = match client.objects.get(&parent_xdg_surface_id)? {
             WaylandObject::XdgSurface(surface) => surface.role,
             _ => return None,
@@ -1807,22 +2075,32 @@ impl WaylandServer {
             .objects
             .iter()
             .filter_map(|(id, obj)| match obj {
-                WaylandObject::XdgPopup(popup) if popup.parent_xdg_surface_id == parent_xdg_surface_id => Some(*id),
+                WaylandObject::XdgPopup(popup)
+                    if popup.parent_xdg_surface_id == parent_xdg_surface_id =>
+                {
+                    Some(*id)
+                }
                 _ => None,
             })
             .collect();
         for popup_id in popup_ids {
-            let Some(WaylandObject::XdgPopup(popup)) = client.objects.get(&popup_id).cloned() else {
+            let Some(WaylandObject::XdgPopup(popup)) = client.objects.get(&popup_id).cloned()
+            else {
                 continue;
             };
-            self.events.push(WaylandServerEvent::WindowChanged(popup.scene_id));
+            self.events
+                .push(WaylandServerEvent::WindowChanged(popup.scene_id));
         }
     }
 
     // ── Stage 5 public API ────────────────────────────────────────────────────
 
     /// Compute where a layer surface should be positioned and sized on screen.
-    fn compute_layer_surface_rect(ls: &LayerSurfaceState, sw: u32, sh: u32) -> (i32, i32, u32, u32) {
+    fn compute_layer_surface_rect(
+        ls: &LayerSurfaceState,
+        sw: u32,
+        sh: u32,
+    ) -> (i32, i32, u32, u32) {
         let w = if ls.desired_width > 0 {
             ls.desired_width
         } else if (ls.anchor & ANCHOR_LEFT != 0) && (ls.anchor & ANCHOR_RIGHT != 0) {
@@ -1861,7 +2139,13 @@ impl WaylandServer {
             let surf_ids: Vec<u32> = client
                 .objects
                 .iter()
-                .filter_map(|(id, obj)| if matches!(obj, WaylandObject::Surface(_)) { Some(*id) } else { None })
+                .filter_map(|(id, obj)| {
+                    if matches!(obj, WaylandObject::Surface(_)) {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             for surf_id in surf_ids {
                 let callbacks = if let Some(WaylandObject::Surface(ref mut s)) =
@@ -1909,7 +2193,9 @@ impl WaylandServer {
         if let Some((old_h, old_sid)) = self.pointer_focus {
             if new_focus != Some((old_h, old_sid)) {
                 if let Some(client) = self.clients.get_mut(&old_h) {
-                    if let Some(ptr_id) = find_object_id(client, |o| matches!(o, WaylandObject::Pointer)) {
+                    if let Some(ptr_id) =
+                        find_object_id(client, |o| matches!(o, WaylandObject::Pointer))
+                    {
                         let mut mb = MessageBuilder::new(ptr_id, 1); // leave
                         mb.push_u32(serial);
                         mb.push_u32(old_sid);
@@ -1925,7 +2211,9 @@ impl WaylandServer {
         // Enter / motion to new focus.
         if let Some((new_h, new_sid)) = new_focus {
             if let Some(client) = self.clients.get_mut(&new_h) {
-                if let Some(ptr_id) = find_object_id(client, |o| matches!(o, WaylandObject::Pointer)) {
+                if let Some(ptr_id) =
+                    find_object_id(client, |o| matches!(o, WaylandObject::Pointer))
+                {
                     if self.pointer_focus != Some((new_h, new_sid)) {
                         let mut mb = MessageBuilder::new(ptr_id, 0); // enter
                         mb.push_u32(serial);
@@ -1951,9 +2239,13 @@ impl WaylandServer {
 
     /// Deliver a pointer button press/release to the currently focused surface.
     pub fn deliver_pointer_button(&mut self, button: u32, pressed: bool, time_ms: u32) {
-        let Some((h, _)) = self.pointer_focus else { return };
+        let Some((h, _)) = self.pointer_focus else {
+            return;
+        };
         let serial = next_serial();
-        let Some(client) = self.clients.get_mut(&h) else { return };
+        let Some(client) = self.clients.get_mut(&h) else {
+            return;
+        };
         if let Some(ptr_id) = find_object_id(client, |o| matches!(o, WaylandObject::Pointer)) {
             let mut mb = MessageBuilder::new(ptr_id, 3); // button
             mb.push_u32(serial);
@@ -1982,7 +2274,9 @@ impl WaylandServer {
         if let Some((old_h, old_sid)) = self.keyboard_focus {
             if new_focus != Some((old_h, old_sid)) {
                 if let Some(client) = self.clients.get_mut(&old_h) {
-                    if let Some(kbd_id) = find_object_id(client, |o| matches!(o, WaylandObject::Keyboard)) {
+                    if let Some(kbd_id) =
+                        find_object_id(client, |o| matches!(o, WaylandObject::Keyboard))
+                    {
                         let mut mb = MessageBuilder::new(kbd_id, 1); // leave
                         mb.push_u32(serial);
                         mb.push_u32(old_sid);
@@ -1995,7 +2289,9 @@ impl WaylandServer {
 
         if let Some((new_h, new_sid)) = new_focus {
             if let Some(client) = self.clients.get_mut(&new_h) {
-                if let Some(kbd_id) = find_object_id(client, |o| matches!(o, WaylandObject::Keyboard)) {
+                if let Some(kbd_id) =
+                    find_object_id(client, |o| matches!(o, WaylandObject::Keyboard))
+                {
                     let mut mb = MessageBuilder::new(kbd_id, 0); // enter
                     mb.push_u32(serial);
                     mb.push_u32(new_sid);
@@ -2012,9 +2308,13 @@ impl WaylandServer {
     /// Deliver a keyboard key event to the focused surface.
     /// `evdev_code` is the Linux evdev keycode (from `ui_events::hid_to_evdev`).
     pub fn deliver_keyboard_key(&mut self, evdev_code: u32, pressed: bool, time_ms: u32) {
-        let Some((h, _)) = self.keyboard_focus else { return };
+        let Some((h, _)) = self.keyboard_focus else {
+            return;
+        };
         let serial = next_serial();
-        let Some(client) = self.clients.get_mut(&h) else { return };
+        let Some(client) = self.clients.get_mut(&h) else {
+            return;
+        };
         if let Some(kbd_id) = find_object_id(client, |o| matches!(o, WaylandObject::Keyboard)) {
             let mut mb = MessageBuilder::new(kbd_id, 3); // key
             mb.push_u32(serial);
@@ -2033,9 +2333,13 @@ impl WaylandServer {
         mods_latched: u32,
         mods_locked: u32,
     ) {
-        let Some((h, _)) = self.keyboard_focus else { return };
+        let Some((h, _)) = self.keyboard_focus else {
+            return;
+        };
         let serial = next_serial();
-        let Some(client) = self.clients.get_mut(&h) else { return };
+        let Some(client) = self.clients.get_mut(&h) else {
+            return;
+        };
         if let Some(kbd_id) = find_object_id(client, |o| matches!(o, WaylandObject::Keyboard)) {
             let mut mb = MessageBuilder::new(kbd_id, 4); // modifiers
             mb.push_u32(serial);
@@ -2112,7 +2416,10 @@ fn read_string(payload: &[u8]) -> String {
 
 /// Find the first object ID matching `pred` in a client's object map.
 fn find_object_id(client: &ClientConnection, pred: impl Fn(&WaylandObject) -> bool) -> Option<u32> {
-    client.objects.iter().find_map(|(id, obj)| if pred(obj) { Some(*id) } else { None })
+    client
+        .objects
+        .iter()
+        .find_map(|(id, obj)| if pred(obj) { Some(*id) } else { None })
 }
 
 /// Resolve the wl_surface_id for a role object (XdgToplevel or XdgPopup).
@@ -2121,12 +2428,16 @@ fn wl_surface_id_for_role(client: &ClientConnection, role_obj_id: u32) -> Option
         WaylandObject::XdgToplevel(top) => {
             if let Some(WaylandObject::XdgSurface(xdg)) = client.objects.get(&top.xdg_surface_id) {
                 Some(xdg.wl_surface_id)
-            } else { None }
+            } else {
+                None
+            }
         }
         WaylandObject::XdgPopup(pop) => {
             if let Some(WaylandObject::XdgSurface(xdg)) = client.objects.get(&pop.xdg_surface_id) {
                 Some(xdg.wl_surface_id)
-            } else { None }
+            } else {
+                None
+            }
         }
         _ => None,
     }

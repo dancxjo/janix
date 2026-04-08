@@ -689,11 +689,7 @@ pub extern "C" fn rust_invalid_opcode_handler(frame: &InterruptStackFrame) -> ! 
             let rip = frame.rip as *const u8;
             let mut bytes = [0u8; 8];
             core::ptr::copy_nonoverlapping(rip, bytes.as_mut_ptr(), 8);
-            kernel::kinfo!(
-                "USER-UD: rip=0x{:x} bytes={:02x?}",
-                frame.rip,
-                bytes
-            );
+            kernel::kinfo!("USER-UD: rip=0x{:x} bytes={:02x?}", frame.rip, bytes);
         }
 
         unsafe {

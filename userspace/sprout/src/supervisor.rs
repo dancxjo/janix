@@ -1,5 +1,6 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
+use abi::ids::HandleId;
 use abi::schema::keys;
 use abi::schema::kinds as abi_kinds;
 use alloc::format;
@@ -8,7 +9,6 @@ use alloc::vec::Vec;
 use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
@@ -215,7 +215,6 @@ impl Supervisor {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
 
-
                         // Set priority based on app name
                         let priority = if task.name.contains("scheduler_verify")
                             || task.name.contains("threads")
@@ -380,7 +379,6 @@ impl Supervisor {
     }
 }
 
-
 /// Spawn bloom compositor with display handles (minimal - no input events)
 fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandles) {
     use abi::vm::{VmBacking, VmMapReq, VmProt};
@@ -422,8 +420,7 @@ fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandl
     let bloom_arg = boot_fd as usize;
     info!(
         "SPROUT: Bloom handles via FD={} backend={}",
-        boot_fd,
-        dh.backend_name
+        boot_fd, dh.backend_name
     );
 
     match stem::syscall::spawn_process("/bloom", bloom_arg) {

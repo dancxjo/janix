@@ -2,7 +2,7 @@ use abi::ids::HandleId;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
-use stem::thing::sys::{get_kind, stat, read};
+use stem::thing::sys::{get_kind, read, stat};
 use stem::thing::ThingId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

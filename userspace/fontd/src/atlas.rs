@@ -8,9 +8,9 @@ extern crate alloc;
 use abi::font_protocol::GlyphPlacement;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use stem::thing::sys::{write};
-use stem::thing::ThingId;
 use stem::syscall::memfd_create;
+use stem::thing::ThingId;
+use stem::thing::sys::write;
 
 /// Initial atlas size
 const INITIAL_ATLAS_SIZE: u32 = 256;

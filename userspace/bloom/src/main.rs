@@ -84,6 +84,75 @@ struct DragState {
     window_id: ThingId,
     start_mouse: (i32, i32),
     start_rect: crate::geometry::Rect,
+    kind: crate::window_manager::DragKind,
+}
+
+fn render_wayland_scene_surface(
+    scene: &mut crate::scene_graph::SceneGraph,
+    snapshot: &crate::wayland::server::WaylandWindowSnapshot,
+) {
+    use abi::pixel::PixelFormat;
+
+    if scene.get_surface(snapshot.scene_id).is_none() {
+        scene.insert_surface(
+            snapshot.scene_id,
+            crate::surface::Surface::new(snapshot.width.max(1), snapshot.height.max(1), PixelFormat::Bgra8888),
+        );
+    }
+    if let Some(surf) = scene.get_surface_mut(snapshot.scene_id) {
+        surf.resize(snapshot.width.max(1), snapshot.height.max(1));
+        surf.x = snapshot.x;
+        surf.y = snapshot.y;
+        surf.z_index = snapshot.z_index;
+        surf.visible = true;
+
+        let mut pb = surf.pixel_buffer();
+        pb.clear();
+
+        if snapshot.decorated {
+            raster::fill_rect_copy(&mut pb, 0, 0, snapshot.width, snapshot.height, 0xFF20242A);
+            raster::fill_rect_copy(&mut pb, 0, 0, snapshot.width, snapshot.content_y, 0xFF353B45);
+            raster::fill_rect_copy(
+                &mut pb,
+                snapshot.content_x,
+                snapshot.content_y,
+                snapshot.content_width,
+                snapshot.content_height,
+                0xFF101317,
+            );
+        }
+
+        if let Some(buffer) = snapshot.buffer {
+            if let Ok(ptr) = stem::thing::sys::bytespace_map(ThingId::from_u64(buffer.bs_id)) {
+                let copy_w = snapshot.content_width.min(buffer.width as i32).max(0);
+                let copy_h = snapshot.content_height.min(buffer.height as i32).max(0);
+                unsafe {
+                    let src = ptr as *const u8;
+                    for y in 0..copy_h {
+                        let src_off = (y as usize) * buffer.stride as usize;
+                        let dst_off = ((y + snapshot.content_y) as usize) * pb.stride_bytes
+                            + (snapshot.content_x as usize) * 4;
+                        core::ptr::copy_nonoverlapping(
+                            src.add(src_off),
+                            pb.ptr.add(dst_off),
+                            copy_w as usize * 4,
+                        );
+                    }
+                }
+                let _ = stem::thing::sys::bytespace_unmap(ThingId::from_u64(buffer.bs_id), ptr);
+            }
+        }
+    }
+}
+
+fn sync_wayland_scene(
+    scene: &mut crate::scene_graph::SceneGraph,
+    snapshots: &[crate::wayland::server::WaylandWindowSnapshot],
+) {
+    for snapshot in snapshots {
+        render_wayland_scene_surface(scene, snapshot);
+    }
+    scene.resort();
 }
 
 /// Tracks cursor performance metrics to ensure "butter smooth" behavior.
@@ -911,7 +980,6 @@ fn main(arg: usize) -> ! {
     let mut last_loop_start_ns = stem::monotonic_ns();
 
     let mut current_bs_id = final_bs_id;
-    let mut latest_wayland_commit: Option<crate::wayland::server::WaylandSurfaceCommit> = None;
     let mut current_age = final_age;
 
     loop {
@@ -927,16 +995,20 @@ fn main(arg: usize) -> ! {
         loop_ctrl.next();
 
         wayland_server.pump();
-        for commit in wayland_server.committed_surfaces.drain(..) {
-            stem::info!(
-                "Wayland frame committed! bs_id={}, w={}, h={}",
-                commit.bs_id,
-                commit.width,
-                commit.height
-            );
-            latest_wayland_commit = Some(commit);
-            paint_pending_rebuilds = true; // force repaint to show the latest buffer
+        wayland_server.tick(loop_start_ns);
+        for event in wayland_server.drain_events() {
+            match event {
+                crate::wayland::server::WaylandServerEvent::WindowChanged(_) => {
+                    paint_pending_rebuilds = true;
+                }
+                crate::wayland::server::WaylandServerEvent::WindowRemoved(scene_id) => {
+                    scene.remove_surface(scene_id);
+                    paint_pending_rebuilds = true;
+                }
+            }
         }
+        let latest_wayland_snapshots = wayland_server.snapshots();
+        sync_wayland_scene(&mut scene, &latest_wayland_snapshots);
 
         invalidation_causes.clear();
         let updates = ASSETS.publish_pending();
@@ -1163,6 +1235,13 @@ fn main(arg: usize) -> ! {
             // F11 Toggle: Maximize/Restore focused window
             if pressed_keys.contains(&Key::F11) && !prev_keys.contains(&Key::F11) {
                 if let Some(focused) = focused_window {
+                    if wayland_server.is_scene_surface(focused) {
+                        if wayland_server.toggle_maximized(focused, screen_w, screen_h) {
+                            paint_pending_rebuilds = true;
+                            invalidation_causes.push(SnapshotInvalidation::Forced);
+                            continue;
+                        }
+                    }
                     if let Some(restore_rect) = maximized_windows.remove(&focused) {
                         // Restore
                         stem::info!(
@@ -1382,7 +1461,40 @@ fn main(arg: usize) -> ! {
                     use crate::window_manager::{hit_test, Hit};
                     let hit_result = hit_test(cursor.x, cursor.y, hit_rect, false);
 
-                    if hit_result == Hit::TitleBar {
+                    if wayland_server.is_scene_surface(hit_id) {
+                        let _ = wayland_server.raise_surface(hit_id);
+                        match hit_result {
+                            Hit::TitleBar => {
+                                drag_state = Some(DragState {
+                                    window_id: hit_id,
+                                    start_mouse: (cursor.x, cursor.y),
+                                    start_rect: hit_rect,
+                                    kind: crate::window_manager::DragKind::Move,
+                                });
+                            }
+                            Hit::ResizeEdge(edge) => {
+                                drag_state = Some(DragState {
+                                    window_id: hit_id,
+                                    start_mouse: (cursor.x, cursor.y),
+                                    start_rect: hit_rect,
+                                    kind: crate::window_manager::DragKind::Resize {
+                                        anchor: crate::window_manager::ResizeAnchor::from_edge(edge),
+                                    },
+                                });
+                            }
+                            Hit::ResizeCorner(corner) => {
+                                drag_state = Some(DragState {
+                                    window_id: hit_id,
+                                    start_mouse: (cursor.x, cursor.y),
+                                    start_rect: hit_rect,
+                                    kind: crate::window_manager::DragKind::Resize {
+                                        anchor: crate::window_manager::ResizeAnchor::from_corner(corner),
+                                    },
+                                });
+                            }
+                            Hit::ClientArea | Hit::ButtonMaximize | Hit::ButtonShade | Hit::None => {}
+                        }
+                    } else if hit_result == Hit::TitleBar {
                         let inset_right =
                             stem::thing::sys::prop_get(hit_id, keys::UI_INSET_RIGHT).unwrap_or(0);
                         let inset_bottom =
@@ -1392,6 +1504,7 @@ fn main(arg: usize) -> ! {
                                 window_id: hit_id,
                                 start_mouse: (cursor.x, cursor.y),
                                 start_rect: hit_rect,
+                                kind: crate::window_manager::DragKind::Move,
                             });
                             // Optimized raise: use cached max_z
                             let max_z = paint_pipeline.max_z_excluding(hit_id);
@@ -1429,32 +1542,83 @@ fn main(arg: usize) -> ! {
                 if left_down && cursor_moved {
                     let delta_x = cursor.x - drag.start_mouse.0;
                     let delta_y = cursor.y - drag.start_mouse.1;
-                    let mut next_rect = crate::geometry::Rect::new(
-                        drag.start_rect.x() + delta_x,
-                        drag.start_rect.y() + delta_y,
-                        drag.start_rect.width(),
-                        drag.start_rect.height(),
-                    );
-                    next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
-                    let _ = stem::thing::sys::prop_set(
-                        drag.window_id,
-                        keys::UI_X,
-                        next_rect.x() as u64,
-                    );
-                    let _ = stem::thing::sys::prop_set(
-                        drag.window_id,
-                        keys::UI_Y,
-                        next_rect.y() as u64,
-                    );
-                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_RIGHT, 0);
-                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_BOTTOM, 0);
-
-                    // User moved the window, prevent auto-tiling
-                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);
-                    stem::info!(
-                        "[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}",
-                        drag.window_id
-                    );
+                    if wayland_server.is_scene_surface(drag.window_id) {
+                        match drag.kind {
+                            crate::window_manager::DragKind::Move => {
+                                let mut next_rect = crate::geometry::Rect::new(
+                                    drag.start_rect.x() + delta_x,
+                                    drag.start_rect.y() + delta_y,
+                                    drag.start_rect.width(),
+                                    drag.start_rect.height(),
+                                );
+                                next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
+                                let _ = wayland_server.move_surface(
+                                    drag.window_id,
+                                    next_rect.x(),
+                                    next_rect.y(),
+                                );
+                            }
+                            crate::window_manager::DragKind::Resize { anchor } => {
+                                let mut next_rect = drag.start_rect;
+                                if anchor.west {
+                                    next_rect.origin.x += delta_x;
+                                    next_rect.size.width -= delta_x;
+                                }
+                                if anchor.east {
+                                    next_rect.size.width += delta_x;
+                                }
+                                if anchor.north {
+                                    next_rect.origin.y += delta_y;
+                                    next_rect.size.height -= delta_y;
+                                }
+                                if anchor.south {
+                                    next_rect.size.height += delta_y;
+                                }
+                                next_rect = crate::window_manager::clamp_window_rect(
+                                    next_rect,
+                                    screen_w,
+                                    screen_h,
+                                );
+                                let content_w = (next_rect.width()
+                                    - crate::wayland::server::XDG_TOPLEVEL_BORDER * 2)
+                                    .max(64);
+                                let content_h = (next_rect.height()
+                                    - crate::wayland::server::XDG_TOPLEVEL_TITLEBAR
+                                    - crate::wayland::server::XDG_TOPLEVEL_BORDER)
+                                    .max(48);
+                                let _ = wayland_server.resize_toplevel(
+                                    drag.window_id,
+                                    content_w,
+                                    content_h,
+                                );
+                            }
+                        }
+                    } else {
+                        let mut next_rect = crate::geometry::Rect::new(
+                            drag.start_rect.x() + delta_x,
+                            drag.start_rect.y() + delta_y,
+                            drag.start_rect.width(),
+                            drag.start_rect.height(),
+                        );
+                        next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
+                        let _ = stem::thing::sys::prop_set(
+                            drag.window_id,
+                            keys::UI_X,
+                            next_rect.x() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            drag.window_id,
+                            keys::UI_Y,
+                            next_rect.y() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_RIGHT, 0);
+                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_BOTTOM, 0);
+                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);
+                        stem::info!(
+                            "[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}",
+                            drag.window_id
+                        );
+                    }
                 }
             }
 
@@ -1775,31 +1939,6 @@ fn main(arg: usize) -> ! {
 
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
-
-            if let Some(ref commit) = latest_wayland_commit {
-                if let Ok(ptr) =
-                    stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(commit.bs_id))
-                {
-                    let w = commit.width.min(screen_w as u32) as i32;
-                    let h = commit.height.min(screen_h as u32) as i32;
-                    let wb = commit.stride as usize;
-                    unsafe {
-                        let src = ptr as *const u8;
-                        let dst = surface.ptr;
-                        for y in 0..h {
-                            core::ptr::copy_nonoverlapping(
-                                src.add((y as usize) * wb),
-                                dst.add((y as usize) * surface.stride_bytes),
-                                (w as usize) * 4,
-                            );
-                        }
-                    }
-                    let _ = stem::thing::sys::bytespace_unmap(
-                        stem::thing::ThingId::from_u64(commit.bs_id),
-                        ptr,
-                    );
-                }
-            }
 
             // GPU composition path (when enabled)
             // Uploads window textures and submits virgl BLIT commands

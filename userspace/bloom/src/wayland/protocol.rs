@@ -45,6 +45,21 @@ impl MessageBuilder {
         self.update_header();
     }
 
+    pub fn push_i32(&mut self, val: i32) {
+        self.buf.extend_from_slice(&val.to_ne_bytes());
+        self.update_header();
+    }
+
+    pub fn push_array(&mut self, bytes: &[u8]) {
+        self.push_u32(bytes.len() as u32);
+        self.buf.extend_from_slice(bytes);
+        let padding = (4 - (bytes.len() % 4)) % 4;
+        for _ in 0..padding {
+            self.buf.push(0);
+        }
+        self.update_header();
+    }
+
     pub fn push_string(&mut self, val: &str) {
         let len = val.len() as u32 + 1; // +1 for null terminator
         self.push_u32(len);

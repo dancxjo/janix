@@ -157,7 +157,7 @@ impl VfsNode for DeviceDirNode {
 
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         write_dir_entries(
-            ["vendor", "device", "class", "status", "graph_id"].into_iter(),
+            ["vendor", "device", "class", "status", "handle"].into_iter(),
             buf,
         )
     }
@@ -241,7 +241,7 @@ fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
             entry.class_code, entry.subclass, entry.prog_if
         ),
         "status" => "present\n".into(),
-        "graph_id" => format!("{}\n", entry.graph_id),
+        "handle" => format!("{}\n", entry.graph_id),
         _ => return Err(Errno::ENOENT),
     };
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))

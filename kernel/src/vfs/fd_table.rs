@@ -34,12 +34,15 @@ pub struct OpenFile {
 
 /// Per-process file descriptor table.
 pub struct FdTable {
-    entries: [Option<OpenFile>; MAX_FDS],
+    entries: alloc::vec::Vec<Option<OpenFile>>,
 }
 
 impl FdTable {
     pub fn new() -> Self {
-        let entries = core::array::from_fn(|_| None);
+        let mut entries = alloc::vec::Vec::with_capacity(MAX_FDS);
+        for _ in 0..MAX_FDS {
+            entries.push(None);
+        }
         Self { entries }
     }
 

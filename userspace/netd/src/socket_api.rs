@@ -13,7 +13,6 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::dns;
-use stem::thing::ThingId;
 use stem::{debug, info, trace, warn};
 
 pub static mut CONN_RX: [[u8; 8192]; 256] = [[0; 8192]; 256];
@@ -48,18 +47,12 @@ struct ManagedSocket {
     local: Option<EndpointV4>,
     remote: Option<EndpointV4>,
     owner_tid: u64,
-    socket_node: ThingId,
-    connection_node: Option<ThingId>,
     bytes_tx: u64,
     bytes_rx: u64,
     packets_tx: u64,
     packets_rx: u64,
     last_error_sym: u64,
     last_seen_ms: u64,
-    /// True when graph nodes need (re-)initialization
-    graph_dirty: bool,
-    /// Stable key for graph node creation (consumed on first flush)
-    socket_key: Option<u64>,
     /// Index of the backing static buffer, if any
     pub buf_idx: Option<usize>,
     /// Additional socket handles for listener pool backlog
@@ -79,8 +72,6 @@ impl ManagedSocket {
 pub struct SocketApi {
     /// Next handle ID to assign
     next_handle: u32,
-    /// Monotonic socket identity for graph-stable keys
-    next_socket_id: u64,
     /// Map of API handles to managed sockets
     sockets: BTreeMap<u32, ManagedSocket>,
     /// Pending accepted connections (listen_handle -> Vec<(conn_handle, remote_ip, remote_port)>)
@@ -89,9 +80,7 @@ pub struct SocketApi {
     pending_removal: Vec<(SocketHandle, Option<usize>)>,
     /// Reusable scratch buffer for receive operations
     recv_scratch: Vec<u8>,
-    /// Next graph stats flush timestamp
-    pub next_graph_flush_ms: u64,
-    /// List of free buffer indices (0..64)
+    /// List of free buffer indices (0..256)
     pub free_buffers: Vec<usize>,
 }
 
@@ -103,13 +92,10 @@ impl SocketApi {
         }
         Self {
             next_handle: 1,
-            next_socket_id: 1,
             sockets: BTreeMap::new(),
             pending_accepts: BTreeMap::new(),
             pending_removal: Vec::new(),
             recv_scratch: Vec::with_capacity(32768), // Large enough for most frames
-            // Defer first graph flush to avoid blocking Root IPC during early boot
-            next_graph_flush_ms: (stem::time::now().as_millis() as u64).saturating_add(60_000),
             free_buffers,
         }
     }
@@ -136,11 +122,6 @@ impl SocketApi {
         self.alloc_handle()
     }
 
-    fn alloc_socket_id(&mut self) -> u64 {
-        let id = self.next_socket_id;
-        self.next_socket_id = self.next_socket_id.wrapping_add(1).max(1);
-        id
-    }
 
     fn now_ms() -> u64 {
         stem::time::now().as_millis() as u64
@@ -149,19 +130,6 @@ impl SocketApi {
     fn endpoint_ip_string(ep: EndpointV4) -> alloc::string::String {
         let b = ep.ip.as_bytes();
         format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
-    }
-
-    fn socket_key(_owner_tid: u64, _socket_id: u64, _kind: SocketType) -> u64 {
-        0
-    }
-
-    fn connection_key(
-        _owner_tid: u64,
-        _local: EndpointV4,
-        _remote: EndpointV4,
-        _start_ms: u64,
-    ) -> u64 {
-        0
     }
 
     fn tcp_state_label(state: TcpState) -> &'static str {
@@ -217,7 +185,8 @@ impl SocketApi {
     }
 
     fn set_last_error(managed: &mut ManagedSocket, text: &str) {
-        managed.last_error_sym = stem::thing::sys::intern(text).ok().unwrap_or(0) as u64;
+        let _ = text;
+        managed.last_error_sym = 0;
     }
 
     fn new_managed_socket(
@@ -227,38 +196,26 @@ impl SocketApi {
         is_listener: bool,
         local: Option<EndpointV4>,
         owner_tid: u64,
-        api_handle: u32,
+        _api_handle: u32,
         now_ms: u64,
         buf_idx: Option<usize>,
     ) -> ManagedSocket {
-        let socket_id = self.alloc_socket_id();
-        let socket_key = Self::socket_key(owner_tid, socket_id, kind);
-
-        // DEFERRED: All graph operations are lazy-initialized during flush_graph.
-        // This prevents blocking Root service IPC from stalling the network I/O
-        // hot path. The socket_node will be populated on the first flush_graph pass.
-        let managed = ManagedSocket {
+        ManagedSocket {
             handle: socket_handle,
             kind,
             is_listener,
             local,
             remote: None,
             owner_tid,
-            socket_node: ThingId::default(), // Lazily populated in flush_graph
-            connection_node: None,
             bytes_tx: 0,
             bytes_rx: 0,
             packets_tx: 0,
             packets_rx: 0,
             last_error_sym: 0,
             last_seen_ms: now_ms,
-            graph_dirty: true, // Needs graph initialization
-            socket_key: Some(socket_key),
             buf_idx,
             listen_pool: Vec::new(),
-        };
-
-        managed
+        }
     }
 
     fn sync_local_edge(_managed: &ManagedSocket) {}

@@ -147,7 +147,7 @@ impl ProviderFs {
     ///                         replies here; kernel reads replies from here).
     /// * `resp_write_handle` — the *write* handle id for `resp_port` that was
     ///                         registered in the global handle table so the
-    ///                         provider can call `SYS_PORT_SEND(resp_write_handle, …)`.
+    ///                         provider can call `SYS_channel_send(resp_write_handle, …)`.
     pub fn new(
         req_port: Arc<crate::ipc::Port>,
         resp_port: Arc<crate::ipc::Port>,

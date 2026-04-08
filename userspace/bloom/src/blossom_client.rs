@@ -82,9 +82,9 @@ impl BlossomClient {
         // Test connection with ping
         let mut ping_buf = [0u8; 8];
         if let Some(len) = encode_ping(&mut ping_buf) {
-            if syscall::port_send(req, &ping_buf[..len]).is_ok() {
+            if syscall::channel_send(req, &ping_buf[..len]).is_ok() {
                 let mut resp_buf = [0u8; 8];
-                if let Ok(resp_len) = syscall::port_recv(resp, &mut resp_buf) {
+                if let Ok(resp_len) = syscall::channel_recv(resp, &mut resp_buf) {
                     if resp_len > 0 && resp_buf[0] == 0 {
                         self.connected = true;
                         stem::info!("BLOOM: Connected to Blossom service");
@@ -105,12 +105,7 @@ impl BlossomClient {
 
     /// Request rasterization of an SVG from a memfd
     #[allow(dead_code)]
-    pub fn rasterize(
-        &mut self,
-        svg_fd: u32,
-        width: u32,
-        height: u32,
-    ) -> Option<CachedRaster> {
+    pub fn rasterize(&mut self, svg_fd: u32, width: u32, height: u32) -> Option<CachedRaster> {
         if !self.connected && !self.connect() {
             return None;
         }
@@ -141,14 +136,14 @@ impl BlossomClient {
         let mut req_buf = [0u8; 256];
         let req_len = request.encode(&mut req_buf)?;
 
-        if syscall::port_send(self.req_port, &req_buf[..req_len]).is_err() {
+        if syscall::channel_send(self.req_port, &req_buf[..req_len]).is_err() {
             self.connected = false;
             return None;
         }
 
         // Receive response
         let mut resp_buf = [0u8; 256];
-        let resp_len = match syscall::port_recv(self.resp_port, &mut resp_buf) {
+        let resp_len = match syscall::channel_recv(self.resp_port, &mut resp_buf) {
             Ok(len) if len > 0 => len,
             _ => {
                 self.connected = false;

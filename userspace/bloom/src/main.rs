@@ -58,11 +58,8 @@ use stem::thing::ThingId;
 
 use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
 use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
-use abi::schema::input::{
-    FILTER_BUTTON, FILTER_POINTER, SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER,
-};
 use abi::schema::{hid, keys, kinds};
-use stem::syscall::{port_create, topic_subscribe, PortHandle};
+use stem::syscall::ChannelHandle;
 use stem::syscall::vfs::{vfs_open, vfs_write};
 
 use crate::asset::AssetBank;
@@ -251,24 +248,6 @@ fn find_bristle_node() -> Option<ThingId> {
         }
         _ => None,
     }
-}
-
-fn subscribe_bristle_topic() -> Option<PortHandle> {
-    let input_node = find_bristle_node()?;
-    if let Ok(topic_id) = prop_get(input_node, abi::schema::input::INPUT_TOPIC_ID) {
-        if let Ok((write, read)) = port_create(4096) {
-            if topic_subscribe(topic_id as u32, write).is_ok() {
-                stem::info!(
-                    "[bloom] dynamically subscribed to input topic {} on svc.Input {} via port {}",
-                    topic_id,
-                    input_node.to_u64_lossy(),
-                    read
-                );
-                return Some(read);
-            }
-        }
-    }
-    None
 }
 
 fn sync_input_from_graph(
@@ -470,8 +449,8 @@ fn read_fb_info() -> Option<FbInfoPayload> {
     Some(payload)
 }
 
-fn unpack_handle(arg: usize, index: u32) -> PortHandle {
-    ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+fn unpack_handle(arg: usize, index: u32) -> ChannelHandle {
+    ((arg >> (index * 16)) & 0xFFFF) as ChannelHandle
 }
 
 fn window_rect_from_props(
@@ -930,16 +909,10 @@ fn main(arg: usize) -> ! {
     let mut screen_h = final_height as i32;
 
     // Cursor state
-    // Prefer Bristle's broker topic over the legacy boot-wired event port. The
-    // topic path is the authoritative distribution channel and has proven more
-    // responsive than the older direct handoff.
-    let mut bristle_evt_handle = subscribe_bristle_topic().unwrap_or(bristle_evt as PortHandle);
+    // Bristle delivers compositor input over the supervisor-provided event port.
+    let bristle_evt_handle = bristle_evt as ChannelHandle;
 
-    stem::info!(
-        "[bloom] bristle_evt_handle = {} (legacy was {})",
-        bristle_evt_handle,
-        bristle_evt
-    );
+    stem::info!("[bloom] bristle_evt_handle = {}", bristle_evt_handle);
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut bristle_node = find_bristle_node();
     let mut graph_input = GraphInputState::default();
@@ -1126,14 +1099,6 @@ fn main(arg: usize) -> ! {
                 let size = (h * s) as usize;
                 surface = unsafe { surface::PixelBuffer::new(ptr, size, w, h, s) };
                 current_fd = fd;
-            }
-        }
-
-        // Handle raw input before any expensive graph/watch/paint work so cursor motion
-        // is not delayed behind compositor bookkeeping.
-        if bristle_evt_handle == 0 {
-            if let Some(handle) = subscribe_bristle_topic() {
-                bristle_evt_handle = handle;
             }
         }
 

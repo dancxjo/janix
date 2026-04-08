@@ -204,10 +204,10 @@ fn main(_arg: usize) -> ! {
         }
     }
 
-    let (write_handle, read_handle) = match stem::syscall::port::port_create(65536) {
+    let (write_handle, read_handle) = match stem::syscall::channel_create(65536) {
         Ok(h) => h,
         Err(e) => {
-            error!("HDAUDIO: port_create failed: {:?}", e);
+            error!("HDAUDIO: channel_create failed: {:?}", e);
             loop {
                 stem::time::sleep_ms(1000);
             }
@@ -237,7 +237,7 @@ fn main(_arg: usize) -> ! {
     let mut total_bytes: u64 = 0;
     let mut last_log_ns = 0u64;
     loop {
-        match stem::syscall::port::port_recv(read_handle, &mut in_buf) {
+        match stem::syscall::channel_recv(read_handle, &mut in_buf) {
             Ok(n) if n > 0 => {
                 hda.feed_pcm(&in_buf[..n]);
                 total_bytes = total_bytes.saturating_add(n as u64);

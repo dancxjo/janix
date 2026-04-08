@@ -19,7 +19,7 @@ mod vfs_provider;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::VirtioNetDriver;
-use stem::syscall::port::{port_create, port_try_recv};
+use stem::syscall::{channel_create, channel_try_recv};
 use stem::syscall::vfs_mount;
 use stem::{error, info, warn};
 use vfs_provider::{handle_vfs_rpc, NetVfsState};
@@ -67,7 +67,7 @@ fn main(arg: usize) -> ! {
     // Create the VFS provider port pair.
     //   req_write → kernel sends VFS RPCs here
     //   req_read  → this daemon reads RPCs here
-    let (req_write, req_read) = match port_create(VFS_RPC_MAX_REQ * 8) {
+    let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
         Ok(handles) => {
             info!("VIRTIO_NETD: Created VFS provider port");
             handles
@@ -115,7 +115,7 @@ fn main(arg: usize) -> ! {
         }
 
         // 3. Service any pending VFS RPC (non-blocking).
-        match port_try_recv(req_read, &mut req_buf) {
+        match channel_try_recv(req_read, &mut req_buf) {
             Ok(n) if n > 0 => {
                 handle_vfs_rpc(&mut state, &mut driver, &req_buf[..n]);
             }

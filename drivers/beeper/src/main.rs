@@ -10,7 +10,7 @@ use abi::schema::keys::WRITE_PORT_HANDLE;
 use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
 use alloc::vec::Vec;
 use stem::info;
-use stem::syscall::port::{port_send, port_wait, PortHandle};
+use stem::syscall::{channel_send, channel_wait, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 
@@ -37,7 +37,7 @@ fn main(_arg: usize) -> ! {
         if found_id.to_u64_lossy() != 0 {
             if let Ok(h) = thingsys::prop_get(found_id, WRITE_PORT_HANDLE) {
                 if h != 0 {
-                    write_port_handle = h as PortHandle;
+                    write_port_handle = h as ChannelHandle;
                     break;
                 }
             }
@@ -76,19 +76,19 @@ fn main(_arg: usize) -> ! {
 
         let mut sent_bytes = 0;
         while sent_bytes < buf.len() {
-            match port_send(write_port_handle, &buf[sent_bytes..]) {
+            match channel_send(write_port_handle, &buf[sent_bytes..]) {
                 Ok(n) if n > 0 => {
                     sent_bytes += n;
                 }
                 _ => {
                     // Port full, wait for space
-                    let _ = port_wait(&[write_port_handle], abi::syscall::port_wait::WRITABLE);
+                    let _ = channel_wait(&[write_port_handle], abi::syscall::channel_wait::WRITABLE);
                 }
             }
         }
 
         offset += to_write;
-        // Rely on port_wait(WRITABLE) for native backpressure instead of sleeping manually!
+        // Rely on channel_wait(WRITABLE) for native backpressure instead of sleeping manually!
     }
 
     info!("Beeper: Finished.");

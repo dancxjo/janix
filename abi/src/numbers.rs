@@ -69,32 +69,19 @@ pub const SYS_MEMFD_CREATE: u32 = 0x2006;
 pub const SYS_MEMFD_PHYS: u32 = 0x2007;
 
 // ============================================================================
-// IPC Ports & Streaming (0x3000)
+// IPC (0x3000)
 // ============================================================================
 pub const SYS_PORT_CREATE: u32 = 0x3000;
-pub const SYS_PORT_SEND: u32 = 0x3001;
-pub const SYS_PORT_RECV: u32 = 0x3002;
-pub const SYS_PORT_TRY_RECV: u32 = 0x3003;
-pub const SYS_PORT_SEND_ALL: u32 = 0x3004;
-pub const SYS_PORT_SEND_FD: u32 = 0x3005;
-pub const SYS_PORT_RECV_FD: u32 = 0x3006;
-pub const SYS_PORT_INFO: u32 = 0x3007;
-pub const SYS_PORT_CLOSE: u32 = 0x3008;
-pub const SYS_PORT_WAIT: u32 = 0x3009;
-
-pub const SYS_STREAM_OPEN: u32 = 0x300A;
-pub const SYS_STREAM_LISTEN: u32 = 0x300B;
-pub const SYS_STREAM_READ: u32 = 0x300C;
-pub const SYS_STREAM_POLL: u32 = 0x300D;
-
-pub const SYS_TOPIC_CREATE: u32 = 0x300E;
-pub const SYS_TOPIC_SUBSCRIBE: u32 = 0x300F;
-pub const SYS_TOPIC_PUBLISH: u32 = 0x3010;
-
-pub const SYS_PIPE_CREATE: u32 = 0x3011;
-pub const SYS_PIPE_READ: u32 = 0x3012;
-pub const SYS_PIPE_WRITE: u32 = 0x3013;
-pub const SYS_PIPE_CLOSE: u32 = 0x3014;
+pub const SYS_CHANNEL_CREATE: u32 = 0x3000;
+pub const SYS_CHANNEL_SEND: u32 = 0x3001;
+pub const SYS_CHANNEL_RECV: u32 = 0x3002;
+pub const SYS_CHANNEL_TRY_RECV: u32 = 0x3003;
+pub const SYS_CHANNEL_SEND_ALL: u32 = 0x3004;
+pub const SYS_CHANNEL_SEND_HANDLE: u32 = 0x3005;
+pub const SYS_CHANNEL_RECV_HANDLE: u32 = 0x3006;
+pub const SYS_CHANNEL_INFO: u32 = 0x3007;
+pub const SYS_CHANNEL_CLOSE: u32 = 0x3008;
+pub const SYS_CHANNEL_WAIT: u32 = 0x3009;
 pub const SYS_PIPE: u32 = 0x3015;
 
 // ============================================================================
@@ -150,7 +137,7 @@ pub const SYS_CONSOLE_ENABLE: u32 = 0x7002;
 // ABI Flags & Constants
 // ============================================================================
 
-pub mod port_wait {
+pub mod channel_wait {
     pub const READABLE: u32 = 1 << 0;
     pub const WRITABLE: u32 = 1 << 1;
 }

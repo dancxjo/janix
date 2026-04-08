@@ -4,14 +4,8 @@ use abi::syscall::*;
 
 pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let syscall_id = n as u32;
-    let tid = unsafe { crate::sched::current_tid_current() };
-
-    if tid >= 15 {
-        crate::kinfo!("DISPATCH [tid={}]: n=0x{:x} (WATCH_VAL=0x{:x}) args={:x?}", tid, syscall_id, SYS_FS_WATCH_PATH, args);
-    }
 
     if syscall_id == 0x400F {
-        crate::kinfo!("DISPATCH: FORCED HIT 400F");
         let res = handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]);
         return match res {
             Ok(v) => v as isize,
@@ -61,27 +55,19 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
 
-        SYS_PORT_CREATE => handlers::sys_port_create(args[0]),
-        SYS_PORT_SEND => handlers::sys_port_send(args[0], args[1], args[2]),
-        SYS_PORT_SEND_ALL => handlers::sys_port_send_all(args[0], args[1], args[2]),
-        SYS_PORT_RECV => handlers::sys_port_recv(args[0], args[1], args[2]),
-        SYS_PORT_CLOSE => handlers::sys_port_close(args[0]),
-        SYS_PORT_WAIT => handlers::sys_port_wait(args[0], args[1], args[2]),
-        SYS_PORT_INFO => handlers::sys_port_info(args[0]),
-        SYS_TOPIC_CREATE => handlers::sys_topic_create(),
-        SYS_TOPIC_SUBSCRIBE => handlers::sys_topic_subscribe(args[0], args[1]),
-        SYS_TOPIC_PUBLISH => handlers::sys_topic_publish(args[0], args[1], args[2]),
-        SYS_PORT_TRY_RECV => handlers::sys_port_try_recv(args[0], args[1], args[2]),
-        SYS_PORT_SEND_FD => handlers::sys_port_send_fd(args[0], args[1]),
-        SYS_PORT_RECV_FD => handlers::sys_port_recv_fd(args[0], args[1]),
+        SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
+        SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),
+        SYS_CHANNEL_SEND_ALL => handlers::sys_channel_send_all(args[0], args[1], args[2]),
+        SYS_CHANNEL_RECV => handlers::sys_channel_recv(args[0], args[1], args[2]),
+        SYS_CHANNEL_CLOSE => handlers::sys_channel_close(args[0]),
+        SYS_CHANNEL_WAIT => handlers::sys_channel_wait(args[0], args[1], args[2]),
+        SYS_CHANNEL_INFO => handlers::sys_channel_info(args[0]),
+        SYS_CHANNEL_TRY_RECV => handlers::sys_channel_try_recv(args[0], args[1], args[2]),
+        SYS_CHANNEL_SEND_HANDLE => handlers::sys_channel_send_handle(args[0], args[1]),
+        SYS_CHANNEL_RECV_HANDLE => handlers::sys_channel_recv_handle(args[0], args[1]),
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),
-
-        SYS_STREAM_LISTEN => handlers::stream::sys_stream_listen(args[0], args[1]),
-        SYS_STREAM_OPEN => handlers::stream::sys_stream_open(args[0]),
-        SYS_STREAM_READ => handlers::stream::sys_stream_read(args[0], args[1], args[2]),
-        SYS_STREAM_POLL => handlers::stream::sys_stream_poll(args[0], args[1], args[2]),
 
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),
@@ -99,11 +85,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_NIC_LINK_UP => handlers::sys_nic_link_up(),
         SYS_NIC_POLL_RX => handlers::sys_nic_poll_rx(args[0], args[1]),
         SYS_NIC_TX => handlers::sys_nic_tx(args[0], args[1]),
-
-        SYS_PIPE_CREATE => handlers::sys_pipe_create(args[0], args[1]),
-        SYS_PIPE_READ => handlers::sys_pipe_read(args[0], args[1], args[2]),
-        SYS_PIPE_WRITE => handlers::sys_pipe_write(args[0], args[1], args[2]),
-        SYS_PIPE_CLOSE => handlers::sys_pipe_close(args[0], args[1]),
 
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
 
@@ -123,27 +104,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_POLL => handlers::vfs::SYS_FS_poll(args[0], args[1], args[2]),
         SYS_FS_SEEK => handlers::vfs::SYS_FS_seek(args[0], args[1], args[2]),
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
-        0x400F => {
-            crate::kinfo!("DISPATCH: hitting LITERAL 400F arm");
-            handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3])
-        }
+        0x400F => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
 
-        _ => {
-            if tid >= 15 {
-                crate::kinfo!("DISPATCH [tid={}]: Unknown syscall #{} (0x{:x}) args={:x?}", tid, syscall_id, syscall_id, args);
-            }
-            Err(abi::errors::Errno::ENOSYS)
-        }
+        _ => Err(abi::errors::Errno::ENOSYS),
     };
 
-    let result_as_isize = match result {
+    match result {
         Ok(val) => val as isize,
         Err(e) => -(e as isize),
-    };
-
-    if tid == 18 {
-        crate::kinfo!("DISPATCH [tid=18]: n=0x{:x} -> ok={}", syscall_id, result_as_isize);
     }
-
-    result_as_isize
 }

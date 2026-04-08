@@ -1,7 +1,7 @@
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
-use stem::syscall::PortHandle;
+use stem::syscall::ChannelHandle;
 use stem::thing::{sys as thingsys, ThingId};
 use stem::syscall::vfs;
 use stem::syscall::{vm_map, vm_unmap};
@@ -56,8 +56,8 @@ pub struct CompositorTarget {
     pub format: u32,
     pub ptr: *mut u8,
     pub size_bytes: usize,
-    pub driver_req: PortHandle,
-    pub driver_resp: PortHandle,
+    pub driver_req: ChannelHandle,
+    pub driver_resp: ChannelHandle,
     pub backend: DisplayBackend,
 }
 
@@ -71,7 +71,7 @@ pub enum CompositorError {
 impl CompositorTarget {
     pub fn map_from_fd(
         fd: u32,
-        arg_ports: (PortHandle, PortHandle),
+        arg_ports: (ChannelHandle, ChannelHandle),
     ) -> Result<Self, CompositorError> {
         stem::info!(
             "bloom: map_from_fd start fd={}",
@@ -121,7 +121,7 @@ impl CompositorTarget {
     }
 
     pub fn discover_and_map(
-        arg_ports: (PortHandle, PortHandle),
+        arg_ports: (ChannelHandle, ChannelHandle),
         timeout_ms: u32,
     ) -> Result<Self, CompositorError> {
         let sym = Symbols::new();
@@ -173,7 +173,7 @@ impl CompositorTarget {
         height: u32,
         stride: u32,
         format: u32,
-        arg_ports: (PortHandle, PortHandle),
+        arg_ports: (ChannelHandle, ChannelHandle),
     ) -> Result<Self, CompositorError> {
         crate::log!(
             "compositor fd {} ({}x{} stride={} format={})",
@@ -238,8 +238,8 @@ impl CompositorTarget {
 
         // If not provided in args, check properties
         if req == 0 || resp == 0 {
-            req = thingsys::prop_get_fd(fd, "display_drv_req").unwrap_or(0) as PortHandle;
-            resp = thingsys::prop_get_fd(fd, "display_drv_resp").unwrap_or(0) as PortHandle;
+            req = thingsys::prop_get_fd(fd, "display_drv_req").unwrap_or(0) as ChannelHandle;
+            resp = thingsys::prop_get_fd(fd, "display_drv_resp").unwrap_or(0) as ChannelHandle;
         }
 
         // If still 0, wait with timeout
@@ -252,10 +252,10 @@ impl CompositorTarget {
                     // 20 * 50ms = 1s wait max
                     if thingsys::root_stream_poll(w, &mut evt).is_ok() {
                         if evt.key == sym.display_drv_req {
-                            req = evt.value as PortHandle;
+                            req = evt.value as ChannelHandle;
                         }
                         if evt.key == sym.display_drv_resp {
-                            resp = evt.value as PortHandle;
+                            resp = evt.value as ChannelHandle;
                         }
                         if req != 0 && resp != 0 {
                             break;

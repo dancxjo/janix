@@ -6,7 +6,7 @@
 #![no_main]
 
 use stem::info;
-use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, port_send_all};
+use stem::syscall::{ChannelHandle, ioport_read, ioport_write, irq_subscribe, channel_send_all};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;
@@ -194,7 +194,7 @@ fn init_mouse() {
 
 #[stem::main]
 fn main(raw_write_handle: usize) -> ! {
-    let handle = raw_write_handle as PortHandle;
+    let handle = raw_write_handle as ChannelHandle;
 
     info!("ps2_mouse: online (handle={})", handle);
 
@@ -228,7 +228,7 @@ use abi::hid::{
 use mouse::{MouseState, PointerEvent};
 
 fn send_mouse_events(
-    handle: PortHandle,
+    handle: ChannelHandle,
     state: &mut MouseState,
     packet: &[u8; 3],
     drop_counter: &mut u32,
@@ -281,7 +281,7 @@ fn send_mouse_events(
                     len = 22;
                 }
             }
-            if len > 0 && port_send_all(handle, &buf[..len]).is_err() {
+            if len > 0 && channel_send_all(handle, &buf[..len]).is_err() {
                 *drop_counter = drop_counter.wrapping_add(1);
                 if *drop_counter <= 4 || *drop_counter % 100 == 0 {
                     info!(
@@ -296,7 +296,7 @@ fn send_mouse_events(
 
 /// Drain all pending mouse data and assemble packets
 fn drain_mouse_data(
-    handle: PortHandle,
+    handle: ChannelHandle,
     state: &mut MouseState,
     packet: &mut [u8; 3],
     idx: &mut usize,
@@ -333,7 +333,7 @@ fn drain_mouse_data(
 }
 
 /// Fallback polling loop
-fn polling_loop(handle: PortHandle) -> ! {
+fn polling_loop(handle: ChannelHandle) -> ! {
     info!(
         "ps2_mouse: using cooperative polling loop ({}ms interval)",
         POLLING_INTERVAL_MS

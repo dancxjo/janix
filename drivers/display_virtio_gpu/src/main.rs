@@ -10,7 +10,7 @@ use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
-use stem::syscall::{port_recv, PortHandle};
+use stem::syscall::{channel_recv, ChannelHandle};
 use stem::thing::{sys as thingsys, ThingId};
 use virtio_gpu::{Rect, VirtioGpu};
 
@@ -136,17 +136,17 @@ pub static MANIFEST: ManifestHeader = ManifestHeader {
     _reserved: 0,
 };
 
-fn unpack_handle(arg: usize, index: u32) -> PortHandle {
-    ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+fn unpack_handle(arg: usize, index: u32) -> ChannelHandle {
+    ((arg >> (index * 16)) & 0xFFFF) as ChannelHandle
 }
 
-fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
+fn send_msg(handle: ChannelHandle, msg_type: u16, payload: &[u8]) {
     let mut buf = [0u8; 256];
     if let Some(len) = drvproto::encode_message(&mut buf, msg_type, payload) {
-        let mut status = stem::syscall::port_send_all(handle, &buf[..len]);
+        let mut status = stem::syscall::channel_send_all(handle, &buf[..len]);
         while let Err(abi::errors::Errno::EAGAIN) = status {
-            let _ = stem::syscall::port::port_wait(&[handle], abi::syscall::port_wait::WRITABLE);
-            status = stem::syscall::port_send_all(handle, &buf[..len]);
+            let _ = stem::syscall::channel_wait(&[handle], abi::syscall::channel_wait::WRITABLE);
+            status = stem::syscall::channel_send_all(handle, &buf[..len]);
         }
         stem::trace!(
             "display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}",
@@ -356,7 +356,7 @@ fn main(arg: usize) -> ! {
                 }
 
                 if has_req_readable {
-                    match port_recv(drv_req_read, &mut buf) {
+                    match channel_recv(drv_req_read, &mut buf) {
                         Ok(n) => {
                             if n == 0 {
                                 // No payload queued after wake; just continue the outer loop.
@@ -366,14 +366,14 @@ fn main(arg: usize) -> ! {
                             }
                         }
                         Err(e) => {
-                            stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
+                            stem::error!("display_virtio_gpu: channel_recv ERR: {:?}", e);
                         }
                     }
 
-                    // `port_recv` is now blocking. After `WaitSet` wakes us, drain only
-                    // with `port_try_recv` so we don't park here before processing frames.
+                    // `channel_recv` is now blocking. After `WaitSet` wakes us, drain only
+                    // with `channel_try_recv` so we don't park here before processing frames.
                     loop {
-                        match stem::syscall::port_try_recv(drv_req_read, &mut buf) {
+                        match stem::syscall::channel_try_recv(drv_req_read, &mut buf) {
                             Ok(n) => {
                                 if n == 0 {
                                     break;
@@ -383,7 +383,7 @@ fn main(arg: usize) -> ! {
                             }
                             Err(abi::errors::Errno::EAGAIN) => break,
                             Err(e) => {
-                                stem::error!("display_virtio_gpu: port_try_recv ERR: {:?}", e);
+                                stem::error!("display_virtio_gpu: channel_try_recv ERR: {:?}", e);
                                 break;
                             }
                         }
@@ -478,9 +478,7 @@ fn main(arg: usize) -> ! {
                 }
                 drvproto::MSG_PRESENT => {
                     if current_fd.is_none() {
-                        stem::error!(
-                            "display_virtio_gpu: current_fd is NONE during MSG_PRESENT!"
-                        );
+                        stem::error!("display_virtio_gpu: current_fd is NONE during MSG_PRESENT!");
                         let err = drvproto::ErrResp { code: 1 };
                         let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
                         if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
@@ -715,7 +713,9 @@ fn main(arg: usize) -> ! {
                                     let mut req: abi::vm::VmMapReq = unsafe { core::mem::zeroed() };
                                     req.backing = abi::vm::VmBacking::File { fd, offset: 0 };
                                     req.len = hdr.data_len as usize;
-                                    req.prot = abi::vm::VmProt::READ | abi::vm::VmProt::WRITE | abi::vm::VmProt::USER;
+                                    req.prot = abi::vm::VmProt::READ
+                                        | abi::vm::VmProt::WRITE
+                                        | abi::vm::VmProt::USER;
                                     match stem::syscall::vm_map(&req) {
                                         Ok(resp) => {
                                             let ptr = resp.addr;

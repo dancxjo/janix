@@ -14,7 +14,7 @@ use core::time::Duration;
 use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::abi::schema::kinds;
-use stem::syscall::port::{port_create, port_recv, port_send, port_wait, PortHandle};
+use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
 use stem::syscall::{ioport_read, ioport_write};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
@@ -75,7 +75,7 @@ struct AtaDisk {
     supports_lba48: bool,
     model: [u8; 40],
     serial: [u8; 20],
-    read_port_handle: Option<PortHandle>,
+    read_port_handle: Option<ChannelHandle>,
 }
 
 /// ATAPI (CD-ROM) device
@@ -88,7 +88,7 @@ struct AtapiDevice {
     sector_count: u64,
     model: [u8; 40],
     serial: [u8; 20],
-    read_port_handle: Option<PortHandle>,
+    read_port_handle: Option<ChannelHandle>,
 }
 
 fn ata_inb(port: u16) -> u8 {
@@ -288,7 +288,7 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     disk.graph_id = disk_id;
 
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
+    let (write_handle, read_handle) = match channel_create(4096) {
         Ok(handles) => handles,
         Err(e) => {
             error!("ATA_DISK: Failed to create port: {:?}", e);
@@ -523,7 +523,7 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     dev.graph_id = node_id;
 
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
+    let (write_handle, read_handle) = match channel_create(4096) {
         Ok(handles) => handles,
         Err(e) => {
             error!("ATA_DISK: Failed to create port: {:?}", e);
@@ -620,7 +620,7 @@ fn main(_arg: usize) -> ! {
     info!("ATA_DISK: Entering RPC service loop");
 
     // Collect all port handles for waiting on requests
-    let mut handles: Vec<PortHandle> = Vec::new();
+    let mut handles: Vec<ChannelHandle> = Vec::new();
     for disk in &disks {
         if let Some(h) = disk.read_port_handle {
             handles.push(h);
@@ -642,10 +642,10 @@ fn main(_arg: usize) -> ! {
     // Main service loop
     loop {
         // Wait for a request on any port (blocking)
-        let ready_handle = match port_wait(&handles, abi::syscall::port_wait::READABLE) {
+        let ready_handle = match channel_wait(&handles, abi::syscall::channel_wait::READABLE) {
             Ok(h) => h,
             Err(e) => {
-                error!("ATA_DISK: port_wait failed: {:?}", e);
+                error!("ATA_DISK: channel_wait failed: {:?}", e);
                 stem::sleep(Duration::from_millis(100));
                 continue;
             }
@@ -656,13 +656,13 @@ fn main(_arg: usize) -> ! {
         for disk in &disks {
             if disk.read_port_handle == Some(ready_handle) {
                 let mut buf = [0u8; 4096];
-                match port_recv(ready_handle, &mut buf) {
+                match channel_recv(ready_handle, &mut buf) {
                     Ok(len) if len > 0 => {
                         handle_ata_request(disk, &buf[..len], ready_handle);
                     }
                     Ok(_) => {} // No data
                     Err(e) => {
-                        error!("ATA_DISK: port_recv failed: {:?}", e);
+                        error!("ATA_DISK: channel_recv failed: {:?}", e);
                     }
                 }
                 found = true;
@@ -674,13 +674,13 @@ fn main(_arg: usize) -> ! {
             for dev in &atapi_devs {
                 if dev.read_port_handle == Some(ready_handle) {
                     let mut buf = [0u8; 4096];
-                    match port_recv(ready_handle, &mut buf) {
+                    match channel_recv(ready_handle, &mut buf) {
                         Ok(len) if len > 0 => {
                             handle_atapi_request(dev, &buf[..len], ready_handle);
                         }
                         Ok(_) => {} // No data
                         Err(e) => {
-                            error!("ATA_DISK: port_recv failed: {:?}", e);
+                            error!("ATA_DISK: channel_recv failed: {:?}", e);
                         }
                     }
                     break;
@@ -691,7 +691,7 @@ fn main(_arg: usize) -> ! {
 }
 
 /// Handle a block device RPC request for ATA disk
-fn handle_ata_request(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle) {
+fn handle_ata_request(disk: &AtaDisk, request_data: &[u8], port_handle: ChannelHandle) {
     if request_data.is_empty() {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
@@ -709,7 +709,7 @@ fn handle_ata_request(disk: &AtaDisk, request_data: &[u8], port_handle: PortHand
 }
 
 /// Handle Identify request for ATA disk
-fn handle_ata_identify(disk: &AtaDisk, port_handle: PortHandle) {
+fn handle_ata_identify(disk: &AtaDisk, port_handle: ChannelHandle) {
     let response = IdentifyResponse {
         sector_size: disk.sector_size,
         sector_count: disk.sector_count,
@@ -733,13 +733,13 @@ fn handle_ata_identify(disk: &AtaDisk, port_handle: PortHandle) {
         );
     }
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Identify response: {:?}", e);
     }
 }
 
 /// Handle Read request for ATA disk
-fn handle_ata_read(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle) {
+fn handle_ata_read(disk: &AtaDisk, request_data: &[u8], port_handle: ChannelHandle) {
     if request_data.len() < core::mem::size_of::<ReadRequest>() {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
@@ -771,7 +771,7 @@ fn handle_ata_read(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle)
 }
 
 /// Handle a block device RPC request for ATAPI device
-fn handle_atapi_request(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHandle) {
+fn handle_atapi_request(dev: &AtapiDevice, request_data: &[u8], port_handle: ChannelHandle) {
     if request_data.is_empty() {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
@@ -789,7 +789,7 @@ fn handle_atapi_request(dev: &AtapiDevice, request_data: &[u8], port_handle: Por
 }
 
 /// Handle Identify request for ATAPI device
-fn handle_atapi_identify(dev: &AtapiDevice, port_handle: PortHandle) {
+fn handle_atapi_identify(dev: &AtapiDevice, port_handle: ChannelHandle) {
     let response = IdentifyResponse {
         sector_size: dev.sector_size,
         sector_count: dev.sector_count,
@@ -809,13 +809,13 @@ fn handle_atapi_identify(dev: &AtapiDevice, port_handle: PortHandle) {
         );
     }
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Identify response: {:?}", e);
     }
 }
 
 /// Handle Read request for ATAPI device
-fn handle_atapi_read(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHandle) {
+fn handle_atapi_read(dev: &AtapiDevice, request_data: &[u8], port_handle: ChannelHandle) {
     if request_data.len() < core::mem::size_of::<ReadRequest>() {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
@@ -846,7 +846,7 @@ fn handle_atapi_read(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHa
 }
 
 /// Send a Read success response
-fn send_read_response(port_handle: PortHandle, data: &[u8]) {
+fn send_read_response(port_handle: ChannelHandle, data: &[u8]) {
     let header = ReadResponse {
         data_len: data.len() as u32,
     };
@@ -865,13 +865,13 @@ fn send_read_response(port_handle: PortHandle, data: &[u8]) {
 
     response_buf[1 + core::mem::size_of::<ReadResponse>()..].copy_from_slice(data);
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Read response: {:?}", e);
     }
 }
 
 /// Send an error response
-fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
+fn send_error_response(port_handle: ChannelHandle, error_code: BlockDeviceError) {
     let error_resp = ErrorResponse {
         error_code: error_code as u8,
         _reserved: [0; 3],
@@ -888,7 +888,7 @@ fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
         );
     }
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Error response: {:?}", e);
     }
 }

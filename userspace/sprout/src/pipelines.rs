@@ -1,20 +1,20 @@
 use crate::task::{ManagedTask, TaskKind};
 use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
-use abi::syscall::vfs_flags::O_RDONLY;
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
+use abi::syscall::vfs_flags::O_RDONLY;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use stem::abi::driver_ctx::DriverCtx;
-use stem::syscall::{port_create, PortHandle};
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+use stem::syscall::{channel_create, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn};
-use abi::ids::HandleId;
 
 pub struct DisplayHandles {
-    pub drv_req_write: PortHandle,
-    pub drv_resp_read: PortHandle,
+    pub drv_req_write: ChannelHandle,
+    pub drv_resp_read: ChannelHandle,
     pub bs_id: u32,
     /// Which display backend was selected
     pub backend_name: &'static str,
@@ -56,10 +56,7 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
         format: 0,
     };
     let slice = unsafe {
-        core::slice::from_raw_parts_mut(
-            &mut payload as *mut _ as *mut u8,
-            FB_INFO_PAYLOAD_SIZE,
-        )
+        core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, FB_INFO_PAYLOAD_SIZE)
     };
     let n = match vfs_read(fd, slice) {
         Ok(n) => n,
@@ -78,7 +75,12 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
         );
         return None;
     }
-    Some((payload.width, payload.height, payload.stride, payload.format))
+    Some((
+        payload.width,
+        payload.height,
+        payload.stride,
+        payload.format,
+    ))
 }
 
 pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
@@ -229,23 +231,23 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     if driver_name.is_none() && backend_name != "BootFB" {
         if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
             if count > 0 {
-            display_device = Some(gpu_buf[0]);
+                display_device = Some(gpu_buf[0]);
 
-            // Read native resolution from boot framebuffer if available
-            let mut fb_buf = [ThingId::default(); 1];
-            if let Ok(fb_count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
-                if fb_count > 0 {
-                    let fb = fb_buf[0];
-                    display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
-                    display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
+                // Read native resolution from boot framebuffer if available
+                let mut fb_buf = [ThingId::default(); 1];
+                if let Ok(fb_count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
+                    if fb_count > 0 {
+                        let fb = fb_buf[0];
+                        display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
+                        display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
+                    }
                 }
-            }
 
-            // Fall back to reasonable default if no bootfb
-            if display_width == 0 || display_height == 0 {
-                display_width = 1024;
-                display_height = 768;
-            }
+                // Fall back to reasonable default if no bootfb
+                if display_width == 0 || display_height == 0 {
+                    display_width = 1024;
+                    display_height = 768;
+                }
 
                 display_stride = display_width * 4;
                 display_format = 1;
@@ -327,17 +329,17 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut drv_resp_read = 0;
 
     if let Some(driver_name) = driver_name {
-        let drv_req = match port_create(4096) {
+        let drv_req = match channel_create(4096) {
             Ok(handles) => handles,
             Err(e) => {
-                warn!("SPROUT: drv_req port_create failed: {:?}", e);
+                warn!("SPROUT: drv_req channel_create failed: {:?}", e);
                 return None;
             }
         };
-        let drv_resp = match port_create(4096) {
+        let drv_resp = match channel_create(4096) {
             Ok(handles) => handles,
             Err(e) => {
-                warn!("SPROUT: drv_resp port_create failed: {:?}", e);
+                warn!("SPROUT: drv_resp channel_create failed: {:?}", e);
                 return None;
             }
         };
@@ -391,15 +393,15 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 }
 
 pub struct InputHandles {
-    pub evt_read: PortHandle,
-    pub evt_input_echo_read: PortHandle,
+    pub bloom_evt_read: ChannelHandle,
+    pub evt_input_echo_read: ChannelHandle,
 }
 
 pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     info!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
 
     // Create kbd_raw port (ps2_kbd -> bristle)
-    let kbd_raw = match stem::syscall::port_create(4096) {
+    let kbd_raw = match stem::syscall::channel_create(4096) {
         Ok((write_h, read_h)) => {
             info!("SPROUT: Created kbd_raw port (w={}, r={})", write_h, read_h);
             (write_h, read_h)
@@ -407,14 +409,14 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         Err(e) => {
             stem::error!("SPROUT: Failed to create kbd_raw port: {:?}", e);
             return InputHandles {
-                evt_read: 0,
+                bloom_evt_read: 0,
                 evt_input_echo_read: 0,
             };
         }
     };
 
     // Create mouse_raw port (ps2_mouse -> bristle)
-    let mouse_raw = match stem::syscall::port_create(4096) {
+    let mouse_raw = match stem::syscall::channel_create(4096) {
         Ok((write_h, read_h)) => {
             info!(
                 "SPROUT: Created mouse_raw port (w={}, r={})",
@@ -425,14 +427,13 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         Err(e) => {
             stem::error!("SPROUT: Failed to create mouse_raw port: {:?}", e);
             return InputHandles {
-                evt_read: 0,
+                bloom_evt_read: 0,
                 evt_input_echo_read: 0,
             };
         }
     };
 
-    // Keep the wired Bristle event ports for now. The topic path is still
-    // available, but the explicit ports are the only path proven to work.
+    // Dedicated Bristle -> Bloom input channel plus optional input echo tap.
 
     // Spawn ps2_kbd with raw write handle
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
@@ -472,15 +473,14 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
     }
 
-    // Event ports (legacy fan-out)
-    let evt = stem::syscall::port_create(8192).unwrap_or((0, 0));
-    let evt_input_echo = stem::syscall::port_create(8192).unwrap_or((0, 0));
+    let bloom_evt = stem::syscall::channel_create(8192).unwrap_or((0, 0));
+    let evt_input_echo = stem::syscall::channel_create(8192).unwrap_or((0, 0));
 
     // Spawn bristle with packed handles:
-    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_input_echo_write[15:0]
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | bloom_evt_write[31:16] | evt_input_echo_write[15:0]
     let bristle_arg = ((kbd_raw.1 as u64) << 48)
         | ((mouse_raw.1 as u64) << 32)
-        | ((evt.0 as u64) << 16)
+        | ((bloom_evt.0 as u64) << 16)
         | (evt_input_echo.0 as u64);
 
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
@@ -505,7 +505,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 
     info!("SPROUT: Input broker ready (keyboard + mouse)");
     InputHandles {
-        evt_read: evt.1,
+        bloom_evt_read: bloom_evt.1,
         evt_input_echo_read: evt_input_echo.1,
     }
 }
@@ -552,10 +552,10 @@ pub fn setup_compositor(
             slice[0] = 0xB100AA01; // Magic
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
-            slice[3] = input.evt_read as u32; // Pass wired Bristle event handle
+            slice[3] = input.bloom_evt_read as u32;
             info!(
                 "SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}",
-                drv_req_write, drv_resp_read, input.evt_read
+                drv_req_write, drv_resp_read, input.bloom_evt_read
             );
 
             // Display bytespace id (128-bit)
@@ -575,8 +575,7 @@ pub fn setup_compositor(
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
         "SPROUT: Bloom handles via FD={} backend={}",
-        boot_fd,
-        backend_info
+        boot_fd, backend_info
     );
 
     // Spawn bloom
@@ -687,7 +686,6 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
         }
     }
 }
-
 
 pub fn setup_taskman_service(_tasks: &mut Vec<ManagedTask>) {
     // Taskman removed

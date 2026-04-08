@@ -3,7 +3,7 @@ use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use alloc::vec::Vec;
-use stem::syscall::{port_recv, PortHandle};
+use stem::syscall::{channel_recv, ChannelHandle};
 
 use crate::cursor::CursorState;
 
@@ -82,7 +82,7 @@ fn apply_mouse_accel(delta: (i16, i16), dt_s: f32, cfg: &MouseAccelConfig) -> (i
 }
 
 pub fn poll_bristle(
-    handle: PortHandle,
+    handle: ChannelHandle,
     cursor: &mut CursorState,
     keys: &mut alloc::collections::BTreeSet<abi::hid::Key>,
     accel_cfg: &MouseAccelConfig,
@@ -94,7 +94,7 @@ pub fn poll_bristle(
     let mut stats = PollStats::default();
 
     loop {
-        let n = match port_recv(handle, &mut buf) {
+        let n = match channel_recv(handle, &mut buf) {
             Ok(n) => n,
             Err(_) => return stats,
         };
@@ -208,7 +208,7 @@ pub fn poll_bristle(
 /// The caller is responsible for applying movement and button state
 /// after processing events through the window manager.
 pub fn poll_pointer_events(
-    handle: PortHandle,
+    handle: ChannelHandle,
     accel_cfg: &MouseAccelConfig,
     accel_state: &mut MouseAccelState,
 ) -> Vec<PointerEvent> {
@@ -216,7 +216,7 @@ pub fn poll_pointer_events(
     let mut buf = [0u8; 256];
 
     loop {
-        let n = match port_recv(handle, &mut buf) {
+        let n = match channel_recv(handle, &mut buf) {
             Ok(n) => n,
             Err(_) => return events,
         };

@@ -6,7 +6,7 @@ use abi::driver_frame::FrameReader;
 use abi::ids::HandleId;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{channel_recv, channel_send, ChannelHandle};
 use stem::thing::ThingId;
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -28,8 +28,8 @@ struct FakeConfig {
     burst: bool,
 }
 
-fn unpack_handle(arg: usize, index: u32) -> PortHandle {
-    ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+fn unpack_handle(arg: usize, index: u32) -> ChannelHandle {
+    ((arg >> (index * 16)) & 0xFFFF) as ChannelHandle
 }
 
 fn parse_config(arg: usize) -> FakeConfig {
@@ -63,18 +63,18 @@ fn parse_config(arg: usize) -> FakeConfig {
     }
 }
 
-fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
+fn send_msg(handle: ChannelHandle, msg_type: u16, payload: &[u8]) {
     let mut buf = [0u8; 256];
     if let Some(len) = drvproto::encode_message(&mut buf, msg_type, payload) {
-        let _ = port_send(handle, &buf[..len]);
+        let _ = channel_send(handle, &buf[..len]);
     }
 }
 
-fn send_msg_split(handle: PortHandle, msg_type: u16, payload: &[u8]) {
+fn send_msg_split(handle: ChannelHandle, msg_type: u16, payload: &[u8]) {
     let mut buf = [0u8; 256];
     if let Some(len) = drvproto::encode_message(&mut buf, msg_type, payload) {
         if len < 3 {
-            let _ = port_send(handle, &buf[..len]);
+            let _ = channel_send(handle, &buf[..len]);
             return;
         }
         let part = len / 3;
@@ -85,27 +85,27 @@ fn send_msg_split(handle: PortHandle, msg_type: u16, payload: &[u8]) {
             if chunk == 0 {
                 break;
             }
-            let _ = port_send(handle, &buf[offset..offset + chunk]);
+            let _ = channel_send(handle, &buf[offset..offset + chunk]);
             offset += chunk;
         }
     }
 }
 
-fn send_ack(handle: PortHandle, burst: bool) {
+fn send_ack(handle: ChannelHandle, burst: bool) {
     let mut buf = [0u8; 64];
     if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_ACK, &[]) {
         if burst {
             if let Some(len2) = drvproto::encode_message(&mut buf[len..], drvproto::MSG_ACK, &[]) {
                 let total = len + len2;
-                let _ = port_send(handle, &buf[..total]);
+                let _ = channel_send(handle, &buf[..total]);
                 return;
             }
         }
-        let _ = port_send(handle, &buf[..len]);
+        let _ = channel_send(handle, &buf[..len]);
     }
 }
 
-fn send_err(handle: PortHandle, code: u32) {
+fn send_err(handle: ChannelHandle, code: u32) {
     let err = drvproto::ErrResp { code };
     let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
     if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
@@ -137,12 +137,12 @@ fn main(arg: usize) -> ! {
     let wait_handles = [drv_req_read];
     loop {
         // Yield to let others run if we don't have data, blocking until we do
-        if let Err(_) = stem::syscall::port_wait(&wait_handles, 1 /* READABLE */) {
+        if let Err(_) = stem::syscall::channel_wait(&wait_handles, 1 /* READABLE */) {
             stem::yield_now();
             continue;
         }
 
-        if let Ok(n) = port_recv(drv_req_read, &mut buf) {
+        if let Ok(n) = channel_recv(drv_req_read, &mut buf) {
             if n > 0 {
                 frames.push(&buf[..n]);
             }

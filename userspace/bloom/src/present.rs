@@ -13,7 +13,7 @@ use abi::ThingId;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;
-use stem::syscall::{port_send_all, port_try_recv, PortHandle};
+use stem::syscall::{channel_send_all, channel_try_recv, ChannelHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
@@ -221,8 +221,8 @@ impl Presenter for FilePresenter {
 }
 
 pub struct DriverPresenter {
-    req_write: PortHandle,
-    resp_read: PortHandle,
+    req_write: ChannelHandle,
+    resp_read: ChannelHandle,
     frames: FrameReader<4096>,
     awaiting_bind_ack: bool,
     negotiation: Option<DriverNegotiation>,
@@ -236,7 +236,7 @@ pub struct DriverPresenter {
 }
 
 impl DriverPresenter {
-    pub fn new(req_write: PortHandle, resp_read: PortHandle) -> Self {
+    pub fn new(req_write: ChannelHandle, resp_read: ChannelHandle) -> Self {
         Self {
             req_write,
             resp_read,
@@ -259,7 +259,7 @@ impl DriverPresenter {
         let read_tok = ws.add_port_readable(self.resp_read as u64).unwrap();
 
         loop {
-            match port_send_all(self.req_write, data) {
+            match channel_send_all(self.req_write, data) {
                 Err(abi::errors::Errno::EAGAIN) => {
                     // Drain response traffic while the request port is full.
                     // Without this, ACK/ACQUIRED messages can fill the return port,
@@ -404,7 +404,7 @@ impl DriverPresenter {
     fn pump_port(&mut self) {
         let mut temp = [0u8; 256];
         loop {
-            let n = match port_try_recv(self.resp_read, &mut temp) {
+            let n = match channel_try_recv(self.resp_read, &mut temp) {
                 Ok(n) => n,
                 Err(_) => break,
             };

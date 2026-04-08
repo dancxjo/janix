@@ -21,7 +21,7 @@
 //!
 //! for event in set.wait(Some(Duration::from_secs(5))).unwrap() {
 //!     if event.token() == tok_rx && event.is_readable() {
-//!         // port has data — call port_recv
+//!         // port has data — call channel_recv
 //!     } else if event.token() == tok_watch {
 //!         // graph event — call root_watch_try_next in a drain loop
 //!     }
@@ -233,7 +233,7 @@ impl WaitSet {
     /// Watch a port for incoming data.
     ///
     /// `handle` is the **read** end of the port (as returned by the low
-    /// half of `port_create`).
+    /// half of `channel_create`).
     pub fn add_port_readable(&mut self, handle: u64) -> Result<WaitToken, Errno> {
         self.push_spec(WaitKind::Port, interest::READABLE, handle)
     }

@@ -118,9 +118,9 @@ fn main(_arg: usize) -> ! {
         socket_api.gc_closed_sockets(&mut socket_set);
 
         if !did_work {
-            let _ = stem::syscall::port::port_wait(
+            let _ = stem::syscall::channel::channel_wait(
                 &[net_provider.req_read_port()],
-                abi::syscall::port_wait::READABLE,
+                abi::syscall::channel_wait::READABLE,
             );
         }
     }

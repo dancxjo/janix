@@ -9,7 +9,7 @@ mod protocol;
 use abi::schema::keys;
 use driver::Rtl8168Driver;
 use protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_MAC_REQ, MSG_MAC_RESP};
-use stem::syscall::port::{port_create, port_recv, port_send};
+use stem::syscall::{channel_create, channel_recv, channel_send};
 use stem::thing::sys as thingsys;
 use stem::{error, info, warn};
 
@@ -41,7 +41,7 @@ fn main(_arg: usize) -> ! {
         if driver.link_up() { "up" } else { "down" }
     );
 
-    let (tx_write, tx_read) = match port_create(65536) {
+    let (tx_write, tx_read) = match channel_create(65536) {
         Ok(h) => h,
         Err(e) => {
             error!("RTL8168D: TX port create failed: {:?}", e);
@@ -50,7 +50,7 @@ fn main(_arg: usize) -> ! {
             }
         }
     };
-    let (rx_write, rx_read) = match port_create(65536) {
+    let (rx_write, rx_read) = match channel_create(65536) {
         Ok(h) => h,
         Err(e) => {
             error!("RTL8168D: RX port create failed: {:?}", e);
@@ -98,7 +98,7 @@ fn main(_arg: usize) -> ! {
     let mut tx_msg_buf = [0u8; 2048];
     loop {
         // Opportunistically drain TX requests.
-        match port_recv(tx_read, &mut tx_msg_buf) {
+        match channel_recv(tx_read, &mut tx_msg_buf) {
             Ok(n) if n > 0 => {
                 if let Some(msg) = NetDriverMsg::decode(&tx_msg_buf[..n]) {
                     match msg.msg_type {
@@ -109,7 +109,7 @@ fn main(_arg: usize) -> ! {
                         }
                         MSG_MAC_REQ => {
                             let m = NetDriverMsg::new(MSG_MAC_RESP, &mac);
-                            let _ = port_send(rx_write, &m.encode());
+                            let _ = channel_send(rx_write, &m.encode());
                         }
                         _ => {}
                     }
@@ -132,7 +132,7 @@ fn main(_arg: usize) -> ! {
         if (isr & ((1 << 0) | (1 << 1) | (1 << 4) | (1 << 6))) != 0 || !driver.irq_enabled() {
             while let Some(frame) = driver.poll_rx() {
                 let msg = NetDriverMsg::new(MSG_FRAME_RX, frame);
-                if let Err(e) = port_send(rx_write, &msg.encode()) {
+                if let Err(e) = channel_send(rx_write, &msg.encode()) {
                     warn!("RTL8168D: RX forward failed: {:?}", e);
                     break;
                 }

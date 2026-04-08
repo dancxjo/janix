@@ -2,8 +2,7 @@
 //!
 //! All timing derives from `stem::time::now()` which returns an `Instant`.
 
-use stem::syscall::port::port_len;
-use stem::syscall::PortHandle;
+use stem::syscall::ChannelHandle;
 use stem::time::{Duration, Instant};
 
 pub struct FrameLoop {
@@ -48,7 +47,7 @@ impl FrameLoop {
         }
     }
 
-    pub fn sleep_until_input(&self, input_handle: Option<PortHandle>) {
+    pub fn sleep_until_input(&self, input_handle: Option<ChannelHandle>) {
         let now = stem::time::now();
         let elapsed = now.saturating_sub(self.frame_start);
 

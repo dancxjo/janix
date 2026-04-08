@@ -169,7 +169,7 @@ impl<'a> Future for RecvFuture<'a> {
     type Output = Result<usize, Errno>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match syscall::port_recv(self.port.handle as syscall::PortHandle, self.buf) {
+        match syscall::channel_recv(self.port.handle as syscall::ChannelHandle, self.buf) {
             Ok(n) => Poll::Ready(Ok(n)),
             Err(Errno::EAGAIN) => {
                 if let Some(reactor) = Reactor::current() {

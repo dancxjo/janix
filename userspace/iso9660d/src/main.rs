@@ -39,7 +39,7 @@ use alloc::vec::Vec;
 use iso9660::{IsoFs, ISO_SECTOR_SIZE};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
-use stem::syscall::{port_create, port_recv, port_send, port_wait, vfs_mount, PortHandle};
+use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle};
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 use stem::{info, warn};
@@ -59,14 +59,14 @@ pub static MANIFEST: ManifestHeader = ManifestHeader {
 
 /// [`BlockDevice`] implementation that talks to a virtio/ATA driver via ports.
 struct PortBlockDevice {
-    port: PortHandle,
-    resp_w: PortHandle,
-    resp_r: PortHandle,
+    port: ChannelHandle,
+    resp_w: ChannelHandle,
+    resp_r: ChannelHandle,
 }
 
 impl PortBlockDevice {
-    fn new(port: PortHandle) -> Option<Self> {
-        let (resp_w, resp_r) = port_create(256 * 1024).ok()?;
+    fn new(port: ChannelHandle) -> Option<Self> {
+        let (resp_w, resp_r) = channel_create(256 * 1024).ok()?;
         Some(Self {
             port,
             resp_w,
@@ -91,12 +91,12 @@ impl BlockDevice for PortBlockDevice {
             )
         };
         req[5..].copy_from_slice(req_bytes);
-        port_send(self.port, &req).map_err(|_| BlockError::IoError)?;
+        channel_send(self.port, &req).map_err(|_| BlockError::IoError)?;
 
         let expected =
             core::mem::size_of::<ReadResponse>() + (count as usize * ISO_SECTOR_SIZE as usize) + 1;
         let mut resp_buf = alloc::vec![0u8; expected];
-        let n = port_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
+        let n = channel_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
         if n < core::mem::size_of::<ReadResponse>() + 1 {
             return Err(BlockError::IoError);
         }
@@ -169,12 +169,12 @@ const E_INVAL: u8 = 22;
 const E_NOTSUP: u8 = 38; // ENOSYS — used as "not supported"
 
 /// Send a VFS RPC response to `resp_port`.
-fn send_resp(resp_port: PortHandle, data: &[u8]) {
-    let _ = port_send(resp_port, data);
+fn send_resp(resp_port: ChannelHandle, data: &[u8]) {
+    let _ = channel_send(resp_port, data);
 }
 
 /// Send an error response.
-fn send_err(resp_port: PortHandle, errno: u8) {
+fn send_err(resp_port: ChannelHandle, errno: u8) {
     send_resp(resp_port, &[errno]);
 }
 
@@ -186,7 +186,7 @@ fn handle_vfs_rpc(fs: &IsoFs, dev: &PortBlockDevice, buf: &[u8]) {
 
     // Parse header.
     let hdr_size = core::mem::size_of::<VfsRpcReqHeader>();
-    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as PortHandle;
+    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as ChannelHandle;
     let op_byte = buf[4];
     let payload = &buf[hdr_size..];
 
@@ -216,7 +216,7 @@ fn handle_vfs_rpc(fs: &IsoFs, dev: &PortBlockDevice, buf: &[u8]) {
 }
 
 /// LOOKUP: resolve a path within the ISO and return a handle.
-fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 4 {
         send_err(resp_port, E_INVAL);
         return;
@@ -259,7 +259,7 @@ fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, paylo
 }
 
 /// READ: read file data.
-fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 20 {
         send_err(resp_port, E_INVAL);
         return;
@@ -314,7 +314,7 @@ fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payloa
 /// The response data is a sequence of packed `DirentWire` structs followed by
 /// the name bytes.  The `offset` parameter is used as an entry index (not a
 /// byte offset) for simplicity.
-fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 20 {
         send_err(resp_port, E_INVAL);
         return;
@@ -367,7 +367,7 @@ fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payl
 }
 
 /// STAT: return metadata for a handle.
-fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 8 {
         send_err(resp_port, E_INVAL);
         return;
@@ -423,11 +423,11 @@ fn main(_arg: usize) -> ! {
     info!("iso9660d: found {} block device(s)", count);
 
     // 2. Probe each device for ISO9660.
-    let mut mounted: Option<(IsoFs, PortBlockDevice, PortHandle, PortHandle)> = None;
+    let mut mounted: Option<(IsoFs, PortBlockDevice, ChannelHandle, ChannelHandle)> = None;
 
     for &dev_id in &devices[..count] {
         let port_handle = match prop_get(dev_id, keys::WRITE_PORT_HANDLE) {
-            Ok(h) => h as PortHandle,
+            Ok(h) => h as ChannelHandle,
             Err(_) => continue,
         };
 
@@ -442,7 +442,7 @@ fn main(_arg: usize) -> ! {
             // 3. Create the provider port pair.
             //    write end  → kernel sends VFS RPCs here
             //    read end   → this daemon reads RPCs here
-            let (req_write, req_read) = match port_create(VFS_RPC_MAX_REQ * 8) {
+            let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
                 Ok(p) => p,
                 Err(e) => {
                     warn!("iso9660d: failed to create provider port: {:?}", e);
@@ -483,7 +483,7 @@ fn main(_arg: usize) -> ! {
     let mut req_buf = alloc::vec![0u8; VFS_RPC_MAX_REQ];
 
     loop {
-        match port_wait(&[req_read], abi::syscall::port_wait::READABLE) {
+        match channel_wait(&[req_read], abi::syscall::channel_wait::READABLE) {
             Ok(_) => {}
             Err(_) => {
                 stem::sleep(core::time::Duration::from_millis(10));
@@ -491,7 +491,7 @@ fn main(_arg: usize) -> ! {
             }
         }
 
-        match port_recv(req_read, &mut req_buf) {
+        match channel_recv(req_read, &mut req_buf) {
             Ok(n) if n > 0 => {
                 handle_vfs_rpc(&fs, &dev, &req_buf[..n]);
             }

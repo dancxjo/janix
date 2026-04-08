@@ -302,7 +302,7 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
 /// [`abi::vfs_rpc`]) to that port whenever a path under `path` is accessed.
 ///
 /// The kernel creates a private response port and registers its write-handle
-/// in the global handle table so the provider can call `SYS_PORT_SEND` to
+/// in the global handle table so the provider can call `SYS_channel_send` to
 /// deliver replies.
 pub fn SYS_FS_mount(
     provider_write_handle: usize,
@@ -337,7 +337,7 @@ pub fn SYS_FS_mount(
     let resp_port = crate::ipc::get_port(resp_port_id).ok_or(Errno::ENOMEM)?;
 
     // Register the write end of the response port in the global handle table
-    // so the provider process can call SYS_PORT_SEND on it.
+    // so the provider process can call SYS_channel_send on it.
     let resp_write_handle = {
         let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
         table

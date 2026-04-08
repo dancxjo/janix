@@ -77,4 +77,4 @@ pub fn root_stream_poll(_handle: u32, _out: &mut abi::types::RootWatchEvent) -> 
     Err(Errno::ENOSYS)
 }
 
-pub use crate::syscall::{memfd_create, memfd_phys, vm_map, stream::stream_poll};
+pub use crate::syscall::{memfd_create, memfd_phys, vm_map};

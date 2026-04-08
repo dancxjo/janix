@@ -1,7 +1,7 @@
 #![feature(restricted_std)]
 #![no_main]
 
-use stem::syscall::{ioport_read, irq_subscribe, port_send_all, PortHandle};
+use stem::syscall::{channel_send_all, ioport_read, irq_subscribe, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::{info, warn};
 
@@ -26,7 +26,7 @@ const KIND_DRV_PS2_KBD: &str = "drv.Ps2Keyboard";
 
 #[stem::main]
 fn main(raw_write_handle: usize) -> ! {
-    let handle = raw_write_handle as PortHandle;
+    let handle = raw_write_handle as ChannelHandle;
 
     info!("ps2_kbd: online (handle={})", handle);
 
@@ -81,7 +81,7 @@ use abi::hid::{
 use thigmonasty::{KeyEdge, KeyboardState};
 
 /// Drain all pending keyboard data from the controller
-fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState, drop_counter: &mut u32) {
+fn drain_keyboard_data(handle: ChannelHandle, state: &mut KeyboardState, drop_counter: &mut u32) {
     // Read while data is available (handle burst of scancodes)
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
@@ -104,7 +104,7 @@ fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState, drop_count
     }
 }
 
-fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
+fn send_key_event(handle: ChannelHandle, edge: KeyEdge, drop_counter: &mut u32) {
     let timestamp_ns = stem::monotonic_ns();
     let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
 
@@ -130,7 +130,7 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
     buf[0..20].copy_from_slice(&header.to_bytes());
     buf[20..24].copy_from_slice(&payload.to_bytes());
 
-    if port_send_all(handle, &buf[..24]).is_err() {
+    if channel_send_all(handle, &buf[..24]).is_err() {
         *drop_counter = drop_counter.wrapping_add(1);
         if *drop_counter <= 4 || *drop_counter % 100 == 0 {
             warn!(
@@ -142,7 +142,7 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
 }
 
 /// Fallback polling loop (if IRQ subscribe fails)
-fn polling_loop(handle: PortHandle) -> ! {
+fn polling_loop(handle: ChannelHandle) -> ! {
     info!(
         "ps2_kbd: using cooperative polling loop ({}ms interval)",
         POLLING_INTERVAL_MS

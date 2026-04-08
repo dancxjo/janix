@@ -367,7 +367,7 @@ mod tests {
 
     /// Test basic send/receive on a Port
     #[test]
-    fn test_port_send_recv() {
+    fn test_channel_send_recv() {
         let port = Arc::new(Port::new(64));
         let sender = Sender::new(Arc::clone(&port));
         let receiver = Receiver::new(Arc::clone(&port));
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn test_port_send_all_atomic() {
+    fn test_channel_send_all_atomic() {
         let port = Arc::new(Port::new(16));
         let receiver = Receiver::new(Arc::clone(&port));
 

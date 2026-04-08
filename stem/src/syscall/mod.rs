@@ -1,7 +1,5 @@
 pub mod arch;
-pub mod pipe;
-pub mod port;
-pub mod stream;
+pub mod channel;
 pub mod vfs;
 pub mod wait;
 
@@ -71,9 +69,9 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
-pub use port::{
-    port_close, port_create, port_recv, port_send, port_send_all, port_try_recv, port_wait,
-    topic_create, topic_publish, topic_subscribe, PortHandle,
+pub use channel::{
+    channel_capacity, channel_close, channel_create, channel_len, channel_recv, channel_send,
+    channel_send_all, channel_try_recv, channel_wait, ChannelHandle,
 };
 pub use vfs::{
     dup, dup2, pipe, vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,

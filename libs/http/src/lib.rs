@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::str::FromStr;
 
-use stem::syscall::port::{port_create, port_send, port_try_recv, PortHandle};
+use stem::syscall::port::{channel_create, channel_send, port_try_recv, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 
@@ -28,8 +28,8 @@ const RESP_ACCEPT: u16 = 0x0004;
 
 pub struct TcpStream {
     socket_handle: u32,
-    netd_port: PortHandle,
-    my_port: PortHandle,
+    netd_port: ChannelHandle,
+    my_port: ChannelHandle,
 }
 
 impl TcpStream {
@@ -41,10 +41,10 @@ impl TcpStream {
         }
         let net_id = buf[0];
         let netd_port = thingsys::prop_get(net_id, "net.socket_api")
-            .map_err(|_| "Socket API port not found")? as PortHandle;
+            .map_err(|_| "Socket API port not found")? as ChannelHandle;
 
         // Create my response port
-        let (my_port, _) = port_create(8192).map_err(|_| "Failed to create response port")?;
+        let (my_port, _) = channel_create(8192).map_err(|_| "Failed to create response port")?;
 
         // Resolve DNS if host is not an IP
         let ip = if let Ok(ip) = parse_ipv4(host) {
@@ -75,8 +75,8 @@ impl TcpStream {
     }
 
     fn resolve_dns(
-        netd_port: PortHandle,
-        my_port: PortHandle,
+        netd_port: ChannelHandle,
+        my_port: ChannelHandle,
         host: &str,
     ) -> Result<[u8; 4], String> {
         let mut msg = Vec::new();
@@ -162,7 +162,7 @@ impl Drop for TcpStream {
     }
 }
 
-fn send_recv(netd_port: PortHandle, my_port: PortHandle, msg: &[u8]) -> Result<Vec<u8>, String> {
+fn send_recv(netd_port: ChannelHandle, my_port: ChannelHandle, msg: &[u8]) -> Result<Vec<u8>, String> {
     if msg.len() < 2 {
         return Err("Invalid message".to_string());
     }
@@ -186,7 +186,7 @@ fn send_recv(netd_port: PortHandle, my_port: PortHandle, msg: &[u8]) -> Result<V
         );
     }
 
-    port_send(netd_port, &packet).map_err(|_| "Send failed")?;
+    channel_send(netd_port, &packet).map_err(|_| "Send failed")?;
 
     let mut buf = [0u8; 8192]; // Large enough for response
     let start = stem::time::monotonic_ns();

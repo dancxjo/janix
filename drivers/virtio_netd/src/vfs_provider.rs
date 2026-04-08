@@ -23,7 +23,7 @@ use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
 use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
-use stem::syscall::port::{port_send, PortHandle};
+use stem::syscall::{channel_send, ChannelHandle};
 
 use crate::driver::VirtioNetDriver;
 
@@ -106,16 +106,16 @@ impl NetVfsState {
 
 // ── Wire helpers ──────────────────────────────────────────────────────────────
 
-fn send_resp(resp_port: PortHandle, data: &[u8]) {
-    let _ = port_send(resp_port, data);
+fn send_resp(resp_port: ChannelHandle, data: &[u8]) {
+    let _ = channel_send(resp_port, data);
 }
 
-fn send_err(resp_port: PortHandle, errno: u8) {
+fn send_err(resp_port: ChannelHandle, errno: u8) {
     send_resp(resp_port, &[errno]);
 }
 
 /// Send `[E_OK][data.len(): u32 LE][data...]`.
-fn send_ok_data(resp_port: PortHandle, data: &[u8]) {
+fn send_ok_data(resp_port: ChannelHandle, data: &[u8]) {
     let mut resp = Vec::with_capacity(5 + data.len());
     resp.push(E_OK);
     resp.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -124,7 +124,7 @@ fn send_ok_data(resp_port: PortHandle, data: &[u8]) {
 }
 
 /// Send `[E_OK][bytes_written: u32 LE]`.
-fn send_ok_written(resp_port: PortHandle, n: u32) {
+fn send_ok_written(resp_port: ChannelHandle, n: u32) {
     let mut resp = [0u8; 5];
     resp[0] = E_OK;
     resp[1..5].copy_from_slice(&n.to_le_bytes());
@@ -142,7 +142,7 @@ pub fn handle_vfs_rpc(state: &mut NetVfsState, driver: &mut VirtioNetDriver, buf
         return;
     }
 
-    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as PortHandle;
+    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as ChannelHandle;
     let op_byte = buf[4];
     let payload = &buf[hdr_size..];
 
@@ -167,7 +167,7 @@ pub fn handle_vfs_rpc(state: &mut NetVfsState, driver: &mut VirtioNetDriver, buf
 
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
-fn handle_lookup(resp_port: PortHandle, payload: &[u8]) {
+fn handle_lookup(resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 4 {
         send_err(resp_port, E_INVAL);
         return;
@@ -210,7 +210,7 @@ fn handle_lookup(resp_port: PortHandle, payload: &[u8]) {
 
 // ── Stat ──────────────────────────────────────────────────────────────────────
 
-fn handle_stat(resp_port: PortHandle, payload: &[u8]) {
+fn handle_stat(resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 8 {
         send_err(resp_port, E_INVAL);
         return;
@@ -282,7 +282,7 @@ const DIR_ENTRIES: &[DirEntry] = &[
     },
 ];
 
-fn handle_readdir(resp_port: PortHandle, payload: &[u8]) {
+fn handle_readdir(resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 20 {
         send_err(resp_port, E_INVAL);
         return;
@@ -331,7 +331,7 @@ fn handle_readdir(resp_port: PortHandle, payload: &[u8]) {
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
-fn handle_read(state: &mut NetVfsState, resp_port: PortHandle, payload: &[u8]) {
+fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 20 {
         send_err(resp_port, E_INVAL);
         return;
@@ -410,7 +410,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: PortHandle, payload: &[u8]) {
 }
 
 /// Send a slice of `text` starting at `offset`, capped at `max_len` bytes.
-fn send_text_slice(resp_port: PortHandle, text: &[u8], offset: usize, max_len: usize) {
+fn send_text_slice(resp_port: ChannelHandle, text: &[u8], offset: usize, max_len: usize) {
     let start = offset.min(text.len());
     let slice = &text[start..];
     let out = &slice[..slice.len().min(max_len)];
@@ -422,7 +422,7 @@ fn send_text_slice(resp_port: PortHandle, text: &[u8], offset: usize, max_len: u
 fn handle_write(
     state: &mut NetVfsState,
     driver: &mut VirtioNetDriver,
-    resp_port: PortHandle,
+    resp_port: ChannelHandle,
     payload: &[u8],
 ) {
     if payload.len() < 20 {
@@ -498,7 +498,7 @@ fn handle_write(
 
 // ── Poll ──────────────────────────────────────────────────────────────────────
 
-fn handle_poll(state: &NetVfsState, resp_port: PortHandle, payload: &[u8]) {
+fn handle_poll(state: &NetVfsState, resp_port: ChannelHandle, payload: &[u8]) {
     if payload.len() < 12 {
         send_err(resp_port, E_INVAL);
         return;

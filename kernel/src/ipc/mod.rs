@@ -5,11 +5,9 @@
 mod handles;
 pub mod pipe;
 mod port;
-mod topic;
 
 pub use handles::{Handle, HandleEntry, HandleMode, HandleTable, MAX_HANDLES};
 pub use port::{Port, PortId, Receiver, Sender};
-pub use topic::{TopicId, create_topic, publish_topic, subscribe_topic};
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;

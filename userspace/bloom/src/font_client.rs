@@ -15,7 +15,7 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
-use stem::syscall::{monotonic_ns, port_send, port_try_recv, PortHandle, vm_map, vm_unmap};
+use stem::syscall::{monotonic_ns, channel_send, channel_try_recv, ChannelHandle, vm_map, vm_unmap};
 use stem::thing::sys::{find, prop_get, stat};
 use stem::thing::ThingId;
 
@@ -152,9 +152,9 @@ impl AtlasKey {
 /// Font client state - owns caches and port handles
 pub struct FontClient {
     /// Port to send requests TO fontd
-    req_port: PortHandle,
+    req_port: ChannelHandle,
     /// Port to receive responses FROM fontd
-    resp_port: PortHandle,
+    resp_port: ChannelHandle,
     /// Glyph placement cache
     glyph_cache: BTreeMap<GlyphKey, GlyphEntry>,
     /// Atlas mappings per (face, size)
@@ -168,7 +168,7 @@ pub struct FontClient {
 }
 
 impl FontClient {
-    pub fn new(req_port: PortHandle, resp_port: PortHandle) -> Self {
+    pub fn new(req_port: ChannelHandle, resp_port: ChannelHandle) -> Self {
         Self {
             req_port,
             resp_port,
@@ -188,8 +188,8 @@ impl FontClient {
             return None;
         }
         let svc_node = nodes[0];
-        let req = prop_get(svc_node, "fontd.req").ok()? as PortHandle;
-        let resp = prop_get(svc_node, "fontd.resp").ok()? as PortHandle;
+        let req = prop_get(svc_node, "fontd.req").ok()? as ChannelHandle;
+        let resp = prop_get(svc_node, "fontd.resp").ok()? as ChannelHandle;
         if req == 0 || resp == 0 {
             return None;
         }
@@ -275,7 +275,7 @@ impl FontClient {
 
         let mut req_buf = [0u8; 2048];
         if let Some(req_len) = req.encode(&mut req_buf) {
-            let _ = port_send(self.req_port, &req_buf[..req_len]);
+            let _ = channel_send(self.req_port, &req_buf[..req_len]);
         }
 
         results
@@ -293,7 +293,7 @@ impl FontClient {
 
         // Drain up to 10 messages per poll to avoid starving the loop
         for _ in 0..10 {
-            let resp_len = match port_try_recv(self.resp_port, &mut resp_buf) {
+            let resp_len = match channel_try_recv(self.resp_port, &mut resp_buf) {
                 Ok(len) if len > 0 => len,
                 _ => break,
             };
@@ -388,7 +388,7 @@ impl FontClient {
         let mut req_buf = [0u8; 32];
         let req_len = req.encode(&mut req_buf)?;
 
-        if port_send(self.req_port, &req_buf[..req_len]).is_err() {
+        if channel_send(self.req_port, &req_buf[..req_len]).is_err() {
             return None;
         }
 

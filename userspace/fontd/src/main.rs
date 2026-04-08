@@ -80,7 +80,7 @@ fn main() -> ! {
     // Open IPC ports for font service
     // Clients send to fontd_req (write), fontd reads from fontd_req (read)
     // Fontd sends to fontd_resp (write), clients read from fontd_resp (read)
-    let (fontd_req, fontd_resp) = match (syscall::port_create(8192), syscall::port_create(8192)) {
+    let (fontd_req, fontd_resp) = match (syscall::channel_create(8192), syscall::channel_create(8192)) {
         (Ok(req), Ok(resp)) => {
             if let Ok(svc_node) = create_node("svc.FontD") {
                 let _ = prop_set(svc_node, "fontd.req", req.0 as u64);
@@ -132,10 +132,10 @@ fn main() -> ! {
         for ready_result in &ready_buf[..ready_count] {
             match ready_result.token {
                 1 if (ready_result.flags & ready::READABLE) != 0 => loop {
-                    match syscall::port_try_recv(fontd_req, &mut ipc_buf) {
+                    match syscall::channel_try_recv(fontd_req, &mut ipc_buf) {
                         Ok(len) if len > 0 => {
                             if let Some(resp_len) = handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state) {
-                                let _ = syscall::port_send(fontd_resp, &resp_buf[..resp_len]);
+                                let _ = syscall::channel_send(fontd_resp, &resp_buf[..resp_len]);
                             }
                         }
                         Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,

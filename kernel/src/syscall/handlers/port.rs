@@ -6,7 +6,7 @@ use abi::errors::{Errno, SysResult};
 
 // Lines 7-9 are duplicates of 3-5
 
-pub fn sys_port_create(capacity: usize) -> SysResult<usize> {
+pub fn sys_channel_create(capacity: usize) -> SysResult<usize> {
     let capacity = capacity.min(65536).max(64);
     let port_id = crate::ipc::create_port(capacity);
 
@@ -22,7 +22,7 @@ pub fn sys_port_create(capacity: usize) -> SysResult<usize> {
     Ok(packed)
 }
 
-pub fn sys_port_send(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_channel_send(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
         return Ok(0);
@@ -53,7 +53,7 @@ pub fn sys_port_send(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
     Ok(written)
 }
 
-pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_channel_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
         return Ok(0);
@@ -82,21 +82,21 @@ pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usi
 
     if port.send_all(&buf[..len]) {
         crate::ktrace!(
-            "sys_port_send_all: wrote {} bytes to port {}",
+            "sys_channel_send_all: wrote {} bytes to port {}",
             len,
             entry.port_id.0
         );
         Ok(len)
     } else {
         crate::ktrace!(
-            "sys_port_send_all: port {} FULL, returning EAGAIN",
+            "sys_channel_send_all: port {} FULL, returning EAGAIN",
             entry.port_id.0
         );
         Err(Errno::EAGAIN)
     }
 }
 
-fn sys_port_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> SysResult<usize> {
+fn sys_channel_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
         return Ok(0);
@@ -124,7 +124,7 @@ fn sys_port_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> 
                 copyout(ptr, &buf[..read])?;
             }
             crate::ktrace!(
-                "sys_port_recv: read {} bytes from port {}",
+                "sys_channel_recv: read {} bytes from port {}",
                 read,
                 entry.port_id.0
             );
@@ -148,7 +148,7 @@ fn sys_port_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> 
                 copyout(ptr, &buf[..read])?;
             }
             crate::ktrace!(
-                "sys_port_recv: read {} bytes from port {} after wait registration",
+                "sys_channel_recv: read {} bytes from port {} after wait registration",
                 read,
                 entry.port_id.0
             );
@@ -166,15 +166,15 @@ fn sys_port_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> 
     }
 }
 
-pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
-    sys_port_recv_impl(handle, ptr, len, true)
+pub fn sys_channel_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    sys_channel_recv_impl(handle, ptr, len, true)
 }
 
-pub fn sys_port_try_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
-    sys_port_recv_impl(handle, ptr, len, false)
+pub fn sys_channel_try_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    sys_channel_recv_impl(handle, ptr, len, false)
 }
 
-pub fn sys_port_close(handle: usize) -> SysResult<usize> {
+pub fn sys_channel_close(handle: usize) -> SysResult<usize> {
     let handle = crate::ipc::Handle(handle as u32);
     let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
     if let Some(entry) = table.close(handle) {
@@ -194,7 +194,7 @@ pub fn sys_port_close(handle: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResult<usize> {
+pub fn sys_channel_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResult<usize> {
     if count == 0 || count > 64 {
         return Err(Errno::EINVAL);
     }
@@ -233,14 +233,14 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
             for i in 0..count {
                 let h = handles[i];
                 let h_ipc = crate::ipc::Handle(h);
-                if (flags & abi::syscall::port_wait::READABLE) != 0 {
+                if (flags & abi::syscall::channel_wait::READABLE) != 0 {
                     if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Read) {
                         if let Some(port) = crate::ipc::get_port(entry.port_id) {
                             port.add_waiter_read(tid);
                         }
                     }
                 }
-                if (flags & abi::syscall::port_wait::WRITABLE) != 0 {
+                if (flags & abi::syscall::channel_wait::WRITABLE) != 0 {
                     if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Write) {
                         if let Some(port) = crate::ipc::get_port(entry.port_id) {
                             port.add_waiter_write(tid);
@@ -257,7 +257,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
                 let h = handles[i];
                 let h_ipc = crate::ipc::Handle(h);
                 if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Read) {
-                    if (flags & abi::syscall::port_wait::READABLE) != 0 {
+                    if (flags & abi::syscall::channel_wait::READABLE) != 0 {
                         if let Some(port) = crate::ipc::get_port(entry.port_id) {
                             if !port.is_empty() {
                                 crate::ktrace!(
@@ -272,7 +272,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
                     }
                 }
                 if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Write) {
-                    if (flags & abi::syscall::port_wait::WRITABLE) != 0 {
+                    if (flags & abi::syscall::channel_wait::WRITABLE) != 0 {
                         if let Some(port) = crate::ipc::get_port(entry.port_id) {
                             if !port.is_full() {
                                 cleanup(&handles[..count], &mut table);
@@ -293,7 +293,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
     }
 }
 
-pub fn sys_port_info(handle: usize) -> SysResult<usize> {
+pub fn sys_channel_info(handle: usize) -> SysResult<usize> {
     let handle = crate::ipc::Handle(handle as u32);
     let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
     let entry = table
@@ -310,35 +310,7 @@ pub fn sys_port_info(handle: usize) -> SysResult<usize> {
     Ok((cap << 32) | (len & 0xFFFFFFFF))
 }
 
-pub fn sys_topic_create() -> SysResult<usize> {
-    let topic = crate::ipc::create_topic();
-    Ok(topic.0 as usize)
-}
-
-pub fn sys_topic_subscribe(topic_id: usize, handle: usize) -> SysResult<usize> {
-    let topic_id = crate::ipc::TopicId(topic_id as u32);
-    let handle = crate::ipc::Handle(handle as u32);
-    crate::ipc::subscribe_topic(topic_id, handle)?;
-    Ok(0)
-}
-
-pub fn sys_topic_publish(topic_id: usize, ptr: usize, len: usize) -> SysResult<usize> {
-    let len = len.min(4096);
-    if len == 0 {
-        return Ok(0);
-    }
-
-    validate_user_range(ptr, len, false)?;
-    let mut buf = [0u8; 4096];
-    unsafe {
-        copyin(&mut buf[..len], ptr)?;
-    }
-
-    let topic_id = crate::ipc::TopicId(topic_id as u32);
-    crate::ipc::publish_topic(topic_id, &buf[..len])
-}
-
-pub fn sys_port_send_fd(handle: usize, fd: usize) -> SysResult<usize> {
+pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let vfs_node = {
         let lock = pinfo_arc.lock();
@@ -360,7 +332,7 @@ pub fn sys_port_send_fd(handle: usize, fd: usize) -> SysResult<usize> {
     Ok(0)
 }
 
-pub fn sys_port_recv_fd(handle: usize, out_fd_ptr: usize) -> SysResult<usize> {
+pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<usize> {
     validate_user_range(out_fd_ptr, 4, true)?;
 
     let handle = crate::ipc::Handle(handle as u32);

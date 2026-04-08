@@ -20,7 +20,7 @@ use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::abi::schema::kinds;
 use stem::block::{BlockDevice, BlockError};
-use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
+use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{error, info};
@@ -102,7 +102,7 @@ struct AhciPort {
     model: [u8; 40],
     serial: [u8; 20],
     graph_id: ThingId,
-    read_port_handle: Option<PortHandle>,
+    read_port_handle: Option<ChannelHandle>,
     mmio_base: u64,
     dma_virt: u64,
     dma_phys: u64,
@@ -412,7 +412,7 @@ fn register_disk(port: &mut AhciPort) {
     port.graph_id = disk_id;
 
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(PORT_BUFFER_SIZE) {
+    let (write_handle, read_handle) = match channel_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
         Err(e) => {
             error!("AHCI: Failed to create port: {:?}", e);
@@ -467,7 +467,7 @@ fn register_atapi_disk(port: &mut AhciPort) {
     port.graph_id = node_id;
 
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(PORT_BUFFER_SIZE) {
+    let (write_handle, read_handle) = match channel_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
         Err(e) => {
             error!("AHCI: Failed to create port: {:?}", e);
@@ -695,7 +695,7 @@ fn main(_arg: usize) -> ! {
     info!("AHCI: Entering RPC service loop");
 
     // Collect all port handles for waiting on requests
-    let handles: Vec<PortHandle> = ports.iter().filter_map(|p| p.read_port_handle).collect();
+    let handles: Vec<ChannelHandle> = ports.iter().filter_map(|p| p.read_port_handle).collect();
 
     if handles.is_empty() {
         info!("AHCI: No active ports to service");
@@ -708,10 +708,10 @@ fn main(_arg: usize) -> ! {
     loop {
         // Wait for a request on any port (blocking)
         let ready_handle =
-            match stem::syscall::port::port_wait(&handles, abi::syscall::port_wait::READABLE) {
+            match channel_wait(&handles, abi::syscall::channel_wait::READABLE) {
                 Ok(h) => h,
                 Err(e) => {
-                    error!("AHCI: port_wait failed: {:?}", e);
+                    error!("AHCI: channel_wait failed: {:?}", e);
                     stem::sleep(Duration::from_millis(100));
                     continue;
                 }
@@ -722,13 +722,13 @@ fn main(_arg: usize) -> ! {
             if port.read_port_handle == Some(ready_handle) {
                 let mut buf = [0u8; 4096];
 
-                match port_recv(ready_handle, &mut buf) {
+                match channel_recv(ready_handle, &mut buf) {
                     Ok(len) if len > 0 => {
                         handle_block_device_request(port, &buf[..len], ready_handle);
                     }
                     Ok(_) => {} // No data
                     Err(e) => {
-                        error!("AHCI: port_recv failed: {:?}", e);
+                        error!("AHCI: channel_recv failed: {:?}", e);
                     }
                 }
                 break;
@@ -738,7 +738,7 @@ fn main(_arg: usize) -> ! {
 }
 
 /// Handle a block device RPC request
-fn handle_block_device_request(port: &AhciPort, request_data: &[u8], _service_port: PortHandle) {
+fn handle_block_device_request(port: &AhciPort, request_data: &[u8], _service_port: ChannelHandle) {
     if request_data.len() < 5 {
         error!(
             "AHCI: Request too short from client (len={})",
@@ -753,7 +753,7 @@ fn handle_block_device_request(port: &AhciPort, request_data: &[u8], _service_po
         request_data[1],
         request_data[2],
         request_data[3],
-    ]) as PortHandle;
+    ]) as ChannelHandle;
 
     let request_type = request_data[4];
 
@@ -767,7 +767,7 @@ fn handle_block_device_request(port: &AhciPort, request_data: &[u8], _service_po
 }
 
 /// Handle Identify request
-fn handle_identify(port: &AhciPort, port_handle: PortHandle) {
+fn handle_identify(port: &AhciPort, port_handle: ChannelHandle) {
     let response = IdentifyResponse {
         sector_size: port.sector_size,
         sector_count: port.sector_count,
@@ -791,13 +791,13 @@ fn handle_identify(port: &AhciPort, port_handle: PortHandle) {
         );
     }
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("AHCI: Failed to send Identify response: {:?}", e);
     }
 }
 
 /// Handle Read request
-fn handle_read(port: &AhciPort, request_data: &[u8], port_handle: PortHandle) {
+fn handle_read(port: &AhciPort, request_data: &[u8], port_handle: ChannelHandle) {
     if request_data.len() < core::mem::size_of::<ReadRequest>() {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
@@ -851,7 +851,7 @@ fn handle_read(port: &AhciPort, request_data: &[u8], port_handle: PortHandle) {
 }
 
 /// Send a Read success response
-fn send_read_response(port_handle: PortHandle, data: &[u8]) {
+fn send_read_response(port_handle: ChannelHandle, data: &[u8]) {
     let header = ReadResponse {
         data_len: data.len() as u32,
     };
@@ -870,13 +870,13 @@ fn send_read_response(port_handle: PortHandle, data: &[u8]) {
 
     response_buf.extend_from_slice(data);
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("AHCI: Failed to send Read response: {:?}", e);
     }
 }
 
 /// Send an error response
-fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
+fn send_error_response(port_handle: ChannelHandle, error_code: BlockDeviceError) {
     let error_resp = ErrorResponse {
         error_code: error_code as u8,
         _reserved: [0; 3],
@@ -893,7 +893,7 @@ fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
         );
     }
 
-    if let Err(e) = port_send(port_handle, &response_buf) {
+    if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("AHCI: Failed to send Error response: {:?}", e);
     }
 }

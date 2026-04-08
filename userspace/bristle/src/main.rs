@@ -11,22 +11,17 @@ use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use stem::info;
-use stem::syscall::{port_recv, port_send_all, port_wait, topic_create, topic_publish, PortHandle};
+use stem::syscall::{channel_recv, channel_send_all, ChannelHandle};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
-fn register_in_graph(topic_id: Option<u32>) -> Option<stem::thing::ThingId> {
-    use abi::schema::input::INPUT_TOPIC_ID;
+fn register_in_graph() -> Option<stem::thing::ThingId> {
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
             info!(
                 "bristle: registered in graph as svc.Input (id={})",
                 node_id.to_u64_lossy()
             );
-            // Publish the topic ID so subscribers can find it
-            if let Some(tid) = topic_id {
-                let _ = thingsys::prop_set(node_id, INPUT_TOPIC_ID, tid as u64);
-            }
             Some(node_id)
         }
         Err(e) => {
@@ -160,54 +155,6 @@ fn update_pointer_button_graph_state(
     );
 }
 
-/// Maximum number of dynamic event subscribers
-const MAX_SUBSCRIBERS: usize = 16;
-
-/// A subscriber entry with port handle and optional filter
-#[derive(Clone, Copy, Default)]
-struct Subscriber {
-    port: PortHandle,
-    filter: u64, // 0=all, 1=keyboard, 2=pointer, 4=button
-}
-
-/// Scan the graph for registered input event subscribers.
-/// Returns the count of subscribers found (up to MAX_SUBSCRIBERS).
-fn scan_subscribers(subscribers: &mut [Subscriber; MAX_SUBSCRIBERS]) -> usize {
-    use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER};
-    use stem::thing::ThingId;
-
-    let mut node_buf = [ThingId::default(); MAX_SUBSCRIBERS];
-    let count = match thingsys::find(SVC_INPUT_SUBSCRIBER, &mut node_buf) {
-        Ok(c) => c.min(MAX_SUBSCRIBERS),
-        Err(_) => 0,
-    };
-
-    let mut valid = 0;
-    for i in 0..count {
-        let node = node_buf[i];
-        // Get the subscriber's port handle
-        if let Ok(port) = thingsys::prop_get(node, SUBSCRIBER_PORT) {
-            if port > 0 && port <= 0xFFFF_FFFF {
-                // Get optional filter (default to 0 = all)
-                let filter = thingsys::prop_get(node, SUBSCRIBER_FILTER).unwrap_or(0);
-                subscribers[valid] = Subscriber {
-                    port: port as PortHandle,
-                    filter,
-                };
-                valid += 1;
-            }
-        }
-    }
-
-    valid
-}
-
-/// Check if event matches subscriber filter
-#[inline]
-fn matches_filter(filter: u64, event_kind: u64) -> bool {
-    filter == 0 || (filter & event_kind) != 0
-}
-
 // (serialization functions removed as devices emit serialized events directly)
 
 /// Kill all userspace tasks except Bristle, then respawn Sprout.
@@ -217,44 +164,30 @@ fn reset_userspace_and_respawn_sprout() {
 
 #[stem::main]
 fn main(packed_handles: usize) -> ! {
-    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_input_echo_write[15:0]
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | bloom_evt_write[31:16] | evt_input_echo_write[15:0]
     let packed = packed_handles as u64;
-    let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
-    let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
-    let legacy_evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
-    let legacy_evt_input_echo_write = (packed & 0xFFFF) as PortHandle;
+    let kbd_read = ((packed >> 48) & 0xFFFF) as ChannelHandle;
+    let mouse_read = ((packed >> 32) & 0xFFFF) as ChannelHandle;
+    let bloom_evt_write = ((packed >> 16) & 0xFFFF) as ChannelHandle;
+    let evt_input_echo_write = (packed & 0xFFFF) as ChannelHandle;
 
     stem::info!("BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY");
 
     info!(
-        "bristle: online (kbd={}, mouse={}, evt={}, input_echo={})",
-        kbd_read, mouse_read, legacy_evt_write, legacy_evt_input_echo_write
+        "bristle: online (kbd={}, mouse={}, bloom_evt={}, input_echo={})",
+        kbd_read, mouse_read, bloom_evt_write, evt_input_echo_write
     );
 
-    // Create the broadcast topic
-    let topic_id = match topic_create() {
-        Ok(id) => {
-            info!("bristle: created broadcast topic {}", id);
-            Some(id)
-        }
-        Err(e) => {
-            info!("bristle: FAILED to create broadcast topic: {:?}", e);
-            None // legacy path still active
-        }
-    };
-
-    let node_id = register_in_graph(topic_id);
+    let node_id = register_in_graph();
     let mut graph_state = InputGraphState::default();
     if let Some(node) = node_id {
         publish_initial_graph_state(node, &graph_state);
     }
-
     let mut recv_buf = [0u8; 128];
     let mut event_accum = [0u8; 64];
     let mut accum_len = 0usize;
     let mut drop_counter: u32 = 0;
     let mut resync_counter: u32 = 0;
-    let mut event_count: u64 = 0;
 
     let mut ws = stem::wait_set::WaitSet::new();
     let mut kbd_tok = None;
@@ -309,7 +242,7 @@ fn main(packed_handles: usize) -> ! {
                 continue;
             };
 
-            if let Ok(n) = port_recv(ready_handle, &mut recv_buf) {
+            if let Ok(n) = channel_recv(ready_handle, &mut recv_buf) {
                 if n > 0 {
                     let mut cursor = 0;
                     while cursor < n {
@@ -454,20 +387,15 @@ fn main(packed_handles: usize) -> ! {
                                         }
                                     }
 
-                                    if port_send_all(legacy_evt_write, event_bytes).is_err() {
+                                    if channel_send_all(bloom_evt_write, event_bytes).is_err() {
                                         drop_counter += 1;
                                     }
 
-                                    if legacy_evt_input_echo_write != 0
-                                        && port_send_all(legacy_evt_input_echo_write, event_bytes)
+                                    if evt_input_echo_write != 0
+                                        && channel_send_all(evt_input_echo_write, event_bytes)
                                             .is_err()
                                     {
                                         drop_counter += 1;
-                                    }
-
-                                    event_count += 1;
-                                    if let Some(tid) = topic_id {
-                                        let _ = topic_publish(tid, event_bytes);
                                     }
 
                                     // Shift remaining bytes

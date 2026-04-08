@@ -105,9 +105,8 @@ const DEFAULT_PIPE_CAPACITY: usize = 4096;
 // Public API for syscall handlers
 // ---------------------------------------------------------------------------
 
-/// Create a new anonymous pipe. Returns the pipe ID.
-/// Both read and write ends share the same ID; the end is distinguished
-/// by which syscall is used (SYS_PIPE_READ vs SYS_PIPE_WRITE).
+/// Create a new anonymous pipe. Returns the internal pipe ID used to back
+/// read/write VFS endpoints.
 pub fn create(capacity: u32, flags: u32) -> u64 {
     let cap = if capacity == 0 {
         DEFAULT_PIPE_CAPACITY
@@ -422,9 +421,8 @@ pub fn write_node_for_id(pipe_id: u64) -> Option<alloc::sync::Arc<dyn crate::vfs
 
 /// Create an anonymous pipe and return a `(pipe_id, read_node, write_node)` triple.
 ///
-/// The pipe_id can be used by the parent process via the legacy `SYS_PIPE_*`
-/// syscalls.  The read/write nodes can be inserted into a child process fd table
-/// via [`crate::vfs::fd_table::FdTable::insert_at`].
+/// The pipe ID remains an internal kernel identifier. The read/write nodes can
+/// be inserted into a child process fd table via [`crate::vfs::fd_table::FdTable::insert_at`].
 pub fn create_fd_pair_with_id(
     capacity: u32,
     nonblock: bool,

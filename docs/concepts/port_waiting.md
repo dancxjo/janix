@@ -2,7 +2,7 @@
 
 Ports now expose two receive modes:
 
-- `port_recv`: blocking receive. If the queue is empty, the current task is parked on the port's read wait queue until data arrives or the write side closes.
+- `channel_recv`: blocking receive. If the queue is empty, the current task is parked on the port's read wait queue until data arrives or the write side closes.
 - `port_try_recv`: non-blocking receive. If the queue is empty, it returns `EAGAIN`.
 
 Queue and wake behavior:

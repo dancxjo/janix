@@ -4,7 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use stem::syscall::{port_create, port_send, port_try_recv, PortHandle};
+use stem::syscall::{channel_create, channel_send, channel_try_recv, ChannelHandle};
 use stem::thing::sys::{memfd_create, write, stat};
 use stem::thing::HandleId;
 use stem::thing::ThingId;
@@ -311,13 +311,13 @@ impl ClientConnection {
             resp.extend_from_slice(&(self.out_buf.len() as u32).to_le_bytes());
             resp.extend_from_slice(&self.out_buf);
             self.out_buf.clear();
-            let _ = port_send(resp_port, &resp);
+            let _ = channel_send(resp_port, &resp);
         }
     }
 }
 
 pub struct WaylandServer {
-    pub req_port: PortHandle,
+    pub req_port: ChannelHandle,
     pub clients: BTreeMap<u64, ClientConnection>,
     scene_index: BTreeMap<ThingId, (u64, u32, bool)>,
     layer_scene_index: BTreeMap<ThingId, (u64, u32)>,
@@ -331,7 +331,7 @@ pub struct WaylandServer {
 
 impl WaylandServer {
     pub fn new(screen_width: u32, screen_height: u32) -> Option<Self> {
-        let (req_write, req_read) = port_create(65536).ok()?;
+        let (req_write, req_read) = channel_create(65536).ok()?;
         if let Err(e) = stem::syscall::vfs_mount(req_write, "/run/wayland-0") {
             stem::warn!(
                 "bloom: failed to mount /run/wayland-0: {:?}; continuing without external Wayland clients",
@@ -355,7 +355,7 @@ impl WaylandServer {
 
     pub fn pump(&mut self) {
         let mut buf = [0u8; VFS_RPC_MAX_REQ];
-        while let Ok(len) = port_try_recv(self.req_port, &mut buf) {
+        while let Ok(len) = channel_try_recv(self.req_port, &mut buf) {
             if len < core::mem::size_of::<VfsRpcReqHeader>() {
                 continue;
             }
@@ -601,7 +601,7 @@ impl WaylandServer {
                 let mut resp = alloc::vec![0u8; 9];
                 resp[0] = 0;
                 resp[1..9].copy_from_slice(&handle.to_le_bytes());
-                let _ = port_send(hdr.resp_port, &resp);
+                let _ = channel_send(hdr.resp_port, &resp);
             }
             Some(VfsRpcOp::Read) => {
                 if payload.len() < 12 {
@@ -617,10 +617,10 @@ impl WaylandServer {
                         resp.extend_from_slice(&(client.out_buf.len() as u32).to_le_bytes());
                         resp.extend_from_slice(&client.out_buf);
                         client.out_buf.clear();
-                        let _ = port_send(hdr.resp_port, &resp);
+                        let _ = channel_send(hdr.resp_port, &resp);
                     }
                 } else {
-                    let _ = port_send(hdr.resp_port, &[abi::errors::Errno::EBADF as u8]);
+                    let _ = channel_send(hdr.resp_port, &[abi::errors::Errno::EBADF as u8]);
                 }
             }
             Some(VfsRpcOp::Write) => {
@@ -637,7 +637,7 @@ impl WaylandServer {
                 let mut resp = alloc::vec![0u8; 5];
                 resp[0] = 0;
                 resp[1..5].copy_from_slice(&(data.len() as u32).to_le_bytes());
-                let _ = port_send(hdr.resp_port, &resp);
+                let _ = channel_send(hdr.resp_port, &resp);
 
                 if let Some(client) = self.clients.get_mut(&handle) {
                     client.in_buf.extend_from_slice(data);
@@ -654,7 +654,7 @@ impl WaylandServer {
                 resp[1..5].copy_from_slice(&mode.to_le_bytes());
                 resp[5..13].copy_from_slice(&0u64.to_le_bytes());
                 resp[13..21].copy_from_slice(&1u64.to_le_bytes());
-                let _ = port_send(hdr.resp_port, &resp);
+                let _ = channel_send(hdr.resp_port, &resp);
             }
             Some(VfsRpcOp::Close) => {
                 if payload.len() < 8 {
@@ -662,10 +662,10 @@ impl WaylandServer {
                 }
                 let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
                 self.remove_client(handle);
-                let _ = port_send(hdr.resp_port, &[0u8]);
+                let _ = channel_send(hdr.resp_port, &[0u8]);
             }
             _ => {
-                let _ = port_send(hdr.resp_port, &[abi::errors::Errno::ENOSYS as u8]);
+                let _ = channel_send(hdr.resp_port, &[abi::errors::Errno::ENOSYS as u8]);
             }
         }
     }

@@ -5,7 +5,7 @@ use abi::hid::{
     BristleEventHeader, EventType, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use stem::info;
-use stem::syscall::{port_recv, port_wait, PortHandle};
+use stem::syscall::{channel_recv, channel_wait, ChannelHandle};
 
 fn log_event(buf: &[u8]) {
     if buf.len() < BristleEventHeader::SIZE {
@@ -76,7 +76,7 @@ fn log_event(buf: &[u8]) {
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    let handle = arg as PortHandle;
+    let handle = arg as ChannelHandle;
     info!("input_echo: starting with port={}", handle);
 
     if handle == 0 {
@@ -88,8 +88,8 @@ fn main(arg: usize) -> ! {
 
     let mut buf = [0u8; 256];
     loop {
-        match port_wait(&[handle], abi::syscall::port_wait::READABLE) {
-            Ok(_) => match port_recv(handle, &mut buf) {
+        match channel_wait(&[handle], abi::syscall::channel_wait::READABLE) {
+            Ok(_) => match channel_recv(handle, &mut buf) {
                 Ok(n) if n > 0 => log_event(&buf[..n]),
                 Ok(_) => {}
                 Err(err) => info!("input_echo: recv error: {:?}", err),

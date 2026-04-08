@@ -112,7 +112,7 @@ fn main(_arg: usize) -> ! {
     // Create a port to receive PCM data from userspace apps
     // 64KB buffer (~700ms of audio) to prevent underruns
     let (write_handle, read_handle) =
-        stem::syscall::port::port_create(65536).expect("Failed to create port");
+        stem::syscall::channel_create(65536).expect("Failed to create channel");
 
     // Publish port handle (quick hack: print it for now, usually publish to graph)
     info!(
@@ -148,8 +148,8 @@ fn main(_arg: usize) -> ! {
         if now - last_status_update > 100_000_000 {
             use abi::schema::keys::*;
 
-            let port_len = stem::syscall::port::port_len(read_handle).unwrap_or(0);
-            let port_cap = stem::syscall::port::port_capacity(read_handle).unwrap_or(1);
+            let port_len = stem::syscall::channel_len(read_handle).unwrap_or(0);
+            let port_cap = stem::syscall::channel_capacity(read_handle).unwrap_or(1);
 
             thingsys::prop_set(
                 ThingId::from_u64(device_id),
@@ -173,7 +173,7 @@ fn main(_arg: usize) -> ! {
         }
 
         // 4. Process Audio Data
-        match stem::syscall::port::port_recv(read_handle, &mut buf) {
+        match stem::syscall::channel_recv(read_handle, &mut buf) {
             Ok(len) if len > 0 => {
                 match device_alloc_dma(dma_dev_handle, 2) {
                     // 8KB pages (Need >4KB for 4K data + header)

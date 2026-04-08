@@ -5,7 +5,7 @@ use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
 use smoltcp::time::Duration;
 use smoltcp::wire::Ipv4Address;
 
-use crate::ipc_device::IpcNicDevice;
+use crate::vfs_device::VfsNicDevice;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -21,7 +21,7 @@ pub struct DhcpConfig {
     pub dns: Ipv4Address,
 }
 
-pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<DhcpConfig, DhcpError> {
+pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
 
@@ -30,11 +30,11 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<Dhcp
 
     stem::info!("DHCP: Starting discovery...");
 
-    let start = IpcNicDevice::now();
+    let start = VfsNicDevice::now();
     let timeout = start + Duration::from_secs(30);
 
     loop {
-        let now = IpcNicDevice::now();
+        let now = VfsNicDevice::now();
         if now > timeout {
             return Err(DhcpError::Timeout);
         }
@@ -83,8 +83,6 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<Dhcp
         let delay = iface.poll_delay(now, &socket_set);
         let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
 
-        let mut wait_set = stem::wait_set::WaitSet::new();
-        let _ = wait_set.add_port_readable(device.rx_port() as u64);
-        let _ = wait_set.wait(Some(core::time::Duration::from_millis(wait_ms as u64)));
+        stem::time::sleep_ms(wait_ms as u64);
     }
 }

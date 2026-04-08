@@ -4,7 +4,7 @@
 //! # Network Service (netd)
 //!
 //! Provides networking capabilities using smoltcp TCP/IP stack.
-//! - Connects to virtio_netd for frame I/O via IPC
+//! - Connects to virtio_netd for frame I/O via VFS (/dev/net/virtio0/)
 //! - Runs DHCP to acquire IP address
 //! - Provides DNS resolver
 //! - Exposes socket API for applications
@@ -14,53 +14,42 @@ extern crate stem;
 
 mod dhcp;
 mod dns;
-mod driver_protocol;
-mod ipc_device;
 mod socket_api;
+mod vfs_device;
 use abi::schema::keys;
-use ipc_device::IpcNicDevice;
+use abi::syscall::vfs_flags::{O_NONBLOCK, O_RDONLY, O_WRONLY};
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use socket_api::SocketApi;
 use stem::syscall::port::{port_create, port_recv, port_send_all, PortHandle};
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{error, info, warn};
+use vfs_device::VfsNicDevice;
 
-/// Graph kind for the network driver service (published by virtio_netd)
-const KIND_NET_DRIVER: &str = "svc.net.Driver";
+/// Path prefix for the virtio NIC VFS provider (published by virtio_netd).
+const VIRTIO0_PATH: &str = "/dev/net/virtio0";
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("NETD: Starting network stack service...");
 
-    // Wait for virtio_netd to be ready via the Graph
-    info!("NETD: Looking for virtio_netd driver service...");
-    loop {
-        let mut ids = [ThingId::default(); 1];
-        if let Ok(n) = thingsys::find(KIND_NET_DRIVER, &mut ids) {
-            if n > 0 {
-                break;
-            }
-        }
-        stem::time::sleep_ms(100);
-    }
-
-    let (tx_port, rx_port, mac, initial_link_up, iface_mtu) = find_driver_service()
-        .expect("NETD: Driver disappeared immediately after graph discovery");
+    // Open /dev/net/virtio0/{rx,tx,events} — retry until virtio_netd is ready.
+    info!("NETD: Waiting for virtio_netd VFS provider at {}...", VIRTIO0_PATH);
+    let (rx_fd, tx_fd, events_fd, mac, iface_mtu, initial_link_up) = open_nic_device();
 
     info!(
         "NETD: Connected to driver - MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
-    // Create IPC-backed smoltcp device
-    let mut device = IpcNicDevice::new(tx_port, rx_port, mac, initial_link_up);
+    // Create VFS-backed smoltcp device
+    let mut device = VfsNicDevice::new(rx_fd, tx_fd, events_fd, mac, iface_mtu as usize, initial_link_up);
 
     // Create smoltcp interface
     let mac_addr = EthernetAddress(mac);
     let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, IpcNicDevice::now());
+    let mut iface = Interface::new(config, &mut device, VfsNicDevice::now());
 
     // Create socket API port early so it's available in the graph immediately
     let (api_write_port, api_read_port) = match port_create(32768) {
@@ -185,17 +174,17 @@ fn main(_arg: usize) -> ! {
         // ===== HOT PATH: Network I/O (must never block) =====
 
         // Always poll the interface first to process pending packets
-        let now = IpcNicDevice::now();
+        let now = VfsNicDevice::now();
         iface.poll(now, &mut device, &mut socket_set);
 
-        // --- Phase 1: Non-blockingly drain rx_port (network frames from driver) ---
-        // This ensures TCP handshake packets (SYN, ACK) are always ingested
-        // before we process API messages like TCP_ACCEPT.
-        while stem::syscall::port::port_len(rx_port).unwrap_or(0) > 0 {
-            let now = IpcNicDevice::now();
-            iface.poll(now, &mut device, &mut socket_set);
-            did_work = true;
-            break; // One extra poll is enough; more frames will be caught next iteration
+        // --- Phase 1: Non-blockingly poll for additional network frames ---
+        // iface.poll calls device.receive() which reads from rx_fd non-blockingly;
+        // one additional poll catches frames that arrived during the first pass.
+        {
+            let now = VfsNicDevice::now();
+            if iface.poll(now, &mut device, &mut socket_set) {
+                did_work = true;
+            }
         }
 
         // --- Phase 2: Process a limited batch of Socket API messages ---
@@ -289,7 +278,7 @@ fn main(_arg: usize) -> ! {
         // (e.g., TCP_SEND), and we need to flush those packets to the wire.
         // Also, TCP handshake packets (SYN-ACK, ACK) may have arrived during
         // API processing and need to be ingested before the next accept check.
-        let now = IpcNicDevice::now();
+        let now = VfsNicDevice::now();
         iface.poll(now, &mut device, &mut socket_set);
 
         if api_buffered > 8192 {
@@ -329,13 +318,10 @@ fn main(_arg: usize) -> ! {
 
         // Only wait if no work was done, otherwise spin back immediately
         // to process remaining network frames or API messages.
-        // Use port_wait instead of sleep_ms to wake IMMEDIATELY when data
-        // arrives on either the network RX port or the socket API port.
-        // sleep_ms(1) was sleeping 2+ seconds due to scheduler granularity,
-        // causing TCP handshake timeouts.
+        // Wait on the socket API port; network frame arrival is caught by
+        // non-blocking device.receive() in the next iface.poll() call.
         if !did_work {
-            let wait_ports = [rx_port, api_read_port];
-            let _ = stem::syscall::port::port_wait(&wait_ports, abi::syscall::port_wait::READABLE);
+            let _ = stem::syscall::port::port_wait(&[api_read_port], abi::syscall::port_wait::READABLE);
         }
     }
 }
@@ -416,48 +402,102 @@ fn decode_socket_api_envelope(packet: &[u8]) -> EnvelopeDecode<'_> {
     EnvelopeDecode::Malformed
 }
 
-/// Find the virtio_netd driver service and get port handles + MAC address
-fn find_driver_service() -> Option<(PortHandle, PortHandle, [u8; 6], bool, u32)> {
-    // Look for svc.net.Driver node
-    let mut buf = [ThingId::default(); 1];
-    let count = thingsys::find(KIND_NET_DRIVER, &mut buf).ok()?;
+/// Open the virtio NIC device files, retrying until the VFS provider is ready.
+///
+/// Returns `(rx_fd, tx_fd, events_fd, mac, mtu, link_up)`.
+///
+/// NOTE: If `/dev/net/virtio0/rx` disappears after this returns (driver exit),
+/// the caller should close all fds and call this function again with backoff.
+fn open_nic_device() -> (u32, u32, u32, [u8; 6], u32, bool) {
+    let rx_path = alloc::format!("{}/rx", VIRTIO0_PATH);
+    let tx_path = alloc::format!("{}/tx", VIRTIO0_PATH);
+    let events_path = alloc::format!("{}/events", VIRTIO0_PATH);
+    let mac_path = alloc::format!("{}/mac", VIRTIO0_PATH);
+    let mtu_path = alloc::format!("{}/mtu", VIRTIO0_PATH);
 
-    if count == 0 {
-        return None;
+    loop {
+        // rx is opened non-blocking so device.receive() never stalls the loop
+        let rx_fd = match vfs_open(&rx_path, O_RDONLY | O_NONBLOCK) {
+            Ok(fd) => fd,
+            Err(_) => {
+                stem::time::sleep_ms(100);
+                continue;
+            }
+        };
+
+        let tx_fd = match vfs_open(&tx_path, O_WRONLY) {
+            Ok(fd) => fd,
+            Err(e) => {
+                warn!("NETD: Failed to open {}: {:?}", tx_path, e);
+                vfs_close(rx_fd).ok();
+                stem::time::sleep_ms(100);
+                continue;
+            }
+        };
+
+        // events is opened non-blocking; errors are silently ignored
+        let events_fd = match vfs_open(&events_path, O_RDONLY | O_NONBLOCK) {
+            Ok(fd) => fd,
+            Err(e) => {
+                warn!("NETD: Failed to open {}: {:?}", events_path, e);
+                vfs_close(rx_fd).ok();
+                vfs_close(tx_fd).ok();
+                stem::time::sleep_ms(100);
+                continue;
+            }
+        };
+
+        // Fallback MAC uses the QEMU/KVM default prefix (52:54:00) to avoid
+        // conflicts with real hardware addresses.
+        let mac = read_mac_file(&mac_path).unwrap_or([0x52, 0x54, 0x00, 0x12, 0x34, 0x56]);
+        let mtu = read_u32_file(&mtu_path).unwrap_or(1500);
+
+        // Assume link up initially; poll_events() will update the state
+        info!(
+            "NETD: Opened VFS NIC device (rx={}, tx={}, events={}, mtu={})",
+            rx_fd, tx_fd, events_fd, mtu
+        );
+        return (rx_fd, tx_fd, events_fd, mac, mtu, true);
     }
+}
 
-    let driver_id = buf[0];
-    info!("NETD: Found driver service node {:?}", driver_id);
+/// Read and parse a MAC address from a text file (`xx:xx:xx:xx:xx:xx\n`).
+fn read_mac_file(path: &str) -> Option<[u8; 6]> {
+    let mut buf = [0u8; 24];
+    let n = read_file_bytes(path, &mut buf)?;
+    let s = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    parse_mac(s)
+}
 
-    // Get TX port handle (we write to this)
-    let tx_port = thingsys::prop_get(driver_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
+/// Parse a MAC address string in `xx:xx:xx:xx:xx:xx` format.
+fn parse_mac(s: &str) -> Option<[u8; 6]> {
+    let mut mac = [0u8; 6];
+    let mut count = 0usize;
+    for (i, hex) in s.split(':').enumerate() {
+        if i >= 6 {
+            return None; // Too many octets
+        }
+        mac[i] = u8::from_str_radix(hex.trim(), 16).ok()?;
+        count += 1;
+    }
+    if count != 6 {
+        return None; // Too few octets
+    }
+    Some(mac)
+}
 
-    // Get RX port handle (we read from this)
-    let rx_port = thingsys::prop_get(driver_id, "net.rx_port").ok()? as PortHandle;
+/// Read a decimal `u32` from a text file.
+fn read_u32_file(path: &str) -> Option<u32> {
+    let mut buf = [0u8; 16];
+    let n = read_file_bytes(path, &mut buf)?;
+    let s = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    s.parse().ok()
+}
 
-    // Get MAC address (packed in u64)
-    let mac_packed = thingsys::prop_get(driver_id, "net.mac").ok()?;
-    let mac = [
-        (mac_packed & 0xFF) as u8,
-        ((mac_packed >> 8) & 0xFF) as u8,
-        ((mac_packed >> 16) & 0xFF) as u8,
-        ((mac_packed >> 24) & 0xFF) as u8,
-        ((mac_packed >> 32) & 0xFF) as u8,
-        ((mac_packed >> 40) & 0xFF) as u8,
-    ];
-
-    let link_up = thingsys::prop_get(driver_id, "net.link_up")
-        .ok()
-        .unwrap_or(1)
-        != 0;
-    let mtu = thingsys::prop_get(driver_id, "net.mtu")
-        .ok()
-        .unwrap_or(1500) as u32;
-
-    info!(
-        "NETD: Driver TX port={}, RX port={}, link_up={}, mtu={}",
-        tx_port, rx_port, link_up, mtu
-    );
-
-    Some((tx_port, rx_port, mac, link_up, mtu))
+/// Read raw bytes from a file, returning the number of bytes read.
+fn read_file_bytes(path: &str, buf: &mut [u8]) -> Option<usize> {
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let result = vfs_read(fd, buf).ok();
+    vfs_close(fd).ok();
+    result
 }

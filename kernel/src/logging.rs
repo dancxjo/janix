@@ -153,9 +153,7 @@ pub unsafe fn force_unlock() {
 
 /// Helper to check if graph logging is safe/ready
 fn can_log_to_graph(_level: Level) -> bool {
-    // TEMP: Disabled for OOM debugging
     false
-    // crate::root::is_inbox_ready() && level != Level::Trace
 }
 
 /// Check if this level should be logged (considering MIN_LOG_LEVEL)
@@ -169,10 +167,10 @@ fn should_log(level: Level) -> bool {
 
 pub fn _log_event(
     meta: LogMetadata,
-    event_sym: crate::root::SymbolShell,
+    event_str: &str,
     msg_fmt: fmt::Arguments,
     fields: &[(&'static str, u64)],
-    about: &[u64],
+    _about: &[u64],
 ) {
     // Check log level filter
     if !should_log(meta.level) {
@@ -187,12 +185,6 @@ pub fn _log_event(
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            let event_str = match &event_sym {
-                crate::root::SymbolShell::Str(s) => s.as_str(),
-                crate::root::SymbolShell::Static(s) => s,
-                crate::root::SymbolShell::Id(_) => "?",
-            };
-
             // Human-readable format: [TIME] [LEVEL] [SOURCE] [CPUx] Message
             let _ = write!(
                 writer,
@@ -215,49 +207,14 @@ pub fn _log_event(
         }
     }
 
-    // 2. Graph Persistence (Best Effort) - skip TRACE to reduce noise
-    if can_log_to_graph(meta.level) {
-        if !IN_GRAPH_LOG.swap(true, Ordering::Acquire) {
-            let tid = unsafe { crate::sched::current_tid_current() };
-            let timestamp = crate::runtime_base().mono_ticks();
-            let message = format!("{}", msg_fmt);
-
-            use crate::root::{LogProvenance, RootOp, SymbolShell};
-
-            let prov = LogProvenance {
-                tid,
-                cpu: 0,
-                module: meta.module,
-                file: meta.file,
-                line: meta.line,
-            };
-
-            let mut field_vec = alloc::vec::Vec::with_capacity(fields.len());
-            for (k, v) in fields {
-                field_vec.push((SymbolShell::Static(k), *v));
-            }
-
-            let op = RootOp::LogEvent {
-                level: meta.level as u8,
-                event: event_sym,
-                message,
-                timestamp,
-                provenance: prov,
-                fields: field_vec,
-                about: alloc::vec::Vec::from(about),
-            };
-
-            crate::root::enqueue(op);
-            IN_GRAPH_LOG.store(false, Ordering::Release);
-        }
-    }
+    // 2. Graph Persistence (REMOVED)
 }
 
 // Backward compatibility shim for kinfo! etc
 pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
     _log_event(
         meta.clone(),
-        crate::root::SymbolShell::Static(meta.module),
+        meta.module,
         args,
         &[],
         &[],
@@ -316,7 +273,7 @@ macro_rules! log_event {
                 line: line!(),
                 module: module_path!(),
             },
-            $crate::root::SymbolShell::Static($event),
+            $event,
             format_args!($msg),
             &[ $( (stringify!($k), $v) ),* ],
             &[ $($about),* ]
@@ -331,7 +288,7 @@ macro_rules! log_event {
                 line: line!(),
                 module: module_path!(),
             },
-            $crate::root::SymbolShell::Static($event),
+            $event,
             format_args!($($arg)*),
             &[],
             &[]

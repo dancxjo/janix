@@ -46,7 +46,7 @@ pub fn sys_log_write(ptr: usize, len: usize, level_arg: usize) -> SysResult<usiz
                     line: 0,
                     module: "user",
                 },
-                crate::root::SymbolShell::Str(alloc::string::String::from(provenance)),
+                provenance,
                 format_args!("{}", msg_body),
                 &[],
                 &[],

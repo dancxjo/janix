@@ -7,7 +7,7 @@
 use crate::syscall;
 use crate::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
 use abi::errors::{errno, Errno, SysResult};
-use abi::syscall::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
+use super::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
 
 /// A VFS file descriptor returned by [`vfs_open`].
 pub type Fd = u32;
@@ -172,7 +172,7 @@ pub fn tcp_connect(addr: &str, port: u16, deadline_ns: u64) -> SysResult<TcpHand
 pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
     let result = unsafe {
         syscall::syscall6(
-            abi::syscall::SYS_NIC_MAC,
+            super::SYS_NIC_MAC,
             out.as_mut_ptr() as usize,
             0,
             0,
@@ -187,7 +187,7 @@ pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
 
 /// Check if the link is up.
 pub fn nic_link_up() -> SysResult<bool> {
-    let result = unsafe { syscall::syscall6(abi::syscall::SYS_NIC_LINK_UP, 0, 0, 0, 0, 0, 0) };
+    let result = unsafe { syscall::syscall6(super::SYS_NIC_LINK_UP, 0, 0, 0, 0, 0, 0) };
 
     errno(result).map(|v| v != 0)
 }
@@ -198,7 +198,7 @@ pub fn nic_link_up() -> SysResult<bool> {
 pub fn nic_poll_rx(buffer: &mut [u8]) -> SysResult<usize> {
     let result = unsafe {
         syscall::syscall6(
-            abi::syscall::SYS_NIC_POLL_RX,
+            super::SYS_NIC_POLL_RX,
             buffer.as_mut_ptr() as usize,
             buffer.len(),
             0,
@@ -215,7 +215,7 @@ pub fn nic_poll_rx(buffer: &mut [u8]) -> SysResult<usize> {
 pub fn nic_tx(frame: &[u8]) -> SysResult<()> {
     let result = unsafe {
         syscall::syscall6(
-            abi::syscall::SYS_NIC_TX,
+            super::SYS_NIC_TX,
             frame.as_ptr() as usize,
             frame.len(),
             0,

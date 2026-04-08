@@ -11,7 +11,6 @@ pub mod memory;
 pub mod net;
 pub mod once_cell;
 
-pub mod root;
 pub mod sched;
 pub mod simd;
 pub mod syscall;

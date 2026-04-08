@@ -107,21 +107,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
 
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
 
-        // ── Unified Object Graph (Root) ───────────────────────────────────
-        SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
-        SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
-        SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
-        SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
-        SYS_ROOT_UNLINK => handlers::sys_root_unlink(args[0], args[1], args[2]),
-        SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
-        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
-        SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),
-        SYS_ROOT_DESCRIBE => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
-        SYS_ROOT_RESOLVE_PATH => handlers::sys_root_resolve_path(args[0], args[1]),
-        SYS_ROOT_GET_PROPS => handlers::sys_root_get_props(args[0], args[1], args[2]),
-        SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),
-        SYS_ROOT_APPLY_BATCH => handlers::sys_root_apply_batch(args[0], args[1]),
-
         // ── VFS (janix) ───────────────────────────────────────────────────
         SYS_FS_OPEN => handlers::vfs::SYS_FS_open(args[0], args[1], args[2]),
         SYS_FS_CLOSE => handlers::vfs::SYS_FS_close(args[0]),

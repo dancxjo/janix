@@ -5,83 +5,33 @@ use abi::symbols::SymbolId;
 use crate::syscall::arch::raw_syscall6;
 use abi::syscall::*;
 
-pub fn get_kind(id: ThingId) -> Result<ThingKind, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_ROOT_GET_KIND, id.to_u64_lossy() as usize, 0, 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|v| unsafe { core::mem::transmute(v as u64) })
+pub fn get_kind(_id: ThingId) -> Result<ThingKind, Errno> {
+    // Legacy graph kinds are gone.
+    Ok(ThingKind(0))
 }
 
-pub fn prop_set<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Result<(), Errno> {
-    let key_wire = key.to_wire();
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_PROP_SET,
-            id.to_u64_lossy() as usize,
-            &key_wire as *const _ as usize,
-            value as usize,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|_| ())
+pub fn prop_get<S: IntoSymbolRef>(_id: ThingId, _key: S) -> Result<u64, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn prop_get<S: IntoSymbolRef>(id: ThingId, key: S) -> Result<u64, Errno> {
-    let key_wire = key.to_wire();
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_PROP_GET,
-            id.to_u64_lossy() as usize,
-            &key_wire as *const _ as usize,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|v| v as u64)
+pub fn prop_set<S: IntoSymbolRef>(_id: ThingId, _key: S, _value: u64) -> Result<(), Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn describe_thing(id: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_DESCRIBE,
-            id.to_u64_lossy() as usize,
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
+pub fn describe_thing(_id: ThingId, _out: &mut [u8]) -> Result<usize, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn link<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<(), Errno> {
-    let rel_wire = rel.to_wire();
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_LINK,
-            src.to_u64_lossy() as usize,
-            &rel_wire as *const _ as usize,
-            dst.to_u64_lossy() as usize,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|_| ())
+pub fn link<S: IntoSymbolRef>(_src: ThingId, _rel: S, _dst: ThingId) -> Result<(), Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn intern(s: &str) -> Result<SymbolId, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_ROOT_INTERN, s.as_ptr() as usize, s.len(), 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|v| v as u32)
+pub fn intern(_s: &str) -> Result<SymbolId, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn create_node<S: IntoSymbolRef>(kind: S) -> Result<ThingId, Errno> {
-    let kind_wire = kind.to_wire();
-    let ret = unsafe { raw_syscall6(SYS_ROOT_CREATE_NODE, &kind_wire as *const _ as usize, 0, 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|v| ThingId::from_u64(v as u64))
+pub fn create_node<S: IntoSymbolRef>(_kind: S) -> Result<ThingId, Errno> {
+    Err(Errno::ENOSYS)
 }
 
 #[derive(Debug)]
@@ -98,19 +48,8 @@ pub fn try_typed<T: super::Thing>(
     }
 }
 
-pub fn find(kind: &str, out: &mut [ThingId]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_FIND,
-            kind.as_ptr() as usize,
-            kind.len(),
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
+pub fn find(_kind: &str, _out: &mut [ThingId]) -> Result<usize, Errno> {
+    Ok(0)
 }
 
 pub use crate::syscall::vfs::{
@@ -122,62 +61,20 @@ pub fn prop_get_fd<S: IntoSymbolRef>(fd: u32, key: S) -> Result<u64, Errno> {
     prop_get(ThingId::from_u64(fd as u64), key)
 }
 
-pub fn watch_subscribe(id: u32, flags: u32) -> Result<u32, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_ROOT_WATCH_SUBSCRIBE, id as usize, flags as usize, 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|v| v as u32)
+pub fn watch_subscribe(_id: u32, _flags: u32) -> Result<u32, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn props_get_many(id: ThingId, keys: &[u32]) -> Result<abi::types::BulkPropsResponse, Errno> {
-    let mut resp = abi::types::BulkPropsResponse::default();
-    let mut req = abi::types::BulkPropsRequest::default();
-    req.node_id = id.to_u64_lossy();
-    req.key_count = keys.len().min(abi::types::BULK_PROPS_MAX_KEYS) as u8;
-    for i in 0..req.key_count as usize {
-        req.keys[i] = keys[i];
-    }
-
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_PROPS_GET_MANY,
-            &req as *const _ as usize,
-            &mut resp as *mut _ as usize,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|_| resp)
+pub fn props_get_many(_id: ThingId, _keys: &[u32]) -> Result<abi::types::BulkPropsResponse, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn describe_symbol(sym: SymbolId, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_DESCRIBE_SYMBOL,
-            sym as usize,
-            out.as_mut_ptr() as usize,
-            out.len(),
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
+pub fn describe_symbol(_sym: SymbolId, _out: &mut [u8]) -> Result<usize, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn root_stream_poll(handle: u32, out: &mut abi::types::RootWatchEvent) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_STREAM_POLL,
-            handle as usize,
-            out as *mut _ as usize,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
+pub fn root_stream_poll(_handle: u32, _out: &mut abi::types::RootWatchEvent) -> Result<usize, Errno> {
+    Err(Errno::ENOSYS)
 }
 
 pub use crate::syscall::{memfd_create, memfd_phys, vm_map, stream::stream_poll};

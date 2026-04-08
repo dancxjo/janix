@@ -7,8 +7,7 @@ use abi::errors::Errno;
 
 use crate::device_registry::{IrqMode, MsiCapability, MsixCapability, PciLocation, REGISTRY};
 use crate::irq::{alloc_vector, free_vector};
-use crate::root::pci::{pci_read_config, pci_write_config};
-use crate::root::{self, RootOp, SymbolShell};
+use crate::runtime_base;
 
 pub struct EnableResult {
     pub vector: u8,
@@ -75,7 +74,6 @@ pub fn enable_for_claim(
         Ok(res) => {
             let mut reg = REGISTRY.lock();
             reg.set_irq_mode(claim_handle, res.mode, res.vector);
-            update_graph_irq(graph_id, res.mode, res.vector);
             Ok(res)
         }
         Err(err) => {
@@ -92,21 +90,21 @@ fn program_msi(location: PciLocation, msi: MsiCapability, vector: u8) -> Result<
     ctrl_new |= 0x1;
 
     unsafe {
-        pci_write_config(
+        runtime_base().pci_cfg_write32(
             location.bus,
             location.dev,
             location.func,
             msi.offset + 0x4,
             addr,
-        );
+        ).ok();
         if msi.is_64bit {
-            pci_write_config(
+            runtime_base().pci_cfg_write32(
                 location.bus,
                 location.dev,
                 location.func,
                 msi.offset + 0x8,
                 0,
-            );
+            ).ok();
             pci_write_config_u16(location, msi.offset + 0xC, data as u16);
         } else {
             pci_write_config_u16(location, msi.offset + 0x8, data as u16);
@@ -168,61 +166,19 @@ fn build_msi_message(vector: u8) -> (u32, u32) {
 fn pci_read_config_u16(location: PciLocation, offset: u8) -> u16 {
     let aligned = offset & !0x3;
     let shift = (offset & 0x2) * 8;
-    let val = unsafe { pci_read_config(location.bus, location.dev, location.func, aligned) };
+    let val = runtime_base().pci_cfg_read32(location.bus, location.dev, location.func, aligned).unwrap_or(0);
     ((val >> shift) & 0xFFFF) as u16
 }
 
 fn pci_write_config_u16(location: PciLocation, offset: u8, value: u16) {
     let aligned = offset & !0x3;
     let shift = (offset & 0x2) * 8;
-    let mut val = unsafe { pci_read_config(location.bus, location.dev, location.func, aligned) };
+    let mut val = runtime_base().pci_cfg_read32(location.bus, location.dev, location.func, aligned).unwrap_or(0);
     val &= !(0xFFFF << shift);
     val |= (value as u32) << shift;
-    unsafe {
-        pci_write_config(location.bus, location.dev, location.func, aligned, val);
-    }
+    runtime_base().pci_cfg_write32(location.bus, location.dev, location.func, aligned, val).ok();
 }
 
-fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
-    if !root::is_inbox_ready() {
-        return;
-    }
-
-    let mode_str = match mode {
-        IrqMode::Legacy => "ioapic",
-        IrqMode::Msi => "msi",
-        IrqMode::Msix => "msix",
-    };
-
-    let reply = root::enqueue(RootOp::Intern {
-        name: String::from(mode_str),
-    });
-    while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe {
-            crate::sched::yield_now_current();
-        }
-    }
-    let mode_sym = reply.value.load(core::sync::atomic::Ordering::Relaxed);
-
-    let reply = root::enqueue(RootOp::PropSet {
-        id: graph_id,
-        key: SymbolShell::Str(String::from(abi::schema::keys::IRQ_MODE)),
-        value: mode_sym,
-    });
-    while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe {
-            crate::sched::yield_now_current();
-        }
-    }
-
-    let reply = root::enqueue(RootOp::PropSet {
-        id: graph_id,
-        key: SymbolShell::Str(String::from(abi::schema::keys::VECTOR)),
-        value: vector as u64,
-    });
-    while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe {
-            crate::sched::yield_now_current();
-        }
-    }
+fn update_graph_irq(_graph_id: u64, _mode: IrqMode, _vector: u8) {
+    // Legacy graph updates are gone.
 }

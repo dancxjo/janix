@@ -561,37 +561,14 @@ pub fn vm_unmap(addr: usize, len: usize) -> Result<(), Errno> {
     abi::errors::errno(ret).map(|_| ())
 }
 
-pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<u32, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_WATCH_OPEN,
-            spec as *const _ as usize,
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret).map(|v| v as u32)
+pub fn root_watch_open(_spec: &abi::types::WatchSpec) -> Result<u32, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn root_watch_try_next(handle: u32, seq: &mut u64, buf: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ROOT_WATCH_TRY_NEXT,
-            handle as usize,
-            seq as *mut _ as usize,
-            buf.as_mut_ptr() as usize,
-            buf.len(),
-            0,
-            0,
-        )
-    };
-    abi::errors::errno(ret)
+pub fn root_watch_try_next(_handle: u32, _seq: &mut u64, _buf: &mut [u8]) -> Result<usize, Errno> {
+    Err(Errno::ENOSYS)
 }
 
-pub fn root_watch_close(handle: u32) -> Result<(), Errno> {
-    let ret = unsafe { raw_syscall6(SYS_ROOT_WATCH_CLOSE, handle as usize, 0, 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|_| ())
+pub fn root_watch_close(_handle: u32) -> Result<(), Errno> {
+    Err(Errno::ENOSYS)
 }

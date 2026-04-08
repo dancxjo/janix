@@ -268,6 +268,10 @@ pub fn init() {
     // Service namespace — populated by userland daemons (ACT V)
     mount::mount("/services", Arc::new(ramfs::RamFs::new()));
     crate::kinfo!("vfs: mounted tmpfs at /services");
+
+    // Session namespace — filesystem-native GUI objects live here.
+    mount::mount("/session", Arc::new(ramfs::RamFs::new()));
+    crate::kinfo!("vfs: mounted tmpfs at /session");
 }
 
 #[cfg(test)]

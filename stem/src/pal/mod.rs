@@ -26,3 +26,10 @@ pub mod alloc;
 pub mod clock;
 pub mod log;
 pub mod net;
+
+/// Shared syscall numbers included directly to avoid dependency on the full
+/// `abi` crate (and its transitive `serde` dependency).
+mod numbers {
+    include!("../../../abi/src/numbers.rs");
+}
+pub use numbers::*;

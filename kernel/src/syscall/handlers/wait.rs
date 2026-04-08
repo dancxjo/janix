@@ -267,28 +267,8 @@ fn poll_fd(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     }
 }
 
-fn poll_graph_op(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
-    match crate::root::async_ops::poll_handle(spec.object) {
-        Ok(crate::root::async_ops::AsyncOpPoll::Pending) => Ok(None),
-        Ok(crate::root::async_ops::AsyncOpPoll::Complete { status, value, .. }) => {
-            let mut flags = wait::ready::DONE;
-            let result_value = if status == 0 {
-                value as i64
-            } else {
-                flags |= wait::ready::ERROR;
-                -(status as i64)
-            };
-            Ok(Some(WaitResult {
-                kind: spec.kind,
-                flags,
-                object: spec.object,
-                token: spec.token,
-                value: result_value,
-                reserved: 0,
-            }))
-        }
-        Err(err) => Ok(Some(error_result(spec, err))),
-    }
+fn poll_graph_op(_spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
+    Err(Errno::ENOSYS)
 }
 
 fn poll_task_exit(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
@@ -361,8 +341,7 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
                 }
             }
             WaitKind::GraphOp => {
-                crate::root::async_ops::register_waiter(spec.object, tid)?;
-                regs.push(Registration::GraphOp(spec.object));
+                return Err(Errno::ENOSYS);
             }
             WaitKind::TaskExit => {
                 match unsafe { crate::sched::register_task_exit_waiter_current(spec.object, tid) } {
@@ -394,8 +373,7 @@ fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> Sy
             Registration::Fd(node) => {
                 node.remove_waiter(tid);
             }
-            Registration::GraphOp(id) => {
-                let _ = crate::root::async_ops::unregister_waiter(*id, tid);
+            Registration::GraphOp(_id) => {
             }
             Registration::TaskExit(target) => {
                 let _ = unsafe { crate::sched::unregister_task_exit_waiter_current(*target, tid) };

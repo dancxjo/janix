@@ -1,30 +1,23 @@
 extern crate alloc;
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use abi::schema::{keys, kinds};
-use abi::types::HandleId;
-use abi::ui_paint::{PaintOpTag, PaintReader};
-use stem::thing::sys::{
-    find, prop_get, stat, read,
-};
-use stem::syscall::{vm_map, vm_unmap};
+use abi::errors::Errno;
+use abi::pixel::PixelFormat;
+use abi::vfs_watch::{flags as watch_flags, mask as watch_mask};
+use stem::syscall::vfs::{vfs_close, vfs_read, vfs_watch_path};
 use stem::thing::ThingId;
 
 use crate::asset::Image;
-use crate::drawlist::{DrawCmd, DrawList};
-use crate::frame::AssetGeneration;
-use crate::geometry::{Color, EdgeAA, Rect};
-use crate::raster;
+use crate::geometry::{Color, Rect};
+use crate::scene_graph::SceneGraph;
+use crate::session_fs::{self, AttachedBuffer};
 use crate::surface::PixelBuffer;
-use alloc::sync::Arc;
-use core::cmp::{max, min};
 
-const WINDOW_REBUILD_BUDGET_NS: u64 = 8_000_000;
-const MAX_WINDOW_REBUILDS_PER_FRAME: usize = 1;
+const WATCH_BUFFER_BYTES: usize = 512;
 
 pub struct WindowHit {
     pub id: ThingId,
@@ -32,28 +25,29 @@ pub struct WindowHit {
     pub z: i32,
 }
 
-#[derive(Clone, Copy)]
-struct WindowFrameProps {
+#[derive(Clone)]
+struct WindowPaintState {
+    name: String,
     rect: Rect,
-    paint_gen: u64,
-    paint_bs: u64,
     z: i32,
     hidden: bool,
+    surface_name: Option<String>,
+    title: String,
+    app_id: String,
+    mapped: bool,
+    focused: bool,
+    maximized: bool,
+    fullscreen: bool,
+    geometry_gen: u64,
+    content_gen: u64,
+    last_commit: u64,
 }
 
-/// Internal window paint state with generation tracking.
-///
-/// This structure tracks the state needed to construct a cache key.
-/// The actual rasterized buffers are stored in `RenderState`'s `WindowRasterCache`.
-pub(crate) struct WindowPaintState {
-    pub(crate) rect: Rect,
-    pub(crate) z: i32,
-    pub(crate) hidden: bool,
-    pub(crate) paint_gen: u64,
-    pub(crate) paint_bs: u64,
-    pub(crate) geometry_gen: u64,
-    pub(crate) asset_gen: u64,
-    pub(crate) raster_dirty: bool,
+#[derive(Clone, Copy)]
+struct WindowWatchState {
+    shell_fd: u32,
+    requested_fd: u32,
+    bind_fd: u32,
 }
 
 pub struct PaintResult {
@@ -63,311 +57,187 @@ pub struct PaintResult {
 
 pub struct PaintPipeline {
     windows: BTreeMap<ThingId, WindowPaintState>,
-    render_state: crate::render_state::RenderState,
-    icon_symbol_cache: BTreeMap<String, u32>,
     dirty_windows: BTreeSet<ThingId>,
     scan_required: bool,
+    focused: Option<ThingId>,
+    next_configure_serial: u64,
+    windows_watch: Option<u32>,
+    surfaces_watch: Option<u32>,
+    window_watches: BTreeMap<ThingId, WindowWatchState>,
+    surface_watches: BTreeMap<String, u32>,
 }
 
 impl PaintPipeline {
     pub fn new() -> Self {
+        session_fs::ensure_session_roots();
         Self {
             windows: BTreeMap::new(),
-            render_state: crate::render_state::RenderState::new(),
-            icon_symbol_cache: BTreeMap::new(),
             dirty_windows: BTreeSet::new(),
             scan_required: true,
+            focused: None,
+            next_configure_serial: 1,
+            windows_watch: open_watch(
+                session_fs::WINDOWS_ROOT,
+                watch_mask::CREATE | watch_mask::REMOVE | watch_mask::MOVE,
+            ),
+            surfaces_watch: open_watch(
+                session_fs::SURFACES_ROOT,
+                watch_mask::CREATE | watch_mask::REMOVE | watch_mask::MOVE,
+            ),
+            window_watches: BTreeMap::new(),
+            surface_watches: BTreeMap::new(),
         }
+    }
+
+    pub fn poll_watch_activity(&mut self) -> bool {
+        let mut changed = false;
+
+        if drain_watch(self.windows_watch) {
+            self.scan_required = true;
+            changed = true;
+        }
+        if drain_watch(self.surfaces_watch) {
+            self.scan_required = true;
+            changed = true;
+        }
+
+        let window_ids: Vec<ThingId> = self.window_watches.keys().copied().collect();
+        for id in window_ids {
+            let Some(watch) = self.window_watches.get(&id).copied() else {
+                continue;
+            };
+            if drain_watch(Some(watch.shell_fd))
+                || drain_watch(Some(watch.requested_fd))
+                || drain_watch(Some(watch.bind_fd))
+            {
+                self.dirty_windows.insert(id);
+                changed = true;
+            }
+        }
+
+        let surface_names: Vec<String> = self.surface_watches.keys().cloned().collect();
+        for name in surface_names {
+            let Some(fd) = self.surface_watches.get(&name).copied() else {
+                continue;
+            };
+            if drain_watch(Some(fd)) {
+                for (id, win) in self.windows.iter() {
+                    if win.surface_name.as_deref() == Some(name.as_str()) {
+                        self.dirty_windows.insert(*id);
+                    }
+                }
+                changed = true;
+            }
+        }
+
+        changed
     }
 
     pub fn process_updates<F>(
         &mut self,
-        scene: &mut crate::scene_graph::SceneGraph,
+        scene: &mut SceneGraph,
         screen_w: i32,
         screen_h: i32,
         rescan_windows: bool,
-        refresh_paint: bool,
+        _refresh_paint: bool,
         mut on_progress: F,
     ) -> PaintResult
     where
         F: FnMut(),
     {
-        use crate::render_state::RasterCacheKey;
-        use abi::pixel::PixelFormat;
-
-        // Get current asset generation
-        let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
-        let update_start_ns = stem::monotonic_ns();
-        let mut rebuilds_this_frame = 0usize;
-        let mut pending_rebuilds = false;
+        session_fs::ensure_session_roots();
 
         let mut damage = Vec::new();
         if rescan_windows || self.scan_required {
             self.sync_windows(scene, screen_w, screen_h, &mut damage, &mut on_progress);
-        } else if refresh_paint {
-            self.refresh_window_paint_state(&mut on_progress);
         }
 
         let dirty_ids: Vec<ThingId> = self.dirty_windows.iter().copied().collect();
         for id in dirty_ids {
             on_progress();
-
-            let Some(entry) = self.windows.get_mut(&id) else {
-                self.dirty_windows.remove(&id);
-                continue;
-            };
-
-            if !entry.raster_dirty || entry.hidden {
-                entry.raster_dirty = false;
-                self.dirty_windows.remove(&id);
-                continue;
+            if let Some(rect) = self.refresh_window_surface(scene, id) {
+                damage.push(rect);
             }
-
-            let elapsed_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
-            let budget_exhausted = rebuilds_this_frame >= MAX_WINDOW_REBUILDS_PER_FRAME
-                || (rebuilds_this_frame > 0 && elapsed_ns >= WINDOW_REBUILD_BUDGET_NS);
-            if budget_exhausted {
-                pending_rebuilds = true;
-                break;
-            }
-
-            let rect = entry.rect;
-            let target_asset_gen = current_asset_gen;
-            let cache_key = RasterCacheKey::new(
-                id,
-                entry.paint_gen,
-                entry.geometry_gen,
-                target_asset_gen,
-                1.0,
-                EdgeAA::None,
-                PixelFormat::Bgra8888,
-            );
-
-            if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
-                crate::trace_counter!("bloom.window_paint.cache_hit", 1);
-                entry.asset_gen = target_asset_gen;
-                entry.raster_dirty = false;
-                self.dirty_windows.remove(&id);
-            } else {
-                crate::trace_counter!("bloom.window_paint.cache_miss", 1);
-
-                let rebuild_start_ns = stem::monotonic_ns();
-                let w = rect.width() as usize;
-                let h = rect.height() as usize;
-                let len = w * h;
-
-                crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
-                crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
-
-                if w > 0 && h > 0 {
-                    let mut buffer = vec![0u32; len];
-
-                    let mut surface = unsafe {
-                        PixelBuffer::new(
-                            buffer.as_mut_ptr() as *mut u8,
-                            len * 4,
-                            w as u32,
-                            h as u32,
-                            w as u32 * 4,
-                        )
-                    };
-
-                    let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                    let list =
-                        build_drawlist(entry.paint_bs, local_rect, &mut self.icon_symbol_cache);
-                    raster::execute(&mut surface, &list, false);
-
-                    let image = Arc::new(Image {
-                        width: w as u32,
-                        height: h as u32,
-                        pixels: Arc::from(buffer.as_slice()),
-                        gen: AssetGeneration(target_asset_gen),
-                        name: Arc::from("window"),
-                        id: None,
-                    });
-
-                    self.render_state.insert_window_raster(cache_key, image);
-
-                    if let Some(surf) = scene.get_surface_mut(id) {
-                        surf.resize(w as i32, h as i32);
-                        let ptr = buffer.as_ptr() as *const u8;
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(ptr, surf.buffer.as_mut_ptr(), len * 4);
-                        }
-                        surf.add_damage(Rect::new(0, 0, w as i32, h as i32));
-                    }
-                }
-
-                rebuilds_this_frame += 1;
-                entry.asset_gen = target_asset_gen;
-                entry.raster_dirty = false;
-                self.dirty_windows.remove(&id);
-
-                let rebuild_ns = stem::monotonic_ns().saturating_sub(rebuild_start_ns);
-                if rebuild_ns > 25_000_000 {
-                    stem::warn!(
-                        "[bloom] slow window rebuild id={} {:.3}ms size={}x{}",
-                        id.to_u64_lossy(),
-                        rebuild_ns as f64 / 1_000_000.0,
-                        rect.width(),
-                        rect.height(),
-                    );
-                }
-                stem::yield_now();
-            }
-
-            damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
+            self.dirty_windows.remove(&id);
         }
 
-        pending_rebuilds |= !self.dirty_windows.is_empty();
-
-        let update_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
-        if update_ns > 50_000_000 {
-            stem::warn!(
-                "[bloom] process_updates took {:.3}ms (rebuilds={} pending={})",
-                update_ns as f64 / 1_000_000.0,
-                rebuilds_this_frame,
-                pending_rebuilds,
-            );
-        }
-
+        damage.extend(scene.collect_damage());
         PaintResult {
             damage,
-            pending_rebuilds,
+            pending_rebuilds: false,
         }
     }
 
-    fn sync_windows<F>(
-        &mut self,
-        scene: &mut crate::scene_graph::SceneGraph,
-        screen_w: i32,
-        screen_h: i32,
-        damage: &mut Vec<Rect>,
-        on_progress: &mut F,
-    ) where
-        F: FnMut(),
-    {
-        let mut window_ids = [ThingId::default(); 128];
-        let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
-        let mut active: BTreeSet<ThingId> = BTreeSet::new();
-
-        for id in window_ids.iter().take(count) {
-            on_progress();
-            let Some(props) = read_window_frame_props(*id, screen_w, screen_h) else {
-                if let Some(prev) = self.windows.remove(id) {
-                    self.dirty_windows.remove(id);
-                    damage.push(prev.rect);
-                }
-                continue;
-            };
-            active.insert(*id);
-
-            let rect = props.rect;
-            let mut needs_rebuild = false;
-
-            let entry = self.windows.entry(*id).or_insert_with(|| {
-                needs_rebuild = true;
-                WindowPaintState {
-                    rect,
-                    z: props.z,
-                    hidden: props.hidden,
-                    paint_gen: 0,
-                    paint_bs: 0,
-                    geometry_gen: 0,
-                    asset_gen: 0,
-                    raster_dirty: true,
-                }
-            });
-
-            if entry.paint_gen != props.paint_gen || entry.paint_bs != props.paint_bs {
-                needs_rebuild = true;
-            }
-
-            let geometry_changed =
-                entry.rect != rect || entry.z != props.z || entry.hidden != props.hidden;
-            if geometry_changed {
-                needs_rebuild = true;
-                if entry.rect != rect || entry.hidden != props.hidden {
-                    damage.push(Rect::new(
-                        entry.rect.x(),
-                        entry.rect.y(),
-                        entry.rect.width(),
-                        entry.rect.height(),
-                    ));
-                }
-            }
-
-            entry.rect = rect;
-            entry.z = props.z;
-            entry.hidden = props.hidden;
-            entry.paint_gen = props.paint_gen;
-            entry.paint_bs = props.paint_bs;
-
-            if geometry_changed {
-                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
-            }
-            if needs_rebuild {
-                entry.raster_dirty = true;
-                self.dirty_windows.insert(*id);
-            }
-
-            // Sync SceneGraph state
-            use crate::surface::Surface;
-            use abi::pixel::PixelFormat;
-
-            if scene.get_surface(*id).is_none() {
-                scene.insert_surface(
-                    *id,
-                    Surface::new(rect.width(), rect.height(), PixelFormat::Bgra8888),
-                );
-            }
-
-            if let Some(surf) = scene.get_surface_mut(*id) {
-                surf.x = rect.x();
-                surf.y = rect.y();
-                surf.z_index = props.z;
-                surf.visible = !props.hidden;
-            }
-            scene.resort();
-        }
-
-        let removed: Vec<ThingId> = self
-            .windows
-            .keys()
-            .copied()
-            .filter(|id| !active.contains(id))
-            .collect();
-        for id in removed {
-            if let Some(prev) = self.windows.remove(&id) {
-                self.dirty_windows.remove(&id);
-                damage.push(prev.rect);
-            }
-            scene.remove_surface(id);
-        }
-
-        self.scan_required = false;
+    pub fn contains_window(&self, id: ThingId) -> bool {
+        self.windows.contains_key(&id)
     }
 
-    fn refresh_window_paint_state<F>(&mut self, on_progress: &mut F)
-    where
-        F: FnMut(),
-    {
-        let window_ids: Vec<ThingId> = self.windows.keys().copied().collect();
-        for id in window_ids {
-            on_progress();
-            let Some(entry) = self.windows.get_mut(&id) else {
-                continue;
-            };
+    pub fn set_focus_target(&mut self, focused: Option<ThingId>) {
+        if self.focused == focused {
+            return;
+        }
 
-            let paint_gen = prop_get(id, keys::UI_PAINT_GEN).unwrap_or(entry.paint_gen);
-            let paint_bs = prop_get(id, keys::UI_PAINT_BYTESPACE).unwrap_or(entry.paint_bs);
-            if paint_gen != entry.paint_gen || paint_bs != entry.paint_bs {
-                entry.paint_gen = paint_gen;
-                entry.paint_bs = paint_bs;
-                entry.raster_dirty = true;
-                self.dirty_windows.insert(id);
+        if let Some(prev) = self.focused.take() {
+            if let Some(win) = self.windows.get_mut(&prev) {
+                win.focused = false;
+                write_window_focus(win);
             }
         }
+
+        self.focused = focused;
+        if let Some(id) = focused {
+            if let Some(win) = self.windows.get_mut(&id) {
+                win.focused = true;
+                write_window_focus(win);
+            }
+        }
+    }
+
+    pub fn move_window(&mut self, id: ThingId, x: i32, y: i32) -> bool {
+        let Some(win) = self.windows.get_mut(&id) else {
+            return false;
+        };
+        let old_rect = win.rect;
+        win.rect.origin.x = x;
+        win.rect.origin.y = y;
+        win.geometry_gen = win.geometry_gen.wrapping_add(1);
+        write_window_geometry(win);
+        self.dirty_windows.insert(id);
+        old_rect != win.rect
+    }
+
+    pub fn resize_window(&mut self, id: ThingId, width: i32, height: i32) -> bool {
+        let Some(win) = self.windows.get_mut(&id) else {
+            return false;
+        };
+        let old_rect = win.rect;
+        win.rect.size.width = width.max(1);
+        win.rect.size.height = height.max(1);
+        win.geometry_gen = win.geometry_gen.wrapping_add(1);
+        win.content_gen = win.content_gen.wrapping_add(1);
+        win.last_commit = 0;
+        let serial = self.next_configure_serial;
+        self.next_configure_serial = self.next_configure_serial.wrapping_add(1);
+        send_configure(serial, win);
+        write_window_geometry(win);
+        self.dirty_windows.insert(id);
+        old_rect != win.rect
+    }
+
+    pub fn set_window_z(&mut self, id: ThingId, z: i32) -> bool {
+        let Some(win) = self.windows.get_mut(&id) else {
+            return false;
+        };
+        if win.z == z {
+            return false;
+        }
+        win.z = z;
+        let _ = session_fs::write_text(
+            &format!("{}/shell/current/z", session_fs::window_path(&win.name)),
+            &format!("{}\n", z),
+        );
+        self.dirty_windows.insert(id);
+        true
     }
 
     pub fn top_window_at_point(&self, x: i32, y: i32) -> Option<WindowHit> {
@@ -378,7 +248,6 @@ impl PaintPipeline {
                 state_a
                     .z
                     .cmp(&state_b.z)
-                    // Tie-breaker: Lower ID is "on top" (matches compose() stable sort)
                     .then_with(|| id_b.cmp(id_a))
             })
             .map(|(id, state)| WindowHit {
@@ -386,11 +255,6 @@ impl PaintPipeline {
                 rect: state.rect,
                 z: state.z,
             })
-    }
-
-    #[cfg(test)]
-    pub fn test_windows(&mut self) -> &mut BTreeMap<ThingId, WindowPaintState> {
-        &mut self.windows
     }
 
     pub fn max_z_excluding(&self, exclude_id: ThingId) -> i32 {
@@ -424,15 +288,6 @@ impl PaintPipeline {
         (order, max_z)
     }
 
-    /// Build a list of GPU quads for all visible windows.
-    ///
-    /// Returns a tuple of (quads, texture_info) where texture_info contains
-    /// the window ID and rasterized image data needed to upload textures.
-    ///
-    /// The caller is responsible for:
-    /// 1. Creating GPU textures for each window
-    /// 2. Uploading the rasterized window content to those textures
-    /// 3. Passing the returned quads to GpuCompositor::render_quads()
     #[cfg(feature = "gpu")]
     pub fn build_gpu_quads(&self) -> Vec<crate::gpu_compositor::Quad> {
         use crate::gpu_compositor::{Quad, Rect as GpuRect};
@@ -441,63 +296,51 @@ impl PaintPipeline {
             .windows
             .iter()
             .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
-            .map(|(id, w)| {
-                // Use window ID as texture ID (lower 32 bits)
-                // The caller must ensure textures are registered with matching IDs
-                let texture_id = id.to_u64_lossy() as u32;
-
-                Quad {
-                    texture_id,
-                    dst_rect: GpuRect {
-                        x: w.rect.x(),
-                        y: w.rect.y(),
-                        w: w.rect.width() as u32,
-                        h: w.rect.height() as u32,
-                    },
-                    src_rect: None, // Full texture
-                    opacity: 1.0,
-                    z: w.z as u32,
-                }
+            .map(|(id, w)| Quad {
+                texture_id: id.to_u64_lossy() as u32,
+                dst_rect: GpuRect {
+                    x: w.rect.x(),
+                    y: w.rect.y(),
+                    w: w.rect.width() as u32,
+                    h: w.rect.height() as u32,
+                },
+                src_rect: None,
+                opacity: 1.0,
+                z: w.z as u32,
             })
             .collect();
-
-        // Sort by z (ascending = back to front for painter's algorithm)
         quads.sort_by_key(|q| q.z);
-
         quads
     }
 
-    /// Get window raster info for GPU texture upload.
-    ///
-    /// Returns an iterator of (window_id, rect, generation, cached_image_ref).
-    /// Use this to determine which window textures need uploading.
     #[cfg(feature = "gpu")]
     pub fn windows_for_gpu_upload(&self) -> impl Iterator<Item = (ThingId, Rect, u64, u64)> + '_ {
-        // Returns (window_id, rect, paint_gen, geometry_gen) for texture upload decisions
         self.windows
             .iter()
             .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
-            .map(move |(id, w)| (*id, w.rect, w.paint_gen, w.geometry_gen))
+            .map(move |(id, w)| (*id, w.rect, w.content_gen, w.geometry_gen))
     }
 
-    /// Compose the scene into the framebuffer surface using occlusion culling.
+    #[cfg(not(feature = "gpu"))]
+    pub fn windows_for_gpu_upload(&self) -> core::iter::Empty<(ThingId, Rect, u64, u64)> {
+        core::iter::empty()
+    }
+
     pub fn compose(
         &self,
-        scene: &crate::scene_graph::SceneGraph,
+        scene: &SceneGraph,
         surface: &mut PixelBuffer,
         damage: &[Rect],
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
-        // Build list of surface IDs for iteration. SceneGraph is ordered back-to-front.
-        // We need front-to-back for occlusion culling.
         let mut ordered_surfaces = scene.ordered_surfaces.clone();
         ordered_surfaces.reverse();
 
         crate::trace_span!("bloom.compose");
 
         for damage_rect in damage {
-            let d_rect: Rect = Rect::new(
+            let d_rect = Rect::new(
                 damage_rect.x(),
                 damage_rect.y(),
                 damage_rect.width(),
@@ -547,10 +390,8 @@ impl PaintPipeline {
                 remaining = next_remaining;
             }
 
-            // Fill background for remaining
             for r in remaining {
                 if let Some(wp) = wallpaper {
-                    // Blit wallpaper tiled
                     blit_wallpaper_tiled(surface, r, wp);
                 } else {
                     fill_rect(surface, r, bg_color);
@@ -558,15 +399,452 @@ impl PaintPipeline {
             }
         }
     }
+
+    fn sync_windows<F>(
+        &mut self,
+        scene: &mut SceneGraph,
+        screen_w: i32,
+        screen_h: i32,
+        damage: &mut Vec<Rect>,
+        on_progress: &mut F,
+    ) where
+        F: FnMut(),
+    {
+        let names = session_fs::list_dir(session_fs::WINDOWS_ROOT);
+        let mut active = BTreeSet::new();
+
+        for name in names {
+            on_progress();
+            session_fs::ensure_window_tree(&name);
+            let id = session_fs::scene_id_from_name(&name);
+            active.insert(id);
+
+            let mut loaded = load_window_state(&name, screen_w, screen_h, self.windows.len() as i32);
+            loaded.focused = self.focused == Some(id);
+            self.install_window_watches(id, &name);
+            if let Some(surface_name) = loaded.surface_name.as_ref() {
+                session_fs::ensure_surface_tree(surface_name);
+                self.install_surface_watch(surface_name);
+            }
+
+            let old = self.windows.get(&id).cloned();
+            let is_new = old.is_none();
+            if let Some(prev) = old {
+                loaded.geometry_gen = if prev.rect != loaded.rect || prev.z != loaded.z {
+                    prev.geometry_gen.wrapping_add(1)
+                } else {
+                    prev.geometry_gen
+                };
+                loaded.content_gen = prev.content_gen;
+                loaded.last_commit = prev.last_commit;
+                loaded.focused = self.focused == Some(id);
+
+                if prev.rect != loaded.rect {
+                    damage.push(prev.rect);
+                    damage.push(loaded.rect);
+                }
+                if prev.surface_name != loaded.surface_name
+                    || prev.maximized != loaded.maximized
+                    || prev.fullscreen != loaded.fullscreen
+                {
+                    loaded.content_gen = prev.content_gen.wrapping_add(1);
+                    self.dirty_windows.insert(id);
+                    let serial = self.next_configure_serial;
+                    self.next_configure_serial = self.next_configure_serial.wrapping_add(1);
+                    send_configure(serial, &mut loaded);
+                }
+            } else {
+                loaded.geometry_gen = 1;
+                loaded.content_gen = 1;
+                self.dirty_windows.insert(id);
+                let serial = self.next_configure_serial;
+                self.next_configure_serial = self.next_configure_serial.wrapping_add(1);
+                send_configure(serial, &mut loaded);
+            }
+
+            use crate::surface::Surface;
+            if scene.get_surface(id).is_none() {
+                scene.insert_surface(
+                    id,
+                    Surface::new(
+                        loaded.rect.width().max(1),
+                        loaded.rect.height().max(1),
+                        PixelFormat::Bgra8888,
+                    ),
+                );
+            }
+
+            if let Some(surf) = scene.get_surface_mut(id) {
+                surf.x = loaded.rect.x();
+                surf.y = loaded.rect.y();
+                surf.z_index = loaded.z;
+                surf.visible = loaded.mapped && !loaded.hidden;
+            }
+
+            if is_new {
+                damage.push(loaded.rect);
+            }
+            write_window_runtime(&loaded);
+            self.windows.insert(id, loaded);
+        }
+
+        let removed: Vec<ThingId> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| !active.contains(id))
+            .collect();
+
+        for id in removed {
+            if let Some(prev) = self.windows.remove(&id) {
+                damage.push(prev.rect);
+                scene.remove_surface(id);
+            }
+            if let Some(watch) = self.window_watches.remove(&id) {
+                let _ = vfs_close(watch.shell_fd);
+                let _ = vfs_close(watch.requested_fd);
+                let _ = vfs_close(watch.bind_fd);
+            }
+        }
+
+        self.scan_required = false;
+        scene.resort();
+    }
+
+    fn refresh_window_surface(&mut self, scene: &mut SceneGraph, id: ThingId) -> Option<Rect> {
+        let window = self.windows.get_mut(&id)?;
+        let Some(surface_name) = window.surface_name.clone() else {
+            window.mapped = false;
+            write_window_runtime(window);
+            if let Some(surf) = scene.get_surface_mut(id) {
+                surf.visible = false;
+            }
+            return Some(window.rect);
+        };
+
+        session_fs::ensure_surface_tree(&surface_name);
+        let surface_base = session_fs::surface_path(&surface_name);
+        let commit = session_fs::read_u64(&format!("{}/status/last_commit", surface_base))
+            .or_else(|| session_fs::read_u64(&format!("{}/commit", surface_base)))
+            .unwrap_or(0);
+
+        if commit == 0 && window.last_commit == 0 {
+            window.mapped = false;
+            write_window_runtime(window);
+            return Some(window.rect);
+        }
+
+        if commit == window.last_commit && window.mapped {
+            return None;
+        }
+
+        let attach_text = session_fs::read_text(&format!("{}/attach", surface_base))?;
+        let attached = session_fs::parse_attach_payload(&attach_text)?;
+        if let Some((pixels, width, height)) = read_attached_pixels(attached) {
+            if let Some(surf) = scene.get_surface_mut(id) {
+                if surf.width != width as i32 || surf.height != height as i32 {
+                    surf.resize(width as i32, height as i32);
+                }
+                let max_pixels = surf.width as usize * surf.height as usize;
+                let copy_pixels = max_pixels.min(pixels.len());
+                for (dst, src) in surf.buffer[..copy_pixels].chunks_exact_mut(4).zip(pixels[..copy_pixels].iter()) {
+                    dst.copy_from_slice(&src.to_le_bytes());
+                }
+                surf.visible = true;
+                surf.add_damage(Rect::new(0, 0, width as i32, height as i32));
+                surf.x = window.rect.x();
+                surf.y = window.rect.y();
+                surf.z_index = window.z;
+            }
+
+            window.last_commit = commit.max(window.last_commit.saturating_add(1));
+            window.mapped = true;
+            window.content_gen = window.content_gen.wrapping_add(1);
+            window.rect.size.width = width as i32;
+            window.rect.size.height = height as i32;
+            write_window_runtime(window);
+            let _ = session_fs::write_text(&format!("{}/status/mapped", surface_base), "1\n");
+            let _ = session_fs::write_text(
+                &format!("{}/status/last_commit", surface_base),
+                &format!("{}\n", window.last_commit),
+            );
+            let _ = session_fs::write_text(
+                &format!("{}/status/width", surface_base),
+                &format!("{}\n", width),
+            );
+            let _ = session_fs::write_text(
+                &format!("{}/status/height", surface_base),
+                &format!("{}\n", height),
+            );
+            let _ = session_fs::write_text(&format!("{}/status/buffer_attached", surface_base), "1\n");
+            return Some(window.rect);
+        }
+
+        None
+    }
+
+    fn install_window_watches(&mut self, id: ThingId, name: &str) {
+        if self.window_watches.contains_key(&id) {
+            return;
+        }
+        let base = session_fs::window_path(name);
+        let shell_fd = open_watch(
+            &format!("{}/shell", base),
+            watch_mask::MODIFY | watch_mask::CREATE | watch_mask::REMOVE,
+        )
+        .unwrap_or(0);
+        let requested_fd = open_watch(
+            &format!("{}/shell/requested", base),
+            watch_mask::MODIFY | watch_mask::CREATE | watch_mask::REMOVE,
+        )
+        .unwrap_or(0);
+        let bind_fd = open_watch(
+            &format!("{}/bind", base),
+            watch_mask::MODIFY | watch_mask::CREATE | watch_mask::REMOVE,
+        )
+        .unwrap_or(0);
+        self.window_watches.insert(
+            id,
+            WindowWatchState {
+                shell_fd,
+                requested_fd,
+                bind_fd,
+            },
+        );
+    }
+
+    fn install_surface_watch(&mut self, surface_name: &str) {
+        if self.surface_watches.contains_key(surface_name) {
+            return;
+        }
+        if let Some(fd) = open_watch(
+            &session_fs::surface_path(surface_name),
+            watch_mask::MODIFY | watch_mask::CREATE | watch_mask::REMOVE,
+        ) {
+            self.surface_watches.insert(surface_name.to_string(), fd);
+        }
+    }
+
+}
+
+impl Drop for PaintPipeline {
+    fn drop(&mut self) {
+        if let Some(fd) = self.windows_watch.take() {
+            let _ = vfs_close(fd);
+        }
+        if let Some(fd) = self.surfaces_watch.take() {
+            let _ = vfs_close(fd);
+        }
+        for (_, watch) in self.window_watches.iter() {
+            let _ = vfs_close(watch.shell_fd);
+            let _ = vfs_close(watch.requested_fd);
+            let _ = vfs_close(watch.bind_fd);
+        }
+        for (_, fd) in self.surface_watches.iter() {
+            let _ = vfs_close(*fd);
+        }
+    }
+}
+
+fn send_configure(serial: u64, window: &mut WindowPaintState) {
+    let mut states = Vec::new();
+    if window.focused {
+        states.push("activated");
+    }
+    if window.maximized {
+        states.push("maximized");
+    }
+    if window.fullscreen {
+        states.push("fullscreen");
+    }
+
+    let line = session_fs::encode_configure_event(
+        serial,
+        window.rect.width(),
+        window.rect.height(),
+        &states,
+    );
+    let _ = session_fs::append_line(
+        &format!("{}/events", session_fs::window_path(&window.name)),
+        &line,
+    );
+    let _ = session_fs::write_text(
+        &format!(
+            "{}/status/last_configure_serial",
+            session_fs::window_path(&window.name)
+        ),
+        &format!("{}\n", serial),
+    );
+}
+
+fn write_window_runtime(window: &WindowPaintState) {
+    write_window_geometry(window);
+    write_window_focus(window);
+    let base = session_fs::window_path(&window.name);
+    let _ = session_fs::write_text(
+        &format!("{}/status/mapped", base),
+        if window.mapped { "1\n" } else { "0\n" },
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/maximized", base),
+        if window.maximized { "1\n" } else { "0\n" },
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/fullscreen", base),
+        if window.fullscreen { "1\n" } else { "0\n" },
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/activated", base),
+        if window.focused { "1\n" } else { "0\n" },
+    );
+}
+
+fn write_window_geometry(window: &WindowPaintState) {
+    let base = session_fs::window_path(&window.name);
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/x", base),
+        &format!("{}\n", window.rect.x()),
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/y", base),
+        &format!("{}\n", window.rect.y()),
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/width", base),
+        &format!("{}\n", window.rect.width()),
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/height", base),
+        &format!("{}\n", window.rect.height()),
+    );
+    let _ = session_fs::write_text(
+        &format!("{}/shell/current/z", base),
+        &format!("{}\n", window.z),
+    );
+}
+
+fn write_window_focus(window: &WindowPaintState) {
+    let base = session_fs::window_path(&window.name);
+    let _ = session_fs::write_text(
+        &format!("{}/status/focused", base),
+        if window.focused { "1\n" } else { "0\n" },
+    );
+}
+
+fn load_window_state(name: &str, screen_w: i32, screen_h: i32, ordinal: i32) -> WindowPaintState {
+    let base = session_fs::window_path(name);
+    let x = read_i32(&format!("{}/shell/current/x", base))
+        .unwrap_or(48 + (ordinal % 8) * 36)
+        .clamp(0, screen_w.saturating_sub(64));
+    let y = read_i32(&format!("{}/shell/current/y", base))
+        .unwrap_or(48 + (ordinal % 6) * 28)
+        .clamp(0, screen_h.saturating_sub(64));
+    let width = read_i32(&format!("{}/shell/current/width", base)).unwrap_or(640).max(1);
+    let height = read_i32(&format!("{}/shell/current/height", base)).unwrap_or(480).max(1);
+    let z = read_i32(&format!("{}/shell/current/z", base)).unwrap_or(ordinal + 1);
+    let title = session_fs::read_text(&format!("{}/shell/title", base)).unwrap_or_default();
+    let app_id = session_fs::read_text(&format!("{}/shell/app_id", base)).unwrap_or_default();
+    let surface_name = session_fs::read_text(&format!("{}/bind/surface", base)).filter(|s| !s.is_empty());
+    let maximized = session_fs::read_bool(&format!("{}/shell/requested/maximize", base));
+    let fullscreen = session_fs::read_bool(&format!("{}/shell/requested/fullscreen", base));
+    let hidden = session_fs::read_bool(&format!("{}/status/closing", base));
+    let mapped = session_fs::read_bool(&format!("{}/status/mapped", base));
+
+    WindowPaintState {
+        name: name.to_string(),
+        rect: Rect::new(x, y, width, height),
+        z,
+        hidden,
+        surface_name,
+        title,
+        app_id,
+        mapped,
+        focused: false,
+        maximized,
+        fullscreen,
+        geometry_gen: 0,
+        content_gen: 0,
+        last_commit: 0,
+    }
+}
+
+fn open_watch(path: &str, mask: u32) -> Option<u32> {
+    vfs_watch_path(path, mask, watch_flags::NONBLOCK | watch_flags::ONLYDIR).ok()
+}
+
+fn drain_watch(fd: Option<u32>) -> bool {
+    let Some(fd) = fd else {
+        return false;
+    };
+    if fd == 0 {
+        return false;
+    }
+    let mut saw_event = false;
+    loop {
+        let mut buf = [0u8; WATCH_BUFFER_BYTES];
+        match vfs_read(fd, &mut buf) {
+            Ok(0) => break,
+            Ok(_) => saw_event = true,
+            Err(Errno::EAGAIN) => break,
+            Err(_) => break,
+        }
+    }
+    saw_event
+}
+
+fn read_attached_pixels(attached: AttachedBuffer) -> Option<(Vec<u32>, u32, u32)> {
+    use abi::vm::{VmBacking, VmMapReq, VmProt};
+
+    let len = attached.stride as usize * attached.height as usize;
+    let req = VmMapReq {
+        addr_hint: 0,
+        len,
+        prot: VmProt::READ | VmProt::USER,
+        flags: abi::vm::VmMapFlags::empty(),
+        backing: VmBacking::File {
+            fd: attached.fd,
+            offset: 0,
+        },
+    };
+    let resp = stem::thing::sys::vm_map(&req).ok()?;
+    let src = unsafe { core::slice::from_raw_parts(resp.addr as *const u8, len) };
+    let width = attached.width.max(1);
+    let height = attached.height.max(1);
+    let row_pixels = width as usize;
+    let mut out = vec![0u32; row_pixels * height as usize];
+
+    for y in 0..height as usize {
+        let src_off = y * attached.stride as usize;
+        let src_row = &src[src_off..src_off + row_pixels * 4];
+        for x in 0..row_pixels {
+            let off = x * 4;
+            out[y * row_pixels + x] = u32::from_le_bytes([
+                src_row[off],
+                src_row[off + 1],
+                src_row[off + 2],
+                src_row[off + 3],
+            ]);
+        }
+    }
+
+    Some((out, width, height))
+}
+
+fn read_i32(path: &str) -> Option<i32> {
+    let text = session_fs::read_text(path)?;
+    if text.is_empty() {
+        return None;
+    }
+    if let Some(hex) = text.strip_prefix("0x") {
+        i32::from_str_radix(hex, 16).ok()
+    } else {
+        text.parse::<i32>().ok()
+    }
 }
 
 fn subtract_rect(base: Rect, cut: Rect) -> Vec<Rect> {
-    // assumes cut intersects base (guaranteed by caller logic usually, but intersection check handles subset)
-    // cut must be within base for this simple logic? No, cut is intersection(base, win), so cut IS within base.
-
     let mut out = Vec::with_capacity(4);
 
-    // Top
     if cut.y() > base.y() {
         out.push(Rect::new(
             base.x(),
@@ -575,7 +853,6 @@ fn subtract_rect(base: Rect, cut: Rect) -> Vec<Rect> {
             cut.y() - base.y(),
         ));
     }
-    // Bottom
     if cut.y() + cut.height() < base.y() + base.height() {
         let y1 = cut.y() + cut.height();
         out.push(Rect::new(
@@ -586,9 +863,8 @@ fn subtract_rect(base: Rect, cut: Rect) -> Vec<Rect> {
         ));
     }
 
-    // Left (be careful with y range - middle strip)
-    let y0 = max(base.y(), cut.y());
-    let y1 = min(base.y() + base.height(), cut.y() + cut.height());
+    let y0 = core::cmp::max(base.y(), cut.y());
+    let y1 = core::cmp::min(base.y() + base.height(), cut.y() + cut.height());
     let h = y1 - y0;
 
     if h > 0 {
@@ -611,13 +887,8 @@ fn blit_rect(
     src_stride: usize,
     src_rect: Rect,
 ) {
-    // Simple copy/blend
-    // src_pixels are assumed to be 0xAARRGGBB
-
     let dw = dst.width();
     let dh = dst.height();
-
-    // Clip dst_rect to surface
     let dx = dst_rect.x();
     let dy = dst_rect.y();
     let w = dst_rect.width();
@@ -626,18 +897,15 @@ fn blit_rect(
     for iy in 0..h {
         let sy = src_rect.y() + iy;
         let d_y = dy + iy;
-
         if d_y < 0 || d_y >= dh {
             continue;
         }
 
         let mut d_off = (d_y as usize * dst.stride_bytes) + (dx as usize * 4);
         let mut s_off = (sy as usize * src_stride) + (src_rect.x() as usize);
-        // src_pixels is u32 slice, stride is u32 count
 
         for ix in 0..w {
             let d_x = dx + ix;
-
             if d_x < 0 || d_x >= dw {
                 d_off += 4;
                 s_off += 1;
@@ -646,23 +914,20 @@ fn blit_rect(
 
             let src_px = src_pixels[s_off];
             let sa = (src_px >> 24) & 0xFF;
-
-            // Fast paths: avoid destination read when not needed.
             if sa == 0 {
                 d_off += 4;
                 s_off += 1;
                 continue;
             }
+
             let output = if sa == 0xFF {
                 src_px
             } else {
                 blend_pixel(src_px, unsafe {
-                    // Read current dst only for alpha blend.
                     let ptr = dst.ptr.add(d_off);
                     let b = *ptr;
                     let g = *ptr.add(1);
                     let r = *ptr.add(2);
-                    // DST is BGRX (ignore alpha/assume 255)
                     Color::rgb(r, g, b).to_u32()
                 })
             };
@@ -695,10 +960,7 @@ fn blend_pixel(src: u32, dst: u32) -> u32 {
     let dg = (dst >> 8) & 0xFF;
     let db = dst & 0xFF;
 
-    // SrcOver
-    // out = src * α + dst * (1 - α)
     let inv_a = 255 - sa;
-
     let r = (sr * sa + dr * inv_a) / 255;
     let g = (sg * sa + dg * inv_a) / 255;
     let b = (sb * sa + db * inv_a) / 255;
@@ -711,10 +973,10 @@ fn fill_rect(dst: &mut PixelBuffer, rect: Rect, color: Color) {
     let dw = dst.width();
     let dh = dst.height();
 
-    let x0 = max(0, rect.x());
-    let y0 = max(0, rect.y());
-    let x1 = min(dw, rect.x() + rect.width());
-    let y1 = min(dh, rect.y() + rect.height());
+    let x0 = core::cmp::max(0, rect.x());
+    let y0 = core::cmp::max(0, rect.y());
+    let x1 = core::cmp::min(dw, rect.x() + rect.width());
+    let y1 = core::cmp::min(dh, rect.y() + rect.height());
 
     if x1 <= x0 || y1 <= y0 {
         return;
@@ -728,7 +990,6 @@ fn fill_rect(dst: &mut PixelBuffer, rect: Rect, color: Color) {
 }
 
 fn blit_wallpaper_tiled(dst: &mut PixelBuffer, rect: Rect, wp: &Image) {
-    // Similar to fill_rect logic but sampling wp
     let dw = dst.width();
     let dh = dst.height();
     let ww = wp.width as i32;
@@ -738,331 +999,29 @@ fn blit_wallpaper_tiled(dst: &mut PixelBuffer, rect: Rect, wp: &Image) {
         return;
     }
 
-    let x0 = max(0, rect.x());
-    let y0 = max(0, rect.y());
-    let x1 = min(dw, rect.x() + rect.width());
-    let y1 = min(dh, rect.y() + rect.height());
+    let x0 = core::cmp::max(0, rect.x());
+    let y0 = core::cmp::max(0, rect.y());
+    let x1 = core::cmp::min(dw, rect.x() + rect.width());
+    let y1 = core::cmp::min(dh, rect.y() + rect.height());
 
     if x1 <= x0 || y1 <= y0 {
         return;
     }
 
-    // WP pixels are likely packed u32 or u8? Image has `pixels: Arc<[u32]>`. Wait, Image struct in asset.rs: `pixels: Arc<Box<[u32]>>` ?
-    // Let's check Image struct def.
-    // asset.rs: `pub pixels: Arc<[u32]>` (lines not fully shown but likely u32 based on usage in raster).
-    // Actually, `asset::Image` usually stores u32 pixels.
-    // I need to assume it is u32 slice.
-
-    let pixels: &[u32] = unsafe { core::mem::transmute(&*wp.pixels) }; // Safety: Should already be castable or access methods?
-                                                                       // Wait, let's verify Image struct.
-
+    let pixels: &[u32] = unsafe { core::mem::transmute(&*wp.pixels) };
     for y in y0..y1 {
         let wy = y % wh;
         for x in x0..x1 {
             let wx = x % ww;
             let p = pixels[(wy * ww + wx) as usize];
-            dst.put_px(x, y, p); // WP usually opaque
+            dst.put_px(x, y, p);
         }
     }
-}
-
-fn read_window_frame_props(
-    window_id: ThingId,
-    screen_w: i32,
-    screen_h: i32,
-) -> Option<WindowFrameProps> {
-    let w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-    let h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
-    if w <= 0 || h <= 0 {
-        return None;
-    }
-    let mut x = prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
-    let mut y = prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
-    let inset_right = prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
-    let inset_bottom = prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
-    if inset_right > 0 {
-        x = screen_w - inset_right - w;
-    }
-    if inset_bottom > 0 {
-        y = screen_h - inset_bottom - h;
-    }
-
-    Some(WindowFrameProps {
-        rect: Rect::new(x, y, w, h),
-        paint_gen: prop_get(window_id, keys::UI_PAINT_GEN).unwrap_or(0),
-        paint_bs: prop_get(window_id, keys::UI_PAINT_BYTESPACE).unwrap_or(0),
-        z: prop_get(window_id, keys::UI_Z_INDEX).unwrap_or(0) as i32,
-        hidden: prop_get(window_id, keys::UI_HIDDEN).unwrap_or(0) != 0,
-    })
-}
-
-fn build_drawlist(
-    paint_bs: u64,
-    rect: Rect,
-    icon_symbol_cache: &mut BTreeMap<String, u32>,
-) -> DrawList {
-    let mut list = DrawList::new();
-    if paint_bs == 0 {
-        return list;
-    }
-    if rect.width() <= 0 || rect.height() <= 0 {
-        return list;
-    }
-    list.commands().push(DrawCmd::PushClip { rect });
-    let origin_x = rect.x();
-    let origin_y = rect.y();
-
-    let fd = paint_bs as u32;
-    if let Ok((_, size_u64, _)) = stat(fd) {
-        let size = size_u64 as usize;
-        if size > 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: size,
-                prot: VmProt::READ | VmProt::USER,
-                flags: abi::vm::VmMapFlags::empty(),
-                backing: VmBacking::File {
-                    fd,
-                    offset: 0,
-                },
-            };
-
-            if let Ok(resp) = vm_map(&req) {
-                let ptr = resp.addr as *const u8;
-                let bytes = unsafe { core::slice::from_raw_parts(ptr, size) };
-                decode_paint_ops(bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
-                let _ = vm_unmap(ptr as usize, size);
-                list.commands().push(DrawCmd::PopClip);
-                return list;
-            }
-        }
-    }
-
-    // Fallback for platforms/targets where mapping can fail.
-    if let Ok(bytes) = read_fd(fd) {
-        decode_paint_ops(&bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
-    }
-    list.commands().push(DrawCmd::PopClip);
-    list
-}
-
-fn decode_paint_ops(
-    bytes: &[u8],
-    origin_x: i32,
-    origin_y: i32,
-    list: &mut DrawList,
-    icon_symbol_cache: &mut BTreeMap<String, u32>,
-) {
-    let mut reader = match PaintReader::new(bytes) {
-        Some(reader) => reader,
-        None => return,
-    };
-
-    while let Some(op) = reader.next() {
-        match op.tag {
-            PaintOpTag::PushClip => {
-                if let Some((x, y, w, h)) = decode_rect(op.payload) {
-                    list.commands().push(DrawCmd::PushClip {
-                        rect: Rect::new(x + origin_x, y + origin_y, w, h),
-                    });
-                }
-            }
-            PaintOpTag::PopClip => {
-                list.commands().push(DrawCmd::PopClip);
-            }
-            PaintOpTag::FillRect => {
-                if let Some((x, y, w, h, color)) = decode_fill_rect(op.payload) {
-                    list.commands().push(DrawCmd::FillRect {
-                        rect: Rect::new(x + origin_x, y + origin_y, w, h),
-                        color: Color::from_u32(color),
-                        aa: EdgeAA::None,
-                    });
-                }
-            }
-            PaintOpTag::DrawTextRun => {
-                if let Some(text) = decode_text_run(op.payload) {
-                    list.commands().push(DrawCmd::Text {
-                        text: text.text,
-                        font: Some(text.font),
-                        rect: Rect::new(text.x + origin_x, text.y + origin_y, text.w, text.h),
-                        size: text.size as f32,
-                        color: Color::from_u32(text.color),
-                        font_debug: false,
-                    });
-                }
-            }
-            PaintOpTag::BlitImage => {
-                // TODO: hook into asset/image cache by key
-            }
-            PaintOpTag::StrokeLine => {
-                if let Some((x1, y1, x2, y2, width, color)) = decode_line(op.payload) {
-                    list.commands().push(DrawCmd::Line {
-                        from: crate::isa::PointF::new(
-                            (x1 + origin_x) as f32,
-                            (y1 + origin_y) as f32,
-                        ),
-                        to: crate::isa::PointF::new((x2 + origin_x) as f32, (y2 + origin_y) as f32),
-                        color: Color::from_u32(color),
-                        width: width as f32,
-                    });
-                }
-            }
-            PaintOpTag::DrawIcon => {
-                if let Some((x, y, w, h, name)) = decode_icon(op.payload) {
-                    let icon_id = if let Some(id) = icon_symbol_cache.get(name.as_str()) {
-                        *id
-                    } else {
-                        let Ok(id) = stem::thing::sys::intern(&name) else {
-                            continue;
-                        };
-                        icon_symbol_cache.insert(name.clone(), id);
-                        id
-                    };
-                    list.commands().push(DrawCmd::Icon {
-                        icon_name_id: icon_id,
-                        dest: Rect::new(x + origin_x, y + origin_y, w, h),
-                    });
-                }
-            }
-            PaintOpTag::FillLinearGradient => {
-                if let Some((x, y, w, h, c1, c2)) =
-                    abi::ui_paint::decode_fill_linear_gradient(op.payload)
-                {
-                    list.commands().push(DrawCmd::FillLinearGradient {
-                        rect: Rect::new(x + origin_x, y + origin_y, w, h),
-                        color1: Color::from_u32(c1),
-                        color2: Color::from_u32(c2),
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn decode_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32)> {
-    if payload.len() < 16 {
-        return None;
-    }
-    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
-    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
-    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
-    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
-    Some((x, y, w, h))
-}
-
-fn decode_fill_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {
-    if payload.len() < 20 {
-        return None;
-    }
-    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
-    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
-    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
-    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
-    let color = u32::from_le_bytes(payload[16..20].try_into().ok()?);
-    Some((x, y, w, h, color))
-}
-
-fn decode_line(payload: &[u8]) -> Option<(i32, i32, i32, i32, i32, u32)> {
-    if payload.len() < 24 {
-        return None;
-    }
-    let x1 = i32::from_le_bytes(payload[0..4].try_into().ok()?);
-    let y1 = i32::from_le_bytes(payload[4..8].try_into().ok()?);
-    let x2 = i32::from_le_bytes(payload[8..12].try_into().ok()?);
-    let y2 = i32::from_le_bytes(payload[12..16].try_into().ok()?);
-    let width = i32::from_le_bytes(payload[16..20].try_into().ok()?);
-    let color = u32::from_le_bytes(payload[20..24].try_into().ok()?);
-    Some((x1, y1, x2, y2, width, color))
-}
-
-fn decode_icon(payload: &[u8]) -> Option<(i32, i32, i32, i32, String)> {
-    if payload.len() < 20 {
-        return None;
-    }
-    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
-    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
-    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
-    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
-    let name_len = u32::from_le_bytes(payload[16..20].try_into().ok()?);
-    let start = 20;
-    let end = start + name_len as usize;
-    if end > payload.len() {
-        return None;
-    }
-    let name = String::from(core::str::from_utf8(&payload[start..end]).ok()?);
-    Some((x, y, w, h, name))
-}
-
-struct TextRunDecoded {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    size: i32,
-    color: u32,
-    font: String,
-    text: String,
-}
-
-fn decode_text_run(payload: &[u8]) -> Option<TextRunDecoded> {
-    if payload.len() < 36 {
-        return None;
-    }
-    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
-    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
-    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
-    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
-    let _baseline = i32::from_le_bytes(payload[16..20].try_into().ok()?);
-    let size = i32::from_le_bytes(payload[20..24].try_into().ok()?);
-    let color = u32::from_le_bytes(payload[24..28].try_into().ok()?);
-    let font_len = u32::from_le_bytes(payload[28..32].try_into().ok()?);
-    let text_len = u32::from_le_bytes(payload[32..36].try_into().ok()?);
-    let start = 36;
-    let font_end = start + font_len as usize;
-    let text_end = font_end + text_len as usize;
-    if text_end > payload.len() {
-        return None;
-    }
-    let font = String::from(core::str::from_utf8(&payload[start..font_end]).ok()?);
-    let text = String::from(core::str::from_utf8(&payload[font_end..text_end]).ok()?);
-    Some(TextRunDecoded {
-        x,
-        y,
-        w,
-        h,
-        size,
-        color,
-        font,
-        text,
-    })
-}
-
-fn read_fd(fd: u32) -> Result<Vec<u8>, abi::errors::Errno> {
-    let (_, size_u64, _) = stat(fd)?;
-    let size = size_u64 as usize;
-    if size == 0 {
-        return Ok(Vec::new());
-    }
-    let mut out = Vec::with_capacity(size);
-    out.resize(size, 0);
-    let mut offset = 0usize;
-    while offset < size {
-        let read_len = read(fd, &mut out[offset..])?;
-        if read_len == 0 {
-            break;
-        }
-        offset = offset.saturating_add(read_len);
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Rect;
-    use stem::thing::ThingId;
 
     fn make_id(n: u8) -> ThingId {
         let mut b = [0u8; 16];
@@ -1073,90 +1032,46 @@ mod tests {
     #[test]
     fn test_top_window_z_priority() {
         let mut pipeline = PaintPipeline::new();
-        let windows = pipeline.test_windows();
-
-        // Window A: Z=5
-        let id_a = make_id(1);
-        windows.insert(
-            id_a,
+        pipeline.windows.insert(
+            make_id(1),
             WindowPaintState {
+                name: "a".into(),
                 rect: Rect::new(0, 0, 100, 100),
                 z: 5,
                 hidden: false,
-                paint_gen: 0,
-                paint_bs: 0,
+                surface_name: None,
+                title: String::new(),
+                app_id: String::new(),
+                mapped: true,
+                focused: false,
+                maximized: false,
+                fullscreen: false,
                 geometry_gen: 0,
-                asset_gen: 0,
-                raster_dirty: false,
+                content_gen: 0,
+                last_commit: 0,
             },
         );
-
-        // Window B: Z=10 (On Top)
-        let id_b = make_id(2);
-        windows.insert(
-            id_b,
+        pipeline.windows.insert(
+            make_id(2),
             WindowPaintState {
+                name: "b".into(),
                 rect: Rect::new(0, 0, 100, 100),
                 z: 10,
                 hidden: false,
-                paint_gen: 0,
-                paint_bs: 0,
+                surface_name: None,
+                title: String::new(),
+                app_id: String::new(),
+                mapped: true,
+                focused: false,
+                maximized: false,
+                fullscreen: false,
                 geometry_gen: 0,
-                asset_gen: 0,
-                raster_dirty: false,
+                content_gen: 0,
+                last_commit: 0,
             },
         );
 
-        let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
-        assert_eq!(hit.id, id_b, "Higher Z should win");
-    }
-
-    #[test]
-    fn test_top_window_tie_breaker() {
-        let mut pipeline = PaintPipeline::new();
-        let windows = pipeline.test_windows();
-
-        // Window A: ID=1, Z=0
-        let id_a = make_id(1);
-        windows.insert(
-            id_a,
-            WindowPaintState {
-                rect: Rect::new(0, 0, 100, 100),
-                z: 0,
-                hidden: false,
-                paint_gen: 0,
-                paint_bs: 0,
-                geometry_gen: 0,
-                asset_gen: 0,
-                raster_dirty: false,
-            },
-        );
-
-        // Window B: ID=2, Z=0
-        let id_b = make_id(2);
-        windows.insert(
-            id_b,
-            WindowPaintState {
-                rect: Rect::new(0, 0, 100, 100),
-                z: 0,
-                hidden: false,
-                paint_gen: 0,
-                paint_bs: 0,
-                geometry_gen: 0,
-                asset_gen: 0,
-                raster_dirty: false,
-            },
-        );
-
-        // In compose(), stable sort by Z descending (stable) followed by iterating keys (ascending).
-        // Since key 1 < key 2, key 1 comes first.
-        // First one wins occlusion.
-        // So we expect ID 1.
-
-        let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
-        assert_eq!(
-            hit.id, id_a,
-            "Lower ID should win ties (matching render order)"
-        );
+        let hit = pipeline.top_window_at_point(50, 50).expect("hit");
+        assert_eq!(hit.id, make_id(2));
     }
 }

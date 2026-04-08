@@ -34,6 +34,7 @@ mod reclaimer;
 mod render_graph;
 mod render_state;
 mod scene_graph;
+mod session_fs;
 pub mod snapshot;
 mod state;
 mod surface;
@@ -1027,53 +1028,6 @@ fn main(arg: usize) -> ! {
         None
     };
 
-    // UI Window Watch - triggers dirty when windows are created/modified
-    stem::info!("bloom: calling intern for UI_WINDOW");
-    let ui_window_kind = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
-    stem::info!("bloom: intern returned UI_WINDOW={}", ui_window_kind);
-    let ui_window_watch = if ui_window_kind != 0 {
-        use abi::root::RootWatchFilter;
-        use abi::types::{WatchMode, WatchSpec};
-        // Use kind() filter to watch for node creation, not predicate() which watches edges
-        let filter = RootWatchFilter::subject(ui_window_kind.into());
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
-            filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-            ..Default::default()
-        };
-        stem::info!("bloom: calling root_watch_open for UI_WINDOW");
-        let res = stem::syscall::root_watch_open(&spec).ok();
-        stem::info!("bloom: root_watch_open ret={:?}", res);
-        res
-    } else {
-        None
-    };
-
-    // UI Paint Watch - triggers dirty when paint generation changes
-    stem::info!("bloom: calling intern for UI_PAINT_GEN");
-    let ui_paint_gen_key = stem::thing::sys::intern(keys::UI_PAINT_GEN).unwrap_or(0);
-    stem::info!("bloom: intern returned UI_PAINT_GEN={}", ui_paint_gen_key);
-    let ui_paint_watch = if ui_paint_gen_key != 0 {
-        use abi::root::RootWatchFilter;
-        use abi::types::{WatchMode, WatchSpec};
-        let filter = RootWatchFilter::predicate(ui_paint_gen_key);
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
-            filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-            ..Default::default()
-        };
-        stem::info!("bloom: calling root_watch_open for UI_PAINT_GEN");
-        let res = stem::syscall::root_watch_open(&spec).ok();
-        stem::info!("bloom: root_watch_open ret={:?}", res);
-        res
-    } else {
-        None
-    };
-
-    // Track watch event counts for diagnostics
-    let mut ui_watch_events_total: u64 = 0;
     // Removed force_full_damage bool, using invalidation_causes vector
     let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> =
         alloc::vec::Vec::with_capacity(16);
@@ -1224,45 +1178,9 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        // 1. Check for UI window changes
-        if let Some(uw) = ui_window_watch {
-            let mut w_seq = 0u64;
-            let mut w_buf = [0u8; 256];
-            let mut drained = 0u32;
-            // Drain all pending events this frame
-            while let Ok(len) = stem::syscall::root_watch_try_next(uw, &mut w_seq, &mut w_buf) {
-                if len > 0 {
-                    drained += 1;
-                } else {
-                    break;
-                }
-            }
-            if drained > 0 {
-                ui_watch_events_total += drained as u64;
-                stem::info!(
-                    "[bloom] UI watch: drained {} events (total={})",
-                    drained,
-                    ui_watch_events_total
-                );
-                invalidation_causes.push(SnapshotInvalidation::GeometryChanged);
-            }
-        }
-
-        // 2. Check for UI_PAINT updates
-        if let Some(pw) = ui_paint_watch {
-            let mut p_seq = 0u64;
-            let mut p_buf = [0u8; 256];
-            let mut drained = 0u32;
-            while let Ok(len) = stem::syscall::root_watch_try_next(pw, &mut p_seq, &mut p_buf) {
-                if len > 0 {
-                    drained += 1;
-                } else {
-                    break;
-                }
-            }
-            if drained > 0 {
-                invalidation_causes.push(SnapshotInvalidation::ContentChanged);
-            }
+        if paint_pipeline.poll_watch_activity() {
+            paint_pending_rebuilds = true;
+            invalidation_causes.push(SnapshotInvalidation::ContentChanged);
         }
 
         let cursor_moved_since_last_frame = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
@@ -1365,7 +1283,26 @@ fn main(arg: usize) -> ! {
                             continue;
                         }
                     }
-                    if let Some(restore_rect) = maximized_windows.remove(&focused) {
+                    if paint_pipeline.contains_window(focused) {
+                        if let Some(restore_rect) = maximized_windows.remove(&focused) {
+                            let _ = paint_pipeline.move_window(
+                                focused,
+                                restore_rect.x(),
+                                restore_rect.y(),
+                            );
+                            let _ = paint_pipeline.resize_window(
+                                focused,
+                                restore_rect.width(),
+                                restore_rect.height(),
+                            );
+                        } else if let Some(current_rect) =
+                            scene.get_surface(focused).map(|s| s.rect())
+                        {
+                            maximized_windows.insert(focused, current_rect);
+                            let _ = paint_pipeline.move_window(focused, 0, 0);
+                            let _ = paint_pipeline.resize_window(focused, screen_w, screen_h);
+                        }
+                    } else if let Some(restore_rect) = maximized_windows.remove(&focused) {
                         // Restore
                         stem::info!(
                             "[bloom] F11: Restoring window {:?} to {:?}",
@@ -1561,6 +1498,7 @@ fn main(arg: usize) -> ! {
                     &mut alt_cycle_max_z,
                 ) {
                     set_focus(&mut focused_window, Some(next));
+                    paint_pipeline.set_focus_target(focused_window);
                     crate::trace_counter!("bloom.win_cache.cycle.next", 1);
                 }
             }
@@ -1580,6 +1518,7 @@ fn main(arg: usize) -> ! {
                         .unwrap_or_default();
                     crate::trace_counter!("bloom.win_cache.avoided_find", 1);
                     set_focus(&mut focused_window, Some(hit_id));
+                    paint_pipeline.set_focus_target(focused_window);
 
                     use crate::window_manager::{hit_test, Hit};
                     let hit_result = hit_test(cursor.x, cursor.y, hit_rect, false);
@@ -1633,26 +1572,19 @@ fn main(arg: usize) -> ! {
                             let max_z = paint_pipeline.max_z_excluding(hit_id);
                             crate::trace_counter!("bloom.win_cache.raise.count", 1);
                             crate::trace_counter!("bloom.win_cache.avoided_find", 1); // raise_window used to find
-                            let _ = stem::thing::sys::prop_set(
-                                hit_id,
-                                keys::UI_Z_INDEX,
-                                (max_z as u64).saturating_add(1),
-                            );
+                            let _ = paint_pipeline.set_window_z(hit_id, max_z.saturating_add(1));
                         }
                     } else if hit_result == Hit::ClientArea {
                         // Optimized raise
                         let max_z = paint_pipeline.max_z_excluding(hit_id);
                         crate::trace_counter!("bloom.win_cache.raise.count", 1);
                         crate::trace_counter!("bloom.win_cache.avoided_find", 1);
-                        let _ = stem::thing::sys::prop_set(
-                            hit_id,
-                            keys::UI_Z_INDEX,
-                            (max_z as u64).saturating_add(1),
-                        );
+                        let _ = paint_pipeline.set_window_z(hit_id, max_z.saturating_add(1));
                         // Click delivered to Wayland client via wl_pointer (see wayland_server)
                     }
                 } else {
                     set_focus(&mut focused_window, None);
+                    paint_pipeline.set_focus_target(focused_window);
                 }
             }
 
@@ -1662,6 +1594,7 @@ fn main(arg: usize) -> ! {
 
             if let Some(drag) = drag_state {
                 set_focus(&mut focused_window, Some(drag.window_id));
+                paint_pipeline.set_focus_target(focused_window);
                 if left_down && cursor_moved {
                     let delta_x = cursor.x - drag.start_mouse.0;
                     let delta_y = cursor.y - drag.start_mouse.1;
@@ -1724,23 +1657,8 @@ fn main(arg: usize) -> ! {
                             drag.start_rect.height(),
                         );
                         next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
-                        let _ = stem::thing::sys::prop_set(
-                            drag.window_id,
-                            keys::UI_X,
-                            next_rect.x() as u64,
-                        );
-                        let _ = stem::thing::sys::prop_set(
-                            drag.window_id,
-                            keys::UI_Y,
-                            next_rect.y() as u64,
-                        );
-                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_RIGHT, 0);
-                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_BOTTOM, 0);
-                        let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);
-                        stem::info!(
-                            "[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}",
-                            drag.window_id
-                        );
+                        let _ =
+                            paint_pipeline.move_window(drag.window_id, next_rect.x(), next_rect.y());
                     }
                 }
             }

@@ -22,7 +22,6 @@ use abi::syscall::vfs_flags::{O_NONBLOCK, O_RDONLY, O_WRONLY};
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
 use smoltcp::wire::EthernetAddress;
 use socket_api::SocketApi;
-use stem::syscall::port::PortHandle;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::{info, warn};
 use vfs_device::VfsNicDevice;
@@ -125,80 +124,6 @@ fn main(_arg: usize) -> ! {
             );
         }
     }
-}
-
-const SOCKET_API_ENVELOPE_HEADER_LEN: usize = 16;
-const SOCKET_API_MAX_PAYLOAD_LEN: usize = 4096;
-
-enum EnvelopeDecode<'a> {
-    Complete {
-        client_response_port: PortHandle,
-        caller_tid: Option<u64>,
-        msg_body: &'a [u8],
-        msg_type: u16,
-        consumed: usize,
-    },
-    NeedMore,
-    Malformed,
-}
-
-fn decode_socket_api_envelope(packet: &[u8]) -> EnvelopeDecode<'_> {
-    if packet.len() < SOCKET_API_ENVELOPE_HEADER_LEN {
-        return EnvelopeDecode::NeedMore;
-    }
-
-    let response_port =
-        u32::from_le_bytes([packet[0], packet[1], packet[2], packet[3]]) as PortHandle;
-    let caller_tid = u64::from_le_bytes([
-        packet[4], packet[5], packet[6], packet[7], packet[8], packet[9], packet[10], packet[11],
-    ]);
-    let msg_type = u16::from_le_bytes([packet[12], packet[13]]);
-    let payload_len = u16::from_le_bytes([packet[14], packet[15]]) as usize;
-
-    if payload_len > SOCKET_API_MAX_PAYLOAD_LEN {
-        warn!(
-            "NETD: Malformed Socket API message: payload too large (len={}, port={}, tid=0x{:016x}, type=0x{:04x}, payload_len={}, hex={:02x?})",
-            packet.len(),
-            response_port,
-            caller_tid,
-            msg_type,
-            payload_len,
-            &packet[..core::cmp::min(packet.len(), SOCKET_API_ENVELOPE_HEADER_LEN)]
-        );
-        return EnvelopeDecode::Malformed;
-    }
-
-    if packet.len() < SOCKET_API_ENVELOPE_HEADER_LEN + payload_len {
-        return EnvelopeDecode::NeedMore;
-    }
-
-    if socket_api::is_known_msg_type(msg_type) {
-        return EnvelopeDecode::Complete {
-            client_response_port: response_port,
-            caller_tid: Some(caller_tid),
-            msg_body: &packet[12..SOCKET_API_ENVELOPE_HEADER_LEN + payload_len],
-            msg_type,
-            consumed: SOCKET_API_ENVELOPE_HEADER_LEN + payload_len,
-        };
-    }
-
-    if msg_type == 0 {
-        warn!(
-            "NETD: Protocol desync! Received RESP_OK (0) as request type. Full header: {:02x?}",
-            &packet[..SOCKET_API_ENVELOPE_HEADER_LEN]
-        );
-    }
-
-    warn!(
-        "NETD: Malformed Socket API message: len={}, port={}, tid=0x{:016x}, type=0x{:04x}, payload_len={}, hex={:02x?}",
-        packet.len(),
-        response_port,
-        caller_tid,
-        msg_type,
-        payload_len,
-        &packet[..core::cmp::min(packet.len(), SOCKET_API_ENVELOPE_HEADER_LEN)]
-    );
-    EnvelopeDecode::Malformed
 }
 
 /// Open the virtio NIC device files, retrying until the VFS provider is ready.

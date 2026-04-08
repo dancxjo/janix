@@ -10,6 +10,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 fn now() -> Instant {
     Instant::from_millis(stem::time::now().as_millis() as i64)
 }
+use crate::vfs_device::VfsNicDevice;
 
 #[derive(Debug)]
 pub enum DnsError {
@@ -21,6 +22,7 @@ pub enum DnsError {
 pub fn lookup_a<D: Device>(
     iface: &mut Interface,
     device: &mut D,
+    device: &mut VfsNicDevice,
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
@@ -53,6 +55,7 @@ pub fn lookup_a<D: Device>(
     stem::info!("DNS: Querying {} for {}", dns_server, name);
 
     let start = now();
+    let start = VfsNicDevice::now();
     let timeout = start + Duration::from_secs(5);
 
     let mut sent = false;
@@ -61,6 +64,8 @@ pub fn lookup_a<D: Device>(
     loop {
         let t = now();
         if t > timeout {
+        let now = VfsNicDevice::now();
+        if now > timeout {
             stem::info!("DNS: Timeout after {} polls", poll_count);
             return Err(DnsError::Timeout);
         }

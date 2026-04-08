@@ -6,6 +6,8 @@ use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::Ipv4Address;
 
+use crate::vfs_device::VfsNicDevice;
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum DhcpError {
@@ -25,6 +27,7 @@ fn now() -> Instant {
 }
 
 pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<DhcpConfig, DhcpError> {
+pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
 
@@ -39,6 +42,12 @@ pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<Dhcp
     loop {
         let ts = now();
         if ts > timeout {
+    let start = VfsNicDevice::now();
+    let timeout = start + Duration::from_secs(30);
+
+    loop {
+        let now = VfsNicDevice::now();
+        if now > timeout {
             return Err(DhcpError::Timeout);
         }
 
@@ -85,6 +94,9 @@ pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<Dhcp
 
         let delay = iface.poll_delay(ts, &socket_set);
         let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(10).min(10);
+        let delay = iface.poll_delay(now, &socket_set);
+        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
+
         stem::time::sleep_ms(wait_ms as u64);
     }
 }

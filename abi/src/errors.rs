@@ -54,6 +54,7 @@ pub enum Errno {
     ENOBUFS = 105,
     EMSGSIZE = 90,
     ETIMEDOUT = 110,
+    ECONNREFUSED = 111,
     // Add more as needed, following Linux numbers usually helps debugging
 
     // Custom/Extension
@@ -103,6 +104,8 @@ pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
             22 => Err(Errno::EINVAL),
             32 => Err(Errno::EPIPE),
             38 => Err(Errno::ENOSYS),
+            110 => Err(Errno::ETIMEDOUT),
+            111 => Err(Errno::ECONNREFUSED),
             _ => Err(Errno::EINVAL), // Fallback
         }
     } else {

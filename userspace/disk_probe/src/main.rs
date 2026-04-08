@@ -17,8 +17,7 @@ use stem::info;
 use stem::syscall::{
     channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
 };
-use stem::thing::sys::{find, prop_get};
-use stem::thing::ThingId;
+use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -60,36 +59,72 @@ fn send_err(resp_port: ChannelHandle, errno: u8) {
 }
 
 fn render_disk_info(index: usize) -> Option<alloc::string::String> {
-    let mut disks = [ThingId::default(); 16];
-    let count = find("dev.storage.Disk", &mut disks).unwrap_or(0);
-    if index >= count {
+    let mut disks: Vec<alloc::string::String> = Vec::new();
+    if let Ok(fd) = vfs_open("/services/storage", abi::syscall::vfs_flags::O_RDONLY) {
+        let mut buf = [0u8; 4096];
+        if let Ok(n) = vfs_readdir(fd, &mut buf) {
+            let mut offset = 0;
+            while offset < n {
+                let mut end = offset;
+                while end < n && buf[end] != 0 {
+                    end += 1;
+                }
+                if end > offset {
+                    if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                        disks.push(alloc::string::String::from(name));
+                    }
+                }
+                offset = end + 1;
+            }
+        }
+        let _ = vfs_close(fd);
+    }
+
+    if index >= disks.len() {
         return None;
     }
-    let disk_id = disks[index];
+    let name = &disks[index];
+    let path = format!("/services/storage/{}", name);
+    
+    let mut out = format!("Disk {} ({})\n", index, name);
 
-    let mut out = format!("Disk {} (Thing {:?})\n", index, disk_id.0);
+    if let Ok(fd) = vfs_open(&path, abi::syscall::vfs_flags::O_RDONLY) {
+        let mut h_buf = [0u8; 32];
+        if let Ok(h_n) = vfs_read(fd, &mut h_buf) {
+            let h_str = core::str::from_utf8(&h_buf[..h_n]).unwrap_or("");
+            if let Ok(port) = h_str.trim().parse::<u32>() {
+                let port = port as ChannelHandle;
+                let (resp_w, resp_r) = match channel_create(1024) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        let _ = vfs_close(fd);
+                        return Some(out);
+                    }
+                };
 
-    match prop_get(disk_id, "sector_count") {
-        Ok(sectors) => {
-            let size_mb = (sectors * 512) / (1024 * 1024);
-            out.push_str(&format!("Sector count: {} ({} MB)\n", sectors, size_mb));
+                // Identify Request
+                let mut req = [0u8; 5];
+                req[0..4].copy_from_slice(&(resp_w as u32).to_le_bytes());
+                req[4] = abi::block_device_protocol::BlockDeviceRequest::Identify as u8;
+                
+                if channel_send(port, &req).is_ok() {
+                    let mut resp = [0u8; 1024];
+                    if let Ok(n) = channel_recv(resp_r, &mut resp) {
+                        if n > 0 && resp[0] == abi::block_device_protocol::BlockDeviceResponse::Ok as u8 {
+                            let id_resp: abi::block_device_protocol::IdentifyResponse = unsafe {
+                                core::ptr::read_unaligned(resp[1..].as_ptr() as *const _)
+                            };
+                            let size_mb = (id_resp.sector_count * id_resp.sector_size as u64) / (1024 * 1024);
+                            out.push_str(&format!("Sector count: {} ({} MB)\n", id_resp.sector_count, size_mb));
+                            out.push_str(&format!("Sector size: {} bytes\n", id_resp.sector_size));
+                            let model = core::str::from_utf8(&id_resp.model).unwrap_or("").trim();
+                            out.push_str(&format!("Model: {}\n", model));
+                        }
+                    }
+                }
+            }
         }
-        Err(_) => out.push_str("Sector count: (unavailable)\n"),
-    }
-
-    match prop_get(disk_id, "sector_size") {
-        Ok(size) => {
-            out.push_str(&format!("Sector size: {} bytes\n", size));
-        }
-        Err(_) => out.push_str("Sector size: (unavailable)\n"),
-    }
-
-    match prop_get(disk_id, "lba48") {
-        Ok(lba48) => {
-            let support = if lba48 != 0 { "yes" } else { "no" };
-            out.push_str(&format!("LBA48 support: {}\n", support));
-        }
-        Err(_) => out.push_str("LBA48 support: (unavailable)\n"),
+        let _ = vfs_close(fd);
     }
 
     Some(out)
@@ -244,8 +279,27 @@ fn handle_readdir(resp_port: ChannelHandle, payload: &[u8]) {
         return;
     }
 
-    let mut disks = [ThingId::default(); 16];
-    let count = find("dev.storage.Disk", &mut disks).unwrap_or(0);
+    let mut disks: Vec<alloc::string::String> = Vec::new();
+    if let Ok(fd) = vfs_open("/services/storage", abi::syscall::vfs_flags::O_RDONLY) {
+        let mut buf = [0u8; 4096];
+        if let Ok(n) = vfs_readdir(fd, &mut buf) {
+            let mut offset = 0;
+            while offset < n {
+                let mut end = offset;
+                while end < n && buf[end] != 0 {
+                    end += 1;
+                }
+                if end > offset {
+                    if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                        disks.push(alloc::string::String::from(name));
+                    }
+                }
+                offset = end + 1;
+            }
+        }
+        let _ = vfs_close(fd);
+    }
+    let count = disks.len();
 
     let start_idx = offset;
     let mut out: Vec<u8> = Vec::new();

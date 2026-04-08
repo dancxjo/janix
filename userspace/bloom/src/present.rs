@@ -9,7 +9,7 @@
 
 use abi::display_driver_protocol::{self as drvproto, BindPayload, OfferFramebufferPayload};
 use abi::driver_frame::FrameReader;
-use abi::ThingId;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;

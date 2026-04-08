@@ -84,10 +84,6 @@ impl ThingId {
         id
     }
 
-    /// Lossy conversion of a 128-bit ThingId to a u64 (little-endian).
-    pub fn to_u64_lossy(self) -> u64 {
-        u64::from_le_bytes(self.0[0..8].try_into().unwrap())
-    }
 }
 
 impl PredicateId {

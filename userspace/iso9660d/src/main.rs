@@ -42,8 +42,7 @@ use stem::block::{BlockDevice, BlockError};
 use stem::syscall::{
     channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
 };
-use stem::thing::sys::{find, prop_get};
-use stem::thing::ThingId;
+use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir};
 use stem::{info, warn};
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -413,61 +412,72 @@ fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payl
 fn main(_arg: usize) -> ! {
     info!("iso9660d: starting ISO9660 VFS provider");
 
-    // 1. Find block devices.
-    let mut devices = [ThingId::default(); 32];
-    let count = match find(kinds::DEV_STORAGE_BLOCK_DEVICE, &mut devices) {
-        Ok(n) => n,
-        Err(_) => {
-            warn!("iso9660d: failed to find block devices");
-            0
-        }
-    };
-    info!("iso9660d: found {} block device(s)", count);
-
-    // 2. Probe each device for ISO9660.
+    // 1. Find block devices via VFS.
     let mut mounted: Option<(IsoFs, PortBlockDevice, ChannelHandle, ChannelHandle)> = None;
 
-    for &dev_id in &devices[..count] {
-        let port_handle = match prop_get(dev_id, keys::WRITE_PORT_HANDLE) {
-            Ok(h) => h as ChannelHandle,
-            Err(_) => continue,
-        };
-
-        let block_dev = match PortBlockDevice::new(port_handle) {
-            Some(d) => d,
-            None => continue,
-        };
-
-        if let Some(fs) = IsoFs::probe(&block_dev) {
-            info!("iso9660d: found ISO9660 on device {:?}", dev_id);
-
-            // 3. Create the provider port pair.
-            //    write end  → kernel sends VFS RPCs here
-            //    read end   → this daemon reads RPCs here
-            let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("iso9660d: failed to create provider port: {:?}", e);
-                    continue;
+    if let Ok(fd) = vfs_open("/services/storage", abi::syscall::vfs_flags::O_RDONLY) {
+        let mut buf = [0u8; 4096];
+        if let Ok(n) = vfs_readdir(fd, &mut buf) {
+            let mut offset = 0;
+            while offset < n {
+                let mut end = offset;
+                while end < n && buf[end] != 0 {
+                    end += 1;
                 }
-            };
+                if end > offset {
+                    if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                        let path = alloc::format!("/services/storage/{}", name);
+                        if let Ok(h_fd) = vfs_open(&path, abi::syscall::vfs_flags::O_RDONLY) {
+                            let mut h_buf = [0u8; 32];
+                            if let Ok(h_n) = vfs_read(h_fd, &mut h_buf) {
+                                let h_str = core::str::from_utf8(&h_buf[..h_n]).unwrap_or("");
+                                if let Ok(port_handle) = h_str.trim().parse::<u32>() {
+                                    let block_dev = match PortBlockDevice::new(port_handle as ChannelHandle) {
+                                        Some(d) => d,
+                                        None => {
+                                            let _ = vfs_close(h_fd);
+                                            offset = end + 1;
+                                            continue;
+                                        }
+                                    };
 
-            // 4. Mount via SYS_FS_MOUNT.
-            //    We pass the *write* end to the kernel so it can send us RPCs.
-            match vfs_mount(req_write, "/boot/iso") {
-                Ok(()) => {
-                    info!(
-                        "iso9660d: mounted at /boot/iso (provider port w={} r={})",
-                        req_write, req_read
-                    );
-                    mounted = Some((fs, block_dev, req_write, req_read));
-                    break;
+                                    if let Some(fs) = IsoFs::probe(&block_dev) {
+                                        info!("iso9660d: found ISO9660 on device {}", name);
+
+                                        // 3. Create the provider port pair.
+                                        let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
+                                            Ok(p) => p,
+                                            Err(e) => {
+                                                warn!("iso9660d: failed to create provider port: {:?}", e);
+                                                let _ = vfs_close(h_fd);
+                                                offset = end + 1;
+                                                continue;
+                                            }
+                                        };
+
+                                        // 4. Mount via SYS_FS_MOUNT.
+                                        match vfs_mount(req_write, "/boot/iso") {
+                                            Ok(()) => {
+                                                info!("iso9660d: mounted at /boot/iso (provider port w={} r={})", req_write, req_read);
+                                                mounted = Some((fs, block_dev, req_write, req_read));
+                                                let _ = vfs_close(h_fd);
+                                                break;
+                                            }
+                                            Err(e) => {
+                                                warn!("iso9660d: vfs_mount failed: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = vfs_close(h_fd);
+                        }
+                    }
                 }
-                Err(e) => {
-                    warn!("iso9660d: vfs_mount failed: {:?}", e);
-                }
+                offset = end + 1;
             }
         }
+        let _ = vfs_close(fd);
     }
 
     let (fs, dev, _req_write, req_read) = match mounted {

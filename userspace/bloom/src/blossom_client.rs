@@ -3,14 +3,11 @@
 //! This module provides a client for communicating with the Blossom SVG cache service.
 //! It handles connection establishment, request encoding, and caching of responses.
 
-use abi::ids::HandleId;
 use abi::svg_protocol::{
     encode_ping, RasterizeSvgRequest, RasterizeSvgResponse, SvgSource, SvgStatus,
 };
 use alloc::collections::BTreeMap;
 use stem::syscall;
-use stem::thing::sys::{find, prop_get};
-use stem::thing::ThingId;
 
 /// Cached raster variant metadata
 #[derive(Debug)]
@@ -51,29 +48,25 @@ impl BlossomClient {
             return true;
         }
 
-        // Find svc.Blossom node
-        let mut nodes = [ThingId::default(); 8];
-        let count = match find("svc.Blossom", &mut nodes) {
-            Ok(c) => c,
-            Err(_) => {
-                return false;
-            }
+        // Use VFS service discovery
+        use abi::syscall::vfs_flags::O_RDONLY;
+        use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+        let read_port = |path: &str| -> Option<u32> {
+            let fd = vfs_open(path, O_RDONLY).ok()?;
+            let mut buf = [0u8; 16];
+            let n = vfs_read(fd, &mut buf).ok()?;
+            let _ = vfs_close(fd);
+            core::str::from_utf8(&buf[..n]).ok()?.trim().parse::<u32>().ok()
         };
 
-        if count == 0 {
-            return false;
-        }
-
-        let svc = nodes[0];
-
-        // Get port handles
-        let req = match prop_get(svc, "blossom.req") {
-            Ok(v) => v as u32,
-            Err(_) => return false,
+        let req = match read_port("/services/blossom/req") {
+            Some(v) => v,
+            None => return false,
         };
-        let resp = match prop_get(svc, "blossom.resp") {
-            Ok(v) => v as u32,
-            Err(_) => return false,
+        let resp = match read_port("/services/blossom/resp") {
+            Some(v) => v,
+            None => return false,
         };
 
         self.req_port = req;

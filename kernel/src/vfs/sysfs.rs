@@ -7,7 +7,7 @@
 use abi::errors::{Errno, SysResult};
 use alloc::format;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 use crate::device_registry::{DeviceEntry, REGISTRY};
 
@@ -30,7 +30,9 @@ impl Default for SysFs {
 impl VfsDriver for SysFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
         match SysPath::parse(path)? {
-            SysPath::Root => Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"]))),
+            SysPath::Root => {
+                Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"])))
+            }
             SysPath::Devices => Ok(Arc::new(DevicesDirNode)),
             SysPath::DeviceDir(name) => {
                 let (_, entry) = find_device_by_slot(name)?;
@@ -41,7 +43,24 @@ impl VfsDriver for SysFs {
                 let node = lookup_device_file(entry, file)?;
                 Ok(Arc::new(node))
             }
-            SysPath::Firmware => Ok(Arc::new(StaticDirNode::new(302, &["acpi", "dtb"]))),
+            SysPath::VirtioDir(name) => {
+                let (_, entry) = find_device_by_slot(name)?;
+                if entry.vendor_id != 0x1af4 {
+                    return Err(Errno::ENOENT);
+                }
+                Ok(Arc::new(VirtioDirNode::new(entry)))
+            }
+            SysPath::VirtioFile(name, file) => {
+                let (_, entry) = find_device_by_slot(name)?;
+                if entry.vendor_id != 0x1af4 {
+                    return Err(Errno::ENOENT);
+                }
+                let node = lookup_virtio_file(entry, file)?;
+                Ok(Arc::new(node))
+            }
+            SysPath::Firmware => {
+                Ok(Arc::new(StaticDirNode::new(302, &["acpi", "dtb", "hhdm", "framebuffer"])))
+            }
             SysPath::FirmwareFile("acpi") => {
                 if let Some(rsdp) = crate::boot_info::get().and_then(|i| i.acpi_rsdp) {
                     let text = format!("0x{:016x}\n", rsdp);
@@ -58,6 +77,23 @@ impl VfsDriver for SysFs {
                     Err(Errno::ENOENT)
                 }
             }
+            SysPath::FirmwareFile("hhdm") => {
+                if let Some(hhdm) = crate::boot_info::get().map(|i| i.hhdm_offset) {
+                    let text = format!("0x{:016x}\n", hhdm);
+                    Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 305)))
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
+            SysPath::FirmwareFile("framebuffer") => {
+                if let Some(fb) = crate::boot_info::get().and_then(|i| i.framebuffer) {
+                    let text = format!("width={}\nheight={}\nstride={}\nformat={:?}\naddr=0x{:x}\n",
+                        fb.width, fb.height, fb.pitch, fb.format, fb.addr);
+                    Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 306)))
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
             SysPath::FirmwareFile(_) => Err(Errno::ENOENT),
         }
     }
@@ -68,6 +104,8 @@ enum SysPath<'a> {
     Devices,
     DeviceDir(&'a str),
     DeviceFile(&'a str, &'a str),
+    VirtioDir(&'a str),
+    VirtioFile(&'a str, &'a str),
     Firmware,
     FirmwareFile(&'a str),
 }
@@ -82,6 +120,10 @@ impl<'a> SysPath<'a> {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some("devices"), None, None, None) => Ok(Self::Devices),
             (Some("devices"), Some(dev), None, None) => Ok(Self::DeviceDir(dev)),
+            (Some("devices"), Some(dev), Some("virtio"), None) => Ok(Self::VirtioDir(dev)),
+            (Some("devices"), Some(dev), Some("virtio"), Some(file)) => {
+                Ok(Self::VirtioFile(dev, file))
+            }
             (Some("devices"), Some(dev), Some(file), None) => Ok(Self::DeviceFile(dev, file)),
             (Some("firmware"), None, None, None) => Ok(Self::Firmware),
             (Some("firmware"), Some(file), None, None) => Ok(Self::FirmwareFile(file)),
@@ -178,10 +220,30 @@ impl VfsNode for DeviceDirNode {
     }
 
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        write_dir_entries(
-            ["vendor", "device", "class", "status", "handle"].into_iter(),
-            buf,
-        )
+        let mut entries = vec![
+            "vendor", "device", "class", "status", "handle", "bar0", "bar1", "bar2", "bar3", "bar4",
+            "bar5",
+        ];
+
+        // Find device in registry to check if it's VirtIO
+        let reg = REGISTRY.lock();
+        let mut is_virtio = false;
+        for i in 0..reg.len() {
+            if let Some(entry) = reg.entry_copy(i) {
+                if 0x1000 + entry.graph_id == self.ino {
+                    if entry.vendor_id == 0x1af4 {
+                        is_virtio = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if is_virtio {
+            entries.push("virtio");
+        }
+
+        write_dir_entries(entries.into_iter(), buf)
     }
 }
 
@@ -254,7 +316,7 @@ fn slot_name(entry: DeviceEntry) -> alloc::string::String {
 }
 
 fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
-    let ino_base = 0x2000 + entry.graph_id * 8;
+    let ino_base = 0x2000 + entry.graph_id * 16;
     let text = match file {
         "vendor" => format!("0x{:04x}\n", entry.vendor_id),
         "device" => format!("0x{:04x}\n", entry.device_id),
@@ -264,8 +326,171 @@ fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
         ),
         "status" => "present\n".into(),
         "handle" => format!("{}\n", entry.graph_id),
+        "bar0" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[0], entry.mmio_sizes[0]),
+        "bar1" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[1], entry.mmio_sizes[1]),
+        "bar2" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[2], entry.mmio_sizes[2]),
+        "bar3" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[3], entry.mmio_sizes[3]),
+        "bar4" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[4], entry.mmio_sizes[4]),
+        "bar5" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[5], entry.mmio_sizes[5]),
         _ => return Err(Errno::ENOENT),
     };
+    Ok(StaticTextNode::new(text.into_bytes(), ino_base))
+}
+ 
+struct VirtioDirNode {
+    ino: u64,
+}
+ 
+impl VirtioDirNode {
+    fn new(entry: DeviceEntry) -> Self {
+        Self {
+            ino: 0x3000 + entry.graph_id,
+        }
+    }
+}
+ 
+impl VfsNode for VirtioDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+ 
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+ 
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o555,
+            size: 0,
+            ino: self.ino,
+        })
+    }
+ 
+    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        write_dir_entries(
+            [
+                "common_bar",
+                "common_offset",
+                "notify_bar",
+                "notify_offset",
+                "notify_multiplier",
+                "isr_bar",
+                "isr_offset",
+                "device_bar",
+                "device_offset",
+            ]
+            .into_iter(),
+            buf,
+        )
+    }
+}
+ 
+fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
+    use crate::virtio::pci::{VirtioCapabilityType, VirtioPciDevice};
+ 
+    let loc = entry.pci_location.ok_or(Errno::ENODEV)?;
+    let runtime = crate::runtime_base();
+    let mut virtio_caps = Vec::new();
+ 
+    // Scan capabilities to find VirtIO ones
+    let mut cap_ptr = {
+        let status = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x04)? >> 16;
+        if (status & 0x10) == 0 {
+            return Err(Errno::ENODEV);
+        }
+        (runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x34)? & 0xFF) as u8
+    };
+ 
+    while cap_ptr != 0 {
+        let cap_header = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr)?;
+        let cap_id = (cap_header & 0xFF) as u8;
+        if cap_id == 0x09 {
+            // Vendor specific (VirtIO)
+            let len = ((cap_header >> 8) & 0xFF) as u8;
+            let cap_type = ((cap_header >> 16) & 0xFF) as u8;
+            let bar = ((cap_header >> 24) & 0xFF) as u8;
+ 
+            let mut notify_off_multiplier = 0u32;
+            let offset = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 4)?;
+            let length = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 8)?;
+ 
+            if cap_type == VirtioCapabilityType::NotifyCfg as u8 && len >= 16 {
+                notify_off_multiplier =
+                    runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 12)?;
+            }
+ 
+            virtio_caps.push(crate::virtio::pci::VirtioCapability {
+                cap_type,
+                bar,
+                offset,
+                length,
+                notify_off_multiplier,
+            });
+        }
+        cap_ptr = ((cap_header >> 8) & 0xFF) as u8;
+    }
+ 
+    let find_cap = |t: VirtioCapabilityType| virtio_caps.iter().find(|c| c.cap_type == t as u8);
+ 
+    let text = match file {
+        "common_bar" => format!(
+            "{}\n",
+            find_cap(VirtioCapabilityType::CommonCfg)
+                .map(|c| c.bar)
+                .unwrap_or(0xFF)
+        ),
+        "common_offset" => format!(
+            "0x{:x}\n",
+            find_cap(VirtioCapabilityType::CommonCfg)
+                .map(|c| c.offset)
+                .unwrap_or(0)
+        ),
+        "notify_bar" => format!(
+            "{}\n",
+            find_cap(VirtioCapabilityType::NotifyCfg)
+                .map(|c| c.bar)
+                .unwrap_or(0xFF)
+        ),
+        "notify_offset" => format!(
+            "0x{:x}\n",
+            find_cap(VirtioCapabilityType::NotifyCfg)
+                .map(|c| c.offset)
+                .unwrap_or(0)
+        ),
+        "notify_multiplier" => format!(
+            "{}\n",
+            find_cap(VirtioCapabilityType::NotifyCfg)
+                .map(|c| c.notify_off_multiplier)
+                .unwrap_or(0)
+        ),
+        "isr_bar" => format!(
+            "{}\n",
+            find_cap(VirtioCapabilityType::IsrCfg)
+                .map(|c| c.bar)
+                .unwrap_or(0xFF)
+        ),
+        "isr_offset" => format!(
+            "0x{:x}\n",
+            find_cap(VirtioCapabilityType::IsrCfg)
+                .map(|c| c.offset)
+                .unwrap_or(0)
+        ),
+        "device_bar" => format!(
+            "{}\n",
+            find_cap(VirtioCapabilityType::DeviceCfg)
+                .map(|c| c.bar)
+                .unwrap_or(0xFF)
+        ),
+        "device_offset" => format!(
+            "0x{:x}\n",
+            find_cap(VirtioCapabilityType::DeviceCfg)
+                .map(|c| c.offset)
+                .unwrap_or(0)
+        ),
+        _ => return Err(Errno::ENOENT),
+    };
+ 
+    let ino_base = 0x4000 + entry.graph_id * 32;
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))
 }
 

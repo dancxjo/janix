@@ -1,14 +1,9 @@
-extern crate alloc;
-
-use abi::schema::keys;
-use abi::schema::kinds;
 
 use abi::ids::HandleId;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use stem::thing::sys::{close, create_node, find, intern, open, prop_get, prop_set, read, stat};
-use stem::thing::ThingId;
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_stat};
 use stem::{debug, info, thread, warn};
 
 use crate::frame::AssetGeneration;
@@ -129,47 +124,10 @@ impl FontAsset {
         (metrics, bitmap_arc)
     }
 
-    pub fn get_glyph_from_graph(&self, glyph_id: ThingId) -> Option<(fontdue::Metrics, Arc<[u8]>)> {
-        // 1. Read metrics
-        let cp = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_CODEPOINT).ok()? as u32;
-        let px = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_PX_SIZE).ok()? as u64; // f32 bits?
-        let w = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_WIDTH).ok()? as usize;
-        let h = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_HEIGHT).ok()? as usize;
-        let ox = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_OFFSET_X).ok()? as i32;
-        let oy = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_OFFSET_Y).ok()? as i32;
-        let adv = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_ADVANCE).ok()? as f32;
-
-        let metrics = fontdue::Metrics {
-            width: w,
-            height: h,
-            xmin: ox as i32,
-            ymin: oy as i32,
-            advance_width: adv,
-            advance_height: 0.0,
-            bounds: fontdue::OutlineBounds {
-                xmin: ox as f32,
-                ymin: oy as f32,
-                width: w as f32,
-                height: h as f32,
-            },
-        };
-
-        // 2. Read bitmap
-        let fd = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_BITMAP).ok()? as u32;
-        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
-        let size = size_u64 as usize;
-        if size == 0 {
-            return None;
-        }
-
-        let mut buf = alloc::vec![0u8; size];
-        let bytes_read = stem::thing::sys::read(fd, &mut buf).ok()?;
-        if bytes_read != size {
-            return None;
-        }
-
-        let bitmap_arc: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
-        Some((metrics, bitmap_arc))
+    pub fn get_glyph_from_graph(&self, _glyph_id: u64) -> Option<(fontdue::Metrics, Arc<[u8]>)> {
+        // Legacy graph-based glyph retrieval is deprecated.
+        // Glyphs are now rasterized on-demand by fontdue.
+        None
     }
 }
 
@@ -495,13 +453,13 @@ impl AssetBank {
         }
     }
 
-    pub fn enqueue_cursor_load_fd(&self, id: ThingId, name: &str) {
+    pub fn enqueue_cursor_load_fd(&self, id: u64, name: &str) {
         // Deduplicate
         {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
                 if let AssetLoadJob::CursorFd { fd: jfd, .. } = job {
-                    if *jfd == id.to_u64_lossy() as u32 {
+                    if u64::from(*jfd) == id {
                         return;
                     }
                 }
@@ -516,7 +474,7 @@ impl AssetBank {
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
         queue.push_back(AssetLoadJob::CursorFd {
-            fd: id.to_u64_lossy() as u32,
+            fd: id as u32,
             name: Arc::from(name),
         });
         if was_empty {
@@ -787,11 +745,12 @@ impl AssetBank {
         }
     }
 
-    pub fn load_icon_immediate_from_bs(fd: u32) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
-        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
-        let size = size_u64 as usize;
+    pub fn load_icon_immediate_from_bs(_fd: u32) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+        /*
+        let Ok((_, size, _)) = vfs_stat(fd) else { return None; };
+        let size = size as usize;
         let mut buf = alloc::vec![0u8; size];
-        let bytes_read = stem::thing::sys::read(fd, &mut buf).ok()?;
+        let bytes_read = vfs_read(fd, &mut buf).ok()?;
         if bytes_read != size {
             return None;
         }
@@ -800,37 +759,19 @@ impl AssetBank {
         let mut parser = crate::svg::SvgParser::new();
         let cmds = parser.parse(xml);
         Some(Arc::new(cmds))
+        */
+        None
     }
 
     /// Load an icon from a boot module path (e.g., "assets/icons/thingos/foo.svg")
     pub fn load_icon_immediate_from_path(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
-        use abi::schema::kinds;
-        use stem::thing::sys::{describe_thing, find, prop_get, stat};
-
-        let mut modules = [ThingId::default(); 256];
-        let count = find(kinds::BOOT_MODULE, &mut modules).ok()?;
-
-        for i in 0..count {
-            let mut buf = [0u8; 512];
-            let len = describe_thing(modules[i], &mut buf).ok()?;
-            let desc = core::str::from_utf8(&buf[..len]).ok()?;
-
-            if let Some(pos) = desc.find("name: \"") {
-                let rest = &desc[pos + 7..];
-                if let Some(end) = rest.find('"') {
-                    let mod_name = &rest[..end];
-                    if mod_name == path || mod_name.ends_with(path) || path.ends_with(mod_name) {
-                        let fd = prop_get(modules[i], "bytespace").ok()? as u32;
-                        return Self::load_icon_immediate_from_bs(fd);
-                    }
-                }
-            }
-        }
+        // SVG loading via legacy graph modules is disabled.
+        // Cursors and icons should be loaded as BMPs or via a dedicated VFS service.
         None
     }
 
     pub fn load_wallpaper_immediate_from_fd(&self, fd: u32, display_name: &str) -> Option<Image> {
-        let (_, size, _) = stem::thing::sys::stat(fd).ok()?;
+        let (_, size, _) = stem::syscall::vfs::vfs_stat(fd).ok()?;
         Self::load_wallpaper_immediate_from_fd_with_size(fd, size as usize, display_name)
     }
 
@@ -853,7 +794,7 @@ impl AssetBank {
             backing: VmBacking::File { fd, offset: 0 },
         };
 
-        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let resp = stem::syscall::vm_map(&req).ok()?;
         let ptr = resp.addr as *mut u8;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
@@ -878,7 +819,7 @@ impl AssetBank {
     }
     pub fn load_cursor_immediate_from_bs(fd: u32, name: &str) -> Option<CursorAsset> {
         debug!("[asset_bank] load_cursor_immediate_from_fd: {}", name);
-        let (_, size_u64, _) = stem::thing::sys::stat(fd).ok()?;
+        let (_, size_u64, _) = stem::syscall::vfs::vfs_stat(fd).ok()?;
         let size = size_u64 as usize;
 
         use abi::vm::{VmBacking, VmMapReq, VmProt};
@@ -890,7 +831,7 @@ impl AssetBank {
             backing: VmBacking::File { fd, offset: 0 },
         };
 
-        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let resp = stem::syscall::vm_map(&req).ok()?;
         let ptr = resp.addr as *mut u8;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
@@ -935,7 +876,7 @@ impl AssetBank {
 
     /// Publish font to pending (called by loader thread)
     pub fn publish_font(&self, font: FontAsset) {
-        publish_font_family_node(&font.name);
+                // Legacy graph font publication removed.
         // Find an empty or replaceable pending slot
         for i in 0..8 {
             if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire)
@@ -1186,58 +1127,17 @@ impl AssetBank {
 
     fn probe_asset(name: &str) -> Option<(u32, usize)> {
         use stem::abi::schema::kinds;
-        use stem::thing::sys::{describe_thing, find, prop_get, stat};
-
         // Guard: reject empty search names
         if name.is_empty() {
             return None;
         }
 
-        // Allow scanning all boot modules (sys_root_find caps at 4096 bytes => 256 ThingId entries).
-        let mut modules = [ThingId::default(); 256];
-        let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-
-        for i in 0..count {
-            let mod_id = modules[i];
-            let mut buf = [0u8; 512];
-            let len = match describe_thing(mod_id, &mut buf) {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-
-            let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-            let mod_name = if let Some(pos) = desc.find("name: \"") {
-                let rest = &desc[pos + 7..];
-                if let Some(end) = rest.find('"') {
-                    &rest[..end]
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
-            };
-
-            // Skip empty module names
-            if mod_name.is_empty() {
-                continue;
-            }
-
-            // Match exact name or proper path suffix
-            let is_match = mod_name == name || mod_name.ends_with(name);
-            if !is_match {
-                continue;
-            }
-
-            let fd = match prop_get(mod_id, "bytespace") {
-                Ok(id) => id as u32,
-                Err(_) => continue,
-            };
-
-            if let Ok((_, size, _)) = stat(fd) {
-                return Some((fd, size as usize));
-            }
-        }
         None
+    }
+
+    pub fn find_boot_assets(&mut self) {
+        // Legacy graph probe removed. Assets are now discovered via VFS readdir on /boot
+        // (Handled by painter_resources.rs)
     }
 
     pub fn load_wallpaper_from_graph(&self, path: &str) -> Option<Image> {
@@ -1323,7 +1223,7 @@ impl AssetBank {
             backing: VmBacking::File { fd, offset: 0 },
         };
 
-        let resp = stem::thing::sys::vm_map(&req).ok()?;
+        let resp = stem::syscall::vm_map(&req).ok()?;
         let ptr = resp.addr as *mut u8;
         debug!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -1431,8 +1331,8 @@ impl AssetBank {
             backing: VmBacking::File { fd, offset: 0 },
         };
 
-        let resp = match stem::thing::sys::vm_map(&req) {
-            Ok(p) => p,
+        let resp = match stem::syscall::vm_map(&req) {
+            Ok(r) => r,
             Err(e) => {
                 warn!("[asset_bank] vm_map FAILED: {:?}", e);
                 return None;
@@ -1481,29 +1381,3 @@ impl AssetBank {
     }
 }
 
-fn publish_font_family_node(name: &str) {
-    if name.is_empty() {
-        return;
-    }
-    let key = intern(name).unwrap_or(0) as u64;
-    if key == 0 {
-        return;
-    }
-    let mut nodes = [ThingId::default(); 128];
-    if let Ok(count) = find(kinds::FONT_FAMILY, &mut nodes) {
-        for id in nodes.iter().take(count) {
-            if prop_get(*id, keys::FONT_FAMILY_KEY).unwrap_or(0) == key {
-                return;
-            }
-        }
-    }
-    let node = match create_node(kinds::FONT_FAMILY) {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-    let _ = prop_set(node, keys::FONT_FAMILY_KEY, key);
-    if let Ok(fd) = stem::syscall::memfd_create(name, 0) {
-        let _ = stem::thing::sys::write(fd, name.as_bytes());
-        let _ = prop_set(node, keys::FONT_NAME, fd as u64);
-    }
-}

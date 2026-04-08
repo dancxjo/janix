@@ -8,7 +8,6 @@ pub mod ipc;
 pub mod irq;
 pub mod logging;
 pub mod memory;
-pub mod net;
 pub mod once_cell;
 
 pub mod sched;

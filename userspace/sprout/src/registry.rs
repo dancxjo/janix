@@ -74,7 +74,7 @@ impl Registry {
                     }
                 }
             }
-            let _ = thingsys::close(fd);
+            let _ = stem::syscall::vfs::vfs_close(fd);
         } else {
             // Fallback for v0 if parsing fails
             if mod_name.contains("rtc_cmos") {
@@ -91,7 +91,7 @@ impl Registry {
         let mut hdr_buf = [0u8; 64];
         // Note: thingsys::read currently doesn't support offset, so we either need seek or just read sequentially.
         // For ELF header (first 64 bytes), sequential is fine.
-        if thingsys::read(fd, &mut hdr_buf).is_err() {
+        if stem::syscall::vfs::vfs_read(fd, &mut hdr_buf).is_err() {
             return None;
         }
 
@@ -103,10 +103,6 @@ impl Registry {
         let shentsize = u16::from_le_bytes(hdr_buf[0x3A..0x3C].try_into().unwrap()) as usize;
         let shnum = u16::from_le_bytes(hdr_buf[0x3C..0x3E].try_into().unwrap()) as usize;
         let shstrndx = u16::from_le_bytes(hdr_buf[0x3E..0x40].try_into().unwrap()) as usize;
-
-        // Since we don't have seek yet in thingsys wrapper (or maybe it's not implemented yet?),
-        // we'll read the whole file or just the parts we need if they are close enough.
-        // Actually, let's add vfs_seek to thingsys for this.
 
         let strtab_sh_off = shoff + (shstrndx as usize * shentsize);
         let (strtab_off, _) = self.read_sh_info(fd, strtab_sh_off)?;
@@ -139,8 +135,8 @@ impl Registry {
         offset: usize,
         buf: &mut [u8],
     ) -> Result<usize, abi::errors::Errno> {
-        let _ = thingsys::seek(fd, offset as i64, 0)?; // 0 = SEEK_SET
-        thingsys::read(fd, buf)
+        let _ = stem::syscall::vfs::vfs_seek(fd, offset as i64, 0)?; // 0 = SEEK_SET
+        stem::syscall::vfs::vfs_read(fd, buf)
     }
 
     fn read_sh_info(&self, fd: u32, offset: usize) -> Option<(usize, usize)> {

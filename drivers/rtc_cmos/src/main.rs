@@ -4,7 +4,6 @@
 extern crate alloc;
 use stem::abi::driver_ctx::DriverCtx;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::thing::sys as thingsys;
 use stem::{error, info, warn};
 
 #[link_section = ".thing_manifest"]
@@ -130,15 +129,15 @@ fn main(arg: usize) -> ! {
 
     info!("Starting... arg={:x}", arg);
 
-    if arg == 0 {
-        error!("No context provided (arg=0).");
-        stem::syscall::exit(1);
-    }
-
-    let ctx = DriverCtx::from_raw(arg);
-    let dev_id = stem::thing::ThingId(ctx.device_id.0);
-
-    info!("Serving device ID: {:?}", dev_id);
+    let dev_id = if arg != 0 {
+        let ctx = DriverCtx::from_raw(arg);
+        let id = stem::thing::ThingId(ctx.device_id.0);
+        info!("Serving device ID: {:?}", id);
+        id
+    } else {
+        info!("Starting without explicit context (phased boot mode).");
+        stem::thing::ThingId::default()
+    };
 
     // Read RTC and anchor system clock
     let (year, month, day, hour, minute, second) = read_rtc();

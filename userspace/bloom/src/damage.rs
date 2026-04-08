@@ -14,39 +14,23 @@ pub const MAX_RECTS: usize = 32;
 use crate::geometry::Rect;
 use crate::snapshot::SnapshotInvalidation;
 use alloc::vec::Vec;
-use stem::thing::HandleId;
-use stem::thing::ThingId;
 
 /// Explicit cause for damage invalidation.
-///
-/// Every damage rect should have at least one cause to make rendering
-/// decisions auditable and debuggable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DamageCause {
-    /// Window or surface geometry changed (move, resize)
     GeometryChanged,
-    /// Paint properties changed (color, style, etc)
     PaintChanged,
-    /// Asset was updated (image, font, cursor)
     AssetUpdated,
-    /// Cursor moved to a new position
     CursorMoved,
-    /// Cursor shape/asset changed
     CursorShapeChanged,
-    /// Full redraw was explicitly requested
     ForceFull,
-    /// Content of a window snapshot changed
     ContentChanged,
-    /// Font rendering changed (font file, size, etc)
     FontChanged,
-    /// Theme settings changed
     ThemeChanged,
-    /// Cause is unknown or not specified
     Unknown,
 }
 
 impl DamageCause {
-    /// Convert from SnapshotInvalidation to DamageCause
     pub fn from_invalidation(inv: SnapshotInvalidation) -> Self {
         match inv {
             SnapshotInvalidation::GeometryChanged => DamageCause::GeometryChanged,
@@ -58,19 +42,18 @@ impl DamageCause {
         }
     }
 
-    /// Get a short color code for debug visualization
     pub fn debug_color(&self) -> u32 {
         match self {
-            DamageCause::GeometryChanged => 0xFF00FFFF,    // Cyan
-            DamageCause::PaintChanged => 0xFFFF00FF,       // Magenta
-            DamageCause::AssetUpdated => 0xFFFFFF00,       // Yellow
-            DamageCause::CursorMoved => 0xFF00FF00,        // Green
-            DamageCause::CursorShapeChanged => 0xFF90EE90, // Light Green
-            DamageCause::ForceFull => 0xFFFF0000,          // Red
-            DamageCause::ContentChanged => 0xFFFF8000,     // Orange
-            DamageCause::FontChanged => 0xFF87CEEB,        // Light Blue
-            DamageCause::ThemeChanged => 0xFFFFB6C1,       // Light Pink
-            DamageCause::Unknown => 0xFF808080,            // Gray
+            DamageCause::GeometryChanged => 0xFF00FFFF,
+            DamageCause::PaintChanged => 0xFFFF00FF,
+            DamageCause::AssetUpdated => 0xFFFFFF00,
+            DamageCause::CursorMoved => 0xFF00FF00,
+            DamageCause::CursorShapeChanged => 0xFF90EE90,
+            DamageCause::ForceFull => 0xFFFF0000,
+            DamageCause::ContentChanged => 0xFFFF8000,
+            DamageCause::FontChanged => 0xFF87CEEB,
+            DamageCause::ThemeChanged => 0xFFFFB6C1,
+            DamageCause::Unknown => 0xFF808080,
         }
     }
 }
@@ -80,7 +63,7 @@ impl DamageCause {
 pub struct DamageRecord {
     pub rect: Rect,
     pub cause: DamageCause,
-    pub source: Option<ThingId>,
+    pub source: Option<u64>,
 }
 
 /// A collection of damage rectangles for a frame.
@@ -91,7 +74,7 @@ pub struct DamageRecord {
 pub struct Damage {
     rects: [Rect; MAX_RECTS],
     causes: [DamageCause; MAX_RECTS],
-    sources: [Option<ThingId>; MAX_RECTS],
+    sources: [Option<u64>; MAX_RECTS],
     count: usize,
     bounds: Rect,
     /// True if the entire frame is damaged.
@@ -130,7 +113,7 @@ impl Damage {
     }
 
     /// Create full-frame damage with an explicit cause.
-    pub fn full_with_cause(bounds: Rect, cause: DamageCause, source: Option<ThingId>) -> Self {
+    pub fn full_with_cause(bounds: Rect, cause: DamageCause, source: Option<u64>) -> Self {
         let mut rects = [Rect::default(); MAX_RECTS];
         rects[0] = bounds;
         let mut causes = [DamageCause::Unknown; MAX_RECTS];
@@ -169,7 +152,7 @@ impl Damage {
 
     /// Add a rectangle to the damage set with an explicit cause.
     /// Clips to bounds, discards empty rects, merges overlapping/touching rects.
-    pub fn add_rect_with_cause(&mut self, r: Rect, cause: DamageCause, source: Option<ThingId>) {
+    pub fn add_rect_with_cause(&mut self, r: Rect, cause: DamageCause, source: Option<u64>) {
         if self.is_full {
             return; // Already fully damaged
         }
@@ -260,7 +243,7 @@ impl Damage {
     }
 
     /// Collapse all damage to a single full-frame rect with a cause.
-    fn collapse_to_full_with_cause(&mut self, cause: DamageCause, source: Option<ThingId>) {
+    fn collapse_to_full_with_cause(&mut self, cause: DamageCause, source: Option<u64>) {
         self.rects[0] = self.bounds;
         self.causes[0] = cause;
         self.sources[0] = source;
@@ -292,7 +275,7 @@ impl Damage {
     }
 
     /// Get the source for a specific damage rect index.
-    pub fn get_source(&self, index: usize) -> Option<ThingId> {
+    pub fn get_source(&self, index: usize) -> Option<u64> {
         if index < self.count {
             self.sources[index]
         } else {
@@ -350,7 +333,7 @@ impl DamageTracker {
         &mut self,
         rect: Rect,
         cause: DamageCause,
-        source: Option<ThingId>,
+        source: Option<u64>,
     ) {
         self.damage.add_rect_with_cause(rect, cause, source);
     }
@@ -371,7 +354,7 @@ impl DamageTracker {
     }
 
     /// Mark the entire frame as damaged with an explicit cause.
-    pub fn mark_full_with_cause(&mut self, cause: DamageCause, source: Option<ThingId>) {
+    pub fn mark_full_with_cause(&mut self, cause: DamageCause, source: Option<u64>) {
         self.damage = Damage::full_with_cause(self.bounds, cause, source);
     }
 
@@ -666,7 +649,7 @@ mod tests {
         t.begin_frame(100, 100);
 
         let rect = Rect::new(10, 10, 20, 20);
-        let source = Some(ThingId::from_u64(42));
+        let source = Some(42u64);
         t.note_bbox_with_cause(rect, DamageCause::GeometryChanged, source);
 
         let d = t.end_frame();
@@ -681,7 +664,7 @@ mod tests {
         let mut t = DamageTracker::new();
         t.begin_frame(100, 100);
 
-        let source = Some(ThingId::from_u64(99));
+        let source = Some(99);
         t.mark_full_with_cause(DamageCause::ForceFull, source);
 
         let d = t.end_frame();
@@ -710,8 +693,8 @@ mod tests {
         let bounds = Rect::full(100, 100);
         let mut d = Damage::empty(bounds);
 
-        let source1 = Some(ThingId::from_u64(10));
-        let source2 = Some(ThingId::from_u64(20));
+        let source1 = Some(10);
+        let source2 = Some(20);
 
         d.add_rect_with_cause(
             Rect::new(0, 0, 10, 10),

@@ -13,14 +13,12 @@ pub mod arch;
 pub mod bitset;
 pub mod block;
 pub mod console;
-pub mod css;
 pub mod device;
 pub mod errors;
 pub mod fs;
 
 #[cfg(feature = "global-alloc")]
 pub mod heap;
-pub mod html;
 pub mod i18n;
 #[cfg(feature = "rt")]
 pub mod memory;
@@ -30,8 +28,6 @@ pub mod pal;
 pub mod panic;
 pub mod pci;
 pub mod perf;
-pub mod petals;
-
 pub mod rt;
 pub mod simd;
 pub mod stack;
@@ -39,11 +35,9 @@ pub mod syscall;
 pub mod task;
 pub mod thread;
 pub mod time;
-pub mod ui;
 pub mod utils;
 pub mod vm;
 pub mod wait_set;
-pub mod xml;
 
 // Re-export time types for convenience
 pub use time::{Duration, Instant};

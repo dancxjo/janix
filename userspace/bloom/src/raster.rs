@@ -17,7 +17,7 @@ use alloc::collections::BTreeMap;
 
 use crate::text_cache::{hash_str, TextCacheEntry, TextCacheKey, TextRasterCache};
 use spin::Mutex;
-use stem::thing::{HandleId, ThingId};
+use abi::ids::HandleId;
 
 static TEXT_CACHE: Mutex<Option<TextRasterCache>> = Mutex::new(None);
 
@@ -64,18 +64,14 @@ impl VmMapCache {
             backing: VmBacking::File { fd, offset: 0 },
         };
 
-        match stem::thing::sys::vm_map(&req) {
-            Ok(resp) => {
-                let dt = stem::monotonic_ns().saturating_sub(start);
-                crate::trace_counter!("raster.vm_map.count", 1);
-                crate::trace_counter!("raster.vm_map.ns_total", dt);
+        let Ok(resp) = stem::syscall::vm_map(&req) else { return None; };
+        let dt = stem::monotonic_ns().saturating_sub(start);
+        crate::trace_counter!("raster.vm_map.count", 1);
+        crate::trace_counter!("raster.vm_map.ns_total", dt);
 
-                let ptr = resp.addr as *mut u8;
-                self.entries.insert(fd, MappedFile { ptr, len });
-                Some(ptr)
-            }
-            Err(_) => None,
-        }
+        let ptr = resp.addr as *mut u8;
+        self.entries.insert(fd, MappedFile { ptr, len });
+        Some(ptr)
     }
 }
 
@@ -1587,11 +1583,11 @@ fn rasterize_text_locally(
         let primary_face_id = stack
             .iter()
             .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()))
-            .unwrap_or(ThingId::default());
+            .unwrap_or(0);
 
         // Cache Key
         let key = TextCacheKey {
-            face_id: primary_face_id.to_u64_lossy(),
+            face_id: primary_face_id,
             px: size as u16,
             flags: if fd { 1 } else { 0 },
             text_hash: hash_str(text),
@@ -1658,10 +1654,10 @@ fn rasterize_text_locally(
 fn rasterize_text_to_a8(
     graph: &mut font_graph::FontGraph,
     text: &str,
-    stack: &[ThingId],
+    stack: &[u64],
     size: f32,
     met: &fontdue::LineMetrics,
-    primary_face_id: ThingId,
+    primary_face_id: u64,
 ) -> Option<TextCacheEntry> {
     // Pass 1: Measure bounds
     let mut min_x = i32::MAX;
@@ -2003,7 +1999,7 @@ fn rasterize_text_fallback(
     rf: Option<&str>,
     _fd: bool,
 ) {
-    let fonts = crate::ASSETS.get_fonts();
+    let fonts = crate::painter_resources::ASSETS.get_fonts();
     if fonts.is_empty() {
         return;
     }

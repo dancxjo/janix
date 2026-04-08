@@ -1,9 +1,11 @@
 #![feature(restricted_std)]
 #![no_main]
 
-use abi::schema::{keys, kinds, source};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
+extern crate alloc;
+
+use abi::ids::HandleId;
+use abi::schema::{keys, source};
+use abi::types::ThingId;
 use stem::{info, warn};
 
 const MAX_FUNCTIONS: usize = 256;
@@ -190,72 +192,98 @@ fn push_claim(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usiz
     *tracked_len += 1;
 }
 
-fn publish_binding(id: ThingId, rule: PciRule, claim: usize) {
-    let drv_id = match thingsys::create_node("drv.pci.Bind") {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-    let _ = thingsys::prop_set(drv_id, "drv.claim_handle", claim as u64);
-    let _ = thingsys::prop_set(drv_id, keys::SOURCE, source::PCI as u64);
-    if let Ok(sym) = thingsys::intern(rule.name) {
-        let _ = thingsys::prop_set(drv_id, keys::NAME, sym as u64);
-    }
-    if let Ok(sym) = thingsys::intern(rule.role_kind) {
-        let _ = thingsys::prop_set(drv_id, keys::KIND, sym as u64);
-    }
-    let _ = thingsys::link(drv_id, "DRIVES", id);
-    let _ = thingsys::link(id, "MANAGED_BY", drv_id);
+fn publish_binding(_id: ThingId, _rule: PciRule, _claim: usize) {
+    // Purged graph-based binding reporting.
+    // Future: report bindings via /sys or /run.
 }
 
 fn scan_once(
     tracked: &mut [ClaimedDevice; MAX_TRACKED],
     tracked_len: &mut usize,
-    funcs: &mut [ThingId; MAX_FUNCTIONS],
 ) {
-    let count = thingsys::find(kinds::DEV_PCI_FUNCTION, funcs).unwrap_or(0);
-    for &id in funcs.iter().take(count) {
-        if already_claimed(id, tracked, *tracked_len) {
-            continue;
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
+
+    let fd = match vfs_open("/sys/devices", O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return,
+    };
+    let mut buf = [0u8; 4096];
+    let n = vfs_readdir(fd, &mut buf).unwrap_or(0);
+    let _ = vfs_close(fd);
+
+    let mut offset = 0;
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
         }
-
-        let vendor_id = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
-        let device_id = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
-        let class_code = thingsys::prop_get(id, keys::CLASS_CODE).unwrap_or(0) as u8;
-        let subclass = thingsys::prop_get(id, keys::SUBCLASS_CODE).unwrap_or(0) as u8;
-        let prog_if = thingsys::prop_get(id, keys::PROG_IF).unwrap_or(0) as u8;
-        let bus = thingsys::prop_get(id, keys::BUS).unwrap_or(0);
-        let dev = thingsys::prop_get(id, keys::DEVICE).unwrap_or(0);
-        let func = thingsys::prop_get(id, keys::FUNCTION).unwrap_or(0);
-
-        let Some(rule) = find_rule(vendor_id, device_id, class_code, subclass, prog_if) else {
-            continue;
-        };
-
-        match stem::syscall::device_claim(id.to_u64_lossy()) {
-            Ok(claim) => {
-                info!(
-                    "pci_stubd: bound {} to {:02x}:{:02x}.{} {:04x}:{:04x} class {:02x}:{:02x}:{:02x} claim={}",
-                    rule.name,
-                    bus as u8,
-                    dev as u8,
-                    func as u8,
-                    vendor_id,
-                    device_id,
-                    class_code,
-                    subclass,
-                    prog_if,
-                    claim
-                );
-                publish_binding(id, rule, claim);
-                push_claim(tracked, tracked_len, id);
-            }
-            Err(e) => {
-                warn!(
-                    "pci_stubd: failed bind {} {:04x}:{:04x} at {:02x}:{:02x}.{}: {:?}",
-                    rule.name, vendor_id, device_id, bus as u8, dev as u8, func as u8, e
-                );
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                let path = alloc::format!("/sys/devices/{}", name);
+                process_device(tracked, tracked_len, &path);
             }
         }
+        offset = end + 1;
+    }
+}
+
+fn process_device(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize, path: &str) {
+    let handle = match read_sys_u32(&alloc::format!("{}/handle", path)) {
+        Ok(h) => h as u64,
+        Err(_) => return,
+    };
+
+    let id = ThingId::from_u64(handle);
+    if already_claimed(id, tracked, *tracked_len) {
+        return;
+    }
+
+    let vendor_id = read_sys_u32(&alloc::format!("{}/vendor", path)).unwrap_or(0) as u16;
+    let device_id = read_sys_u32(&alloc::format!("{}/device", path)).unwrap_or(0) as u16;
+
+    let class_full = read_sys_u32(&alloc::format!("{}/class", path)).unwrap_or(0);
+    let class_code = (class_full >> 16) as u8;
+    let subclass = (class_full >> 8) as u8;
+    let prog_if = (class_full & 0xFF) as u8;
+
+    let Some(rule) = find_rule(vendor_id, device_id, class_code, subclass, prog_if) else {
+        return;
+    };
+
+    match stem::syscall::device_claim(handle) {
+        Ok(claim) => {
+            info!(
+                "pci_stubd: bound {} to {} vendor={:04x} device={:04x} class={:02x}:{:02x}:{:02x} claim={}",
+                rule.name, path, vendor_id, device_id, class_code, subclass, prog_if, claim
+            );
+            publish_binding(id, rule, claim);
+            push_claim(tracked, tracked_len, id);
+        }
+        Err(e) => {
+            warn!(
+                "pci_stubd: failed bind {} at {}: {:?}",
+                rule.name, path, e
+            );
+        }
+    }
+}
+
+fn read_sys_u32(path: &str) -> Result<u32, abi::errors::Errno> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY)?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf)?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).map_err(|_| abi::errors::Errno::EIO)?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).map_err(|_| abi::errors::Errno::EIO)
+    } else {
+        trimmed.parse::<u32>().map_err(|_| abi::errors::Errno::EIO)
     }
 }
 
@@ -264,10 +292,9 @@ fn main(_arg: usize) -> ! {
     info!("pci_stubd: starting pci-id matcher");
     let mut tracked = [ClaimedDevice::default(); MAX_TRACKED];
     let mut tracked_len = 0usize;
-    let mut funcs = [ThingId::default(); MAX_FUNCTIONS];
-
+ 
     loop {
-        scan_once(&mut tracked, &mut tracked_len, &mut funcs);
+        scan_once(&mut tracked, &mut tracked_len);
         stem::time::sleep_ms(1000);
     }
 }

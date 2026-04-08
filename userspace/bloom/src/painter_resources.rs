@@ -1,12 +1,9 @@
 use crate::asset::AssetBank;
 use crate::font_graph;
-use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
-use abi::types::{WatchMode, WatchSpec};
 use alloc::string::String;
 use alloc::string::ToString;
-use stem::thing::sys::{describe_thing, find, prop_get, read, stat};
-use stem::thing::{HandleId, ThingId};
+use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_stat, vfs_close};
 use stem::{debug, info, syscall, warn};
 
 pub static ASSETS: AssetBank = AssetBank::new();
@@ -38,63 +35,33 @@ pub extern "C" fn wallpaper_loader_entry() -> ! {
 }
 
 pub extern "C" fn font_loader_entry() -> ! {
-    let mut modules = [ThingId::default(); 64];
-    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-    for i in 0..count {
-        let mut buf = [0u8; 512];
-        let len = match describe_thing(modules[i], &mut buf) {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-        let mod_name = if let Some(pos) = desc.find("name: \"") {
-            let rest = &desc[pos + 7..];
-            if let Some(end) = rest.find('"') {
-                &rest[..end]
-            } else {
-                continue;
+    debug!("[bloom] font loader: scanning /boot for fonts");
+    
+    let mut names = [0u8; 4096];
+    let boot_fd = vfs_open("/boot", abi::syscall::vfs_flags::O_RDONLY).expect("failed to open /boot");
+    if let Ok(count) = vfs_readdir(boot_fd, &mut names) {
+        let mut offset = 0;
+        for _ in 0..count {
+            if offset >= names.len() { break; }
+            let name_len = names[offset] as usize;
+            if name_len == 0 { break; }
+            let name = core::str::from_utf8(&names[offset+1..offset+1+name_len]).unwrap_or("");
+            offset += 1 + name_len;
+
+            if name.ends_with(".ttf") || name.ends_with(".TTF") || name.ends_with(".otf") || name.ends_with(".OTF") {
+                let path = alloc::format!("/boot/{}", name);
+                if let Ok(fd) = vfs_open(&path, 0) {
+                    if let Ok((_kind, size, _id)) = vfs_stat(fd) {
+                        ASSETS.enqueue_font_load(fd, size as usize, name);
+                        // We keep the FD open as it's passed to enqueue_font_load
+                    } else {
+                        let _ = vfs_close(fd);
+                    }
+                }
             }
-        } else {
-            continue;
-        };
-        if mod_name.ends_with(".ttf")
-            || mod_name.ends_with(".TTF")
-            || mod_name.ends_with(".otf")
-            || mod_name.ends_with(".OTF")
-        {
-            let fd = match prop_get(modules[i], "bytespace") {
-                Ok(id) => id as u32,
-                Err(_) => continue,
-            };
-            let size = match stat(fd) {
-                Ok((_, s, _)) => s,
-                Err(_) => continue,
-            };
-            ASSETS.enqueue_font_load(fd, size as usize, mod_name);
         }
     }
-
-    let k_file = stem::thing::sys::intern(kinds::FONT_FILE).unwrap_or(0);
-    let k_family = stem::thing::sys::intern(kinds::FONT_FAMILY).unwrap_or(0);
-    let k_face = stem::thing::sys::intern(kinds::FONT_FACE).unwrap_or(0);
-    let k_super = stem::thing::sys::intern(kinds::FONT_SUPERFAMILY).unwrap_or(0);
-    let p_bs = stem::thing::sys::intern(keys::FONT_BYTESPACE).unwrap_or(0);
-    let p_sz = stem::thing::sys::intern(keys::FONT_SIZE_BYTES).unwrap_or(0);
-    let p_name = stem::thing::sys::intern(keys::FONT_NAME).unwrap_or(0);
-    let dirty_keys = [
-        p_name,
-        stem::thing::sys::intern(keys::FONT_STYLE).unwrap_or(0),
-        stem::thing::sys::intern(keys::FONT_WEIGHT).unwrap_or(0),
-        stem::thing::sys::intern(keys::FONT_WIDTH).unwrap_or(0),
-        stem::thing::sys::intern(keys::FONT_SLOPE).unwrap_or(0),
-        stem::thing::sys::intern(keys::FONT_COVERAGE_RANGES).unwrap_or(0),
-        stem::thing::sys::intern(rels::FONT_CONTAINS).unwrap_or(0),
-        stem::thing::sys::intern(rels::FONT_COVERS).unwrap_or(0),
-    ];
-    let watch_kinds = [k_file, k_family, k_face, k_super];
-    let mut watch_ids: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
-    let mut watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
-    let mut watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    let _ = vfs_close(boot_fd);
 
     loop {
         stem::syscall::sleep_ms(10000);

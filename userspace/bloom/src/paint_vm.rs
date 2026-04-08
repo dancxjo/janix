@@ -9,19 +9,16 @@ use abi::errors::Errno;
 use abi::pixel::PixelFormat;
 use abi::vfs_watch::{flags as watch_flags, mask as watch_mask};
 use stem::syscall::vfs::{vfs_close, vfs_read, vfs_watch_path};
-use stem::thing::ThingId;
-
-use crate::asset::Image;
-use crate::desktop::WallpaperMode;
-use crate::geometry::{Color, Rect};
+use crate::geometry::Rect;
+use crate::session_fs;
 use crate::scene_graph::SceneGraph;
-use crate::session_fs::{self, AttachedBuffer};
 use crate::surface::PixelBuffer;
-
-const WATCH_BUFFER_BYTES: usize = 512;
-
+use crate::asset::Image;
+use crate::desktop::{WallpaperMode, WATCH_BUFFER_BYTES};
+use crate::isa::Color;
+use crate::session_fs::AttachedBuffer;
 pub struct WindowHit {
-    pub id: ThingId,
+    pub id: u64,
     pub rect: Rect,
     pub z: i32,
 }
@@ -57,14 +54,14 @@ pub struct PaintResult {
 }
 
 pub struct PaintPipeline {
-    windows: BTreeMap<ThingId, WindowPaintState>,
-    dirty_windows: BTreeSet<ThingId>,
+    windows: BTreeMap<u64, WindowPaintState>,
+    dirty_windows: BTreeSet<u64>,
     scan_required: bool,
-    focused: Option<ThingId>,
+    focused: Option<u64>,
     next_configure_serial: u64,
     windows_watch: Option<u32>,
     surfaces_watch: Option<u32>,
-    window_watches: BTreeMap<ThingId, WindowWatchState>,
+    window_watches: BTreeMap<u64, WindowWatchState>,
     surface_watches: BTreeMap<String, u32>,
 }
 
@@ -102,7 +99,7 @@ impl PaintPipeline {
             changed = true;
         }
 
-        let window_ids: Vec<ThingId> = self.window_watches.keys().copied().collect();
+        let window_ids: Vec<u64> = self.window_watches.keys().copied().collect();
         for id in window_ids {
             let Some(watch) = self.window_watches.get(&id).copied() else {
                 continue;
@@ -153,7 +150,7 @@ impl PaintPipeline {
             self.sync_windows(scene, screen_w, screen_h, &mut damage, &mut on_progress);
         }
 
-        let dirty_ids: Vec<ThingId> = self.dirty_windows.iter().copied().collect();
+        let dirty_ids: Vec<u64> = self.dirty_windows.iter().copied().collect();
         for id in dirty_ids {
             on_progress();
             if let Some(rect) = self.refresh_window_surface(scene, id) {
@@ -169,11 +166,11 @@ impl PaintPipeline {
         }
     }
 
-    pub fn contains_window(&self, id: ThingId) -> bool {
+    pub fn contains_window(&self, id: u64) -> bool {
         self.windows.contains_key(&id)
     }
 
-    pub fn set_focus_target(&mut self, focused: Option<ThingId>) {
+    pub fn set_focus_target(&mut self, focused: Option<u64>) {
         if self.focused == focused {
             return;
         }
@@ -194,7 +191,7 @@ impl PaintPipeline {
         }
     }
 
-    pub fn move_window(&mut self, id: ThingId, x: i32, y: i32) -> bool {
+    pub fn move_window(&mut self, id: u64, x: i32, y: i32) -> bool {
         let Some(win) = self.windows.get_mut(&id) else {
             return false;
         };
@@ -207,7 +204,7 @@ impl PaintPipeline {
         old_rect != win.rect
     }
 
-    pub fn resize_window(&mut self, id: ThingId, width: i32, height: i32) -> bool {
+    pub fn resize_window(&mut self, id: u64, width: i32, height: i32) -> bool {
         let Some(win) = self.windows.get_mut(&id) else {
             return false;
         };
@@ -225,7 +222,7 @@ impl PaintPipeline {
         old_rect != win.rect
     }
 
-    pub fn set_window_z(&mut self, id: ThingId, z: i32) -> bool {
+    pub fn set_window_z(&mut self, id: u64, z: i32) -> bool {
         let Some(win) = self.windows.get_mut(&id) else {
             return false;
         };
@@ -255,7 +252,7 @@ impl PaintPipeline {
             })
     }
 
-    pub fn max_z_excluding(&self, exclude_id: ThingId) -> i32 {
+    pub fn max_z_excluding(&self, exclude_id: u64) -> i32 {
         self.windows
             .iter()
             .filter(|(id, _)| **id != exclude_id)
@@ -264,8 +261,8 @@ impl PaintPipeline {
             .unwrap_or(0)
     }
 
-    pub fn build_window_cycle_order(&self) -> (Vec<ThingId>, i32) {
-        let mut list: Vec<(ThingId, i32)> = self
+    pub fn build_window_cycle_order(&self) -> (Vec<u64>, i32) {
+        let mut list: Vec<(u64, i32)> = self
             .windows
             .iter()
             .filter(|(_, state)| !state.hidden)
@@ -278,7 +275,7 @@ impl PaintPipeline {
 
         list.sort_by(|(a_id, a_z), (b_id, b_z)| {
             b_z.cmp(a_z)
-                .then(a_id.to_u64_lossy().cmp(&b_id.to_u64_lossy()))
+                .then(a_id.cmp(&b_id))
         });
 
         let max_z = list.iter().map(|(_, z)| *z).max().unwrap_or(0);
@@ -295,7 +292,7 @@ impl PaintPipeline {
             .iter()
             .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
             .map(|(id, w)| Quad {
-                texture_id: id.to_u64_lossy() as u32,
+                texture_id: *id as u32,
                 dst_rect: GpuRect {
                     x: w.rect.x(),
                     y: w.rect.y(),
@@ -312,7 +309,7 @@ impl PaintPipeline {
     }
 
     #[cfg(feature = "gpu")]
-    pub fn windows_for_gpu_upload(&self) -> impl Iterator<Item = (ThingId, Rect, u64, u64)> + '_ {
+    pub fn windows_for_gpu_upload(&self) -> impl Iterator<Item = (u64, Rect, u64, u64)> + '_ {
         self.windows
             .iter()
             .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
@@ -320,7 +317,7 @@ impl PaintPipeline {
     }
 
     #[cfg(not(feature = "gpu"))]
-    pub fn windows_for_gpu_upload(&self) -> core::iter::Empty<(ThingId, Rect, u64, u64)> {
+    pub fn windows_for_gpu_upload(&self) -> core::iter::Empty<(u64, Rect, u64, u64)> {
         core::iter::empty()
     }
 
@@ -487,7 +484,7 @@ impl PaintPipeline {
             self.windows.insert(id, loaded);
         }
 
-        let removed: Vec<ThingId> = self
+        let removed: Vec<u64> = self
             .windows
             .keys()
             .copied()
@@ -510,7 +507,7 @@ impl PaintPipeline {
         scene.resort();
     }
 
-    fn refresh_window_surface(&mut self, scene: &mut SceneGraph, id: ThingId) -> Option<Rect> {
+    fn refresh_window_surface(&mut self, scene: &mut SceneGraph, id: u64) -> Option<Rect> {
         let window = self.windows.get_mut(&id)?;
         let Some(surface_name) = window.surface_name.clone() else {
             window.mapped = false;
@@ -586,7 +583,7 @@ impl PaintPipeline {
         None
     }
 
-    fn install_window_watches(&mut self, id: ThingId, name: &str) {
+    fn install_window_watches(&mut self, id: u64, name: &str) {
         if self.window_watches.contains_key(&id) {
             return;
         }
@@ -1123,10 +1120,8 @@ fn blit_image_scaled(dst: &mut PixelBuffer, clip: Rect, image: &Image, dest: Rec
 mod tests {
     use super::*;
 
-    fn make_id(n: u8) -> ThingId {
-        let mut b = [0u8; 16];
-        b[0] = n;
-        ThingId(b)
+    fn make_id(n: u8) -> u64 {
+        n as u64
     }
 
     #[test]

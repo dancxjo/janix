@@ -6,6 +6,7 @@
 extern crate alloc;
 
 use abi::font_protocol::GlyphPlacement;
+use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use stem::syscall::memfd_create;

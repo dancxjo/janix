@@ -5,9 +5,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use stem::syscall::{channel_create, channel_send, channel_try_recv, ChannelHandle};
-use stem::thing::sys::{memfd_create, stat, write};
-use stem::thing::HandleId;
-use stem::thing::ThingId;
+use stem::syscall::{memfd_create, vm_map};
+use stem::syscall::vfs::vfs_write;
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(10);
 static NEXT_SERIAL: AtomicU32 = AtomicU32::new(1);
@@ -66,7 +65,7 @@ struct Geometry {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WaylandWindowSnapshot {
-    pub scene_id: ThingId,
+    pub scene_id: u64,
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -87,8 +86,8 @@ pub struct WaylandWindowSnapshot {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WaylandServerEvent {
-    WindowChanged(ThingId),
-    WindowRemoved(ThingId),
+    WindowChanged(u64),
+    WindowRemoved(u64),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,7 +150,7 @@ struct XdgSurfaceState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct XdgToplevelState {
     xdg_surface_id: u32,
-    scene_id: ThingId,
+    scene_id: u64,
     title: String,
     app_id: String,
     min_width: i32,
@@ -176,7 +175,7 @@ struct XdgToplevelState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct XdgPopupState {
     xdg_surface_id: u32,
-    scene_id: ThingId,
+    scene_id: u64,
     parent_xdg_surface_id: u32,
     positioner_id: u32,
     rel_x: i32,
@@ -235,7 +234,7 @@ struct LayerSurfaceState {
     keyboard_interactivity: u32,
     pending_serial: Option<u32>,
     acked_serial: Option<u32>,
-    scene_id: ThingId,
+    scene_id: u64,
     mapped: bool,
     buffer: Option<BufferMeta>,
 }
@@ -250,7 +249,7 @@ struct ActivationTokenState {
 /// Snapshot of a layer-shell surface for the compositor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerSurfaceSnapshot {
-    pub scene_id: ThingId,
+    pub scene_id: u64,
     pub layer: u32,
     pub anchor: u32,
     pub exclusive_zone: i32,
@@ -316,8 +315,8 @@ impl ClientConnection {
 pub struct WaylandServer {
     pub req_port: ChannelHandle,
     pub clients: BTreeMap<u64, ClientConnection>,
-    scene_index: BTreeMap<ThingId, (u64, u32, bool)>,
-    layer_scene_index: BTreeMap<ThingId, (u64, u32)>,
+    scene_index: BTreeMap<u64, (u64, u32, bool)>,
+    layer_scene_index: BTreeMap<u64, (u64, u32)>,
     events: Vec<WaylandServerEvent>,
     pub screen_width: u32,
     pub screen_height: u32,
@@ -405,11 +404,11 @@ impl WaylandServer {
         out
     }
 
-    pub fn is_scene_surface(&self, scene_id: ThingId) -> bool {
+    pub fn is_scene_surface(&self, scene_id: u64) -> bool {
         self.scene_index.contains_key(&scene_id) || self.layer_scene_index.contains_key(&scene_id)
     }
 
-    pub fn move_surface(&mut self, scene_id: ThingId, x: i32, y: i32) -> bool {
+    pub fn move_surface(&mut self, scene_id: u64, x: i32, y: i32) -> bool {
         let Some((handle, object_id, is_popup)) = self.scene_index.get(&scene_id).copied() else {
             return false;
         };
@@ -436,7 +435,7 @@ impl WaylandServer {
         true
     }
 
-    pub fn resize_toplevel(&mut self, scene_id: ThingId, width: i32, height: i32) -> bool {
+    pub fn resize_toplevel(&mut self, scene_id: u64, width: i32, height: i32) -> bool {
         let Some((handle, object_id, is_popup)) = self.scene_index.get(&scene_id).copied() else {
             return false;
         };
@@ -464,7 +463,7 @@ impl WaylandServer {
         true
     }
 
-    pub fn toggle_maximized(&mut self, scene_id: ThingId, screen_w: i32, screen_h: i32) -> bool {
+    pub fn toggle_maximized(&mut self, scene_id: u64, screen_w: i32, screen_h: i32) -> bool {
         let Some((handle, object_id, is_popup)) = self.scene_index.get(&scene_id).copied() else {
             return false;
         };
@@ -513,7 +512,7 @@ impl WaylandServer {
         true
     }
 
-    pub fn raise_surface(&mut self, scene_id: ThingId) -> bool {
+    pub fn raise_surface(&mut self, scene_id: u64) -> bool {
         let Some((handle, object_id, is_popup)) = self.scene_index.get(&scene_id).copied() else {
             return false;
         };
@@ -1376,7 +1375,7 @@ impl WaylandServer {
                         // Send keymap (XKB_V1 = 1, fd-as-bs_id, size)
                         let keymap = crate::ui_events::XKB_KEYMAP.as_bytes();
                         if let Ok(fd) = memfd_create("wl_keymap", 0) {
-                            let _ = write(fd, keymap);
+                            let _ = vfs_write(fd, keymap);
                             let mut mb = MessageBuilder::new(new_id, 0); // keymap
                             mb.push_u32(1); // format XKB_V1
                             mb.push_u32(fd);
@@ -1566,7 +1565,7 @@ impl WaylandServer {
                         // surface is last u32; find scene surface and raise it
                         let surface_id = read_u32(payload, payload.len() - 4);
                         // locate the scene id for this surface in any client
-                        let scene_id_opt: Option<ThingId> =
+                        let scene_id_opt: Option<u64> =
                             self.scene_index.iter().find_map(|(sid, (h, obj_id, _))| {
                                 if let Some(c) = self.clients.get(h) {
                                     let wl_sid = match c.objects.get(obj_id) {
@@ -2168,7 +2167,7 @@ impl WaylandServer {
 
     /// Update pointer focus to the surface at the given scene position.
     /// Sends `wl_pointer::enter` / `leave` / `motion` + `frame` events.
-    pub fn update_pointer_focus(&mut self, scene_id: Option<ThingId>, sx: i32, sy: i32) {
+    pub fn update_pointer_focus(&mut self, scene_id: Option<u64>, sx: i32, sy: i32) {
         // Resolve new (handle, wl_surface_id) from scene_id.
         let new_focus: Option<(u64, u32)> = scene_id.and_then(|id| {
             // xdg surfaces
@@ -2261,7 +2260,7 @@ impl WaylandServer {
 
     /// Set keyboard focus to a scene surface (None to clear).
     /// Sends `wl_keyboard::enter` / `leave` events.
-    pub fn focus_surface(&mut self, scene_id: Option<ThingId>) {
+    pub fn focus_surface(&mut self, scene_id: Option<u64>) {
         let new_focus: Option<(u64, u32)> = scene_id.and_then(|id| {
             let &(h, obj_id, _) = self.scene_index.get(&id)?;
             let client = self.clients.get(&h)?;
@@ -2390,8 +2389,8 @@ fn next_serial() -> u32 {
     NEXT_SERIAL.fetch_add(1, Ordering::SeqCst)
 }
 
-fn scene_id_for(handle: u64, object_id: u32) -> ThingId {
-    ThingId::from_u64((handle << 32) | object_id as u64)
+fn scene_id_for(handle: u64, object_id: u32) -> u64 {
+    (handle << 32) | object_id as u64
 }
 
 fn read_u32(payload: &[u8], offset: usize) -> u32 {

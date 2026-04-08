@@ -9,43 +9,51 @@ mod tone;
 use abi::schema::keys::WRITE_PORT_HANDLE;
 use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
 use alloc::vec::Vec;
-use stem::info;
 use stem::syscall::{channel_send, channel_wait, ChannelHandle};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
+use stem::{info, warn};
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    let tone_freq: Option<f64> = None; // Args not supported yet in stem
-    let seconds = 10.0;
+    let tone_freq: Option<f64> = None;
+    let seconds: f64 = 1.0;
 
-    let mut dev_buf = [ThingId::default(); 1];
     let mut write_port_handle = 0;
+    let mut sample_rate = 44100;
 
-    info!("Beeper: Waiting for sound device write port handle...");
+    info!("Beeper: Waiting for sound device via /services/sound/main...");
 
     while write_port_handle == 0 {
-        let mut devices = [ThingId::default(); 1];
-        let mut found_id = ThingId::default();
+        use abi::syscall::vfs_flags::O_RDONLY;
+        use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+        use abi::sound::AudioInfoPayload;
 
-        if thingsys::find(DEV_SOUND_HDA_PCI_STUB, &mut devices).unwrap_or(0) > 0 {
-            found_id = devices[0];
-        } else if thingsys::find(DEV_SOUND, &mut devices).unwrap_or(0) > 0 {
-            found_id = devices[0];
-        }
+        if let Ok(fd) = vfs_open("/services/sound/main", O_RDONLY) {
+            let mut payload = AudioInfoPayload {
+                magic: 0,
+                write_handle: 0,
+                read_handle: 0,
+                sample_rate: 0,
+                channels: 0,
+                bits_per_sample: 0,
+            };
+            let slice = unsafe {
+                core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+            };
 
-        if found_id.to_u64_lossy() != 0 {
-            if let Ok(h) = thingsys::prop_get(found_id, WRITE_PORT_HANDLE) {
-                if h != 0 {
-                    write_port_handle = h as ChannelHandle;
+            if let Ok(n) = vfs_read(fd, slice) {
+                if n == abi::sound::AUDIO_INFO_PAYLOAD_SIZE && payload.magic == AudioInfoPayload::MAGIC {
+                    write_port_handle = payload.write_handle as ChannelHandle;
+                    sample_rate = payload.sample_rate;
+                    info!("Beeper: Connected to sound device (rate={}Hz, handle={})", sample_rate, write_port_handle);
+                    let _ = vfs_close(fd);
                     break;
                 }
             }
+            let _ = vfs_close(fd);
         }
-        stem::time::sleep_ms(100); // Backoff if property hasn't been set yet
+        stem::time::sleep_ms(100);
     }
 
-    let sample_rate = 44100;
     let samples: Vec<u8> = if let Some(freq) = tone_freq {
         info!("Beeper: Generating {}Hz sine wave for {}s", freq, seconds);
         let mut gen = tone::ToneGenerator::new(freq, sample_rate as f64);

@@ -12,8 +12,6 @@ use alloc::vec::Vec;
 use core::mem::size_of;
 use spec::*;
 use stem::syscall::{device_alloc_dma, device_dma_phys};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{error, info, warn};
 use virtio::device::VirtioDevice;
 
@@ -28,39 +26,38 @@ use virtio::device::VirtioDevice;
 const QUEUE_SIZE: u16 = 64;
 
 #[stem::main]
-fn main(_arg: usize) -> ! {
-    info!("SND: Starting VirtIO Sound Driver...");
+fn main(boot_fd: usize) -> ! {
+    info!("SND: Starting VirtIO Sound Driver (boot_fd={})...", boot_fd);
 
-    // 1. Find the device
-    let mut dev_buf = [ThingId::default(); 1];
-    let count = match thingsys::find(kinds::DEV_SOUND, &mut dev_buf) {
-        Ok(c) => c,
-        Err(e) => {
-            error!("SND: Failed to find device: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1);
-            }
+    // 1. Get device path from bootstrap memfd
+    let mut path_buf = [0u8; 128];
+    let path = if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let ptr = resp.addr as *const u8;
+            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            unsafe { core::slice::from_raw_parts(ptr, len) }
+        } else {
+            b"/sys/devices/pci-00:01.0" // Hardcoded fallback for v0 if map fails
         }
+    } else {
+        b"/sys/devices/pci-00:01.0"
     };
-
-    if count == 0 {
-        error!("SND: No VirtIO sound device found");
-        loop {
-            stem::time::sleep_ms(1);
-        }
-    }
-
-    let device_id = dev_buf[0].to_u64_lossy();
-    info!("SND: Found device at ID {}", device_id);
+    let path_str = core::str::from_utf8(path).unwrap_or("/sys/devices/pci-00:01.0");
 
     // 2. Initialize Hardware
-    let mut driver = match VirtioDevice::new(device_id) {
+    let mut driver = match VirtioDevice::new(path_str) {
         Ok(d) => d,
         Err(e) => {
-            error!("SND: Failed to claim device: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1);
-            }
+            error!("SND: Failed to claim device at {}: {:?}", path_str, e);
+            loop { stem::time::sleep_ms(1); }
         }
     };
 
@@ -119,13 +116,28 @@ fn main(_arg: usize) -> ! {
         "SND: Listening for audio on port handles: W={} R={}",
         write_handle, read_handle
     );
-    // Publish to the device node so 'beeper' can find it
-    thingsys::prop_set(
-        ThingId::from_u64(device_id),
-        abi::schema::keys::WRITE_PORT_HANDLE,
-        write_handle as u64,
-    )
-    .ok();
+    // Publish to VFS
+    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    use abi::sound::AudioInfoPayload;
+    
+    let payload = AudioInfoPayload {
+        magic: AudioInfoPayload::MAGIC,
+        write_handle: write_handle as u32,
+        read_handle: read_handle as u32,
+        sample_rate: 44100,
+        channels: 2,
+        bits_per_sample: 16,
+    };
+
+    let _ = vfs_mkdir("/services/sound");
+    if let Ok(fd) = vfs_open("/services/sound/main", abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+        let slice = unsafe {
+            core::slice::from_raw_parts(&payload as *const _ as *const u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+        };
+        let _ = vfs_write(fd, slice);
+        let _ = vfs_close(fd);
+        info!("SND: published binary PCM1 info to /services/sound/main");
+    }
 
     let mut buf = [0u8; 4096]; // Max packet size (matched to beeper)
     let dma_dev_handle = driver.claim_handle(); // Pre-fetch handle
@@ -143,32 +155,11 @@ fn main(_arg: usize) -> ! {
         // 2. Recycle TX Descriptors (CRITICAL: Free up space in ring!)
         process_tx_queue(&mut driver);
 
-        // 3. Update Status Properties (every ~100ms)
+        // 3. Update Status Properties (every ~100ms) - Graph updates removed in VFS-native move
         let now = stem::time::monotonic_ns();
         if now - last_status_update > 100_000_000 {
-            use abi::schema::keys::*;
-
-            let port_len = stem::syscall::channel_len(read_handle).unwrap_or(0);
-            let port_cap = stem::syscall::channel_capacity(read_handle).unwrap_or(1);
-
-            thingsys::prop_set(
-                ThingId::from_u64(device_id),
-                SOUND_BUFFERED_FRAMES,
-                (port_len / 4) as u64,
-            )
-            .ok();
-            thingsys::prop_set(
-                ThingId::from_u64(device_id),
-                SOUND_FREE_FRAMES,
-                ((port_cap - port_len) / 4) as u64,
-            )
-            .ok();
-            thingsys::prop_set(
-                ThingId::from_u64(device_id),
-                SOUND_UNDERRUNS,
-                underruns_total,
-            )
-            .ok();
+            // let port_len = stem::syscall::channel_len(read_handle).unwrap_or(0);
+            // let port_cap = stem::syscall::channel_capacity(read_handle).unwrap_or(1);
             last_status_update = now;
         }
 

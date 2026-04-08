@@ -8,7 +8,7 @@ use stem::ui::UiBuilder;
 use stem::thing::sys::prop_set;
 use abi::schema::keys;
 use abi::hid::Key;
-use stem::thing::ThingId;
+use abi::hid::Key;
 
 pub struct KeyOverlay {
     // State
@@ -16,9 +16,9 @@ pub struct KeyOverlay {
     cached_text: String,
     
     // UI Graph Handles
-    root_node: Option<ThingId>,
-    text_node: Option<ThingId>,
-    perf_node: Option<ThingId>,
+    root_node: Option<u64>,
+    text_node: Option<u64>,
+    perf_node: Option<u64>,
     pub show_perf: bool,
 }
 
@@ -34,7 +34,7 @@ impl KeyOverlay {
         }
     }
 
-    pub fn setup(&mut self, UI_CROWN: ThingId) {
+    pub fn setup(&mut self, UI_CROWN: u64) {
         let window = UiBuilder::create_window(UI_CROWN, "Overlay");
         let text = UiBuilder::create_text(window, "");
         let perf = UiBuilder::create_text(window, "");

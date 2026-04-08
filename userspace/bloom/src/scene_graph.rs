@@ -2,15 +2,14 @@ use crate::geometry::Rect;
 use crate::surface::Surface;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use stem::thing::ThingId;
 
 /// A simple compositional scene graph tree.
 /// It holds Surfaces directly, and tracks the z-order stacking and damage calculation.
 pub struct SceneGraph {
     /// Ordered from back to front (bottom to top).
     /// The backmost surface is at index 0.
-    pub ordered_surfaces: Vec<ThingId>,
-    pub surfaces: BTreeMap<ThingId, Surface>,
+    pub ordered_surfaces: Vec<u64>,
+    pub surfaces: BTreeMap<u64, Surface>,
 }
 
 impl SceneGraph {
@@ -21,15 +20,15 @@ impl SceneGraph {
         }
     }
 
-    pub fn get_surface(&self, id: ThingId) -> Option<&Surface> {
+    pub fn get_surface(&self, id: u64) -> Option<&Surface> {
         self.surfaces.get(&id)
     }
 
-    pub fn get_surface_mut(&mut self, id: ThingId) -> Option<&mut Surface> {
+    pub fn get_surface_mut(&mut self, id: u64) -> Option<&mut Surface> {
         self.surfaces.get_mut(&id)
     }
 
-    pub fn insert_surface(&mut self, id: ThingId, surface: Surface) {
+    pub fn insert_surface(&mut self, id: u64, surface: Surface) {
         if !self.surfaces.contains_key(&id) {
             self.ordered_surfaces.push(id);
         }
@@ -37,7 +36,7 @@ impl SceneGraph {
         self.sort_surfaces();
     }
 
-    pub fn remove_surface(&mut self, id: ThingId) -> Option<Surface> {
+    pub fn remove_surface(&mut self, id: u64) -> Option<Surface> {
         self.ordered_surfaces.retain(|&x| x != id);
         self.surfaces.remove(&id)
     }
@@ -56,7 +55,7 @@ impl SceneGraph {
     }
 
     /// Perform a top-down hit test to find the front-most visible surface under the cursor.
-    pub fn hit_test(&self, x: i32, y: i32) -> Option<ThingId> {
+    pub fn hit_test(&self, x: i32, y: i32) -> Option<u64> {
         // Iterate top-to-bottom (reverse order)
         for id in self.ordered_surfaces.iter().rev() {
             if let Some(surf) = self.surfaces.get(id) {

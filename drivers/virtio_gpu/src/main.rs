@@ -10,7 +10,6 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use stem::abi::module_manifest::{MANIFEST_MAGIC, ManifestHeader, ModuleKind};
 use stem::device::device_enable_msi;
 use stem::syscall::{device_alloc_dma, device_dma_phys, device_irq_subscribe, device_irq_wait};
-use stem::thing::sys as thingsys;
 use stem::thread;
 use stem::{error, info, warn};
 
@@ -31,22 +30,36 @@ pub static MANIFEST: ManifestHeader = ManifestHeader {
 };
 
 #[stem::main]
-fn main(arg: usize) -> ! {
-    info!("VIRTIO_GPU: Starting driver, arg=0x{:x}", arg);
+fn main(boot_fd: usize) -> ! {
+    info!("VIRTIO_GPU: Starting driver, boot_fd={}", boot_fd);
 
-    // Find the virtio GPU device in the graph
-    let device_id = match find_virtio_gpu() {
-        Some(id) => id,
-        None => {
-            error!("VIRTIO_GPU: Device not found in graph");
-            stem::syscall::exit(1);
+    // 1. Get device path from bootstrap memfd
+    let mut path_buf = [0u8; 128];
+    let path = if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let ptr = resp.addr as *const u8;
+            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            unsafe { core::slice::from_raw_parts(ptr, len) }
+        } else {
+            b"/sys/devices/pci-00:02.0" // Fallback
         }
+    } else {
+        b"/sys/devices/pci-00:02.0"
     };
+    let path_str = core::str::from_utf8(path).unwrap_or("");
 
-    info!("VIRTIO_GPU: Found device at graph_id={}", device_id);
+    info!("VIRTIO_GPU: Using path={}", path_str);
 
-    // Initialize driver
-    let mut gpu = match VirtioGpu::new(device_id) {
+    // 2. Initialize Hardware
+    let mut gpu = match VirtioGpu::new(path_str) {
         Ok(g) => g,
         Err(e) => {
             error!("VIRTIO_GPU: Failed to init driver: {:?}", e);
@@ -195,13 +208,3 @@ extern "C" fn irq_thread() -> ! {
     }
 }
 
-fn find_virtio_gpu() -> Option<u64> {
-    let mut buf = [stem::thing::ThingId::default(); 1];
-    match thingsys::find("dev.display.Gpu", &mut buf) {
-        Ok(count) if count > 0 => Some(buf[0].to_u64_lossy()),
-        _ => {
-            info!("VIRTIO_GPU: dev.display.Gpu not found");
-            None
-        }
-    }
-}

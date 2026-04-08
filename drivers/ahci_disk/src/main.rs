@@ -18,12 +18,9 @@ use alloc::vec::Vec;
 use core::time::Duration;
 use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::abi::schema::kinds;
 use stem::block::{BlockDevice, BlockError};
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
-use stem::thing::sys as thingsys;
-use stem::thing::{HandleId, ThingId};
 use stem::{error, info};
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -102,7 +99,6 @@ struct AhciPort {
     supports_lba48: bool,
     model: [u8; 40],
     serial: [u8; 20],
-    graph_id: ThingId,
     read_port_handle: Option<ChannelHandle>,
     mmio_base: u64,
     dma_virt: u64,
@@ -205,83 +201,6 @@ fn start_port(hba_base: u64, port: u32) {
     mmio_write32(pb, PORT_CMD, cmd);
 }
 
-fn find_ahci_controller() -> Option<(ThingId, u64)> {
-    let fd = match vfs_open("/sys/devices", abi::syscall::vfs_flags::O_RDONLY) {
-        Ok(fd) => fd,
-        Err(_) => return None,
-    };
-
-    let mut buf = [0u8; 4096];
-    let n = match vfs_readdir(fd, &mut buf) {
-        Ok(n) => n,
-        Err(_) => {
-            let _ = vfs_close(fd);
-            return None;
-        }
-    };
-    let _ = vfs_close(fd);
-
-    let mut offset = 0usize;
-    while offset < n {
-        let mut end = offset;
-        while end < n && buf[end] != 0 {
-            end += 1;
-        }
-        if end > offset {
-            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
-                if name.starts_with("pci-") {
-                    let class_path = alloc::format!("/sys/devices/{}/class", name);
-                    if let Ok(class_fd) = vfs_open(&class_path, abi::syscall::vfs_flags::O_RDONLY) {
-                        let mut class_buf = [0u8; 16];
-                        if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
-                            let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
-                            if class_str.trim().starts_with("0x010601") {
-                                let _ = vfs_close(class_fd);
-                                
-                                // Found it. Now get the BAR5 and ID.
-                                let bar5_path = alloc::format!("/sys/devices/{}/bar5", name);
-                                let bar5 = if let Ok(bar_fd) = vfs_open(&bar5_path, abi::syscall::vfs_flags::O_RDONLY) {
-                                    let mut bar_buf = [0u8; 32];
-                                    let val = if let Ok(bn) = vfs_read(bar_fd, &mut bar_buf) {
-                                        let s = core::str::from_utf8(&bar_buf[..bn]).unwrap_or("");
-                                        u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
-                                    } else {
-                                        0
-                                    };
-                                    let _ = vfs_close(bar_fd);
-                                    val
-                                } else {
-                                    0
-                                };
-
-                                let id_path = alloc::format!("/sys/devices/{}/id", name);
-                                let id = if let Ok(id_fd) = vfs_open(&id_path, abi::syscall::vfs_flags::O_RDONLY) {
-                                    let mut id_buf = [0u8; 32];
-                                    let val = if let Ok(idn) = vfs_read(id_fd, &mut id_buf) {
-                                        let s = core::str::from_utf8(&id_buf[..idn]).unwrap_or("");
-                                        u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
-                                    } else {
-                                        0
-                                    };
-                                    let _ = vfs_close(id_fd);
-                                    val
-                                } else {
-                                    0
-                                };
-
-                                info!("AHCI: Found controller via VFS: {} (BAR5=0x{:x}, ID=0x{:x})", name, bar5, id);
-                                return Some((ThingId::from_u64(id), bar5));
-                            }
-                        }
-                        let _ = vfs_close(class_fd);
-                    }
-                }
-            }
-        }
-        offset = end.saturating_add(1);
-    }
-    None
-}
 
 // -----------------------------------------------------------------------------
 // ATAPI Block Device Implementation
@@ -446,18 +365,6 @@ impl BlockDevice for AhciAtapiDevice {
 // -----------------------------------------------------------------------------
 
 fn register_disk(port: &mut AhciPort) {
-    use stem::abi::schema::keys;
-
-    let disk_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("AHCI: Failed to create block device node: {:?}", e);
-            return;
-        }
-    };
-
-    port.graph_id = disk_id;
-
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match channel_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
@@ -468,30 +375,21 @@ fn register_disk(port: &mut AhciPort) {
     };
     port.read_port_handle = Some(read_handle);
 
-    // Set block device properties
-    thingsys::prop_set(disk_id, keys::SECTOR_SIZE, port.sector_size as u64).ok();
-    thingsys::prop_set(disk_id, keys::SECTOR_COUNT, port.sector_count).ok();
-    thingsys::prop_set(
-        disk_id,
-        keys::LBA48,
-        if port.supports_lba48 { 1u64 } else { 0u64 },
-    )
-    .ok();
+    // Publish to VFS
+    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    let _ = vfs_mkdir("/services/storage");
+    let name = alloc::format!("/services/storage/ahci{}", port.port_num);
+    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+        let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
+        let _ = vfs_close(fd);
+    }
 
-    // Convert model to string and set
     let model_str = core::str::from_utf8(&port.model)
         .unwrap_or("Unknown")
         .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
-    }
-
-    // Publish write handle for clients to send requests to
-    thingsys::prop_set(disk_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
 
     info!(
-        "AHCI: Registered block device {} port={} sectors={} lba48={} model='{}' rpc_port={}",
-        disk_id.to_u64_lossy(),
+        "AHCI: Registered block device port={} sectors={} lba48={} model='{}' rpc_port={}",
         port.port_num,
         port.sector_count,
         port.supports_lba48,
@@ -501,18 +399,6 @@ fn register_disk(port: &mut AhciPort) {
 }
 
 fn register_atapi_disk(port: &mut AhciPort) {
-    use stem::abi::schema::keys;
-
-    let node_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("AHCI: Failed to create block device node: {:?}", e);
-            return;
-        }
-    };
-
-    port.graph_id = node_id;
-
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match channel_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
@@ -523,26 +409,21 @@ fn register_atapi_disk(port: &mut AhciPort) {
     };
     port.read_port_handle = Some(read_handle);
 
-    // Set block device properties
-    thingsys::prop_set(node_id, keys::SECTOR_SIZE, 2048u64).ok();
-    if port.sector_count > 0 {
-        thingsys::prop_set(node_id, keys::SECTOR_COUNT, port.sector_count).ok();
+    // Publish to VFS
+    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    let _ = vfs_mkdir("/services/storage");
+    let name = alloc::format!("/services/storage/atapi{}", port.port_num);
+    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+        let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
+        let _ = vfs_close(fd);
     }
 
-    // Convert model to string and set
     let model_str = core::str::from_utf8(&port.model)
         .unwrap_or("ATAPI Device")
         .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
-    }
-
-    // Publish write handle for clients to send requests to
-    thingsys::prop_set(node_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
 
     info!(
-        "AHCI: Registered ATAPI block device {} port={} model='{}' rpc_port={}",
-        node_id.to_u64_lossy(),
+        "AHCI: Registered ATAPI block device port={} model='{}' rpc_port={}",
         port.port_num,
         model_str,
         write_handle
@@ -550,29 +431,58 @@ fn register_atapi_disk(port: &mut AhciPort) {
 }
 
 #[stem::main]
-fn main(_arg: usize) -> ! {
-    info!("AHCI: Starting AHCI/SATA disk driver v1");
+fn main(boot_fd: usize) -> ! {
+    info!("AHCI: Starting AHCI/SATA disk driver (boot_fd={})", boot_fd);
 
-    let (pci_id, _bar5_phys) = match find_ahci_controller() {
-        Some(c) => c,
-        None => {
-            info!("AHCI: No AHCI controller found");
-            loop {
-                stem::sleep(Duration::from_secs(60));
-            }
+    // 1. Get device path from bootstrap memfd
+    let mut path_buf = [0u8; 128];
+    let path = if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let ptr = resp.addr as *const u8;
+            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            unsafe { core::slice::from_raw_parts(ptr, len) }
+        } else {
+            b"/sys/devices/pci-00:01.0" // Placeholder
         }
+    } else {
+        b"/sys/devices/pci-00:01.0"
     };
+    let path_str = core::str::from_utf8(path).unwrap_or("");
 
-    let claim_handle = match stem::syscall::device_claim(pci_id.to_u64_lossy()) {
+    // Read kernel handle from sysfs
+    let pci_handle = if !path_str.is_empty() {
+        use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+        let h_path = alloc::format!("{}/handle", path_str);
+        if let Ok(fd) = vfs_open(&h_path, abi::syscall::vfs_flags::O_RDONLY) {
+            let mut buf = [0u8; 32];
+            if let Ok(n) = vfs_read(fd, &mut buf) {
+                let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
+                u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
+            } else { 0 }
+        } else { 0 }
+    } else { 0 };
+
+    if pci_handle == 0 {
+        error!("AHCI: Failed to find controller info at '{}'", path_str);
+        loop { stem::sleep(Duration::from_secs(60)); }
+    }
+
+    let claim_handle = match stem::syscall::device_claim(pci_handle) {
         Ok(h) => {
-            info!("AHCI: Claimed PCI device {:?} handle={}", pci_id, h);
+            info!("AHCI: Claimed PCI device 0x{:x} handle={}", pci_handle, h);
             h
         }
         Err(e) => {
             error!("AHCI: Failed to claim: {:?}", e);
-            loop {
-                stem::sleep(Duration::from_secs(60));
-            }
+            loop { stem::sleep(Duration::from_secs(60)); }
         }
     };
 
@@ -669,7 +579,6 @@ fn main(_arg: usize) -> ! {
                     supports_lba48: false,
                     model: [0u8; 40],
                     serial: [0u8; 20],
-                    graph_id: ThingId::default(),
                     read_port_handle: None,
                     mmio_base: mapped_base,
                     dma_virt,
@@ -721,7 +630,6 @@ fn main(_arg: usize) -> ! {
             supports_lba48: false,
             model: [0u8; 40],
             serial: [0u8; 20],
-            graph_id: ThingId::default(),
             read_port_handle: None,
             mmio_base: mapped_base,
             dma_virt,

@@ -59,34 +59,31 @@ pub struct VirtioGpu {
     external_backing: bool,
 
     // Virgl 3D support
+    // Virgl 3D support
     virgl_supported: bool,
     next_resource_id: u32,
+    sysfs_path: alloc::string::String,
 }
 
 impl VirtioGpu {
     /// Create a new VirtioGpu driver instance
-    pub fn new(device_id: u64) -> Result<Self, Errno> {
-        use abi::ids::HandleId;
-        use abi::schema::keys;
+    pub fn new(sysfs_path: &str) -> Result<Self, Errno> {
         use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
-        use stem::thing::ThingId;
-        use stem::thing::sys as thingsys;
 
-        let claim_handle = device_claim(device_id)?;
-        let gpu_node = ThingId::from_u64(device_id);
+        // Read internal handle from /sys/devices/.../handle
+        let device_handle = read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
 
-        // Read VirtIO capability offsets from graph properties (set by kernel PCI enumeration)
-        let common_bar =
-            thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_BAR).unwrap_or(0) as usize;
-        let common_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_OFFSET).unwrap_or(0);
-        let notify_bar =
-            thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_BAR).unwrap_or(0) as usize;
-        let notify_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_OFFSET).unwrap_or(0);
-        let notify_multiplier =
-            thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
+        let claim_handle = device_claim(device_handle)?;
+
+        // Read VirtIO capability offsets from sysfs
+        let common_bar = read_sys_u32(&alloc::format!("{}/virtio/common_bar", sysfs_path)).unwrap_or(0) as usize;
+        let common_offset = read_sys_u32(&alloc::format!("{}/virtio/common_offset", sysfs_path)).unwrap_or(0) as u64;
+        let notify_bar = read_sys_u32(&alloc::format!("{}/virtio/notify_bar", sysfs_path)).unwrap_or(0) as usize;
+        let notify_offset = read_sys_u32(&alloc::format!("{}/virtio/notify_offset", sysfs_path)).unwrap_or(0) as u64;
+        let notify_multiplier = read_sys_u32(&alloc::format!("{}/virtio/notify_multiplier", sysfs_path)).unwrap_or(4);
 
         stem::info!(
-            "virtio_gpu: caps from graph - common BAR{} off=0x{:x}, notify BAR{} off=0x{:x} mult={}",
+            "virtio_gpu: caps from sysfs - common BAR{} off=0x{:x}, notify BAR{} off=0x{:x} mult={}",
             common_bar,
             common_offset,
             notify_bar,
@@ -127,6 +124,7 @@ impl VirtioGpu {
             external_backing: false,
             virgl_supported: false,
             next_resource_id: 1,
+            sysfs_path: alloc::string::String::from(sysfs_path),
         })
     }
 
@@ -887,5 +885,23 @@ impl VirtioGpu {
     /// Get claim handle for device operations
     pub fn claim_handle(&self) -> usize {
         self.claim_handle
+    }
+}
+
+fn read_sys_u32(path: &str) -> Option<u32> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).ok()
+    } else {
+        trimmed.parse::<u32>().ok()
     }
 }

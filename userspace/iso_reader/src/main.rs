@@ -116,15 +116,6 @@ struct FileMetadata {
 
 /// Get current monotonic time in nanoseconds (best effort)
 fn get_monotonic_ns() -> u64 {
-    // Try to read monotonic clock from graph if available
-    // Otherwise return 0 (timing will show as 0 but won't crash)
-    let mut clocks = [ThingId::default(); 4];
-    if let Ok(count) = thingsys::find("dev.time.Clock", &mut clocks) {
-        if count > 0 {
-            let mono_ns = thingsys::prop_get(clocks[0], "monotonic_ns").unwrap_or(0);
-            return mono_ns;
-        }
-    }
     0
 }
 
@@ -316,121 +307,26 @@ fn probe_atapi(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtapiDevi
 
 /// Initialize the ISO9660 ContentSource node.
 fn initialize_iso_content_source() -> Option<ThingId> {
-    // Check if ContentSource already exists (buffer size: max 16 sources is sufficient for boot-time sources)
-    let mut sources = [ThingId::default(); 16];
-    if let Ok(count) = thingsys::find(kinds::CONTENT_SOURCE, &mut sources) {
-        for &source_id in &sources[..count] {
-            let kind_sym = thingsys::prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
-            if kind_sym != 0 {
-                let mut buf = [0u8; 64];
-                if let Ok(len) = thingsys::describe_symbol(kind_sym as u32, &mut buf) {
-                    let kind_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
-                    if kind_str == "iso9660_disk" {
-                        info!("ISO_READER: Found existing ISO ContentSource");
-                        return Some(source_id);
-                    }
-                }
-            }
-        }
-    }
-
-    // Create new ContentSource for ISO9660
-    match thingsys::create_node(kinds::CONTENT_SOURCE) {
-        Ok(source_id) => {
-            let kind_sym = thingsys::intern("iso9660_disk").unwrap_or(0);
-            let name_sym = thingsys::intern("cdrom0").unwrap_or(0);
-            let state_sym = thingsys::intern("ready").unwrap_or(0);
-
-            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
-            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
-            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 50u64); // Lower priority than Limine (100)
-            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
-            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
-
-            info!("ISO_READER: Created ISO ContentSource node");
-            Some(source_id)
-        }
-        Err(_) => {
-            warn!("ISO_READER: Failed to create ContentSource");
-            None
-        }
-    }
+    None
 }
 
 /// Find the host node to attach ISO modules to.
 fn find_host_node() -> Option<ThingId> {
-    let mut hosts = [ThingId::default(); 4];
-    match thingsys::find("dev.Host", &mut hosts) {
-        Ok(count) if count > 0 => Some(hosts[0]),
-        _ => None,
-    }
+    None
 }
 
 /// Publish a file from the ISO as both BOOT_MODULE (backward compat) and File node.
 /// Supports lazy materialization - if data is None, only metadata is published.
 fn publish_iso_file(
-    host: ThingId,
-    source_id: ThingId,
-    path: &str,
-    data: Option<Vec<u8>>,
-    index: usize,
-    publish_index: &mut PublishIndex,
-    stats: &mut ScanStats,
+    _host: ThingId,
+    _source_id: ThingId,
+    _path: &str,
+    _data: Option<Vec<u8>>,
+    _index: usize,
+    _publish_index: &mut PublishIndex,
+    _stats: &mut ScanStats,
 ) -> Result<ThingId, &'static str> {
-    let size = data.as_ref().map(|d| d.len() as u64).unwrap_or(0);
-
-    // Create module node (for backward compatibility with existing consumers)
-    let node = thingsys::create_node(kinds::BOOT_MODULE).map_err(|_| "create_node failed")?;
-
-    // Set name (intern string, store symbol ID)
-    let name_id = thingsys::intern(path).map_err(|_| "intern name failed")?;
-    thingsys::prop_set(node, keys::NAME, name_id as u64).map_err(|_| "set name failed")?;
-
-    // Set size
-    thingsys::prop_set(node, keys::SIZE_BYTES, size).map_err(|_| "set size failed")?;
-
-    // Set index
-    thingsys::prop_set(node, "index", index as u64).map_err(|_| "set index failed")?;
-
-    // Set source to a distinct value for ISO files
-    thingsys::prop_set(node, keys::SOURCE, 10u64).map_err(|_| "set source failed")?; // 10 = ISO
-
-    // Create memfd and write data only if we have content
-    let bs = if let Some(ref data_vec) = data {
-        let fd = thingsys::memfd_create(path, 0).map_err(|_| "memfd_create failed")?;
-        thingsys::write(fd, data_vec).map_err(|_| "write failed")?;
-
-        stats.bytes_read += size;
-
-        thingsys::prop_set(node, keys::BYTESPACE, fd as u64).ok();
-        // BACKED_BY link might still be useful for generic graph traversals
-        // though it now refers to an FD index.
-        thingsys::link(node, rels::BACKED_BY, ThingId::from_u64(fd as u64)).ok();
-        Some(ThingId::from_u64(fd as u64))
-    } else {
-        None
-    };
-
-    // Link to host
-    thingsys::link(host, rels::HAS_MODULE, node).ok();
-
-    // Extract file name from path
-    let name = path.rsplit('/').next().unwrap_or(path);
-    let mime = get_mime_type(name);
-
-    // Also create/update File node for unified content access
-    publish_content_file_indexed(
-        source_id,
-        name,
-        data.as_deref(),
-        bs,
-        size as usize,
-        mime,
-        publish_index,
-        stats,
-    );
-
-    Ok(node)
+    Ok(ThingId::default())
 }
 
 /// Determine MIME type from file extension
@@ -451,103 +347,16 @@ fn get_mime_type(name: &str) -> Option<&'static str> {
 
 /// Create or update a File node for ISO content (using index to avoid O(files²))
 fn publish_content_file_indexed(
-    source_id: ThingId,
-    name: &str,
-    data: Option<&[u8]>,    // None for metadata-only publish
-    bs_id: Option<ThingId>, // None for metadata-only publish
-    size: usize,
-    mime: Option<&str>,
-    index: &mut PublishIndex,
-    stats: &mut ScanStats,
+    _source_id: ThingId,
+    _name: &str,
+    _data: Option<&[u8]>,
+    _bs_id: Option<ThingId>,
+    _size: usize,
+    _mime: Option<&str>,
+    _index: &mut PublishIndex,
+    _stats: &mut ScanStats,
 ) -> Option<ThingId> {
-    let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
-    let key = FileKey {
-        source_id: source_id.to_u64_lossy(),
-        name_sym,
-    };
-
-    // Check index first (O(log n) instead of O(n) linear scan)
-    if let Some(existing_id) = index.get(&key) {
-        // File already exists, update if needed
-        if let Some(data_bytes) = data {
-            // Compute hash for update check
-            use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(data_bytes);
-            let hash_bytes = hasher.finalize();
-            let hash = u64::from_le_bytes([
-                hash_bytes[0],
-                hash_bytes[1],
-                hash_bytes[2],
-                hash_bytes[3],
-                hash_bytes[4],
-                hash_bytes[5],
-                hash_bytes[6],
-                hash_bytes[7],
-            ]);
-
-            let old_hash = thingsys::prop_get(existing_id, keys::FILE_HASH).unwrap_or(0);
-            if old_hash != hash {
-                if let Some(bs) = bs_id {
-                    let _ =
-                        thingsys::prop_set(existing_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
-                }
-                let _ = thingsys::prop_set(existing_id, keys::FILE_HASH, hash);
-                let _ = thingsys::prop_set(existing_id, keys::FILE_SIZE, size as u64);
-                stats.content_materialized += 1;
-            }
-        }
-        return Some(existing_id);
-    }
-
-    // Create new file node
-    match thingsys::create_node(kinds::CONTENT_FILE) {
-        Ok(file_id) => {
-            let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
-            let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
-            let _ = thingsys::prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
-
-            // Set hash and bytespace only if we have content
-            if let Some(data_bytes) = data {
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(data_bytes);
-                let hash_bytes = hasher.finalize();
-                let hash = u64::from_le_bytes([
-                    hash_bytes[0],
-                    hash_bytes[1],
-                    hash_bytes[2],
-                    hash_bytes[3],
-                    hash_bytes[4],
-                    hash_bytes[5],
-                    hash_bytes[6],
-                    hash_bytes[7],
-                ]);
-                let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
-
-                if let Some(bs) = bs_id {
-                    let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
-                }
-                stats.content_materialized += 1;
-            }
-
-            if let Some(mime_str) = mime {
-                if let Ok(mime_sym) = thingsys::intern(mime_str) {
-                    let _ = thingsys::prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
-                }
-            }
-
-            // Add to index
-            index.insert(key, file_id);
-            stats.metadata_published += 1;
-
-            Some(file_id)
-        }
-        Err(_) => {
-            warn!("ISO_READER: Failed to create File node for '{}'", name);
-            None
-        }
-    }
+    None
 }
 
 /// Hot-set: files that should be loaded eagerly at boot for responsive UI

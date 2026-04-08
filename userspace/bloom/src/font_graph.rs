@@ -1,7 +1,6 @@
 extern crate alloc;
 
 use crate::asset::{AssetBank, FontAsset};
-use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -10,9 +9,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
-
-use stem::thing::sys::{find, intern, prop_get, prop_set, read, stat};
-use stem::thing::ThingId;
 
 /// Font epoch counter - increments when font availability changes.
 /// Used by UiBuildKey to detect when text needs re-rendering.
@@ -47,24 +43,24 @@ impl Default for FontStyle {
 
 #[derive(Clone, Debug)]
 pub struct ResolvedFace {
-    pub face_id: ThingId,
-    pub family_id: ThingId,
+    pub face_id: u64,
+    pub family_id: u64,
     pub family_name: Arc<str>,
     pub style_name: Arc<str>,
-    pub file_id: ThingId,
+    pub file_id: u64,
 }
 
 #[derive(Clone, Debug)]
 struct FontFamily {
     name: Arc<str>,
-    faces: Vec<ThingId>,
-    superfamily_id: Option<ThingId>,
+    faces: Vec<u64>,
+    superfamily_id: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
 struct FontFace {
-    family_id: ThingId,
-    file_id: ThingId,
+    family_id: u64,
+    file_id: u64,
     style: Arc<str>,
     weight: u16,
     width: u16,
@@ -82,7 +78,7 @@ struct FontFile {
 #[derive(Clone, Debug)]
 struct FontSuperfamily {
     name: Arc<str>,
-    families: Vec<ThingId>,
+    families: Vec<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -114,22 +110,22 @@ struct FontSymbols {
 impl FontSymbols {
     fn intern() -> Self {
         Self {
-            contains: intern(rels::FONT_CONTAINS).unwrap_or(0) as u64,
-            covers: intern(rels::FONT_COVERS).unwrap_or(0) as u64,
+            contains: 0,
+            covers: 0,
         }
     }
 }
 
 pub struct FontGraph {
-    families: BTreeMap<ThingId, FontFamily>,
-    faces: BTreeMap<ThingId, FontFace>,
-    files: BTreeMap<ThingId, FontFile>,
-    superfamilies: BTreeMap<ThingId, FontSuperfamily>,
-    family_name_index: BTreeMap<String, ThingId>,
-    file_name_index: BTreeMap<String, ThingId>,
-    resolve_cache: BTreeMap<ResolveKey, ThingId>,
-    font_cache: BTreeMap<ThingId, FontAsset>,
-    glyph_cache: BTreeMap<(ThingId, u16, u32), ThingId>,
+    families: BTreeMap<u64, FontFamily>,
+    faces: BTreeMap<u64, FontFace>,
+    files: BTreeMap<u64, FontFile>,
+    superfamilies: BTreeMap<u64, FontSuperfamily>,
+    family_name_index: BTreeMap<String, u64>,
+    file_name_index: BTreeMap<String, u64>,
+    resolve_cache: BTreeMap<ResolveKey, u64>,
+    font_cache: BTreeMap<u64, FontAsset>,
+    glyph_cache: BTreeMap<(u64, u16, u32), u64>,
     dirty: bool,
 }
 
@@ -173,12 +169,13 @@ impl FontGraph {
         self.dirty = false;
     }
 
-    pub fn resolve_stack(&self, stack: Option<&str>) -> Vec<ThingId> {
+    pub fn resolve_stack(&self, stack: Option<&str>) -> Vec<u64> {
         let mut resolved = Vec::new();
-        let mut tokens = Vec::new();
-        if let Some(stack_str) = stack {
-            tokens = parse_stack_tokens(stack_str);
-        }
+        let tokens: Vec<&str> = if let Some(stack_str) = stack {
+            stack_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+        } else {
+            Vec::new()
+        };
 
         if tokens.is_empty() {
             return self.default_stack();
@@ -203,7 +200,7 @@ impl FontGraph {
 
     pub fn resolve_face_for_glyph(
         &mut self,
-        stack: &[ThingId],
+        stack: &[u64],
         style: FontStyle,
         codepoint: u32,
     ) -> Option<ResolvedFace> {
@@ -226,12 +223,12 @@ impl FontGraph {
         None
     }
 
-    pub fn select_face_for_family(&self, family_id: ThingId, style: FontStyle) -> Option<ThingId> {
+    pub fn select_face_for_family(&self, family_id: u64, style: FontStyle) -> Option<u64> {
         let family = self.families.get(&family_id)?;
         best_face_for_style(&family.faces, &self.faces, style)
     }
 
-    pub fn font_for_face(&mut self, face_id: ThingId) -> Option<FontAsset> {
+    pub fn font_for_face(&mut self, face_id: u64) -> Option<FontAsset> {
         let face = self.faces.get(&face_id)?;
         let file = self.files.get(&face.file_id)?;
         if !self.font_cache.contains_key(&face.file_id) {
@@ -250,10 +247,10 @@ impl FontGraph {
 
     fn resolve_in_family(
         &self,
-        family_id: ThingId,
+        family_id: u64,
         style: FontStyle,
         codepoint: u32,
-    ) -> Option<ThingId> {
+    ) -> Option<u64> {
         if let Some(family) = self.families.get(&family_id) {
             let mut candidates = rank_faces(&family.faces, &self.faces, style);
             if let Some(face_id) = first_face_covering(&candidates, &self.faces, codepoint) {
@@ -281,7 +278,7 @@ impl FontGraph {
         None
     }
 
-    pub fn resolved_face_by_id(&self, face_id: ThingId) -> Option<ResolvedFace> {
+    pub fn resolved_face_by_id(&self, face_id: u64) -> Option<ResolvedFace> {
         let face = self.faces.get(&face_id)?;
         let family = self.families.get(&face.family_id)?;
         Some(ResolvedFace {
@@ -293,7 +290,7 @@ impl FontGraph {
         })
     }
 
-    fn default_stack(&self) -> Vec<ThingId> {
+    fn default_stack(&self) -> Vec<u64> {
         let mut stack = Vec::new();
         let preferred = ["Noto Sans", "Noto Sans Symbols", "Noto Sans Symbols 2"];
         for name in preferred {
@@ -313,11 +310,11 @@ impl FontGraph {
         stack
     }
 
-    fn find_family_by_name(&self, name: &str) -> Option<ThingId> {
+    fn find_family_by_name(&self, name: &str) -> Option<u64> {
         self.family_name_index.get(&name.to_lowercase()).copied()
     }
 
-    fn find_family_by_file_name(&self, name: &str) -> Option<ThingId> {
+    fn find_family_by_file_name(&self, name: &str) -> Option<u64> {
         let needle = name.to_lowercase();
         if let Some(id) = self.file_name_index.get(&needle) {
             return Some(*id);
@@ -345,10 +342,10 @@ impl FontGraph {
 
     pub fn find_glyph(
         &mut self,
-        face_id: ThingId,
+        face_id: u64,
         px_size: u16,
         codepoint: u32,
-    ) -> Option<ThingId> {
+    ) -> Option<u64> {
         let key = (face_id, px_size, codepoint);
         if let Some(id) = self.glyph_cache.get(&key) {
             return Some(*id);
@@ -357,91 +354,16 @@ impl FontGraph {
         None
     }
 
-    pub fn request_glyph(&self, face_id: ThingId, px_size: u16, codepoint: u32) {
-        // Enqueue a FONT_GLYPH_REQUEST
-        if let Ok(req_id) = stem::thing::sys::create_node(kinds::FONT_GLYPH_REQUEST) {
-            let _ = prop_set(req_id, keys::FONT_REQUEST_FACE, face_id.to_u64_lossy());
-            let _ = prop_set(req_id, keys::FONT_REQUEST_CODEPOINT, codepoint as u64);
-            let _ = prop_set(req_id, keys::FONT_REQUEST_PX_SIZE, px_size as u64);
-        }
+    pub fn request_glyph(&self, _face_id: u64, _px_size: u16, _codepoint: u32) {
+        // Enqueue a FONT_GLYPH_REQUEST (Deprecated, graph-based)
     }
-}
-
-fn collect_nodes(kind: &str) -> Vec<ThingId> {
-    let mut out = Vec::new();
-    let mut buf = [ThingId::default(); 256];
-    if let Ok(count) = find(kind, &mut buf) {
-        let count = count.min(buf.len());
-        for id in buf.iter().take(count) {
-            out.push(*id);
-        }
-    }
-    out
-}
-
-fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
-    let val = prop_get(node, key).ok()?;
-    if val == 0 {
-        return None;
-    }
-    read_fd_string(val as u32)
-}
-
-fn read_fd_string(fd: u32) -> Option<String> {
-    let (_, size_u64, _) = stat(fd).ok()?;
-    let size = size_u64 as usize;
-    if size == 0 {
-        return Some(String::new());
-    }
-    let mut buf = vec![0u8; size];
-    let len = read(fd, &mut buf).ok()?;
-    let text = core::str::from_utf8(&buf[..len]).unwrap_or("");
-    Some(text.to_string())
-}
-
-fn parse_stack_tokens(stack: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let parts: Vec<&str> = if stack.contains("->") {
-        stack.split("->").collect()
-    } else if stack.contains(',') {
-        stack.split(',').collect()
-    } else {
-        vec![stack]
-    };
-    for part in parts {
-        let token = part.trim();
-        if !token.is_empty() {
-            tokens.push(token.to_string());
-        }
-    }
-    tokens
-}
-
-fn read_coverage(node: ThingId) -> Option<Vec<(u32, u32)>> {
-    let ranges = read_string_prop(node, keys::FONT_COVERAGE_RANGES)?;
-    let mut out = Vec::new();
-    for part in ranges.split(',') {
-        let chunk = part.trim();
-        if chunk.is_empty() {
-            continue;
-        }
-        if let Some((a, b)) = chunk.split_once('-') {
-            if let (Ok(start), Ok(end)) = (u32::from_str_radix(a, 16), u32::from_str_radix(b, 16)) {
-                out.push((start, end));
-            }
-        } else if let Ok(val) = u32::from_str_radix(chunk, 16) {
-            out.push((val, val));
-        }
-    }
-    out.sort_by_key(|(a, _)| *a);
-    Some(out)
 }
 
 fn first_face_covering(
-    faces: &[ThingId],
-    face_map: &BTreeMap<ThingId, FontFace>,
+    faces: &[u64],
+    face_map: &BTreeMap<u64, FontFace>,
     codepoint: u32,
-) -> Option<ThingId> {
+) -> Option<u64> {
     for face_id in faces {
         if let Some(face) = face_map.get(face_id) {
             if coverage_contains(&face.coverage, codepoint) {
@@ -470,10 +392,10 @@ fn coverage_contains(ranges: &[(u32, u32)], codepoint: u32) -> bool {
 }
 
 fn rank_faces(
-    faces: &[ThingId],
-    face_map: &BTreeMap<ThingId, FontFace>,
+    faces: &[u64],
+    face_map: &BTreeMap<u64, FontFace>,
     style: FontStyle,
-) -> Vec<ThingId> {
+) -> Vec<u64> {
     let mut ranked = faces.to_vec();
     ranked.sort_by_key(|id| {
         face_map
@@ -485,10 +407,10 @@ fn rank_faces(
 }
 
 fn best_face_for_style(
-    faces: &[ThingId],
-    face_map: &BTreeMap<ThingId, FontFace>,
+    faces: &[u64],
+    face_map: &BTreeMap<u64, FontFace>,
     style: FontStyle,
-) -> Option<ThingId> {
+) -> Option<u64> {
     faces
         .iter()
         .min_by_key(|id| {
@@ -507,10 +429,10 @@ fn face_style_score(face: &FontFace, style: FontStyle) -> i32 {
     weight + width + slope
 }
 
-fn hash_stack(stack: &[ThingId]) -> u64 {
+fn hash_stack(stack: &[u64]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
     for id in stack {
-        hash = fnv_mix(hash, &id.to_u64_lossy().to_le_bytes());
+        hash = fnv_mix(hash, &id.to_le_bytes());
     }
     hash
 }
@@ -546,8 +468,6 @@ pub fn mark_dirty() {
     }
 }
 
-/// Non-blocking check if fonts are available.
-/// Returns false if graph is dirty and needs refresh (caller should use fallback).
 pub fn has_fonts_ready() -> bool {
     let guard = FONT_GRAPH.lock();
     match guard.as_ref() {
@@ -556,8 +476,6 @@ pub fn has_fonts_ready() -> bool {
     }
 }
 
-/// Non-blocking graph access.
-/// Returns None if graph is dirty and needs refresh (caller should use fallback).
 pub fn try_with_graph_if_ready<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&FontGraph) -> R,

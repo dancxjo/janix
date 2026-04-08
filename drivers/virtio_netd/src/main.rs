@@ -30,7 +30,17 @@ fn main(arg: usize) -> ! {
 
     // Initialize VirtIO-NET driver.
     let mut driver = match if arg != 0 {
-        VirtioNetDriver::claim_device(arg as u64)
+        // In VFS-native model, arg might be a pointer to a string path
+        let path_ptr = arg as *const u8;
+        let mut len = 0;
+        unsafe {
+            while *path_ptr.add(len) != 0 && len < 128 {
+                len += 1;
+            }
+        }
+        let path_str = core::str::from_utf8(unsafe { core::slice::from_raw_parts(path_ptr, len) })
+            .unwrap_or("/sys/devices/pci-00:02.0");
+        VirtioNetDriver::claim_device(path_str)
     } else {
         VirtioNetDriver::find_and_claim()
     } {

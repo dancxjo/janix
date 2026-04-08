@@ -11,7 +11,6 @@ use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
 use stem::syscall::{channel_recv, ChannelHandle};
-use stem::thing::{sys as thingsys, ThingId};
 use virtio_gpu::{Rect, VirtioGpu};
 
 // ============================================================================
@@ -158,29 +157,93 @@ fn send_msg(handle: ChannelHandle, msg_type: u16, payload: &[u8]) {
     }
 }
 
-fn find_gpu() -> Option<ThingId> {
-    let mut buf = [ThingId::default(); 1];
-    let count = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut buf).ok()?;
-    if count == 0 {
-        return None;
+fn find_gpu() -> Option<alloc::string::String> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
+
+    let fd = vfs_open("/sys/devices", O_RDONLY).ok()?;
+    let mut buf = [0u8; 4096];
+    let n = vfs_readdir(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let mut offset = 0;
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                let path = format!("/sys/devices/{}", name);
+                let vendor = read_sys_u32(&format!("{}/vendor", path)).unwrap_or(0);
+                let device = read_sys_u32(&format!("{}/device", path)).unwrap_or(0);
+                let class = read_sys_u32(&format!("{}/class", path)).unwrap_or(0);
+
+                // VirtIO Vendor = 0x1af4, Display Class = 0x0300xx, 
+                // or specifically device 0x1050 or 0x1011
+                if vendor == 0x1af4 && ((class >> 8) == 0x0300 || device == 0x1050 || device == 0x1011) {
+                    return Some(path);
+                }
+            }
+        }
+        offset = end + 1;
     }
-    Some(buf[0])
+    None
 }
 
-/// Query the boot framebuffer for display dimensions.
+fn read_sys_u32(path: &str) -> Option<u32> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).ok()
+    } else {
+        trimmed.parse::<u32>().ok()
+    }
+}
+
+fn read_sys_string(path: &str) -> Option<alloc::string::String> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 256];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    Some(alloc::string::String::from_utf8_lossy(&buf[..n]).to_string())
+}
+
+/// Query the boot framebuffer for display dimensions via /sys/firmware/framebuffer.
 /// Falls back to 1024x768 if not found.
 fn get_display_dimensions() -> (u32, u32, u32, u32) {
-    let mut fb_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
-        if count > 0 {
-            let fb = fb_buf[0];
-            let width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
-            let height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
-            let stride = width * 4;
-            let format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(1) as u32;
-            return (width, height, stride, format);
+    if let Some(info) = read_sys_string("/sys/firmware/framebuffer") {
+        let mut width = 1024;
+        let mut height = 768;
+        let mut stride = 4096;
+        let mut format = 1;
+
+        for line in info.lines() {
+            if let Some(val) = line.strip_prefix("width=") {
+                width = val.parse().unwrap_or(width);
+            } else if let Some(val) = line.strip_prefix("height=") {
+                height = val.parse().unwrap_or(height);
+            } else if let Some(val) = line.strip_prefix("stride=") {
+                stride = val.parse().unwrap_or(stride);
+            } else if let Some(val) = line.strip_prefix("format=") {
+                format = val.parse().unwrap_or(format);
+            }
         }
+        return (width, height, stride, format);
     }
+    
     // Fallback defaults
     (1024, 768, 1024 * 4, 1)
 }
@@ -196,8 +259,8 @@ fn main(arg: usize) -> ! {
     );
 
     // Find and initialize GPU
-    let gpu_id = match find_gpu() {
-        Some(id) => id,
+    let gpu_path = match find_gpu() {
+        Some(path) => path,
         None => {
             info!("display_virtio_gpu: GPU device not found");
             loop {
@@ -206,7 +269,7 @@ fn main(arg: usize) -> ! {
         }
     };
 
-    let mut gpu = match VirtioGpu::new(gpu_id.to_u64_lossy()) {
+    let mut gpu = match VirtioGpu::new(&gpu_path) {
         Ok(g) => g,
         Err(e) => {
             info!("display_virtio_gpu: Failed to initialize GPU: {:?}", e);

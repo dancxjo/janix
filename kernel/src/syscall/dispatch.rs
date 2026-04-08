@@ -81,11 +81,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_MEMFD_CREATE => handlers::sys_memfd_create(args[0], args[1], args[2]),
         SYS_MEMFD_PHYS => handlers::sys_memfd_phys(args[0]),
 
-        SYS_NIC_MAC => handlers::sys_nic_mac(args[0]),
-        SYS_NIC_LINK_UP => handlers::sys_nic_link_up(),
-        SYS_NIC_POLL_RX => handlers::sys_nic_poll_rx(args[0], args[1]),
-        SYS_NIC_TX => handlers::sys_nic_tx(args[0], args[1]),
-
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
 
         // ── VFS (janix) ───────────────────────────────────────────────────

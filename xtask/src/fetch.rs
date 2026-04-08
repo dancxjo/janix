@@ -22,6 +22,7 @@ pub fn fetch() -> Result<()> {
     fetch_fonts(&assets)?;
     fetch_icons(&assets)?;
     fetch_cursors(&assets)?;
+    fetch_unifont(&assets)?;
 
     #[cfg(feature = "svg-cursors")]
     fetch_future_cursors(&assets)?;
@@ -379,6 +380,42 @@ fn fetch_pciids(assets: &Path) -> Result<()> {
             .context("Failed to download pci.ids")?;
     } else {
         println!("    pci.ids already exists.");
+    }
+
+    Ok(())
+}
+
+
+fn fetch_unifont(assets: &Path) -> Result<()> {
+    println!("==> Fetching Unifont...");
+    require_tool("curl")?;
+    require_tool("gunzip")?;
+
+    let fonts_dir = assets.join("fonts");
+    fs::create_dir_all(&fonts_dir)?;
+
+    let unifont_dest = fonts_dir.join("unifont.hex");
+    if !unifont_dest.exists() {
+        println!("    Downloading unifont_all.hex.gz...");
+        let gz_path = fonts_dir.join("unifont_all.hex.gz");
+        download_file(
+            "https://unifoundry.com/pub/unifont/unifont-17.0.04/font-builds/unifont_all-17.0.04.hex.gz",
+            &gz_path,
+        )?;
+
+        println!("    Extracting unifont.hex...");
+        run_cmd(
+            Command::new("gunzip")
+                .arg("-f")
+                .arg(&gz_path),
+        )?;
+        
+        let extracted = fonts_dir.join("unifont_all-17.0.04.hex");
+        if extracted.exists() {
+            fs::rename(&extracted, &unifont_dest)?;
+        }
+    } else {
+        println!("    unifont.hex already exists.");
     }
 
     Ok(())

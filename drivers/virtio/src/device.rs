@@ -13,8 +13,7 @@ use abi::ids::HandleId;
 use abi::schema::keys;
 use core::ptr::{read_volatile, write_volatile};
 use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
+use stem::info;
 
 use crate::constants::*;
 use crate::virtqueue::Virtqueue;
@@ -47,20 +46,22 @@ pub struct VirtioDevice {
 
 impl VirtioDevice {
     /// Create a new VirtioDevice by claiming and mapping a device node
-    pub fn new(device_id: u64) -> Result<Self, Errno> {
-        stem::info!("VirtIO: device::new(0x{:x}) - claiming...", device_id);
+    pub fn new(sys_path: &str) -> Result<Self, Errno> {
+        stem::info!("VirtIO: device::new({})", sys_path);
+
+        // Read kernel handle from /sys/devices/.../handle
+        let device_id = read_sys_u32(&alloc::format!("{}/handle", sys_path))? as u64;
+
+        stem::info!("VirtIO: internal handle=0x{:x} - claiming...", device_id);
         let claim_handle = device_claim(device_id)?;
         stem::info!("VirtIO: claimed, handle={}", claim_handle);
 
-        let node = ThingId::from_u64(device_id);
-
-        // Read VirtIO capability offsets from graph properties
-        let common_bar = thingsys::prop_get(node, keys::VIRTIO_COMMON_BAR).unwrap_or(0) as usize;
-        let common_offset = thingsys::prop_get(node, keys::VIRTIO_COMMON_OFFSET).unwrap_or(0);
-        let notify_bar = thingsys::prop_get(node, keys::VIRTIO_NOTIFY_BAR).unwrap_or(0) as usize;
-        let notify_offset = thingsys::prop_get(node, keys::VIRTIO_NOTIFY_OFFSET).unwrap_or(0);
-        let notify_multiplier =
-            thingsys::prop_get(node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
+        // Read VirtIO capability offsets from sysfs
+        let common_bar = read_sys_u32(&format!("{}/virtio/common_bar", sys_path))? as usize;
+        let common_offset = read_sys_u32(&format!("{}/virtio/common_offset", sys_path))? as u64;
+        let notify_bar = read_sys_u32(&format!("{}/virtio/notify_bar", sys_path))? as usize;
+        let notify_offset = read_sys_u32(&format!("{}/virtio/notify_offset", sys_path))? as u64;
+        let notify_multiplier = read_sys_u32(&format!("{}/virtio/notify_multiplier", sys_path))?;
 
         stem::info!(
             "VirtIO: common_bar={} common_off=0x{:x} notify_bar={} notify_off=0x{:x} mult={}",
@@ -71,9 +72,9 @@ impl VirtioDevice {
             notify_multiplier
         );
 
-        // Device config is optional
-        let device_bar = thingsys::prop_get(node, keys::VIRTIO_DEVICE_BAR).ok();
-        let device_offset = thingsys::prop_get(node, keys::VIRTIO_DEVICE_OFFSET).ok();
+        // Device config is optional (0xFF if not present)
+        let device_bar = read_sys_u32(&format!("{}/virtio/device_bar", sys_path)).unwrap_or(0xFF);
+        let device_offset = read_sys_u32(&format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
 
         // Map the BAR containing common config
         stem::info!("VirtIO: mapping common BAR{}...", common_bar);
@@ -92,19 +93,18 @@ impl VirtioDevice {
         stem::info!("VirtIO: notify_cfg at 0x{:x}", notify_cfg);
 
         // Map device config BAR if available
-        let device_cfg = match (device_bar, device_offset) {
-            (Some(bar), Some(offset)) => {
-                let bar_idx = bar as usize;
-                let bar_base = if bar_idx == common_bar {
-                    common_bar_base
-                } else if bar_idx == notify_bar {
-                    common_bar_base // Same since we already mapped it
-                } else {
-                    device_map_mmio(claim_handle, bar_idx)?
-                };
-                Some(bar_base + offset)
-            }
-            _ => None,
+        let device_cfg = if device_bar != 0xFF {
+            let bar_idx = device_bar as usize;
+            let bar_base = if bar_idx == common_bar {
+                common_bar_base
+            } else if bar_idx == notify_bar {
+                notify_cfg - notify_offset // Already mapped
+            } else {
+                device_map_mmio(claim_handle, bar_idx)?
+            };
+            Some(bar_base + device_offset as u64)
+        } else {
+            None
         };
         stem::info!("VirtIO: device_cfg = {:?}", device_cfg);
 
@@ -133,7 +133,28 @@ impl VirtioDevice {
             driver_features: 0,
         })
     }
+}
 
+
+fn read_sys_u32(path: &str) -> Result<u32, Errno> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY)?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf)?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).map_err(|_| Errno::EIO)?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).map_err(|_| Errno::EIO)
+    } else {
+        trimmed.parse::<u32>().map_err(|_| Errno::EIO)
+    }
+}
+
+impl VirtioDevice {
     /// Initialize the VirtIO device with feature negotiation
     ///
     /// `desired_features` - Features the driver wants to use (device-specific bits)

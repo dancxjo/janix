@@ -2,7 +2,6 @@
 #![no_main]
 
 use stem::syscall::{channel_send_all, ioport_read, irq_subscribe, ChannelHandle};
-use stem::thing::sys as thingsys;
 use stem::{info, warn};
 
 /// PS/2 controller status register
@@ -30,35 +29,10 @@ fn main(raw_write_handle: usize) -> ! {
 
     info!("ps2_kbd: online (handle={})", handle);
 
-    // Create a graph node to represent this driver instance
-    let drv_node = match thingsys::create_node(KIND_DRV_PS2_KBD) {
-        Ok(id) => {
-            info!("ps2_kbd: created driver node {}", id.to_u64_lossy());
-            Some(id)
-        }
-        Err(e) => {
-            warn!("ps2_kbd: failed to create driver node: {:?}", e);
-            None
-        }
-    };
-
-    // Helper to update input mode
-    let set_mode = |mode: &str| {
-        if let Some(id) = drv_node {
-            if let Ok(sym) = thingsys::intern(mode) {
-                let _ = thingsys::prop_set(id, "dev.InputMode", sym as u64);
-            }
-        }
-    };
-
     // Subscribe to keyboard interrupt
     match irq_subscribe(KBD_VECTOR) {
         Ok(()) => {
             info!("ps2_kbd: subscribed to IRQ1 (vector 0x{:02x})", KBD_VECTOR);
-            // Keep polling even after a successful subscription. On the current x86 path
-            // the shared i8042 line can fail to deliver a usable wakeup, but the controller
-            // buffer itself still reflects incoming bytes correctly.
-            set_mode("Polling");
             polling_loop(handle);
         }
         Err(e) => {
@@ -66,7 +40,6 @@ fn main(raw_write_handle: usize) -> ! {
                 "ps2_kbd: IRQ subscribe failed ({:?}), falling back to polling",
                 e
             );
-            set_mode("Polling");
             polling_loop(handle);
         }
     }

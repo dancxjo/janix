@@ -202,6 +202,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "terminal",
+            is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 
@@ -345,6 +351,7 @@ pub fn build_iso_with_config(
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
+    sh.copy_file("assets/fonts/unifont.hex", iso_root.join("boot/unifont.hex"))?;
 
     sh.write_file(
         iso_root.join("boot/locale.conf"),

@@ -1,10 +1,9 @@
 use alloc::string::String;
-use stem::thing::ThingId;
 
 /// Window policy object layered on top of a single Surface.
 /// Provides semantic window management attributes separate from pixel representation.
 pub struct Window {
-    pub surface_id: ThingId, // Corresponds to the Surface in the SceneGraph
+    pub surface_id: u64, // Corresponds to the Surface in the SceneGraph
     pub app_id: String,
     pub title: String,
 
@@ -27,7 +26,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(surface_id: ThingId) -> Self {
+    pub fn new(surface_id: u64) -> Self {
         Self {
             surface_id,
             app_id: String::new(),

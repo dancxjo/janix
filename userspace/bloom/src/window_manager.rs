@@ -8,13 +8,16 @@
 
 use crate::damage::DamageCause;
 use crate::geometry::Rect;
-use crate::ui::constants::{
-    BORDER_THICKNESS, MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, MIN_WINDOW_HEIGHT,
-    MIN_WINDOW_WIDTH, RESIZE_CORNER_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,
-    TITLE_BAR_HEIGHT,
-};
+const BORDER_THICKNESS: i32 = 4;
+const TITLE_BAR_HEIGHT: i32 = 30;
+const MIN_WINDOW_WIDTH: i32 = 100;
+const MIN_WINDOW_HEIGHT: i32 = 60;
+const RESIZE_CORNER_SIZE: i32 = 16;
+const SHADE_BUTTON_SIZE: i32 = 16;
+const MAXIMIZE_BUTTON_SIZE: i32 = 16;
+const SHADE_BUTTON_PADDING: i32 = 8;
+const MAXIMIZE_BUTTON_PADDING: i32 = 8;
 use alloc::vec::Vec;
-use stem::thing::ThingId;
 
 /// Edge of a window for resize operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,7 +135,7 @@ pub enum DragKind {
 /// Active drag state.
 #[derive(Clone, Copy, Debug)]
 pub struct Drag {
-    pub wid: ThingId,
+    pub wid: u64,
     pub kind: DragKind,
     pub start_mouse: (i32, i32),
     pub start_window_rect: Rect,
@@ -297,8 +300,8 @@ pub fn pick_window(
     screen_x: i32,
     screen_y: i32,
     scene: &crate::scene_graph::SceneGraph,
-    windows: &alloc::collections::BTreeMap<ThingId, Window>,
-) -> Option<(ThingId, Hit)> {
+    windows: &alloc::collections::BTreeMap<u64, Window>,
+) -> Option<(u64, Hit)> {
     if let Some(surf_id) = scene.hit_test(screen_x, screen_y) {
         if let Some(surf) = scene.get_surface(surf_id) {
             if let Some(win) = windows.get(&surf_id) {
@@ -375,12 +378,12 @@ pub struct WindowManager {
     /// Currently active drag, if any.
     pub drag: Option<Drag>,
     /// Focused window ID.
-    pub focused: Option<ThingId>,
+    pub focused: Option<u64>,
     /// Screen dimensions for clamping.
     pub screen_w: i32,
     pub screen_h: i32,
     /// Damage rects from geometry changes (old_rect, new_rect, cause).
-    pending_damage: Vec<(Rect, DamageCause, Option<ThingId>)>,
+    pending_damage: Vec<(Rect, DamageCause, Option<u64>)>,
 }
 
 impl WindowManager {
@@ -397,7 +400,7 @@ impl WindowManager {
     /// Begin a drag operation.
     pub fn begin_drag(
         &mut self,
-        wid: ThingId,
+        wid: u64,
         kind: DragKind,
         mouse: (i32, i32),
         window_rect: Rect,
@@ -446,7 +449,7 @@ impl WindowManager {
     }
 
     /// End the current drag operation.
-    pub fn end_drag(&mut self) -> Option<ThingId> {
+    pub fn end_drag(&mut self) -> Option<u64> {
         self.drag.take().map(|d| d.wid)
     }
 
@@ -456,12 +459,12 @@ impl WindowManager {
     }
 
     /// Get the window being dragged (if any).
-    pub fn dragging_window(&self) -> Option<ThingId> {
+    pub fn dragging_window(&self) -> Option<u64> {
         self.drag.as_ref().map(|d| d.wid)
     }
 
     /// Take pending damage rects and clear the buffer.
-    pub fn take_damage(&mut self) -> Vec<(Rect, DamageCause, Option<ThingId>)> {
+    pub fn take_damage(&mut self) -> Vec<(Rect, DamageCause, Option<u64>)> {
         core::mem::take(&mut self.pending_damage)
     }
 
@@ -476,7 +479,7 @@ impl WindowManager {
         old_rect: Rect,
         new_rect: Rect,
         cause: DamageCause,
-        source: Option<ThingId>,
+        source: Option<u64>,
     ) {
         self.pending_damage.push((old_rect, cause, source));
         self.pending_damage.push((new_rect, cause, source));
@@ -517,10 +520,8 @@ impl WindowManager {
 mod tests {
     use super::*;
 
-    fn make_id(n: u8) -> ThingId {
-        let mut b = [0u8; 16];
-        b[0] = n;
-        ThingId(b)
+    fn make_id(n: u8) -> u64 {
+        n as u64
     }
 
     #[test]

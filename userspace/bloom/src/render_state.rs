@@ -10,7 +10,7 @@
 //! ## Cache Key Structure
 //!
 //! `RasterCacheKey` contains:
-//! - **Thing identity**: `ThingId` (window/surface node)
+//! - **Thing identity**: `u64` (window/surface node)
 //! - **Truth generations**:
 //!   - `paint_gen`: Bumped when drawlist content changes
 //!   - `geometry_gen`: Bumped when size/position/transform changes
@@ -67,8 +67,6 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 
 use abi::pixel::PixelFormat;
-use stem::thing::ThingId;
-
 use crate::asset::Image;
 use crate::geometry::EdgeAA;
 
@@ -81,7 +79,7 @@ const DEFAULT_RASTER_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RasterCacheKey {
     /// Thing identity (window/surface node)
-    pub thing: ThingId,
+    pub thing: u64,
     /// Paint generation (drawlist content changes)
     pub paint_gen: u64,
     /// Geometry generation (size/position/transform changes)
@@ -102,7 +100,7 @@ impl RasterCacheKey {
     /// # Parameters
     /// - `scale`: Scale factor in range [0.0, 65535.0]. Values outside this range will be clamped.
     pub fn new(
-        thing: ThingId,
+        thing: u64,
         paint_gen: u64,
         geometry_gen: u64,
         asset_gen: u64,
@@ -553,7 +551,7 @@ mod tests {
     #[test]
     fn window_cache_invalidates_on_paint_gen() {
         let mut state = RenderState::with_cache_limit(1024);
-        let thing = ThingId::from_u64(1);
+        let thing = 1;
         let key1 = RasterCacheKey::new(
             thing,
             1,  // paint_gen
@@ -584,7 +582,7 @@ mod tests {
     //     #[test]
     //     fn window_cache_invalidates_on_geometry_gen() {
     //         let mut state = RenderState::with_cache_limit(1024);
-    //         let thing = ThingId::from_u64(1);
+    //         let thing = 1;
     //         let key1 = RasterCacheKey::new(
     //             thing,
     //             0,
@@ -613,7 +611,7 @@ mod tests {
     #[test]
     fn window_cache_invalidates_on_asset_gen() {
         let mut state = RenderState::with_cache_limit(1024);
-        let thing = ThingId::from_u64(1);
+        let thing = 1;
         let key1 = RasterCacheKey::new(
             thing,
             0,
@@ -643,7 +641,7 @@ mod tests {
     #[test]
     fn window_cache_invalidates_on_scale_change() {
         let mut state = RenderState::with_cache_limit(1024);
-        let thing = ThingId::from_u64(1);
+        let thing = 1;
         let key1 = RasterCacheKey::new(
             thing,
             0,
@@ -673,7 +671,7 @@ mod tests {
     #[test]
     fn window_cache_lru_eviction() {
         let mut state = RenderState::with_cache_limit(32);  // Very small budget
-        let thing = ThingId::from_u64(1);
+        let thing = 1;
         let key_a = RasterCacheKey::new(
             thing,
             1,

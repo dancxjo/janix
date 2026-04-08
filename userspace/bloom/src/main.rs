@@ -39,24 +39,23 @@ mod session_fs;
 pub mod snapshot;
 mod state;
 mod surface;
-mod svg;
+// mod svg;
 mod tessellate;
 mod text_cache;
 mod text_render;
-mod ui;
 mod ui_events;
 mod vir;
 mod wayland;
 mod window;
 mod window_manager;
 
-pub use painter_resources::ASSETS;
+use crate::present::{PresenterImpl, DriverPresenter, evaluate_present_strategy, Presenter};
+use crate::paint_vm::PaintPipeline;
+use crate::frame_loop::FrameLoop;
+use crate::painter_resources::ASSETS;
+use crate::frame::FrameBuilder;
 
 use abi::hid::Key;
-use abi::ids::HandleId;
-use stem::thing::sys::{find, prop_get};
-use stem::thing::ThingId;
-
 use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
 use abi::schema::{hid, keys, kinds};
 use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
@@ -71,10 +70,6 @@ use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::desktop::DesktopState;
-use crate::frame::FrameBuilder;
-use crate::frame_loop::FrameLoop;
-use crate::paint_vm::{PaintPipeline, WindowHit};
-use crate::present::{evaluate_present_strategy, DriverPresenter, Presenter, PresenterImpl};
 use crate::snapshot::SnapshotInvalidation;
 use crate::state::{CompositionMode, DamageOverlayState, DebugFlags, OverlayMode};
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -85,7 +80,7 @@ const BLOSSOM_TITLE_BAR_HEIGHT: i32 = 24;
 
 #[derive(Clone, Copy)]
 struct DragState {
-    window_id: ThingId,
+    window_id: u64,
     start_mouse: (i32, i32),
     start_rect: crate::geometry::Rect,
     kind: crate::window_manager::DragKind,
@@ -93,7 +88,7 @@ struct DragState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PointerFocusState {
-    scene_id: Option<ThingId>,
+    scene_id: Option<u64>,
     local_x: i32,
     local_y: i32,
 }
@@ -157,7 +152,7 @@ fn pointer_focus_at(
 fn publish_pointer_state(cursor: &CursorState, focus: PointerFocusState) {
     let focus_surface = focus
         .scene_id
-        .map(|id| format!("{}\n", id.to_u64_lossy()))
+        .map(|id| format!("{}\n", id))
         .unwrap_or_default();
     let _ = crate::session_fs::write_text(
         &crate::session_fs::pointer_state_path("x"),
@@ -211,9 +206,9 @@ fn mods_from_pressed_keys(keys: &BTreeSet<Key>) -> u32 {
     mods
 }
 
-fn publish_keyboard_state(focus_surface: Option<ThingId>, mods_depressed: u32) {
+fn publish_keyboard_state(focus_surface: Option<u64>, mods_depressed: u32) {
     let focus_surface = focus_surface
-        .map(|id| format!("{}\n", id.to_u64_lossy()))
+        .map(|id| format!("{}\n", id))
         .unwrap_or_default();
     let _ = crate::session_fs::write_text(
         &crate::session_fs::keyboard_state_path("focus_surface"),
@@ -303,7 +298,7 @@ fn render_wayland_scene_surface(
                     offset: 0,
                 },
             };
-            if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+            if let Ok(resp) = stem::syscall::vm_map(&req) {
                 let ptr = resp.addr;
                 let copy_w = snapshot.content_width.min(buffer.width as i32).max(0);
                 let copy_h = snapshot.content_height.min(buffer.height as i32).max(0);
@@ -320,7 +315,7 @@ fn render_wayland_scene_surface(
                         );
                     }
                 }
-                // stem::thing::sys::vm_unmap(&resp).ok();
+                // Legacy graph VM mapping removed
             }
         }
     }
@@ -398,65 +393,11 @@ struct CursorUnderlay {
 
 #[derive(Default)]
 struct GraphInputState {
-    node_id: Option<ThingId>,
+    node_id: Option<u64>,
     last_keyboard_gen: u64,
 }
 
-fn find_bristle_node() -> Option<ThingId> {
-    let mut input_nodes = [ThingId::default(); 16];
-    match find(hid::SVC_INPUT, &mut input_nodes) {
-        Ok(count) if count > 0 => {
-            let count = count.min(input_nodes.len());
-            let mut best = input_nodes[0];
-            for node in input_nodes.iter().take(count).skip(1) {
-                if node.to_u64_lossy() > best.to_u64_lossy() {
-                    best = *node;
-                }
-            }
-            Some(best)
-        }
-        _ => None,
-    }
-}
-
-fn sync_input_from_graph(
-    pressed_keys: &mut BTreeSet<Key>,
-    bristle_node: Option<ThingId>,
-    graph_input: &mut GraphInputState,
-    had_key_event: bool,
-    frame: u64,
-) {
-    use abi::schema::keyboard as kb;
-
-    let Some(node) = bristle_node else {
-        if frame % 120 == 0 {
-            stem::warn!("[bloom] no svc.Input node found for graph input fallback");
-        }
-        return;
-    };
-
-    let keyboard_gen = prop_get(node, kb::KEYBOARD_GEN).unwrap_or(0);
-    if graph_input.node_id != Some(node) {
-        graph_input.node_id = Some(node);
-        graph_input.last_keyboard_gen = keyboard_gen;
-    } else if keyboard_gen < graph_input.last_keyboard_gen {
-        graph_input.last_keyboard_gen = 0;
-        pressed_keys.clear();
-    }
-
-    if !had_key_event && keyboard_gen > graph_input.last_keyboard_gen {
-        graph_input.last_keyboard_gen = keyboard_gen;
-        let key = Key::from_raw(prop_get(node, kb::KEYBOARD_LAST_KEY).unwrap_or(0) as u16);
-        if key != Key::Unknown {
-            let edge = prop_get(node, kb::KEYBOARD_KEY_EDGE).unwrap_or(0);
-            if edge == 0 {
-                pressed_keys.remove(&key);
-            } else {
-                pressed_keys.insert(key);
-            }
-        }
-    }
-}
+// Legacy input discovery eradicated
 
 #[inline]
 fn capture_cursor_underlay(
@@ -623,30 +564,7 @@ fn unpack_handle(arg: usize, index: u32) -> ChannelHandle {
     ((arg >> (index * 16)) & 0xFFFF) as ChannelHandle
 }
 
-fn window_rect_from_props(
-    window_id: ThingId,
-    screen_w: i32,
-    screen_h: i32,
-) -> crate::geometry::Rect {
-    let w = stem::thing::sys::prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-    let h = stem::thing::sys::prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
-    if w <= 0 || h <= 0 {
-        return crate::geometry::Rect::new(0, 0, 0, 0);
-    }
-    let mut x = stem::thing::sys::prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
-    let mut y = stem::thing::sys::prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
-    let inset_right =
-        stem::thing::sys::prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
-    let inset_bottom =
-        stem::thing::sys::prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
-    if inset_right > 0 {
-        x = screen_w - inset_right - w;
-    }
-    if inset_bottom > 0 {
-        y = screen_h - inset_bottom - h;
-    }
-    crate::geometry::Rect::new(x, y, w, h)
-}
+// window_rect_from_props removed
 
 fn in_title_bar(rect: crate::geometry::Rect, _x: i32, y: i32) -> bool {
     let local_y = y - rect.y();
@@ -685,15 +603,15 @@ fn clamp_window_rect(
     r
 }
 
-fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
+fn set_focus(focused_window: &mut Option<u64>, target: Option<u64>) {
     if *focused_window == target {
         return;
     }
-    if let Some(prev) = focused_window.take() {
-        let _ = stem::thing::sys::prop_set(prev, keys::UI_FOCUSED, 0);
+    if let Some(_prev) = focused_window.take() {
+        // Legacy graph property reset removed (UI_FOCUSED)
     }
     if let Some(next) = target {
-        let _ = stem::thing::sys::prop_set(next, keys::UI_FOCUSED, 1);
+        // Legacy graph property set removed (UI_FOCUSED)
         *focused_window = Some(next);
     }
 }
@@ -730,16 +648,18 @@ fn requires_paint_refresh(causes: &[SnapshotInvalidation]) -> bool {
 }
 
 fn cycle_windows_in_order(
-    order: &[ThingId],
-    current: Option<ThingId>,
+    order: &[u64],
+    current: Option<u64>,
     reverse: bool,
     max_z: &mut i32,
-) -> Option<ThingId> {
+) -> Option<u64> {
     if order.is_empty() {
         return None;
     }
 
-    let target_idx = match current.and_then(|id| order.iter().position(|wid| *wid == id)) {
+    let current_idx = current.and_then(|id| order.iter().position(|&x| x == id));
+
+    let next_idx = match current_idx {
         Some(idx) => {
             if reverse {
                 if idx == 0 {
@@ -751,24 +671,12 @@ fn cycle_windows_in_order(
                 (idx + 1) % order.len()
             }
         }
-        None => {
-            if reverse {
-                order.len() - 1
-            } else {
-                0
-            }
-        }
+        None => 0,
     };
-    let target = order[target_idx];
+    let target = order[next_idx];
 
-    // Publish focus status to graph
-    if let Some(prev) = current {
-        let _ = stem::thing::sys::prop_set(prev, keys::UI_FOCUSED, 0);
-    }
-    let _ = stem::thing::sys::prop_set(target, keys::UI_FOCUSED, 1);
-
+    // Legacy graph focus/z-index updates removed
     *max_z = max_z.saturating_add(1);
-    let _ = stem::thing::sys::prop_set(target, keys::UI_Z_INDEX, *max_z as u64);
     Some(target)
 }
 
@@ -783,6 +691,7 @@ fn main(arg: usize) -> ! {
     use abi::vm::{VmBacking, VmMapReq, VmProt};
     let boot_fd = arg as u32;
     let mut display_fd = 0u32;
+    let mut display_geometry = (0u32, 0u32, 0u32, 0u32);
     let mut arg_req = 0u32;
     let mut arg_resp = 0u32;
     let mut bristle_evt = 0u32;
@@ -798,7 +707,7 @@ fn main(arg: usize) -> ! {
                 offset: 0,
             },
         };
-        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr;
             let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
             if slice[0] == 0xB100AA01 {
@@ -806,8 +715,8 @@ fn main(arg: usize) -> ! {
                 arg_resp = slice[2];
                 bristle_evt = slice[3];
                 display_fd = slice[4];
+                display_geometry = (slice[5], slice[6], slice[7], slice[8]);
             }
-            // stem::thing::sys::vm_unmap(&resp).ok(); // If we had it
         }
     } else {
         arg_req = unpack_handle(arg, 0) as u32;
@@ -822,7 +731,7 @@ fn main(arg: usize) -> ! {
         arg_resp
     );
     let target = if display_fd != 0 {
-        CompositorTarget::map_from_fd(display_fd, (arg_req, arg_resp))
+        CompositorTarget::map_from_fd(display_fd, display_geometry, (arg_req, arg_resp))
             .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
     } else {
         CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
@@ -861,7 +770,7 @@ fn main(arg: usize) -> ! {
             || final_stride != fb_info.stride
         {
             let size = (fb_info.height as usize).saturating_mul(fb_info.stride as usize);
-            if let Ok(fd) = stem::thing::sys::memfd_create("bloom.staging", size) {
+            if let Ok(fd) = stem::syscall::memfd_create("bloom.staging", size) {
                 let req = VmMapReq {
                     addr_hint: 0,
                     len: size,
@@ -869,7 +778,7 @@ fn main(arg: usize) -> ! {
                     flags: abi::vm::VmMapFlags::empty(),
                     backing: VmBacking::File { fd, offset: 0 },
                 };
-                if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+                if let Ok(resp) = stem::syscall::vm_map(&req) {
                     final_ptr = resp.addr as *mut u8;
                     final_size = size;
                     final_width = fb_info.width;
@@ -922,7 +831,7 @@ fn main(arg: usize) -> ! {
             },
         };
 
-        if let Ok(resp) = stem::thing::sys::vm_map(&req) {
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *mut u8;
             final_ptr = ptr;
             final_size = (acq_h * acq_s) as usize;
@@ -996,17 +905,15 @@ fn main(arg: usize) -> ! {
 
     stem::info!("[bloom] bristle_evt_handle = {}", bristle_evt_handle);
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
-    let mut bristle_node = find_bristle_node();
-    let mut graph_input = GraphInputState::default();
     let mut paint_pending_rebuilds = false;
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_cursor_buttons = cursor.buttons();
     // Input is now delivered via Wayland protocol (wl_pointer/wl_keyboard)
-    let mut focused_window: Option<ThingId> = None;
-    let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
-    let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> =
+    let mut focused_window: Option<u64> = None;
+    let mut alt_cycle_order: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    let mut maximized_windows: alloc::collections::BTreeMap<u64, crate::geometry::Rect> =
         alloc::collections::BTreeMap::new();
     let mut alt_cycle_max_z: i32 = 0;
     let mut alt_prev_down = false;
@@ -1018,8 +925,8 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut prev_pointer_focus = PointerFocusState::default();
     let mut prev_wayland_pointer_focus = PointerFocusState::default();
-    let mut prev_focus_window_for_wayland: Option<ThingId> = None;
-    let mut prev_keyboard_focus: Option<ThingId> = None;
+    let mut prev_focus_window_for_wayland: Option<u64> = None;
+    let mut prev_keyboard_focus: Option<u64> = None;
     let mut prev_keyboard_mods: u32 = 0;
     let mut keyboard_serial: u64 = 1;
     let mut cursor_underlays: BTreeMap<u32, CursorUnderlay> = BTreeMap::new();
@@ -1076,27 +983,9 @@ fn main(arg: usize) -> ! {
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
-    // Glyph Arrival Watch
-    stem::info!("bloom: calling intern for FONT_GLYPH");
-    let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
-    stem::info!("bloom: intern returned FONT_GLYPH={}", glyph_watch_pred);
-    let glyph_watch = if glyph_watch_pred != 0 {
-        use abi::root::RootWatchFilter;
-        use abi::types::{WatchMode, WatchSpec};
-        let filter = RootWatchFilter::predicate(glyph_watch_pred);
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
-            filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-            ..Default::default()
-        };
-        stem::info!("bloom: calling root_watch_open for FONT_GLYPH");
-        let res = stem::syscall::root_watch_open(&spec).ok();
-        stem::info!("bloom: root_watch_open ret={:?}", res);
-        res
-    } else {
-        None
-    };
+    // Glyph watching via legacy graph is removed.
+    // Assets are now discovered via VFS in /boot.
+    let glyph_watch: Option<u32> = None;
 
     // Removed force_full_damage bool, using invalidation_causes vector
     let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> =
@@ -1179,7 +1068,7 @@ fn main(arg: usize) -> ! {
                         flags: abi::vm::VmMapFlags::empty(),
                         backing: VmBacking::File { fd, offset: 0 },
                     };
-                    match stem::thing::sys::vm_map(&req) {
+                    match stem::syscall::vm_map(&req) {
                         Ok(p) => {
                             let ptr = p.addr as *mut u8;
                             buffer_cache.insert(fd, ptr);
@@ -1216,14 +1105,8 @@ fn main(arg: usize) -> ! {
                     screen_h,
                 )
             };
-            bristle_node = find_bristle_node().or(bristle_node);
-            sync_input_from_graph(
-                &mut pressed_keys,
-                bristle_node,
-                &mut graph_input,
-                poll_stats.had_key_event,
-                loop_ctrl.frame_number(),
-            );
+            // Legacy bristle node discovery removed. Input is now VFS/file-native.
+            // (Previously we used this to sync input bits from graph, deprecated)
         }
 
         // Poll font client for IPC responses. Font warmup should not trigger
@@ -1275,7 +1158,7 @@ fn main(arg: usize) -> ! {
                     if bristle_evt_handle == 0 {
                         return;
                     }
-                    let progress_poll = poll_bristle(
+                    let _progress_poll = poll_bristle(
                         bristle_evt_handle,
                         &mut cursor,
                         &mut pressed_keys,
@@ -1285,19 +1168,8 @@ fn main(arg: usize) -> ! {
                         screen_w,
                         screen_h,
                     );
-                    if progress_poll.had_pointer_event || progress_poll.had_key_event {
-                        bristle_node = find_bristle_node().or(bristle_node);
-                        sync_input_from_graph(
-                            &mut pressed_keys,
-                            bristle_node,
-                            &mut graph_input,
-                            progress_poll.had_key_event,
-                            loop_ctrl.frame_number(),
-                        );
-                    }
                 },
             );
-            paint_pending_rebuilds = res.pending_rebuilds;
             res
         } else {
             crate::paint_vm::PaintResult {
@@ -1309,7 +1181,7 @@ fn main(arg: usize) -> ! {
         // Late-latch input that arrived while process_updates() was running so cursor motion
         // does not wait an extra compositor iteration.
         if bristle_evt_handle != 0 {
-            let late_poll_stats = {
+            let _late_poll_stats = {
                 crate::trace_span!("bloom.loop.poll_bristle_late");
                 poll_bristle(
                     bristle_evt_handle,
@@ -1322,16 +1194,6 @@ fn main(arg: usize) -> ! {
                     screen_h,
                 )
             };
-            if late_poll_stats.had_pointer_event || late_poll_stats.had_key_event {
-                bristle_node = find_bristle_node().or(bristle_node);
-                sync_input_from_graph(
-                    &mut pressed_keys,
-                    bristle_node,
-                    &mut graph_input,
-                    late_poll_stats.had_key_event,
-                    loop_ctrl.frame_number(),
-                );
-            }
         }
 
         // Input-driven window management
@@ -1368,59 +1230,8 @@ fn main(arg: usize) -> ! {
                             let _ = paint_pipeline.move_window(focused, 0, 0);
                             let _ = paint_pipeline.resize_window(focused, screen_w, screen_h);
                         }
-                    } else if let Some(restore_rect) = maximized_windows.remove(&focused) {
-                        // Restore
-                        stem::info!(
-                            "[bloom] F11: Restoring window {:?} to {:?}",
-                            focused,
-                            restore_rect
-                        );
-                        let _ = stem::thing::sys::prop_set(
-                            focused,
-                            keys::UI_X,
-                            restore_rect.x() as u64,
-                        );
-                        let _ = stem::thing::sys::prop_set(
-                            focused,
-                            keys::UI_Y,
-                            restore_rect.y() as u64,
-                        );
-                        let _ = stem::thing::sys::prop_set(
-                            focused,
-                            keys::UI_WIDTH,
-                            restore_rect.width() as u64,
-                        );
-                        let _ = stem::thing::sys::prop_set(
-                            focused,
-                            keys::UI_HEIGHT,
-                            restore_rect.height() as u64,
-                        );
-                        // Ensure manual position is set so tiling doesn't clobber it immediately
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
                     } else {
-                        // Maximize
-                        let x = stem::thing::sys::prop_get(focused, keys::UI_X).unwrap_or(0) as i32;
-                        let y = stem::thing::sys::prop_get(focused, keys::UI_Y).unwrap_or(0) as i32;
-                        let w =
-                            stem::thing::sys::prop_get(focused, keys::UI_WIDTH).unwrap_or(0) as i32;
-                        let h = stem::thing::sys::prop_get(focused, keys::UI_HEIGHT).unwrap_or(0)
-                            as i32;
-                        let current_rect = crate::geometry::Rect::new(x, y, w, h);
-
-                        maximized_windows.insert(focused, current_rect);
-                        stem::info!(
-                            "[bloom] F11: Maximizing window {:?} (saved {:?})",
-                            focused,
-                            current_rect
-                        );
-
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
-                        let _ =
-                            stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
-                        let _ =
-                            stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
+                        stem::warn!("[bloom] F11: Focused window {:?} is not a Wayland surface or VFS window", focused);
                     }
                     invalidation_causes.push(SnapshotInvalidation::Forced);
                 }
@@ -1629,23 +1440,17 @@ fn main(arg: usize) -> ! {
                             | Hit::None => {}
                         }
                     } else if hit_result == Hit::TitleBar {
-                        let inset_right =
-                            stem::thing::sys::prop_get(hit_id, keys::UI_INSET_RIGHT).unwrap_or(0);
-                        let inset_bottom =
-                            stem::thing::sys::prop_get(hit_id, keys::UI_INSET_BOTTOM).unwrap_or(0);
-                        if inset_right == 0 && inset_bottom == 0 {
-                            drag_state = Some(DragState {
-                                window_id: hit_id,
-                                start_mouse: (cursor.x, cursor.y),
-                                start_rect: hit_rect,
-                                kind: crate::window_manager::DragKind::Move,
-                            });
-                            // Optimized raise: use cached max_z
-                            let max_z = paint_pipeline.max_z_excluding(hit_id);
-                            crate::trace_counter!("bloom.win_cache.raise.count", 1);
-                            crate::trace_counter!("bloom.win_cache.avoided_find", 1); // raise_window used to find
-                            let _ = paint_pipeline.set_window_z(hit_id, max_z.saturating_add(1));
-                        }
+                        // Optimized raise: use cached max_z
+                        let max_z = paint_pipeline.max_z_excluding(hit_id);
+                        crate::trace_counter!("bloom.win_cache.raise.count", 1);
+                        crate::trace_counter!("bloom.win_cache.avoided_find", 1);
+                        let _ = paint_pipeline.set_window_z(hit_id, max_z.saturating_add(1));
+                        drag_state = Some(DragState {
+                            window_id: hit_id,
+                            start_mouse: (cursor.x, cursor.y),
+                            start_rect: hit_rect,
+                            kind: crate::window_manager::DragKind::Move,
+                        });
                     } else if hit_result == Hit::ClientArea {
                         // Optimized raise
                         let max_z = paint_pipeline.max_z_excluding(hit_id);
@@ -1758,7 +1563,7 @@ fn main(arg: usize) -> ! {
                 let _ = crate::session_fs::append_line(
                     &crate::session_fs::keyboard_events_path(),
                     &crate::session_fs::encode_keyboard_leave_event(
-                        surface_id.to_u64_lossy(),
+                        surface_id,
                         serial,
                     ),
                 );
@@ -1769,7 +1574,7 @@ fn main(arg: usize) -> ! {
                 let _ = crate::session_fs::append_line(
                     &crate::session_fs::keyboard_events_path(),
                     &crate::session_fs::encode_keyboard_enter_event(
-                        surface_id.to_u64_lossy(),
+                        surface_id,
                         serial,
                     ),
                 );
@@ -1846,7 +1651,7 @@ fn main(arg: usize) -> ! {
             if let Some(scene_id) = prev_pointer_focus.scene_id {
                 let _ = crate::session_fs::append_line(
                     &crate::session_fs::pointer_events_path(),
-                    &crate::session_fs::encode_pointer_leave_event(scene_id.to_u64_lossy()),
+                    &crate::session_fs::encode_pointer_leave_event(scene_id),
                 );
                 emitted_pointer_event = true;
             }
@@ -1854,7 +1659,7 @@ fn main(arg: usize) -> ! {
                 let _ = crate::session_fs::append_line(
                     &crate::session_fs::pointer_events_path(),
                     &crate::session_fs::encode_pointer_enter_event(
-                        scene_id.to_u64_lossy(),
+                        scene_id,
                         crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
                         crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
                     ),
@@ -1871,13 +1676,14 @@ fn main(arg: usize) -> ! {
                     crate::session_fs::logical_to_fixed_16_16(cursor.y),
                     crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
                     crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
-                    pointer_focus.scene_id.map(|id| id.to_u64_lossy()),
+                    pointer_focus.scene_id.map(|id| id),
                 ),
             );
             emitted_pointer_event = true;
         }
 
         if button_edges != 0 {
+            // Legacy graph probe removed. Icons and assets are now VFS-native.
             for button in 0..32u8 {
                 let mask = 1u32 << button;
                 if button_edges & mask == 0 {
@@ -1893,7 +1699,7 @@ fn main(arg: usize) -> ! {
                         crate::session_fs::logical_to_fixed_16_16(cursor.y),
                         crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_x),
                         crate::session_fs::logical_to_fixed_16_16(pointer_focus.local_y),
-                        pointer_focus.scene_id.map(|id| id.to_u64_lossy()),
+                        pointer_focus.scene_id.map(|id| id),
                     ),
                 );
                 emitted_pointer_event = true;
@@ -2240,7 +2046,7 @@ fn main(arg: usize) -> ! {
                             .windows_for_gpu_upload()
                             .map(|(id, rect, paint_gen, geom_gen)| {
                                 (
-                                    id.to_u64_lossy(),
+                                    id,
                                     rect.width().max(0) as u32,
                                     rect.height().max(0) as u32,
                                     paint_gen + geom_gen,
@@ -2395,7 +2201,7 @@ fn main(arg: usize) -> ! {
                             offset: 0,
                         },
                     };
-                    let ptr = stem::thing::sys::vm_map(&req)
+                    let ptr = stem::syscall::vm_map(&req)
                         .expect("map acquired frame")
                         .addr as *mut u8;
                     buffer_cache.insert(next_fd, ptr);

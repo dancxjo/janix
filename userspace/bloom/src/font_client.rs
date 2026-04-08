@@ -15,11 +15,12 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
+use stem::syscall::vfs::vfs_stat;
+use stem::thing::sys::stat;
+use alloc::sync::Arc;
 use stem::syscall::{
     channel_send, channel_try_recv, monotonic_ns, vm_map, vm_unmap, ChannelHandle,
 };
-use stem::thing::sys::{find, prop_get, stat};
-use stem::thing::ThingId;
 
 /// Cached glyph entry with atlas location
 #[derive(Debug, Clone, Copy)]
@@ -107,18 +108,17 @@ impl AtlasMapping {
         unsafe { *(self.ptr_val as *const u8).add(offset) }
     }
 
-    /// Unmap and clear pointer
     pub fn unmap(&mut self) {
         if self.ptr_val != 0 {
-            let (_, size, _) = stat(self.atlas_fd).unwrap();
-            let _ = vm_unmap(self.ptr_val, size as usize);
+            if let Ok((_, size, _)) = vfs_stat(self.atlas_fd) {
+                let _ = vm_unmap(self.ptr_val, size as usize);
+            }
             self.ptr_val = 0;
         }
     }
 }
 
-/// Glyph key for cache lookup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GlyphKey {
     pub face_id: u64,
     pub px_size: u16,
@@ -126,28 +126,24 @@ pub struct GlyphKey {
 }
 
 impl GlyphKey {
-    pub fn new(face_id: ThingId, px_size: u16, glyph_id: u32) -> Self {
+    pub fn new(face_id: u64, px_size: u16, glyph_id: u32) -> Self {
         Self {
-            face_id: face_id.to_u64_lossy(),
+            face_id,
             px_size,
             glyph_id,
         }
     }
 }
 
-/// Atlas key for mapping lookup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AtlasKey {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FaceKey {
     pub face_id: u64,
     pub px_size: u16,
 }
 
-impl AtlasKey {
-    pub fn new(face_id: ThingId, px_size: u16) -> Self {
-        Self {
-            face_id: face_id.to_u64_lossy(),
-            px_size,
-        }
+impl FaceKey {
+    pub fn new(face_id: u64, px_size: u16) -> Self {
+        Self { face_id, px_size }
     }
 }
 
@@ -160,13 +156,13 @@ pub struct FontClient {
     /// Glyph placement cache
     glyph_cache: BTreeMap<GlyphKey, GlyphEntry>,
     /// Atlas mappings per (face, size)
-    atlas_mappings: BTreeMap<AtlasKey, AtlasMapping>,
+    atlas_mappings: BTreeMap<FaceKey, AtlasMapping>,
     /// Metrics cache per (face, size)
-    metrics_cache: BTreeMap<AtlasKey, FaceMetrics>,
+    metrics_cache: BTreeMap<FaceKey, FaceMetrics>,
     /// Pending glyph requests (timestamp of request)
     pending_requests: BTreeMap<GlyphKey, u64>,
     /// At most one in-flight metrics request. Responses are not tagged.
-    pending_metrics_request: Option<(AtlasKey, u64)>,
+    pending_metrics_request: Option<(FaceKey, u64)>,
 }
 
 impl FontClient {
@@ -182,19 +178,23 @@ impl FontClient {
         }
     }
 
-    /// Discover fontd service from graph
+    /// Discover fontd service from VFS
     pub fn discover() -> Option<Self> {
-        let mut nodes = [ThingId::default(); 4];
-        let count = find("svc.FontD", &mut nodes).ok()?;
-        if count == 0 {
-            return None;
-        }
-        let svc_node = nodes[0];
-        let req = prop_get(svc_node, "fontd.req").ok()? as ChannelHandle;
-        let resp = prop_get(svc_node, "fontd.resp").ok()? as ChannelHandle;
-        if req == 0 || resp == 0 {
-            return None;
-        }
+        // Use VFS service discovery
+        use abi::syscall::vfs_flags::O_RDONLY;
+        use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+ 
+        let read_port = |path: &str| -> Option<u32> {
+            let fd = vfs_open(path, O_RDONLY).ok()?;
+            let mut buf = [0u8; 16];
+            let n = vfs_read(fd, &mut buf).ok()?;
+            let _ = vfs_close(fd);
+            core::str::from_utf8(&buf[..n]).ok()?.trim().parse::<u32>().ok()
+        };
+ 
+        let req = read_port("/services/font/req")? as ChannelHandle;
+        let resp = read_port("/services/font/resp")? as ChannelHandle;
+ 
         Some(Self::new(req, resp))
     }
 
@@ -204,12 +204,12 @@ impl FontClient {
     }
 
     /// Get cached glyph entry if it exists and version matches
-    pub fn get_glyph(&self, face_id: ThingId, px_size: u16, glyph_id: u32) -> Option<&GlyphEntry> {
+    pub fn get_glyph(&self, face_id: u64, px_size: u16, glyph_id: u32) -> Option<&GlyphEntry> {
         let key = GlyphKey::new(face_id, px_size, glyph_id);
         let entry = self.glyph_cache.get(&key)?;
 
         // Check if atlas version is still current
-        let atlas_key = AtlasKey::new(face_id, px_size);
+        let atlas_key = FaceKey::new(face_id, px_size);
         if let Some(mapping) = self.atlas_mappings.get(&atlas_key) {
             if mapping.version == entry.atlas_version {
                 return Some(entry);
@@ -221,10 +221,10 @@ impl FontClient {
     /// Get atlas mapping for a (face, size)
     pub fn get_atlas_mapping(
         &mut self,
-        face_id: ThingId,
+        face_id: u64,
         px_size: u16,
     ) -> Option<&mut AtlasMapping> {
-        let key = AtlasKey::new(face_id, px_size);
+        let key = FaceKey::new(face_id, px_size);
         self.atlas_mappings.get_mut(&key)
     }
 
@@ -232,7 +232,7 @@ impl FontClient {
     /// Returns currently matched cache entries. DOES NOT BLOCK.
     pub fn ensure_glyphs(
         &mut self,
-        face_id: ThingId,
+        face_id: u64,
         px_size: u16,
         glyph_ids: &[u32],
     ) -> Vec<GlyphEntry> {
@@ -270,7 +270,7 @@ impl FontClient {
 
         // Build and send EnsureGlyphs request
         let req = EnsureGlyphs {
-            face_id,
+            face_id: abi::wire::ThingId::from_u64(face_id),
             px_size,
             glyph_ids: missing,
         };
@@ -312,7 +312,7 @@ impl FontClient {
                     };
 
                     // Update atlas mapping
-                    let atlas_key = AtlasKey::new(resp.req_face_id, resp.req_px_size);
+                    let atlas_key = FaceKey::new(resp.req_face_id.to_u64_lossy(), resp.req_px_size);
                     let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
                         AtlasMapping::new(
                             resp.atlas_fd,
@@ -332,7 +332,7 @@ impl FontClient {
                         mapping.height = resp.atlas_height;
 
                         // Invalidate cached glyphs for this face/size
-                        let prefix = GlyphKey::new(resp.req_face_id, resp.req_px_size, 0);
+                        let prefix = FaceKey::new(resp.req_face_id.to_u64_lossy(), resp.req_px_size);
                         self.glyph_cache.retain(|k, _| {
                             k.face_id != prefix.face_id || k.px_size != prefix.px_size
                         });
@@ -340,7 +340,7 @@ impl FontClient {
 
                     // Cache new placements and clear pending
                     for p in &resp.placements {
-                        let key = GlyphKey::new(resp.req_face_id, resp.req_px_size, p.glyph_id);
+                        let key = GlyphKey::new(resp.req_face_id.to_u64_lossy(), resp.req_px_size, p.glyph_id);
                         let mut entry = GlyphEntry::from(p);
                         entry.atlas_fd = resp.atlas_fd;
                         entry.atlas_version = resp.atlas_version;
@@ -365,8 +365,8 @@ impl FontClient {
     }
 
     /// Get face metrics (cached)
-    pub fn get_metrics(&mut self, face_id: ThingId, px_size: u16) -> Option<FaceMetrics> {
-        let key = AtlasKey::new(face_id, px_size);
+    pub fn get_metrics(&mut self, face_id: u64, px_size: u16) -> Option<FaceMetrics> {
+        let key = FaceKey::new(face_id, px_size);
         if let Some(m) = self.metrics_cache.get(&key) {
             return Some(*m);
         }
@@ -386,7 +386,7 @@ impl FontClient {
             self.pending_metrics_request = None;
         }
 
-        let req = GetFaceMetrics { face_id, px_size };
+        let req = GetFaceMetrics { face_id: abi::wire::ThingId::from_u64(face_id), px_size };
         let mut req_buf = [0u8; 32];
         let req_len = req.encode(&mut req_buf)?;
 
@@ -423,7 +423,7 @@ pub fn is_available() -> bool {
 }
 
 /// Ensure glyphs are available (batch request)
-pub fn ensure_glyphs(face_id: ThingId, px_size: u16, glyph_ids: &[u32]) -> Vec<GlyphEntry> {
+pub fn ensure_glyphs(face_id: u64, px_size: u16, glyph_ids: &[u32]) -> Vec<GlyphEntry> {
     let mut guard = FONT_CLIENT.lock();
     match guard.as_mut() {
         Some(client) => client.ensure_glyphs(face_id, px_size, glyph_ids),
@@ -432,7 +432,7 @@ pub fn ensure_glyphs(face_id: ThingId, px_size: u16, glyph_ids: &[u32]) -> Vec<G
 }
 
 /// Get cached glyph entry
-pub fn get_glyph(face_id: ThingId, px_size: u16, glyph_id: u32) -> Option<GlyphEntry> {
+pub fn get_glyph(face_id: u64, px_size: u16, glyph_id: u32) -> Option<GlyphEntry> {
     let guard = FONT_CLIENT.lock();
     guard
         .as_ref()?
@@ -441,20 +441,19 @@ pub fn get_glyph(face_id: ThingId, px_size: u16, glyph_id: u32) -> Option<GlyphE
 }
 
 /// Get face metrics
-pub fn get_metrics(face_id: ThingId, px_size: u16) -> Option<FaceMetrics> {
+pub fn get_metrics(face_id: u64, px_size: u16) -> Option<FaceMetrics> {
     let mut guard = FONT_CLIENT.lock();
     guard.as_mut()?.get_metrics(face_id, px_size)
 }
 
 /// Get atlas mapping for blitting
-pub fn with_atlas<F, R>(face_id: ThingId, px_size: u16, f: F) -> Option<R>
+pub fn with_atlas<F, R>(face_id: u64, px_size: u16, f: F) -> Option<R>
 where
     F: FnOnce(&mut AtlasMapping) -> R,
 {
     let mut guard = FONT_CLIENT.lock();
     let client = guard.as_mut()?;
     let mapping = client.get_atlas_mapping(face_id, px_size)?;
-    mapping.ensure_mapped()?;
     Some(f(mapping))
 }
 

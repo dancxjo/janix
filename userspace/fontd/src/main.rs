@@ -11,12 +11,12 @@ use abi::font_protocol::{
     AtlasFormat, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics, FontError, FontRequestTag,
     GetFaceMetrics, GlyphPlacement, decode_request_tag, encode_error, encode_pong,
 };
+use abi::ids::HandleId;
 use abi::wait::{WaitKind, WaitResult, WaitSpec, interest, ready};
 use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
 use stem::syscall;
 use stem::thing::ThingId;
-use stem::thing::sys::{create_node, prop_set};
 use stem::{error, info, warn};
 
 use alloc::collections::BTreeMap;
@@ -85,14 +85,20 @@ fn main() -> ! {
     let (fontd_req, fontd_resp) =
         match (syscall::channel_create(8192), syscall::channel_create(8192)) {
             (Ok(req), Ok(resp)) => {
-                if let Ok(svc_node) = create_node("svc.FontD") {
-                    let _ = prop_set(svc_node, "fontd.req", req.0 as u64);
-                    let _ = prop_set(svc_node, "fontd.resp", resp.1 as u64);
-                    info!(
-                        "FONTD: Service node created, req={}, resp={}",
-                        req.0, resp.1
-                    );
+                // VFS-native service publication
+                let _ = syscall::vfs_mkdir("/services");
+                let _ = syscall::vfs_mkdir("/services/font");
+ 
+                if let Err(e) = syscall::vfs_mount(req.0, "/services/font/req") {
+                    warn!("FONTD: Failed to mount /services/font/req: {:?}", e);
                 }
+                if let Err(e) = syscall::vfs_mount(resp.1, "/services/font/resp") {
+                    warn!("FONTD: Failed to mount /services/font/resp: {:?}", e);
+                }
+ 
+                info!(
+                    "FONTD: Service ports mounted to /services/font/{{req,resp}}"
+                );
                 (req.1, resp.0)
             }
             _ => {

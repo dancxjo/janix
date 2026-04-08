@@ -10,7 +10,7 @@ use crate::asset::{AssetBank, Image};
 use crate::geometry::Color;
 use crate::session_fs;
 
-const WATCH_BUFFER_BYTES: usize = 512;
+pub const WATCH_BUFFER_BYTES: usize = 512;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WallpaperMode {

@@ -7,8 +7,6 @@
 use abi::schema::{keys, kinds, snapshot_mode};
 use alloc::vec::Vec;
 use stem::syscall::vfs::{vfs_close, vfs_open};
-use stem::thing::sys::{prop_get};
-use stem::thing::{HandleId, ThingId};
 use crate::session_fs::{list_dir, WINDOWS_ROOT};
 
 use crate::surface::PixelBuffer;
@@ -39,7 +37,7 @@ impl fmt::Display for SnapshotInvalidation {
 
 #[derive(Clone, Debug)]
 pub struct WindowSnapshot {
-    pub id: ThingId,
+    pub id: u64,
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -54,7 +52,7 @@ pub struct WindowSnapshot {
 
 #[derive(Clone, Debug)]
 pub struct SnapshotMeta {
-    pub bytespace: ThingId,
+    pub bytespace: u32,
     pub width: u32,
     pub height: u32,
     pub stride: u32,
@@ -82,8 +80,8 @@ pub fn collect_windows(screen_w: i32, screen_h: i32) -> Vec<WindowSnapshot> {
     out
 }
 
-fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapshot> {
-    let id_str = alloc::format!("{:x}", id.to_u64_lossy());
+fn read_window(id: u64, screen_w: i32, screen_h: i32) -> Option<WindowSnapshot> {
+    let id_str = alloc::format!("{}", id);
     let base = crate::session_fs::window_path(&id_str);
 
     let width = crate::session_fs::read_u64(&format!("{}/shell/current/width", base)).unwrap_or(0) as u32;
@@ -138,7 +136,7 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
 
     let snapshot = if let Some(att) = attached {
         Some(SnapshotMeta {
-            bytespace: ThingId::from_u64(att.fd as u64),
+            bytespace: att.fd,
             width: att.width,
             height: att.height,
             stride: att.stride,
@@ -200,12 +198,12 @@ fn composite_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot, snapshot:
         prot: VmProt::READ,
         flags: VmMapFlags::SHARED,
         backing: VmBacking::File {
-            fd: snapshot.bytespace.to_u64_lossy() as u32,
+            fd: snapshot.bytespace,
             offset: 0,
         },
     };
 
-    let Ok(resp) = stem::thing::sys::vm_map(&req) else {
+    let Ok(resp) = stem::syscall::vm_map(&req) else {
         return;
     };
 
@@ -221,17 +219,7 @@ fn composite_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot, snapshot:
         win.y,
     );
 
-    let _ = unsafe {
-        stem::syscall::arch::raw_syscall6(
-            abi::syscall::SYS_VM_UNMAP,
-            resp.addr,
-            resp.len,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let _ = stem::syscall::vm_unmap(resp.addr, resp.len);
 }
 
 fn draw_missing_snapshot(surface: &mut PixelBuffer, win: &WindowSnapshot) {

@@ -4,289 +4,80 @@ pub mod riscv64;
 pub mod x86_64;
 
 use abi::ids::HandleId;
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
-// use alloc::vec::Vec;
-use abi::schema::{confidence, keys, kinds, rels, source};
+use abi::schema::{confidence, keys, source};
 use alloc::vec;
 use stem::info;
 
-pub fn set_str_prop(id: ThingId, key: &str, val: &str) -> Result<(), ()> {
-    let sym = thingsys::intern(val).map_err(|_| ())?;
-    thingsys::prop_set(id, key, sym as u64).map_err(|_| ())
+pub fn set_str_prop(_id: abi::types::ThingId, _key: &str, _val: &str) -> Result<(), ()> {
+    Ok(())
 }
 
 #[allow(dead_code)]
 pub struct DevTreeCtx {
-    pub host: ThingId,
-    pub platform_bus: ThingId,
+    pub host: abi::types::ThingId,
+    pub platform_bus: abi::types::ThingId,
     pub hhdm: usize,
     pub acpi_rsdp: Option<usize>,
     pub dtb_ptr: Option<usize>,
-    pub dtb_bytespace: Option<ThingId>,
-    pub dtb_node_id: Option<ThingId>,
+    pub dtb_bytespace: Option<abi::types::ThingId>,
+    pub dtb_node_id: Option<abi::types::ThingId>,
 }
 
 pub fn init() -> Result<DevTreeCtx, ()> {
-    info!("SPROUT: devtree::init entry (v0.2)");
-
-    // 1. Find Host
-    info!("SPROUT: Step 1: Find Host");
-    let mut hosts = [ThingId::default(); 1];
-    // Cast u64 -> usize is implicit in find logic or needed?
-    // root::find syscall takes SymbolShell. kinds::DEV_HOST is &str. fits.
-    let count = thingsys::find(kinds::DEV_HOST, &mut hosts).map_err(|e| {
-        info!("SPROUT: find(dev.host) failed: {:?}", e);
-        ()
-    })?;
-    if count == 0 {
-        info!("SPROUT: No dev.host node found!");
-        return Err(());
+    info!("SPROUT: devtree::init entry (VFS-native)");
+ 
+    // 1. Get HHDM Offset
+    info!("SPROUT: Reading HHDM offset from /sys/firmware/hhdm");
+    let hhdm = read_sys_u64("/sys/firmware/hhdm").unwrap_or(0) as usize;
+    if hhdm == 0 {
+        stem::warn!("SPROUT: Failed to read HHDM offset!");
     }
-    let host = hosts[0];
-
-    // 2. Get HHDM Offset
-    info!("SPROUT: Step 2: HHDM");
-    let hhdm = thingsys::prop_get(host, keys::HHDM_OFFSET).map_err(|e| {
-        info!("SPROUT: prop_get(hhdm_offset) failed: {:?}", e);
-        ()
-    })? as usize;
-
-    // 3. Find/Create Platform Bus
-    info!("SPROUT: Step 3: Platform Bus");
-    let mut buses = [ThingId::default(); 1];
-    let bcount = thingsys::find(kinds::DEV_BUS_PLATFORM, &mut buses).unwrap_or(0);
-    let platform_bus = if bcount > 0 {
-        buses[0]
-    } else {
-        info!("SPROUT: Creating dev.bus.platform...");
-        let bus = thingsys::create_node(kinds::DEV_BUS_PLATFORM).map_err(|_| ())?;
-        thingsys::link(host, rels::HAS_BUS, bus).map_err(|_| ())?;
-
-        thingsys::prop_set(bus, keys::SOURCE, source::PLATFORM as u64).ok();
-        thingsys::prop_set(bus, keys::CONFIDENCE, confidence::HIGH as u64).ok();
-
-        bus
-    };
-
-    // 4. Check for Firmware
-    info!("SPROUT: Step 4: Firmware");
+ 
+    // 2. Check for Firmware
     let mut acpi_rsdp = None;
     let mut dtb_ptr = None;
-    let mut dtb_bytespace = None;
-    let mut dtb_node_id = None;
-
-    let mut fw_buf = [ThingId::default(); 4];
-
-    info!("SPROUT: Finding ACPI...");
-    if let Ok(count) = thingsys::find(kinds::FW_TABLE_ACPI, &mut fw_buf) {
-        info!("SPROUT: Found {} ACPI nodes", count);
-        if count > 0 {
-            if let Ok(val) = thingsys::prop_get(fw_buf[0], keys::PHYS_BASE) {
-                acpi_rsdp = Some(val as usize);
-                info!("SPROUT: ACPI RSDP = 0x{:x}", val);
-            }
-        }
-    } else {
-        info!("SPROUT: find(ACPI) failed/returned error");
+ 
+    if let Ok(val) = read_sys_u64("/sys/firmware/acpi") {
+        acpi_rsdp = Some(val as usize);
+        info!("SPROUT: ACPI RSDP = 0x{:x}", val);
     }
-
-    info!("SPROUT: Finding DTB...");
-    if let Ok(count) = thingsys::find(kinds::FW_TABLE_DTB, &mut fw_buf) {
-        info!("SPROUT: Found {} DTB nodes", count);
-        if count > 0 {
-            dtb_node_id = Some(fw_buf[0]);
-            if let Ok(val) = thingsys::prop_get(fw_buf[0], keys::PHYS_BASE) {
-                dtb_ptr = Some(val as usize);
-                info!("SPROUT: DTB PHYS = 0x{:x}", val);
-            }
-            if let Ok(val) = thingsys::prop_get(fw_buf[0], "bytespace") {
-                dtb_bytespace = Some(ThingId::from_u64(val));
-                info!("SPROUT: DTB Bytespace ID = {}", val);
-            }
-        }
-    } else {
-        info!("SPROUT: find(DTB) failed");
+ 
+    if let Ok(val) = read_sys_u64("/sys/firmware/dtb") {
+        dtb_ptr = Some(val as usize);
+        info!("SPROUT: DTB PHYS = 0x{:x}", val);
     }
-
-    info!("SPROUT: Init OK, returning context");
+ 
+    info!("SPROUT: Init OK, returning context (graph discovery eradicated)");
     Ok(DevTreeCtx {
-        host,
-        platform_bus,
+        host: abi::types::ThingId::default(),
+        platform_bus: abi::types::ThingId::default(),
         hhdm,
         acpi_rsdp,
         dtb_ptr,
-        dtb_bytespace,
-        dtb_node_id,
+        dtb_bytespace: None,
+        dtb_node_id: None,
     })
 }
-
-pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
-    info!("SPROUT: build() called");
-    // Attempt DTB parsing if available
-    if let Some(fd_val) = ctx.dtb_bytespace {
-        let fd = fd_val.to_u64_lossy() as u32;
-        info!("SPROUT: Found DTB fd {}, parsing...", fd);
-        let mut header = [0u8; 8];
-        if let Ok(_) = thingsys::read(fd, &mut header) {
-            let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
-            if magic == 0xd00dfeed {
-                let size =
-                    u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
-
-                if size < 2 * 1024 * 1024 {
-                    // Up to 2MB DTB
-                    info!("SPROUT: Reading DTB size={}...", size);
-                    let mut buf = vec![0u8; size];
-                    if let Ok(read_len) = thingsys::read(fd, &mut buf) {
-                        if read_len == size {
-                            if let Ok(fdt) = fdt::Fdt::new(&buf) {
-                                info!("SPROUT: Valid FDT found. Iterating nodes...");
-
-                                for node in fdt.all_nodes() {
-                                    stem::yield_now(); // Yield inside loop to be safe!
-                                    let name = node.name.split('@').next().unwrap_or("");
-                                    // info!("SPROUT: NODE {}", name); // Too verbose?
-                                    let mut kind = "";
-
-                                    if name.contains("serial") || name.contains("uart") {
-                                        kind = "dev.serial.Uart"; // Map to schema/kinds if possible, or string literal
-                                    } else if name.contains("intc")
-                                        || name.contains("interrupt-controller")
-                                        || name.contains("plic")
-                                        || name.contains("clint")
-                                        || name.contains("gic")
-                                    {
-                                        kind = "dev.InterruptController";
-                                    } else if name.contains("timer") {
-                                        kind = "dev.Timer";
-                                    }
-
-                                    if !kind.is_empty() {
-                                        // Create device
-                                        if let Ok(dev) = thingsys::create_node(kind) {
-                                            // Set provenance (Numeric)
-                                            let _ = thingsys::prop_set(
-                                                dev,
-                                                keys::SOURCE,
-                                                source::DTB as u64,
-                                            );
-                                            let _ = thingsys::prop_set(
-                                                dev,
-                                                keys::CONFIDENCE,
-                                                confidence::HIGH as u64,
-                                            );
-
-                                            // Set identity
-                                            let _ = set_str_prop(dev, keys::NAME, node.name);
-                                            if let Some(compat) = node.compatible() {
-                                                for c in compat.all() {
-                                                    let _ = set_str_prop(dev, "compatible", c);
-                                                    break; // Only first one for now
-                                                }
-                                            }
-
-                                            // Link to platform bus
-                                            let _ = thingsys::link(
-                                                ctx.platform_bus,
-                                                rels::HAS_DEVICE,
-                                                dev,
-                                            );
-
-                                            // Link evidence
-                                            if let Some(evidence) = ctx.dtb_node_id {
-                                                let _ = thingsys::link(
-                                                    dev,
-                                                    rels::DERIVED_FROM,
-                                                    evidence,
-                                                );
-                                            }
-
-                                            // Resources: MMIO
-                                            if let Some(regs) = node.reg() {
-                                                for reg in regs {
-                                                    if let Ok(res) =
-                                                        thingsys::create_node("res.mmio.Range")
-                                                    {
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::SOURCE,
-                                                            source::DTB as u64,
-                                                        );
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::CONFIDENCE,
-                                                            confidence::HIGH as u64,
-                                                        );
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::PHYS_BASE,
-                                                            reg.starting_address as u64,
-                                                        );
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::SIZE_BYTES,
-                                                            reg.size.unwrap_or(0) as u64,
-                                                        );
-                                                        let _ = thingsys::link(
-                                                            dev,
-                                                            rels::HAS_RESOURCE,
-                                                            res,
-                                                        );
-                                                    }
-                                                }
-                                            }
-
-                                            // Resources: IRQ
-                                            if let Some(irqs) = node.interrupts() {
-                                                for irq in irqs {
-                                                    if let Ok(res) =
-                                                        thingsys::create_node("res.Irq")
-                                                    {
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::SOURCE,
-                                                            source::DTB as u64,
-                                                        );
-                                                        let _ = thingsys::prop_set(
-                                                            res,
-                                                            keys::CONFIDENCE,
-                                                            confidence::HIGH as u64,
-                                                        );
-                                                        let _ = thingsys::prop_set(
-                                                            res, "irq", irq as u64,
-                                                        );
-                                                        let _ = thingsys::link(
-                                                            dev,
-                                                            rels::HAS_RESOURCE,
-                                                            res,
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+ 
+fn read_sys_u64(path: &str) -> Result<u64, ()> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+ 
+    let fd = vfs_open(path, O_RDONLY).map_err(|_| ())?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).map_err(|_| ())?;
+    let _ = vfs_close(fd);
+ 
+    let s = core::str::from_utf8(&buf[..n]).map_err(|_| ())?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u64::from_str_radix(&trimmed[2..], 16).map_err(|_| ())
+    } else {
+        trimmed.parse::<u64>().map_err(|_| ())
     }
+}
 
-    #[cfg(target_arch = "x86_64")]
-    return x86_64::enumerate(ctx);
-
-    #[cfg(target_arch = "aarch64")]
-    return aarch64::enumerate(ctx);
-
-    #[cfg(target_arch = "riscv64")]
-    return riscv64::enumerate(ctx);
-
-    #[cfg(target_arch = "loongarch64")]
-    return loongarch64::enumerate(ctx);
-
-    #[allow(unreachable_code)]
+pub fn build(_ctx: &DevTreeCtx) -> Result<(), ()> {
+    info!("SPROUT: build() called (VFS-native, graph building skipped)");
     Ok(())
 }

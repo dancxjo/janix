@@ -8,157 +8,64 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::str::FromStr;
 
-use stem::syscall::port::{channel_create, channel_send, port_try_recv, ChannelHandle};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
-
-// Constants from netd
-const KIND_NET_STACK: &str = "svc.net.Stack";
-const MSG_TCP_CONNECT: u16 = 0x0200;
-const MSG_TCP_SEND: u16 = 0x0201;
-const MSG_TCP_RECV: u16 = 0x0202;
-const MSG_TCP_CLOSE: u16 = 0x0203;
-const MSG_DNS_QUERY: u16 = 0x0500;
-
-const RESP_OK: u16 = 0x0000;
-const RESP_ERROR: u16 = 0x0001;
-const RESP_HANDLE: u16 = 0x0002;
-const RESP_DATA: u16 = 0x0003;
-const RESP_ACCEPT: u16 = 0x0004;
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
 
 pub struct TcpStream {
-    socket_handle: u32,
-    netd_port: ChannelHandle,
-    my_port: ChannelHandle,
+    data_fd: u32,
+    ctl_fd: u32,
 }
 
 impl TcpStream {
     pub fn connect(host: &str, port: u16) -> Result<Self, String> {
-        // Find netd
-        let mut buf = [ThingId::default(); 1];
-        if thingsys::find(KIND_NET_STACK, &mut buf).map_err(|_| "Net stack not found")? == 0 {
-            return Err("Net stack not found".to_string());
-        }
-        let net_id = buf[0];
-        let netd_port = thingsys::prop_get(net_id, "net.socket_api")
-            .map_err(|_| "Socket API port not found")? as ChannelHandle;
+        use abi::syscall::vfs_flags::{O_RDONLY, O_RDWR};
 
-        // Create my response port
-        let (my_port, _) = channel_create(8192).map_err(|_| "Failed to create response port")?;
+        // 1. Allocate a new TCP socket via /net/tcp/new
+        let new_fd = vfs_open("/net/tcp/new", O_RDONLY).map_err(|e| format!("failed to open /net/tcp/new: {:?}", e))?;
+        let mut buf = [0u8; 16];
+        let n = vfs_read(new_fd, &mut buf).map_err(|e| format!("failed to read socket id: {:?}", e))?;
+        let _ = vfs_close(new_fd);
 
-        // Resolve DNS if host is not an IP
-        let ip = if let Ok(ip) = parse_ipv4(host) {
-            ip
-        } else {
-            Self::resolve_dns(netd_port, my_port, host)?
-        };
+        let socket_id = core::str::from_utf8(&buf[..n])
+            .map_err(|_| "invalid socket id encoding")?
+            .trim();
 
-        // Connect
-        let mut msg = Vec::with_capacity(8);
-        msg.extend_from_slice(&MSG_TCP_CONNECT.to_le_bytes());
-        msg.extend_from_slice(&ip);
-        msg.extend_from_slice(&port.to_le_bytes());
+        // 2. Open ctl and data files
+        let ctl_path = format!("/net/tcp/{}/ctl", socket_id);
+        let data_path = format!("/net/tcp/{}/data", socket_id);
 
-        let response = send_recv(netd_port, my_port, &msg)?;
-        let resp_type = u16::from_le_bytes([response[0], response[1]]);
+        let ctl_fd = vfs_open(&ctl_path, O_RDWR).map_err(|e| format!("failed to open ctl: {:?}", e))?;
+        let data_fd = vfs_open(&data_path, O_RDWR).map_err(|e| format!("failed to open data: {:?}", e))?;
 
-        if resp_type == RESP_HANDLE {
-            let handle = u32::from_le_bytes([response[2], response[3], response[4], response[5]]);
-            Ok(Self {
-                socket_handle: handle,
-                netd_port,
-                my_port,
-            })
-        } else {
-            Err("Connection failed".to_string())
-        }
-    }
+        // 3. Connect via ctl file
+        let conn_cmd = format!("connect {} {}", host, port);
+        vfs_write(ctl_fd, conn_cmd.as_bytes()).map_err(|e| format!("connect command failed: {:?}", e))?;
 
-    fn resolve_dns(
-        netd_port: ChannelHandle,
-        my_port: ChannelHandle,
-        host: &str,
-    ) -> Result<[u8; 4], String> {
-        let mut msg = Vec::new();
-        msg.extend_from_slice(&MSG_DNS_QUERY.to_le_bytes());
-        msg.extend_from_slice(host.as_bytes());
+        // Wait for connection to establish (poor man's poll/check for now)
+        // In a real implementation we would poll status or events.
+        stem::time::sleep_ms(100);
 
-        let response = send_recv(netd_port, my_port, &msg)?;
-        let resp_type = u16::from_le_bytes([response[0], response[1]]);
-
-        if resp_type == RESP_DATA {
-            if response.len() >= 6 {
-                Ok([response[2], response[3], response[4], response[5]])
-            } else {
-                Err("Invalid DNS response".to_string())
-            }
-        } else {
-            Err("DNS resolution failed".to_string())
-        }
+        Ok(Self { data_fd, ctl_fd })
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, String> {
-        let mut total_sent = 0;
-        // Chunk the data to avoid the 4KB kernel IPC cap.
-        // V2 header [12 bytes] + msg_type [2 bytes] + handle [4 bytes] = 18 bytes overhead.
-        for chunk in data.chunks(4000) {
-            let mut msg = Vec::with_capacity(6 + chunk.len());
-            msg.extend_from_slice(&MSG_TCP_SEND.to_le_bytes());
-            msg.extend_from_slice(&self.socket_handle.to_le_bytes());
-            msg.extend_from_slice(chunk);
-
-            let response = send_recv(self.netd_port, self.my_port, &msg)?;
-            if response.len() < 4 {
-                return Err("Invalid response length from netd".to_string());
-            }
-            let resp_type = u16::from_le_bytes([response[0], response[1]]);
-
-            if resp_type == RESP_OK {
-                let sent = u16::from_le_bytes([response[2], response[3]]);
-                total_sent += sent as usize;
-                if (sent as usize) < chunk.len() {
-                    // Partial send at TCP level, stop chunking
-                    break;
-                }
-            } else {
-                return Err("Write failed at netd".to_string());
-            }
-        }
-        Ok(total_sent)
+        vfs_write(self.data_fd, data).map_err(|e| format!("write failed: {:?}", e))
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
-        let mut msg = Vec::with_capacity(10);
-        msg.extend_from_slice(&MSG_TCP_RECV.to_le_bytes());
-        msg.extend_from_slice(&self.socket_handle.to_le_bytes());
-        // Use a safe max read size to avoid RESP_DATA ghosting hazard.
-        // Kernel cap is 4096. RESP_DATA header is 2 bytes.
-        let len = (buf.len() as u16).min(4000);
-        msg.extend_from_slice(&len.to_le_bytes());
-
-        let response = send_recv(self.netd_port, self.my_port, &msg)?;
-        if response.len() < 2 {
-            return Ok(0);
-        }
-        let resp_type = u16::from_le_bytes([response[0], response[1]]);
-
-        if resp_type == RESP_DATA {
-            let data = &response[2..];
-            let copy_len = data.len().min(buf.len());
-            buf[..copy_len].copy_from_slice(&data[..copy_len]);
-            Ok(copy_len)
-        } else {
-            Ok(0)
-        }
+        vfs_read(self.data_fd, buf).map_err(|e| {
+            if e == abi::errors::Errno::EAGAIN {
+                Ok(0)
+            } else {
+                Err(format!("read failed: {:?}", e))
+            }
+        })?
     }
 }
 
 impl Drop for TcpStream {
     fn drop(&mut self) {
-        let mut msg = Vec::with_capacity(6);
-        msg.extend_from_slice(&MSG_TCP_CLOSE.to_le_bytes());
-        msg.extend_from_slice(&self.socket_handle.to_le_bytes());
-        let _ = send_recv(self.netd_port, self.my_port, &msg);
+        let _ = vfs_close(self.data_fd);
+        let _ = vfs_close(self.ctl_fd);
     }
 }
 

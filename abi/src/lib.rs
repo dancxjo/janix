@@ -15,7 +15,6 @@ pub mod geometry;
 pub mod ids;
 pub mod module;
 pub mod module_manifest;
-pub mod root;
 pub mod schema;
 pub mod service_contract;
 pub mod symbols;
@@ -34,6 +33,7 @@ pub mod hid;
 pub mod logging;
 pub mod pixel;
 pub mod svg_protocol;
+pub mod sound;
 
 pub mod macros;
 pub mod packed;

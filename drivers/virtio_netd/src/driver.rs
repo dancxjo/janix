@@ -4,8 +4,6 @@
 
 use abi::errors::Errno;
 use stem::syscall::{device_alloc_dma, device_dma_phys};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{info, warn};
 use virtio::VirtioDevice;
 
@@ -74,15 +72,15 @@ impl VirtioNetDriver {
         info!("VirtIO-NET: Searching for NIC device...");
 
         // Find a dev.net.nic node
-        let nic_id = find_nic_device()?;
-        Self::claim_device(nic_id)
+        let nic_path = find_nic_device()?;
+        Self::claim_device(&nic_path)
     }
 
-    pub fn claim_device(nic_id: u64) -> Result<Self, Errno> {
-        info!("VirtIO-NET: Found NIC device t{:x}", nic_id);
+    pub fn claim_device(nic_path: &str) -> Result<Self, Errno> {
+        info!("VirtIO-NET: Claiming NIC device at {}", nic_path);
 
         // Create VirtIO device wrapper
-        let mut device = VirtioDevice::new(nic_id)?;
+        let mut device = VirtioDevice::new(nic_path)?;
 
         // Initialize with NET features
         let desired_features = VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS;
@@ -348,17 +346,53 @@ impl VirtioNetDriver {
     }
 }
 
-/// Find a VirtIO-NET device in the graph
-pub fn find_nic_device() -> Result<u64, Errno> {
-    use abi::schema::kinds;
+/// Find a VirtIO-NET device in sysfs
+pub fn find_nic_device() -> Result<alloc::string::String, Errno> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
-    // Query for dev.net.nic nodes using the thing system API
-    let mut buf = [ThingId::default(); 1];
-    let count = thingsys::find(kinds::DEV_NET_NIC, &mut buf).map_err(|_| Errno::ENODEV)?;
+    let fd = vfs_open("/sys/devices", O_RDONLY).map_err(|_| Errno::ENODEV)?;
+    let mut buf = [0u8; 4096];
+    let n = vfs_readdir(fd, &mut buf).map_err(|_| Errno::ENODEV)?;
+    let _ = vfs_close(fd);
 
-    if count > 0 {
-        Ok(buf[0].to_u64_lossy())
+    let mut offset = 0;
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                let path = alloc::format!("/sys/devices/{}", name);
+                let vendor = read_sys_u32(&alloc::format!("{}/vendor", path)).unwrap_or(0);
+                let class = read_sys_u32(&alloc::format!("{}/class", path)).unwrap_or(0);
+
+                // VirtIO Vendor = 0x1af4, Network Class = 0x0200xx
+                if vendor == 0x1af4 && (class >> 8) == 0x0200 {
+                    return Ok(path);
+                }
+            }
+        }
+        offset = end + 1;
+    }
+    Err(Errno::ENODEV)
+}
+
+fn read_sys_u32(path: &str) -> Option<u32> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).ok()
     } else {
-        Err(Errno::ENODEV)
+        trimmed.parse::<u32>().ok()
     }
 }

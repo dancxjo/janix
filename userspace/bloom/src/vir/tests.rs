@@ -121,6 +121,7 @@ mod tests {
         }
     }
 
+    /*
     #[test]
     fn test_svg_to_vir_conversion() {
         use crate::geometry::{Color, Transform};
@@ -166,6 +167,7 @@ mod tests {
         assert_eq!(vir.height, Some(100.0));
         assert_eq!(vir.elements.len(), 1);
     }
+    */
 
     #[test]
     fn test_quadratic_curve_flattening() {

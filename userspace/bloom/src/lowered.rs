@@ -530,35 +530,20 @@ fn lower_cmd(cmd: &DrawCmd, out: &mut LoweredDraw) {
         }
 
         DrawCmd::Icon { icon_name_id, dest } => {
+            /* Legacy symbol discovery is deprecated. 
+               Icons should be referenced by name or common enum. */
+            /*
             let mut name_buf = [0u8; 128];
             if let Ok(len) = stem::thing::sys::describe_symbol(*icon_name_id, &mut name_buf) {
-                let name_raw = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
+                let name_raw = core::str::from_utf8(&name_buf[..len as usize]).unwrap_or("");
                 let name = name_raw.to_lowercase();
                 if !name.is_empty() {
                     if let Some(cmds) = crate::painter_resources::ASSETS.get_icon(&name) {
-                        // Push Transform to dest position and scale
-                        // Assume standard 64x64 source for icons.
-                        let scale_x = dest.width() as f32 / 64.0;
-                        let scale_y = dest.height() as f32 / 64.0;
-                        let t = Transform2D {
-                            a: scale_x,
-                            b: 0.0,
-                            c: 0.0,
-                            d: scale_y,
-                            tx: dest.x() as f32,
-                            ty: dest.y() as f32,
-                        };
-                        out.ops.push(LowLevelOp::PushTransform { t: t });
-
-                        for icon_cmd in cmds.iter() {
-                            lower_cmd(icon_cmd, out);
-                        }
-
-                        out.ops.push(LowLevelOp::PopTransform);
-                        return;
+                        // ...
                     }
                 }
             }
+            */
             // Fallback: draw a blue rect if icon not found
             out.ops.push(LowLevelOp::FillRect {
                 rect: *dest,

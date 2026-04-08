@@ -18,7 +18,7 @@ pub mod dump;
 pub mod examples;
 pub mod render;
 pub mod shapes;
-pub mod svg_convert;
+// pub mod svg_convert;
 pub mod transform;
 pub mod types;
 
@@ -26,7 +26,7 @@ pub mod types;
 mod tests;
 
 pub use render::vir_to_drawlist;
-pub use svg_convert::svg_to_vir;
+// pub use svg_convert::svg_to_vir;
 pub use transform::*;
 pub use types::*;
 

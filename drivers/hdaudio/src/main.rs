@@ -1,11 +1,10 @@
 #![feature(restricted_std)]
 #![no_main]
+extern crate alloc;
 
 use abi::schema::{keys, kinds};
 use core::ptr::{read_volatile, write_volatile};
 use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{error, info, warn};
 
 const REG_GCAP: u32 = 0x00;
@@ -105,33 +104,54 @@ struct HdaController {
 }
 
 #[stem::main]
-fn main(_arg: usize) -> ! {
-    info!("HDAUDIO: starting");
+fn main(boot_fd: usize) -> ! {
+    info!("HDAUDIO: starting (boot_fd={})", boot_fd);
 
-    info!("HDAUDIO: searching for HDA controller...");
-    let dev = match find_hda_device() {
-        Some(id) => {
-            info!("HDAUDIO: found device {:?}", id);
-            id
+    // 1. Get device path from bootstrap memfd
+    let mut path_buf = [0u8; 128];
+    let path = if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let ptr = resp.addr as *const u8;
+            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            unsafe { core::slice::from_raw_parts(ptr, len) }
+        } else {
+            b""
         }
-        None => {
-            error!("HDAUDIO: no HDA PCI device found");
-            loop {
-                stem::time::sleep_ms(1000);
-            }
+    } else {
+        b""
+    };
+    let path_str = core::str::from_utf8(path).unwrap_or("");
+
+    info!("HDAUDIO: using device path: {}", path_str);
+
+    let dev = if !path_str.is_empty() {
+        // Find handle in the sysfs path
+        if let Some(h) = read_sys_u32(&alloc::format!("{}/handle", path_str)) {
+            h as u64
+        } else {
+            find_hda_device().unwrap_or(0)
         }
+    } else {
+        find_hda_device().unwrap_or(0)
     };
 
-    let vendor = thingsys::prop_get(dev, keys::VENDOR_ID).unwrap_or(0) as u16;
-    let device = thingsys::prop_get(dev, keys::DEVICE_ID).unwrap_or(0) as u16;
-    let bus = thingsys::prop_get(dev, keys::BUS).unwrap_or(0) as u8;
-    let dfn = thingsys::prop_get(dev, keys::DEVICE).unwrap_or(0) as u8;
-    let func = thingsys::prop_get(dev, keys::FUNCTION).unwrap_or(0) as u8;
+    if dev == 0 {
+        error!("HDAUDIO: no HDA PCI device found");
+        loop { stem::time::sleep_ms(1000); }
+    }
 
-    let claim = match device_claim(dev.to_u64_lossy()) {
+    let claim = match device_claim(dev) {
         Ok(h) => h,
         Err(e) => {
-            error!("HDAUDIO: claim failed: {:?}", e);
+            error!("HDAUDIO: claim failed for handle {}: {:?}", dev, e);
             loop {
                 stem::time::sleep_ms(1000);
             }
@@ -148,8 +168,8 @@ fn main(_arg: usize) -> ! {
     };
 
     info!(
-        "HDAUDIO: claimed {:02x}:{:02x}.{} {:04x}:{:04x} mmio=0x{:x}",
-        bus, dfn, func, vendor, device, mmio
+        "HDAUDIO: claimed device handle {} mmio=0x{:x}",
+        dev, mmio
     );
 
     let mut hda = match HdaController::new(mmio, claim) {
@@ -214,19 +234,34 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    let _ = thingsys::prop_set(dev, keys::WRITE_PORT_HANDLE, write_handle as u64);
-    let _ = thingsys::prop_set(dev, keys::LINK_STATUS, 1);
-    let _ = thingsys::prop_set(dev, keys::SOUND_BUFFERED_FRAMES, 0);
-    let _ = thingsys::prop_set(dev, keys::SOUND_FREE_FRAMES, (BUFFER_BYTES / 4) as u64);
-    let _ = thingsys::prop_set(dev, keys::SOUND_UNDERRUNS, 0);
+    // Publish service to VFS
+    use abi::syscall::vfs_flags::{O_CREAT, O_RDWR};
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
+    use abi::sound::AudioInfoPayload;
 
-    if let Ok(svc) = thingsys::create_node("svc.sound.Driver") {
-        let _ = thingsys::prop_set(svc, keys::WRITE_PORT_HANDLE, write_handle as u64);
-        if let Ok(sym) = thingsys::intern("hdaudio") {
-            let _ = thingsys::prop_set(svc, keys::NAME, sym as u64);
-        }
-        let _ = thingsys::link(svc, "DRIVES", dev);
+    let payload = AudioInfoPayload {
+        magic: AudioInfoPayload::MAGIC,
+        write_handle: write_handle as u32,
+        read_handle: read_handle as u32,
+        sample_rate: 48000, 
+        channels: 2,
+        bits_per_sample: 16,
+    };
+
+    let _ = vfs_mkdir("/services/sound");
+    if let Ok(fd) = vfs_open("/services/sound/main", O_CREAT | O_RDWR) {
+        let slice = unsafe {
+            core::slice::from_raw_parts(&payload as *const _ as *const u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+        };
+        let _ = vfs_write(fd, slice);
+        let _ = vfs_close(fd);
+        info!("HDAUDIO: published binary PCM1 info to /services/sound/main");
+    } else {
+        warn!("HDAUDIO: failed to publish info to /services/sound/main");
     }
+
+    // Purged legacy graph reporting.
+    // Future: report status via /services/sound or /run/sound.
 
     info!(
         "HDAUDIO: stream started (write_port={}, read_port={})",
@@ -242,10 +277,7 @@ fn main(_arg: usize) -> ! {
                 hda.feed_pcm(&in_buf[..n]);
                 total_bytes = total_bytes.saturating_add(n as u64);
 
-                let buffered = hda.buffered_bytes() as u64 / 4;
-                let free = (BUFFER_BYTES.saturating_sub(hda.buffered_bytes())) as u64 / 4;
-                let _ = thingsys::prop_set(dev, keys::SOUND_BUFFERED_FRAMES, buffered);
-                let _ = thingsys::prop_set(dev, keys::SOUND_FREE_FRAMES, free);
+                // Purged legacy property updates
 
                 let now = stem::time::monotonic_ns();
                 if now.saturating_sub(last_log_ns) > 1_000_000_000 {
@@ -655,59 +687,85 @@ impl HdaController {
     }
 }
 
-fn find_hda_device() -> Option<ThingId> {
-    let mut devs = [ThingId::default(); 8];
-    info!("HDAUDIO: calling thingsys::find for HDA stubs...");
-    let count = match thingsys::find(kinds::DEV_SOUND_HDA_PCI_STUB, &mut devs) {
-        Ok(c) => {
-            info!("HDAUDIO: find returned {} devices", c);
-            c
-        }
-        Err(e) => {
-            error!("HDAUDIO: find failed: {:?}", e);
-            return None;
-        }
-    };
+fn find_hda_device() -> Option<u64> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
-    // First pass: prefer controllers known to have codecs attached.
-    // QEMU's `-device intel-hda` creates an ICH6 controller (8086:2668)
-    // which is the one that has hda-duplex/hda-micro codecs on it.
-    // Also match known real-hardware IDs.
+    let fd = vfs_open("/sys/devices", O_RDONLY).ok()?;
+    let mut buf = [0u8; 4096];
+    let n = vfs_readdir(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let mut offset = 0;
+    let mut candidates = alloc::vec::Vec::new();
+
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                let path = alloc::format!("/sys/devices/{}", name);
+                let vendor = read_sys_u32(&alloc::format!("{}/vendor", path)).unwrap_or(0);
+                let device = read_sys_u32(&alloc::format!("{}/device", path)).unwrap_or(0);
+                let class = read_sys_u32(&alloc::format!("{}/class", path)).unwrap_or(0);
+
+                // HDA Class = 0x0403xx
+                if (class >> 8) == 0x0403 {
+                    if let Some(handle) = read_sys_u32(&alloc::format!("{}/handle", path)) {
+                        candidates.push((vendor, device, handle as u64));
+                    }
+                }
+            }
+        }
+        offset = end + 1;
+    }
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Preferred controllers
     let preferred: &[(u16, u16)] = &[
-        (0x8086, 0x2668), // Intel ICH6 HDA (QEMU `-device intel-hda`)
-        (0x1022, 0x15e3), // AMD Family 17h HDA
-        (0x1002, 0x1640), // AMD/ATI
-        (0x10de, 0x2291), // NVIDIA
+        (0x8086, 0x2668), // ICH6 HDA
+        (0x8086, 0x27d8), // ICH7
+        (0x8086, 0x284b), // ICH8
     ];
 
-    for &id in devs.iter().take(count) {
-        let vendor = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
-        let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
+    for (v, d, h) in &candidates {
         for &(pv, pd) in preferred {
-            if vendor == pv && device == pd {
-                info!(
-                    "HDAUDIO: matched preferred device {:04x}:{:04x}",
-                    vendor, device
-                );
-                return Some(id);
+            if *v == pv as u32 && *d == pd as u32 {
+                return Some(*h);
             }
         }
     }
 
-    // Second pass: accept any Intel HDA controller (including ICH9 built-in).
-    for &id in devs.iter().take(count) {
-        let vendor = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
-        if vendor == 0x8086 {
-            let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
-            info!("HDAUDIO: using Intel HDA {:04x}:{:04x}", vendor, device);
-            return Some(id);
+    // Intel fallback
+    for (v, _, h) in &candidates {
+        if *v == 0x8086 {
+            return Some(*h);
         }
     }
 
-    // Final fallback: first device found.
-    if count > 0 {
-        Some(devs[0])
+    // Generic fallback
+    Some(candidates[0].2)
+}
+
+fn read_sys_u32(path: &str) -> Option<u32> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).ok()
     } else {
-        None
+        trimmed.parse::<u32>().ok()
     }
 }

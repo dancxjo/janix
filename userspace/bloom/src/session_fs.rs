@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use stem::syscall::vfs::{
     vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir, vfs_seek, vfs_stat, vfs_write,
 };
-use stem::thing::ThingId;
+
 
 pub const SESSION_ROOT: &str = "/session";
 pub const SEATS_ROOT: &str = "/session/seat0";
@@ -134,15 +134,12 @@ pub fn desktop_path(name: &str) -> String {
     format!("{}/{}", DESKTOP_ROOT, name)
 }
 
-pub fn scene_id_from_name(name: &str) -> ThingId {
-    let raw = if let Some(parsed) = parse_u64(name) {
+pub fn scene_id_from_name(name: &str) -> u64 {
+    if let Some(parsed) = parse_u64(name) {
         parsed
     } else {
         stable_name_hash(name)
-    };
-    let mut bytes = [0u8; 16];
-    bytes[..8].copy_from_slice(&raw.to_le_bytes());
-    ThingId(bytes)
+    }
 }
 
 pub fn list_dir(path: &str) -> Vec<String> {

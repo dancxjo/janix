@@ -9,8 +9,7 @@ use alloc::format;
 use core::time::Duration;
 use stem::info;
 use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_stat, vfs_write};
-use stem::thing::sys::{find, memfd_create, prop_get, vm_map};
-use stem::thing::ThingId;
+use stem::syscall::{memfd_create, vm_map};
 
 const KIND_NET_STACK: &str = "svc.net.Stack";
 const WINDOW_ID: &str = "fetchd";
@@ -310,13 +309,16 @@ fn render_window(buffer: &BufferState, ip_text: &str, connected: bool) {
     );
 }
 
-fn pick_best_net_stack(ids: &[ThingId]) -> Option<ThingId> {
-    for id in ids {
-        if prop_get(*id, "net.ip").unwrap_or(0) != 0 {
-            return Some(*id);
-        }
+fn pick_best_ip() -> (alloc::string::String, bool) {
+    // In VFS-native model, we read eth0 status from /net/interfaces/eth0/addr
+    let text = read_text("/net/interfaces/eth0/addr");
+    if text.is_empty() || text.starts_with("0.0.0.0") {
+        (alloc::string::String::from("0.0.0.0"), false)
+    } else {
+        // text is "192.168.1.50/24"
+        let ip = text.split('/').next().unwrap_or("0.0.0.0");
+        (alloc::string::String::from(ip), true)
     }
-    ids.first().copied()
 }
 
 #[stem::main]
@@ -329,17 +331,7 @@ fn main(_arg: usize) -> ! {
     let mut last_ip = u64::MAX;
 
     loop {
-        let mut buf = [ThingId::default(); 16];
-        let (ip_text, connected) = match find(KIND_NET_STACK, &mut buf) {
-            Ok(count) if count > 0 => {
-                let stack = pick_best_net_stack(&buf[..count]).unwrap_or(buf[0]);
-                match prop_get(stack, "net.ip") {
-                    Ok(ip) if ip != 0 => (ip_to_string(ip), true),
-                    _ => (alloc::string::String::from("0.0.0.0"), false),
-                }
-            }
-            _ => (alloc::string::String::from("0.0.0.0"), false),
-        };
+        let (ip_text, connected) = pick_best_ip();
 
         let packed = if connected {
             let parts = ip_text

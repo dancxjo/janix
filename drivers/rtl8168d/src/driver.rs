@@ -1,13 +1,10 @@
 use abi::device::{PCI_IRQ_MODE_MSI, PCI_IRQ_MODE_MSIX};
 use abi::errors::Errno;
-use abi::schema::{keys, kinds};
 use core::mem::size_of;
 use core::ptr::{read_volatile, write_volatile};
 use core::sync::atomic::{fence, Ordering};
 use stem::device::device_enable_msi;
 use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{info, warn};
 
 const RTL8168_VENDOR_ID: u16 = 0x10ec;
@@ -92,11 +89,12 @@ pub struct Rtl8168Driver {
 }
 
 impl Rtl8168Driver {
-    pub fn find_and_claim() -> Result<Self, Errno> {
-        let dev_id = find_rtl8168_device().ok_or(Errno::ENODEV)?;
-        info!("RTL8168: found device {:?}", dev_id);
+    pub fn new(sysfs_path: &str) -> Result<Self, Errno> {
+        // Read internal handle from /sys/devices/.../handle
+        let handle = read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
+        info!("RTL8168: discovered device handle 0x{:x} from {}", handle, sysfs_path);
 
-        let claim = device_claim(dev_id.to_u64_lossy())?;
+        let claim = device_claim(handle)?;
         let mmio = device_map_mmio(claim, 0)?;
         info!("RTL8168: BAR0 mapped at 0x{:x}", mmio);
 
@@ -400,17 +398,22 @@ impl Rtl8168Driver {
     }
 }
 
-fn find_rtl8168_device() -> Option<ThingId> {
-    let mut devs = [ThingId::default(); 16];
-    let count = thingsys::find(kinds::DEV_NET_PCI_STUB, &mut devs).ok()?;
-    for &id in devs.iter().take(count) {
-        let vendor = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
-        let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
-        if vendor == RTL8168_VENDOR_ID && device == RTL8168_DEVICE_ID {
-            return Some(id);
-        }
+fn read_sys_u32(path: &str) -> Option<u32> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 32];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?;
+    let trimmed = s.trim();
+    if trimmed.starts_with("0x") {
+        u32::from_str_radix(&trimmed[2..], 16).ok()
+    } else {
+        trimmed.parse::<u32>().ok()
     }
-    None
 }
 
 const _: () = {

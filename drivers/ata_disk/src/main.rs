@@ -13,11 +13,8 @@ use alloc::vec::Vec;
 use core::time::Duration;
 use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::abi::schema::kinds;
 use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
 use stem::syscall::{ioport_read, ioport_write};
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{error, info};
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -67,7 +64,6 @@ const ATA_SR_DRQ: u8 = 0x08;
 const ATA_SR_ERR: u8 = 0x01;
 
 struct AtaDisk {
-    graph_id: ThingId,
     io_base: u16,
     is_slave: bool,
     sector_count: u64,
@@ -80,7 +76,6 @@ struct AtaDisk {
 
 /// ATAPI (CD-ROM) device
 struct AtapiDevice {
-    graph_id: ThingId,
     io_base: u16,
     ctrl_base: u16,
     is_slave: bool,
@@ -194,7 +189,6 @@ fn identify_drive(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtaDis
     }
 
     Some(AtaDisk {
-        graph_id: ThingId::default(),
         io_base,
         is_slave,
         sector_count,
@@ -275,18 +269,6 @@ fn read_sectors(
 }
 
 fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
-    use stem::abi::schema::keys;
-
-    let disk_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("ATA_DISK: Failed to create node: {:?}", e);
-            return;
-        }
-    };
-
-    disk.graph_id = disk_id;
-
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match channel_create(4096) {
         Ok(handles) => handles,
@@ -297,30 +279,21 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     };
     disk.read_port_handle = Some(read_handle);
 
-    // Set block device properties
-    thingsys::prop_set(disk_id, keys::SECTOR_SIZE, disk.sector_size as u64).ok();
-    thingsys::prop_set(disk_id, keys::SECTOR_COUNT, disk.sector_count).ok();
-    thingsys::prop_set(
-        disk_id,
-        keys::LBA48,
-        if disk.supports_lba48 { 1u64 } else { 0u64 },
-    )
-    .ok();
+    // Publish to VFS
+    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    let _ = vfs_mkdir("/services/storage");
+    let name = alloc::format!("/services/storage/ata_{}_{}", channel, drive);
+    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+        let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
+        let _ = vfs_close(fd);
+    }
 
-    // Convert model to string and set
     let model_str = core::str::from_utf8(&disk.model)
         .unwrap_or("Unknown")
         .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
-    }
-
-    // Publish write handle for clients to send requests to
-    thingsys::prop_set(disk_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
 
     info!(
-        "ATA_DISK: Registered disk {} ch={} drv={} sectors={} lba48={} model='{}' rpc_port={}",
-        disk_id.to_u64_lossy(),
+        "ATA_DISK: Registered disk ch={} drv={} sectors={} lba48={} model='{}' rpc_port={}",
         channel,
         drive,
         disk.sector_count,
@@ -399,7 +372,6 @@ fn identify_atapi(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtapiD
     }
 
     Some(AtapiDevice {
-        graph_id: ThingId::default(),
         io_base,
         ctrl_base,
         is_slave,
@@ -510,18 +482,6 @@ fn ata_outw(port: u16, val: u16) {
 }
 
 fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
-    use stem::abi::schema::keys;
-
-    let node_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("ATA_DISK: Failed to create ATAPI node: {:?}", e);
-            return;
-        }
-    };
-
-    dev.graph_id = node_id;
-
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match channel_create(4096) {
         Ok(handles) => handles,
@@ -532,26 +492,21 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     };
     dev.read_port_handle = Some(read_handle);
 
-    // Set block device properties
-    thingsys::prop_set(node_id, keys::SECTOR_SIZE, dev.sector_size as u64).ok();
-    if dev.sector_count > 0 {
-        thingsys::prop_set(node_id, keys::SECTOR_COUNT, dev.sector_count).ok();
+    // Publish to VFS
+    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    let _ = vfs_mkdir("/services/storage");
+    let name = alloc::format!("/services/storage/atapi_{}_{}", channel, drive);
+    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+        let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
+        let _ = vfs_close(fd);
     }
 
-    // Convert model to string and set
     let model_str = core::str::from_utf8(&dev.model)
         .unwrap_or("ATAPI Device")
         .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
-    }
-
-    // Publish write handle for clients to send requests to
-    thingsys::prop_set(node_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
 
     info!(
-        "ATA_DISK: Registered ATAPI {} ch={} drv={} model='{}' rpc_port={}",
-        node_id.to_u64_lossy(),
+        "ATA_DISK: Registered ATAPI ch={} drv={} model='{}' rpc_port={}",
         channel,
         drive,
         model_str,

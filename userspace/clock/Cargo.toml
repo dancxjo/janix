@@ -1,9 +1,0 @@
-[package]
-name = "clock"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-stem = { path = "../../stem", features = ["rt"] }
-abi = { path = "../../abi" }
-time = { version = "0.3.44", default-features = false }

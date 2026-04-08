@@ -128,8 +128,8 @@ fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult
         &path,
         &argv_slices,
         &env,
-        stdin_fd as usize,
-        stdout_fd as usize,
+        stdin_fd,
+        stdout_fd,
         1, // stderr → shell's own stdout
     ) {
         Ok(resp) => {

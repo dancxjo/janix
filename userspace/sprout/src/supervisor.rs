@@ -48,7 +48,6 @@ impl Supervisor {
         self.ensure_service("/fontd", "svc.FontD");
 
         crate::pipelines::setup_network_apps(&mut self.tasks);
-        crate::pipelines::setup_clock_service(&mut self.tasks);
 
         stem::sleep_ms(100);
 
@@ -97,7 +96,6 @@ impl Supervisor {
 
         crate::pipelines::setup_network_stack(&mut self.tasks);
         crate::pipelines::setup_network_apps(&mut self.tasks);
-        crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
 
         crate::pipelines::spawn_beeper(&mut self.tasks);

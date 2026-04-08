@@ -674,25 +674,6 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
-    match stem::syscall::spawn_process("/clock", 0) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned clock (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "/clock".to_string(),
-                kind: TaskKind::Service("svc.clock".to_string()),
-                module_path: "/clock".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-            });
-        }
-        Err(e) => {
-            warn!("SPROUT: Failed to spawn clock: {:?}", e);
-        }
-    }
-}
 
 pub fn setup_taskman_service(_tasks: &mut Vec<ManagedTask>) {
     // Taskman removed

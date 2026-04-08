@@ -37,7 +37,6 @@ members = [
     "drivers/ps2_mouse",
 
     "userspace/sprout",
-    "userspace/clock",
     "userspace/bristle",
     "userspace/echo",
     "userspace/input_echo",

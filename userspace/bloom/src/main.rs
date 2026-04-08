@@ -863,7 +863,8 @@ fn main(arg: usize) -> ! {
     let mut cursor_metrics = CursorMetrics::default();
 
     let mut wayland_server =
-        crate::wayland::server::WaylandServer::new().expect("Failed to start WaylandServer");
+        crate::wayland::server::WaylandServer::new(screen_w as u32, screen_h as u32)
+            .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)

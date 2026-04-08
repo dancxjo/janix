@@ -27,11 +27,12 @@ pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, dump_stats_current, exit_current,
     get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current,
-    kill_by_tid_current, poll_task_exit_current, process_info_current,
+    kill_by_tid_current, list_processes_current, poll_task_exit_current, process_info_current,
     process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
     remove_user_mappings_current, set_priority_current, sleep_ticks_current, spawn_process_current,
     spawn_process_ex_current, spawn_user_thread_current, task_status_current, task_wait_current,
     unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
+    ProcessSnapshot,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{

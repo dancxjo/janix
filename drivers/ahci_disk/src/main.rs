@@ -23,7 +23,7 @@ use stem::block::{BlockDevice, BlockError};
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
 use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
+use stem::thing::{HandleId, ThingId};
 use stem::{error, info};
 
 #[unsafe(link_section = ".thing_manifest")]

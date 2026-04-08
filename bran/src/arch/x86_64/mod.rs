@@ -96,6 +96,11 @@ impl X86_64Runtime {
     }
 
     pub fn poll_serial(&self) {
+        let mut buf = self.serial_buf.lock();
+        self.poll_serial_unlocked(&mut buf);
+    }
+
+    fn poll_serial_unlocked(&self, buf: &mut SerialBuffer) {
         loop {
             let lsr: u8;
             unsafe {
@@ -106,11 +111,45 @@ impl X86_64Runtime {
                 unsafe {
                     core::arch::asm!("in al, dx", out("al") ch, in("dx") 0x3f8u16, options(nostack, preserves_flags));
                 }
-                self.serial_buf.lock().push(ch);
+                kernel::contract!("[SERIAL] Received: 0x{:02x} ('{}')", ch, ch as char);
+                buf.push(ch);
             } else {
                 break;
             }
         }
+    }
+
+    fn init_uart(&self) {
+        unsafe {
+            let port = 0x3f8u16;
+            // 1. Disable all interrupts while initializing
+            core::arch::asm!("out dx, al", in("dx") port + 1, in("al") 0u8);
+
+            // 2. Enable DLAB (set baud rate divisor)
+            core::arch::asm!("out dx, al", in("dx") port + 3, in("al") 0x80u8);
+
+            // 3. Set divisor to 1 (lo byte) 115200 baud
+            core::arch::asm!("out dx, al", in("dx") port, in("al") 0x01u8);
+
+            // 4. Set divisor to 0 (hi byte)
+            core::arch::asm!("out dx, al", in("dx") port + 1, in("al") 0x00u8);
+
+            // 5. 8 bits, no parity, one stop bit (clears DLAB)
+            core::arch::asm!("out dx, al", in("dx") port + 3, in("al") 0x03u8);
+
+            // 6. Enable FIFO, clear them, with 1-byte threshold
+            core::arch::asm!("out dx, al", in("dx") port + 2, in("al") 0x07u8);
+
+            // 7. IRQs enabled, RTS/DTR set
+            // Bit 3 = OUT2. Bit 1 = RTS. Bit 0 = DTR. 
+            // 0x0B = 1011b (OUT2, RTS, DTR)
+            // CRITICAL: OUT2 must be set to route interrupts to the PIC/IOAPIC!
+            core::arch::asm!("out dx, al", in("dx") port + 4, in("al") 0x0Bu8);
+
+            // 8. Re-enable interrupts: Received Data Available
+            core::arch::asm!("out dx, al", in("dx") port + 1, in("al") 0x01u8);
+        }
+        kernel::contract!("[SERIAL] UART COM1 initialized (115200 8N1 FIFO-1 IRQ-on)");
     }
 }
 
@@ -307,29 +346,40 @@ impl ArchRuntime for X86_64Runtime {
         // Initialize IOAPIC for interrupt routing (after IDT is set up)
         crate::arch::init_ioapic();
 
-        // Enable UART COM1 interrupts (Received Data Available)
-        unsafe {
-            let port = 0x3f9u16; // IER
-            core::arch::asm!("out dx, al", in("dx") port, in("al") 1u8);
-        }
+        // Perform full UART initialization (baud, MCR OUT2, etc)
+        self.init_uart();
     }
 
     fn putchar(&self, c: u8) {
         unsafe {
-            let port = 0x3f8;
+            let port = 0x3f8u16;
+            // Wait for Transmitter Holding Register Empty (THRE)
+            loop {
+                let lsr: u8;
+                core::arch::asm!("in al, dx", out("al") lsr, in("dx") port + 5, options(nostack, preserves_flags));
+                if (lsr & 0x20) != 0 {
+                    break;
+                }
+                core::hint::spin_loop();
+            }
             core::arch::asm!("out dx, al", in("dx") port, in("al") c);
         }
     }
 
     fn getchar(&self) -> Option<u8> {
-        // Try buffer first
-        if let Some(c) = self.serial_buf.lock().pop() {
-            return Some(c);
-        }
-
-        // Otherwise poll hardware
-        self.poll_serial();
-        self.serial_buf.lock().pop()
+        let irq = self.irq_disable();
+        let res = {
+            let mut buf = self.serial_buf.lock();
+            if let Some(c) = buf.pop() {
+                Some(c)
+            } else {
+                // Otherwise poll hardware
+                self.poll_serial_unlocked(&mut buf);
+                buf.pop()
+            }
+        };
+        self.irq_restore(irq);
+        res
     }
 
     fn halt(&self) -> ! {

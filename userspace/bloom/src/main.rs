@@ -848,7 +848,7 @@ fn main(arg: usize) -> ! {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
         // Use kind() filter to watch for node creation, not predicate() which watches edges
-        let filter = RootWatchFilter::kind(ui_window_kind);
+        let filter = RootWatchFilter::subject(ui_window_kind.into());
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
             filter_ptr: &filter as *const _ as u64,

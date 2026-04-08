@@ -1,27 +1,20 @@
-//! Generic envelope for things in the graph.
+//! Generic envelope for things in the system.
 
-use crate::graphable::Graphable;
-use crate::wire::{KindId, ThingId};
+use crate::wire::ThingId;
 
-/// A generic envelope that provides identity + kind for any T: Graphable.
+/// A generic envelope that provides identity.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C)]
-pub struct Thing<T: Graphable> {
+pub struct Thing<T> {
     pub id: ThingId,
-    pub kind: KindId,
     pub value: T,
 }
 
-impl<T: Graphable> Thing<T> {
+impl<T> Thing<T> {
     /// Create a new Thing with a default (zeroed) handle.
-    ///
-    /// NOTE: In userspace, you should usually not mint your own IDs.
-    /// Use this as a sentinel or for temporary storage until the kernel assigns one.
     pub fn new(value: T) -> Self {
-        let id = ThingId::default();
         Self {
-            id,
-            kind: T::kind(),
+            id: ThingId::default(),
             value,
         }
     }
@@ -30,7 +23,6 @@ impl<T: Graphable> Thing<T> {
     pub fn with_id(id: ThingId, value: T) -> Self {
         Self {
             id,
-            kind: T::kind(),
             value,
         }
     }

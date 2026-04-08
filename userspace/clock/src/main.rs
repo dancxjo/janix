@@ -7,11 +7,11 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
-use stem::petals::graph::UiKey;
 use stem::petals::{
-    add_rule, attach_window_stylesheet, create_stylesheet, set_node_classes, Declarations, Petals,
+    add_rule, attach_window_stylesheet, create_stylesheet, set_node_classes, Declarations,
     SelectorKind, StyleSelector,
 };
+use stem::ui::UiBuilder;
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
@@ -199,25 +199,16 @@ fn render_window_init(window_id: ThingId, time_text: &str) -> Option<ThingId> {
         );
     }
 
-    let mut ui = Petals::begin_window(window_id);
-    let mut text_id = None;
-    let root = ui.column(|ui| {
-        let text = ui.text(time_text)?;
-        let _ = ui.key_node(text, UiKey("time"));
-        text_id = Some(text);
-        Ok(())
-    });
-    if let Ok(root) = root {
-        let _ = ui.set_gap(root, 8);
-        let _ = ui.set_padding(root, 16);
+    let panel = UiBuilder::create_panel(window_id);
+    // Ignore gap and padding for now since UiBuilder doesn't have them
+    
+    let text_id = UiBuilder::create_text(panel, time_text);
+    if let Ok(key_sym) = stem::thing::sys::intern("time") {
+        let _ = stem::thing::sys::prop_set(text_id, abi::schema::keys::UI_KEY, key_sym as u64);
     }
-    if ui.finish().is_err() {
-        return None;
-    }
-    if let Some(id) = text_id {
-        let _ = set_node_classes(id, &["clock"]);
-    }
-    text_id
+
+    let _ = set_node_classes(text_id, &["clock"]);
+    Some(text_id)
 }
 
 /// Update just the text content and bump scene gen (no new nodes created).

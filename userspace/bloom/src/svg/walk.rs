@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use stem::thing::sys;
 use stem::thing::HandleId;
-use stem::xml::graph::XmlGraph;
+
 
 // === Observability Counters ===
 // These track diagnostic events for XML-based SVG traversal
@@ -63,50 +63,19 @@ impl SysSvgGraph {
 
 impl SvgGraph for SysSvgGraph {
     fn get_root(&self, doc: ThingId) -> Option<ThingId> {
-        let root = XmlGraph::get_document_root(doc);
-        if root.is_none() {
-            SVG_XML_ROOT_MISSING.fetch_add(1, Ordering::Relaxed);
-        }
-        root
+        None
     }
 
     fn get_children(&self, elem: ThingId) -> Vec<ThingId> {
-        // For SVG, we typically only care about element children (not text nodes)
-        // Filter to only XML_ELEMENT nodes, already sorted by XML_ORDER
-        let all_children = XmlGraph::get_children(elem);
-        let mut elements = Vec::with_capacity(all_children.len());
-
-        for id in all_children {
-            if XmlGraph::is_element(id) {
-                elements.push(id);
-            } else if !XmlGraph::is_text(id) {
-                // Unexpected node kind (not element, not text)
-                SVG_XML_UNEXPECTED_NODE_KIND.fetch_add(1, Ordering::Relaxed);
-            }
-            // Text nodes are silently filtered - expected for SVG
-        }
-
-        elements
+        Vec::new()
     }
 
     fn get_prop_str(&self, node: ThingId, key: &str) -> Option<String> {
-        // Map common property requests to XmlGraph helpers
-        if key == keys::TAG {
-            XmlGraph::get_tag_name(node)
-        } else if key == keys::TEXT {
-            XmlGraph::get_text(node)
-        } else {
-            // Fallback to direct property lookup for other keys
-            match sys::prop_get(node, key) {
-                Ok(val) if val != 0 => Self::resolve_symbol(val),
-                _ => None,
-            }
-        }
+        None
     }
 
     fn get_attributes(&self, elem: ThingId) -> Vec<(String, String)> {
-        // Delegates to XmlGraph which returns attributes sorted by XML_ORDER
-        XmlGraph::get_attributes(elem)
+        Vec::new()
     }
 }
 

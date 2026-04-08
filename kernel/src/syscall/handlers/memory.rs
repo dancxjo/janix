@@ -63,11 +63,34 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         let end = virt + len as u64;
         while virt < end {
             let phys = crate::memory::alloc_frame().ok_or(Errno::ENOMEM)?;
-            let VmBacking::Anonymous { zeroed } = req.backing;
-            if zeroed {
-                let hhdm_virt = phys + hhdm;
-                unsafe {
-                    core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
+            match req.backing {
+                VmBacking::Anonymous { zeroed } => {
+                    if zeroed {
+                        let hhdm_virt = phys + hhdm;
+                        unsafe {
+                            core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
+                        }
+                    }
+                }
+                VmBacking::File { fd, offset: file_offset } => {
+                    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+                    let node = {
+                        let lock = pinfo_arc.lock();
+                        let file = lock.fd_table.get(fd)?;
+                        file.node.clone()
+                    };
+                    
+                    let hhdm_virt = phys + hhdm;
+                    let slice = unsafe { core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size) };
+                    
+                    let current_offset = file_offset + (virt - addr as u64);
+                    let bytes_read = node.read(current_offset, slice)?;
+                    
+                    if bytes_read < page_size {
+                        unsafe {
+                            core::ptr::write_bytes((hhdm_virt + bytes_read as u64) as *mut u8, 0, page_size - bytes_read);
+                        }
+                    }
                 }
             }
             unsafe {
@@ -84,6 +107,7 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         flags: req.flags,
         backing_kind: match req.backing {
             VmBacking::Anonymous { .. } => VmBackingKind::Anonymous,
+            VmBacking::File { .. } => VmBackingKind::File,
         },
         _reserved: [0; 7],
     };

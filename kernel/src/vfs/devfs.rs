@@ -149,14 +149,14 @@ impl VfsNode for DevDirNode {
     }
 }
 
-// ── /dev/console ─────────────────────────────────────────────────────────────
+static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> = Mutex::new(alloc::collections::VecDeque::new());
 
 /// Character device node for `/dev/console`.
 ///
 /// - **write**: each byte is forwarded to the kernel's boot console via
 ///   [`crate::runtime_base()`].
-/// - **read**: drains the calling process's `console_stdin` ring, blocking
-///   (yielding) until data is available.
+/// - **read**: reads from the boot console, applying a canonical line discipline.
+///   Blocks (yields) until a complete line is available.
 pub struct ConsoleNode;
 
 impl VfsNode for ConsoleNode {
@@ -164,23 +164,60 @@ impl VfsNode for ConsoleNode {
         if buf.is_empty() {
             return Ok(0);
         }
-        let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let rt = crate::runtime_base();
+        let mut read_bytes = 0;
         loop {
-            let count = {
-                let mut lock = pinfo.lock();
-                let mut n = 0usize;
-                while n < buf.len() {
-                    match lock.console_stdin.pop_front() {
-                        Some(b) => { buf[n] = b; n += 1; }
-                        None => break,
+            // Drain hardware
+            while let Some(c) = rt.getchar() {
+                let mut cb = CONSOLE_BUF.lock();
+                match c {
+                    b'\r' | b'\n' => {
+                        rt.putchar(b'\r');
+                        rt.putchar(b'\n');
+                        cb.push_back(b'\n');
+                    }
+                    0x08 | 0x7f => {
+                        if !cb.is_empty() && *cb.back().unwrap() != b'\n' {
+                            cb.pop_back();
+                            rt.putchar(0x08);
+                            rt.putchar(b' ');
+                            rt.putchar(0x08);
+                        }
+                    }
+                    0x20..=0x7e => {
+                        cb.push_back(c);
+                        rt.putchar(c);
+                    }
+                    0x03 => {
+                        rt.putchar(b'^');
+                        rt.putchar(b'C');
+                        rt.putchar(b'\r');
+                        rt.putchar(b'\n');
+                        cb.clear();
+                        cb.push_back(0x03);
+                    }
+                    _ => {}
+                }
+            }
+
+            let mut cb = CONSOLE_BUF.lock();
+            let has_line = cb.iter().any(|&b| b == b'\n' || b == 0x03);
+            if has_line || cb.len() >= buf.len() {
+                while read_bytes < buf.len() {
+                    if let Some(b) = cb.pop_front() {
+                        buf[read_bytes] = b;
+                        read_bytes += 1;
+                        if b == b'\n' || b == 0x03 {
+                            break;
+                        }
+                    } else {
+                        break;
                     }
                 }
-                n
-            };
-            if count > 0 {
-                return Ok(count);
+                return Ok(read_bytes);
             }
-            // No data yet — yield and retry.
+            drop(cb);
+
             unsafe { crate::sched::yield_now_current() };
         }
     }
@@ -188,6 +225,9 @@ impl VfsNode for ConsoleNode {
     fn write(&self, _offset: u64, buf: &[u8]) -> SysResult<usize> {
         let rt = crate::runtime_base();
         for &b in buf {
+            if b == b'\n' {
+                rt.putchar(b'\r');
+            }
             rt.putchar(b);
         }
         Ok(buf.len())

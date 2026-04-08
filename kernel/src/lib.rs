@@ -10,7 +10,7 @@ pub mod logging;
 pub mod memory;
 pub mod net;
 pub mod once_cell;
-pub mod petals_session;
+
 pub mod root;
 pub mod sched;
 pub mod simd;
@@ -640,42 +640,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     });
 
     crate::root::init_root_service::<R>();
-    // Root Boot Registration
 
-    let boot_info = crate::root::boot_register::BootInfo {
-        cpu_count: runtime.cpu_total_count(),
-        memory_map: runtime.phys_memory_map(),
-        modules: runtime.modules(),
-        framebuffer: runtime.framebuffer(),
-        hhdm_offset: runtime.phys_to_virt_offset(),
-        acpi_rsdp: runtime.acpi_rsdp(),
-        dtb_ptr: runtime.dtb_ptr(),
-        arch: if cfg!(target_arch = "x86_64") {
-            "x86_64"
-        } else if cfg!(target_arch = "aarch64") {
-            "aarch64"
-        } else if cfg!(target_arch = "riscv64") {
-            "riscv64"
-        } else if cfg!(target_arch = "loongarch64") {
-            "loongarch64"
-        } else {
-            "unknown"
-        },
-        platform_profile: "unknown", // todo: ask runtime
-    };
-    let inventory = crate::root::boot_register::register_all(runtime, &boot_info);
-    #[cfg(feature = "diagnostic-apps")]
-    crate::root::debug_dump::dump_all_to_console();
-    contract!(
-        "KERNEL: root census complete: host=t{:x} kernel=t{:x} root=t{:x}",
-        inventory.host,
-        inventory.kernel,
-        inventory.root
-    );
 
-    // Spawn graph-observer tasks now that Root is available.
-    // These tasks are optional — the scheduler works without them.
-    crate::task::init_graph_workers::<R>();
+    // The Root service is now available.
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
 
@@ -834,9 +801,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     }
 
     contract!("Entering scheduler loop.");
-    crate::petals_session::init();
     loop {
-        crate::petals_session::poll();
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
     }

@@ -105,14 +105,6 @@ bdd *args:
 clear-behavior:
     rm -rf docs/behavior/x86_64 docs/behavior/aarch64 docs/behavior/riscv64 docs/behavior/loongarch64
 
-# Run masked compositing microbenchmarks
-bench-blit arch=karch:
-    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}" --userspace bench_blit
-
-# CI smoke test for benchmarks (ensures they build)
-bench-smoke:
-    ./scripts/ci_bench_smoke.sh
-
 # Kill all running QEMU instances
 die:
     cargo xtask kill

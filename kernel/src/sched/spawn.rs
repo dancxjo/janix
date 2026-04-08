@@ -23,13 +23,9 @@ impl<R: BootRuntime> Scheduler<R> {
         match affinity {
             Affinity::Pinned(cpu) => cpu,
             Affinity::Any => {
-                // NOTE: Automatic SMP bring-up disabled for now. Additional processors
                 // will be brought up manually when needed.
-                // if trigger_smp && self.state.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
                 //     if let Some(next_cpu_id) = rt.next_offline_cpu() {
                 //         let target_cpu = next_cpu_id.0 as usize;
-                //         self.bringup_in_progress = true;
-                //         crate::kinfo!("SMP: Spawn triggered bring-up of CPU {}", target_cpu);
                 //         unsafe {
                 //             let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, target_cpu);
                 //         }
@@ -56,7 +52,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate stack for task {}", id);
@@ -68,7 +64,6 @@ impl<R: BootRuntime> Scheduler<R> {
             .init_kernel_context(entry, stack_top, arg.to_raw());
 
         // Determine target CPU: Balanced among online CPUs.
-        // Kernel threads do NOT trigger bring-up by default unless balanced carefully.
         let target_cpu = self.pick_cpu_and_bringup(affinity, false);
         crate::kdebug!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
 
@@ -129,15 +124,11 @@ impl<R: BootRuntime> Scheduler<R> {
             rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
-        // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(id, priority as u8, false, None, parent_tid, 0);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         id
     }
@@ -155,7 +146,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate kernel stack for user thread {}", id);
@@ -259,22 +250,11 @@ impl<R: BootRuntime> Scheduler<R> {
             rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
-        // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(
-            id,
-            priority as u8,
-            true,
-            None,
-            parent_tid,
-            arg.to_raw() as u64,
-        );
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         id
     }
@@ -292,7 +272,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
 
         self.next_id += 1;
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             return None;
@@ -308,7 +288,6 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let mapping_list = crate::memory::mappings::MappingList { regions };
 
-        // Determine target CPU: New processes trigger bring-up of offline CPUs
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
         crate::kdebug!(
             "SCHED: Task {} (user task/process) assigned to CPU {}",
@@ -370,15 +349,11 @@ impl<R: BootRuntime> Scheduler<R> {
             rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
-        // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid, 0);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         Some(id)
     }
@@ -476,9 +451,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 
     let _irq = rt.irq_disable();
 
-    // Audio pipeline: Pin to CPU 0 to avoid waiting for SMP bring-up
     let affinity = if name.contains("virtio_sound") || name.contains("beeper") {
-        // Audio proof-of-life: Run on CPU 0 immediately, don't trigger SMP bring-up
         crate::task::Affinity::Pinned(0)
     } else if name == "bloom" {
         if rt.cpu_total_count() > 1 {
@@ -521,7 +494,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         ppid,
         argv: alloc::vec![module.name.as_bytes().to_vec()],
         env: alloc::collections::BTreeMap::new(),
-        console_stdin: alloc::collections::VecDeque::new(),
+
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
     }));
@@ -536,7 +509,6 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }
 
     // Queue setting the process name (processed after scheduler lock released)
-    crate::sched::ring::push_task_name::<R>(id, Some(module.name));
 
     rt.irq_restore(_irq);
     Some(id)
@@ -737,7 +709,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         ppid,
         argv: final_argv,
         env,
-        console_stdin: alloc::collections::VecDeque::new(),
+
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
     }));
@@ -752,7 +724,6 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     }
 
     // Queue setting the process name
-    crate::sched::ring::push_task_name::<R>(id, Some(module.name));
 
     rt.irq_restore(_irq);
 
@@ -777,7 +748,6 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
         entry.arg0
     );
 
-    // Safety: we are entering user mode with the provided entry point
     unsafe { rt.tasking().enter_user(entry) }
 }
 

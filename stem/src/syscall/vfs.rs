@@ -5,7 +5,7 @@
 //! Filesystems).
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_UMOUNT, SYS_VFS_UNLINK, SYS_VFS_WRITE};
+use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_READDIR, SYS_VFS_UMOUNT, SYS_VFS_UNLINK, SYS_VFS_WRITE};
 
 use super::arch::raw_syscall6;
 
@@ -51,6 +51,25 @@ pub fn vfs_read(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
     };
     abi::errors::errno(ret)
 }
+
+/// Read directory entries from `fd` into `buf`.
+///
+/// Returns the number of bytes actually read (0 at EOF).
+pub fn vfs_readdir(fd: u32, buf: &mut [u8]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_READDIR,
+            fd as usize,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 
 /// Write `buf` to `fd`.
 ///

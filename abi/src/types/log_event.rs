@@ -1,6 +1,6 @@
-use crate::{BlobId, Graphable, ThingId};
+use crate::{SymbolId, BlobId, ThingId};
 
-#[derive(Graphable, Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C, packed)]
 pub struct LogEvent {
     pub source: ThingId,

@@ -46,20 +46,27 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+
         ProgramConfig {
-            name: "taskman",
-            is_init: false,
+            name: "ps2_kbd",
+            is_init: true,
             boot_module: true,
             features: vec![],
         },
         ProgramConfig {
-            name: "font_explorer",
-            is_init: false,
-            boot_module: false,
+            name: "sh",
+            is_init: true,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
-            name: "ps2_kbd",
+            name: "ls",
+            is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "cat",
             is_init: true,
             boot_module: true,
             features: vec![],
@@ -94,24 +101,8 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-        ProgramConfig {
-            name: "fontd",
-            is_init: true,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "blossom",
-            is_init: true,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "flytrap",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
+
+
         ProgramConfig {
             name: "virtio_netd",
             is_init: false,
@@ -137,18 +128,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "fortune",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "photosynthesis",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "ahci_disk",
             is_init: false,
             boot_module: true,
@@ -156,6 +135,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "iso9660d",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "disk_probe",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -180,12 +165,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "beeper",
-            is_init: true,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "nectar",
             is_init: true,
             boot_module: true,
             features: vec![],

@@ -3,6 +3,7 @@
 //! Provides type-safe `Instant` and `Duration` types with guaranteed monotonic
 //! behavior. All time in Thing-OS derives from this single timebase.
 
+use crate::{SymbolId, BlobId, ThingId};
 /// Monotonic timestamp in nanoseconds since system boot.
 ///
 /// # Guarantees

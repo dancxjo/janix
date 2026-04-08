@@ -27,6 +27,7 @@ pub struct Port {
     send_lock: Mutex<()>,
     recv_lock: Mutex<()>,
     endpoints: Mutex<PortEndpoints>,
+    caps: Mutex<alloc::collections::VecDeque<Arc<dyn crate::vfs::VfsNode>>>,
 
     #[cfg(debug_assertions)]
     sender_tid: AtomicU64,
@@ -58,6 +59,7 @@ impl Port {
                 readers: 1,
                 writers: 1,
             }),
+            caps: Mutex::new(alloc::collections::VecDeque::new()),
             #[cfg(debug_assertions)]
             sender_tid: AtomicU64::new(0),
             #[cfg(debug_assertions)]
@@ -163,6 +165,17 @@ impl Port {
             .store(head.wrapping_add(data.len()), Ordering::Release);
         self.waiters_read.wake_one();
         true
+    }
+
+    /// Send a capability (VFS Node) via the port
+    pub fn send_cap(&self, node: Arc<dyn crate::vfs::VfsNode>) {
+        self.caps.lock().push_back(node);
+        self.waiters_read.wake_one();
+    }
+
+    /// Receive a capability (VFS Node) from the port
+    pub fn try_recv_cap(&self) -> Option<Arc<dyn crate::vfs::VfsNode>> {
+        self.caps.lock().pop_front()
     }
 
     /// Add a reader waiter to the port

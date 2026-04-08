@@ -6,9 +6,23 @@ use crate::task::{ProcessInfo, TaskId, TaskState};
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
+
+// ── ProcessSnapshot ───────────────────────────────────────────────────────────
+
+/// A type-erased snapshot of per-process state, used by procfs to render
+/// `/proc/<pid>/status` and similar files without needing the `R` type parameter.
+#[derive(Clone)]
+pub struct ProcessSnapshot {
+    pub pid: u32,
+    pub ppid: u32,
+    pub name: String,
+    pub state: TaskState,
+    pub argv: Vec<Vec<u8>>,
+}
 
 pub(crate) static mut YIELD_HOOK: Option<fn() -> bool> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
@@ -56,6 +70,8 @@ pub(crate) static mut UNREGISTER_TASK_EXIT_WAITER_HOOK: Option<
 > = None;
 pub(crate) static mut REGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId, u64)> = None;
 pub(crate) static mut UNREGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId)> = None;
+/// Return a snapshot of all live processes (those that have process_info set).
+pub(crate) static mut LIST_PROCESSES_HOOK: Option<fn() -> Vec<ProcessSnapshot>> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -292,5 +308,14 @@ pub unsafe fn graph_thing_for_current() -> Option<u64> {
         hook()
     } else {
         None
+    }
+}
+
+/// Return a snapshot of all live processes.
+pub fn list_processes_current() -> Vec<ProcessSnapshot> {
+    if let Some(hook) = unsafe { LIST_PROCESSES_HOOK } {
+        hook()
+    } else {
+        Vec::new()
     }
 }

@@ -1,0 +1,449 @@
+warning: unused imports: `BlobId` and `SymbolId`
+ --> abi/src/types/system.rs:4:13
+  |
+4 | use crate::{SymbolId, BlobId};
+  |             ^^^^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `SymbolId`
+ --> abi/src/types/log_event.rs:1:13
+  |
+1 | use crate::{SymbolId, BlobId, ThingId};
+  |             ^^^^^^^^
+
+warning: unused import: `BlobId`
+ --> abi/src/types/process.rs:1:23
+  |
+1 | use crate::{SymbolId, BlobId, ThingId};
+  |                       ^^^^^^
+
+warning: unused import: `BlobId`
+ --> abi/src/types/task.rs:1:23
+  |
+1 | use crate::{SymbolId, BlobId, ThingId};
+  |                       ^^^^^^
+
+warning: unused imports: `BlobId` and `SymbolId`
+ --> abi/src/types/thread.rs:1:13
+  |
+1 | use crate::{SymbolId, BlobId, ThingId};
+  |             ^^^^^^^^  ^^^^^^
+
+warning: unused imports: `SymbolId` and `ThingId`
+ --> abi/src/types/window.rs:1:13
+  |
+1 | use crate::{SymbolId, BlobId, ThingId};
+  |             ^^^^^^^^          ^^^^^^^
+
+warning: unused imports: `BlobId`, `SymbolId`, and `ThingId`
+ --> abi/src/types/instant.rs:6:13
+  |
+6 | use crate::{SymbolId, BlobId, ThingId};
+  |             ^^^^^^^^  ^^^^^^  ^^^^^^^
+
+warning: unused import: `core::sync::atomic::AtomicU64`
+ --> abi/src/wire.rs:8:5
+  |
+8 | use core::sync::atomic::AtomicU64;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `abi` (lib) generated 8 warnings (run `cargo fix --lib -p abi` to apply 8 suggestions)
+warning: unused import: `alloc::vec::Vec`
+  --> stem/src/css/ingest.rs:10:5
+   |
+10 | use alloc::vec::Vec;
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `FillRule`, `PathVerb`, and `PointF`
+ --> stem/src/petals/drawlist.rs:6:38
+  |
+6 | ...lder, FillRule, PathVerb, PointF};
+  |          ^^^^^^^^  ^^^^^^^^  ^^^^^^
+
+warning: unused import: `abi::errors::Errno`
+ --> stem/src/petals/drawlist.rs:7:5
+  |
+7 | use abi::errors::Errno;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+  --> stem/src/petals/drawlist.rs:11:5
+   |
+11 | use alloc::vec::Vec;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `core::arch::asm`
+ --> stem/src/syscall/arch/x86_64.rs:1:5
+  |
+1 | use core::arch::asm;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `Errno`
+ --> stem/src/syscall/vfs.rs:7:19
+  |
+7 | use abi::errors::{Errno, SysResult};
+  |                   ^^^^^
+
+warning: unused import: `WaitEvents`
+ --> stem/src/task.rs:7:43
+  |
+7 | ...t, WaitToken, WaitEvents};
+  |                  ^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+ --> stem/src/task.rs:8:5
+  |
+8 | use alloc::sync::Arc;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `abi::ids::HandleId`
+  --> stem/src/thing/debug.rs:27:21
+   |
+27 |                 use abi::ids::HandleId;
+   |                     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `abi::ids::HandleId`
+ --> stem/src/petals/drawlist.rs:9:5
+  |
+9 | use abi::ids::HandleId;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `abi::ids::HandleId`
+ --> stem/src/ui.rs:3:5
+  |
+3 | use abi::ids::HandleId;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: direct cast of function item into an integer
+   --> stem/src/thread.rs:137:75
+    |
+137 | ...ampoline::<F> as usize, ptr, &stack)
+    |                  ^^^^^^^^
+    |
+    = note: `#[warn(function_casts_as_integer)]` on by default
+help: first cast to a pointer `as *const ()`
+    |
+137 |     let tid = crate::syscall::spawn_thread(generic_thread_trampoline::<F> as *const () as usize, ptr, &stack)
+    |                                                                           ++++++++++++
+
+warning: `stem` (lib) generated 12 warnings (run `cargo fix --lib -p stem` to apply 9 suggestions)
+    Checking kernel v0.1.0 (/home/dancxjo/src/thing-os/kernel)
+error[E0433]: failed to resolve: could not find `watch` in `abi`
+   --> kernel/src/syscall/handlers/root_handlers.rs:678:44
+    |
+678 | ...ut_len, abi::watch::MAX_WATCH_PAYLOAD...
+    |                 ^^^^^ could not find `watch` in `abi`
+
+error[E0433]: failed to resolve: could not find `watch` in `abi`
+   --> kernel/src/syscall/handlers/root_handlers.rs:786:44
+    |
+786 | ...ut_len, abi::watch::MAX_WATCH_PAYLOAD...
+    |                 ^^^^^ could not find `watch` in `abi`
+
+error[E0425]: cannot find type `Edge` in module `abi::types`
+   --> kernel/src/syscall/handlers/root_handlers.rs:276:58
+    |
+276 | ...s::Edge>();
+    |       ^^^^ not found in `abi::types`
+
+warning: unused import: `AtomicUsize`
+ --> kernel/src/irq/mod.rs:5:48
+  |
+5 | ...2, AtomicU64, AtomicUsize, Ordering};
+  |                  ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `EthernetFrame`
+ --> kernel/src/net/virtio_net.rs:5:18
+  |
+5 | use crate::net::{EthernetFrame, Nic, NicSt...
+  |                  ^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicU64` and `Ordering`
+  --> kernel/src/sched/sleep.rs:16:30
+   |
+16 | ...atomic::{AtomicU64, Ordering};
+   |             ^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+ --> kernel/src/sched/vm.rs:7:5
+  |
+7 | use alloc::sync::Arc;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `core::alloc::Layout`
+ --> kernel/src/simd.rs:2:5
+  |
+2 | use core::alloc::Layout;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicUsize` and `Ordering`
+ --> kernel/src/simd.rs:3:26
+  |
+3 | ...atomic::{AtomicUsize, Ordering};
+  |             ^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `crate::memory::FRAME_ALLOCATOR`
+   --> kernel/src/syscall/handlers/device.rs:253:9
+    |
+253 |     use crate::memory::FRAME_ALLOCATOR;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `stdio_mode`
+   --> kernel/src/syscall/handlers/process.rs:318:61
+    |
+318 | ...ocessExResp, stdio_mode};
+    |                 ^^^^^^^^^^
+
+warning: unused import: `Errno`
+ --> kernel/src/syscall/handlers/random.rs:4:19
+  |
+4 | use abi::errors::{Errno, SysResult};
+  |                   ^^^^^
+
+warning: unused import: `crate::sched as scheduler`
+ --> kernel/src/task/mod.rs:3:5
+  |
+3 | use crate::sched as scheduler;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `VecDeque`
+  --> kernel/src/task/mod.rs:11:36
+   |
+11 | ...ns::{BTreeMap, VecDeque};
+   |                   ^^^^^^^^
+
+warning: unreachable expression
+    --> kernel/src/sched/mod.rs:1436:5
+     |
+1430 |           hook();
+     |           ------ any code following this expression is unreachable
+...
+1436 | /     loop {
+1437 | |         crate::runtime_base().wait_fo...
+1438 | |     }
+     | |_____^ unreachable expression
+     |
+     = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0559]: variant `VmBackingKind::File` has no field named `fd`
+   --> kernel/src/syscall/handlers/memory.rs:110:65
+    |
+110 | ...Kind::File { fd },
+    |                 ^^ `VmBackingKind::File` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+warning: unused variable: `owner`
+   --> kernel/src/ipc/port.rs:293:13
+    |
+293 |         let owner = target.load(Ordering...
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_owner`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning[E0133]: call to unsafe function `core::intrinsics::transmute` is unsafe and requires unsafe block
+  --> kernel/src/irq/mod.rs:18:45
+   |
+18 | ...te = core::mem::transmute(ptr);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> kernel/src/irq/mod.rs:15:1
+   |
+15 | pub unsafe fn irq_disable_erased() -> crate::IrqState {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning[E0133]: call to unsafe function `core::intrinsics::transmute` is unsafe and requires unsafe block
+  --> kernel/src/irq/mod.rs:28:41
+   |
+28 | ...e) = core::mem::transmute(ptr);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> kernel/src/irq/mod.rs:25:1
+   |
+25 | pub unsafe fn irq_restore_erased(state: crate::IrqState) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: call to unsafe function `core::alloc::Layout::from_size_align_unchecked` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:48:27
+   |
+48 | ... = Layout::from_size_align_unchecked(size, align);
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> kernel/src/memory/global_alloc.rs:33:5
+   |
+33 |     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: call to unsafe function `irq::irq_disable_erased` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:50:19
+   |
+50 | ... = crate::irq::irq_disable_erased();
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning[E0133]: call to unsafe function `irq::irq_restore_erased` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:52:9
+   |
+52 |         crate::irq::irq_restore_erased(irq);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning[E0133]: call to unsafe function `core::alloc::Layout::from_size_align_unchecked` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:66:27
+   |
+66 | ... = Layout::from_size_align_unchecked(size, align);
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> kernel/src/memory/global_alloc.rs:56:5
+   |
+56 |     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: call to unsafe function `irq::irq_disable_erased` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:68:19
+   |
+68 | ... = crate::irq::irq_disable_erased();
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning[E0133]: call to unsafe function `irq::irq_restore_erased` is unsafe and requires unsafe block
+  --> kernel/src/memory/global_alloc.rs:70:9
+   |
+70 |         crate::irq::irq_restore_erased(irq);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning: unused variable: `id`
+  --> kernel/src/sched/blocking.rs:61:17
+   |
+61 |     if let Some(id) = blocked_id {
+   |                 ^^ help: if this is intentional, prefix it with an underscore: `_id`
+
+warning: unused variable: `parent_tid`
+   --> kernel/src/sched/spawn.rs:127:13
+    |
+127 |         let parent_tid = self.state.per_...
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_tid`
+
+warning: unused variable: `cpu`
+   --> kernel/src/sched/spawn.rs:129:33
+    |
+129 | ...nity::Pinned(cpu) = affinity {
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_cpu`
+
+warning: unused variable: `parent_tid`
+   --> kernel/src/sched/spawn.rs:253:13
+    |
+253 |         let parent_tid = self.state.per_...
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_tid`
+
+warning: unused variable: `cpu`
+   --> kernel/src/sched/spawn.rs:255:33
+    |
+255 | ...nity::Pinned(cpu) = affinity {
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_cpu`
+
+warning: unused variable: `parent_tid`
+   --> kernel/src/sched/spawn.rs:352:13
+    |
+352 |         let parent_tid = self.state.per_...
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_tid`
+
+warning: unused variable: `cpu`
+   --> kernel/src/sched/spawn.rs:354:33
+    |
+354 | ...nity::Pinned(cpu) = affinity {
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_cpu`
+
+warning: unused variable: `cpu_total`
+   --> kernel/src/sched/mod.rs:277:13
+    |
+277 |         let cpu_total = if let Some(ptr)...
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cpu_total`
+
+warning: unused variable: `old_priority`
+   --> kernel/src/sched/mod.rs:912:17
+    |
+912 | ...     let old_priority = crate::task::...
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_old_priority`
+
+warning: unused variable: `sched`
+   --> kernel/src/sched/mod.rs:975:13
+    |
+975 |         let sched = unsafe { &*(ptr as *...
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_sched`
+
+warning: unnecessary `unsafe` block
+    --> kernel/src/sched/mod.rs:1170:5
+     |
+1170 |     unsafe {
+     |     ^^^^^^ unnecessary `unsafe` block
+     |
+     = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> kernel/src/syscall/handlers/port.rs:232:17
+    |
+232 | ...let mut table = crate::ipc::GLOBAL_HA...
+    |        ----^^^^^
+    |        |
+    |        help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> kernel/src/task/loader.rs:73:17
+   |
+73 |             let mut perms = MapPerms {
+   |                 ----^^^^^
+   |                 |
+   |                 help: remove this `mut`
+
+warning: unused variable: `cr3_before`
+   --> kernel/src/task/mod.rs:170:13
+    |
+170 |         let cr3_before = rt.debug_active...
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cr3_before`
+
+warning: unused variable: `cr3_before`
+   --> kernel/src/task/mod.rs:202:13
+    |
+202 |         let cr3_before = rt.debug_active...
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cr3_before`
+
+warning: unused variable: `used`
+   --> kernel/src/virtio/queue.rs:261:13
+    |
+261 |         let used = unsafe { &*(self.used...
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_used`
+
+Some errors have detailed explanations: E0133, E0425, E0433, E0559.
+For more information about an error, try `rustc --explain E0133`.
+warning: `kernel` (lib) generated 37 warnings
+error: could not compile `kernel` (lib) due to 4 previous errors; 37 warnings emitted

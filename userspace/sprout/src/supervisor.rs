@@ -1,6 +1,6 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
-use abi::kinds as abi_kinds;
+use abi::schema::kinds as abi_kinds;
 use abi::schema::keys;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -29,25 +29,24 @@ impl Supervisor {
         info!("SPROUT: [Stage 1] Hardware Discovery and Core Drivers");
         self.discover();
 
-        crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
+        /*
+        // crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
         crate::pipelines::setup_audio_driver(&mut self.tasks);
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
+        */
 
         // Settle hardware phase
         stem::sleep_ms(100);
 
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
+        /*
         crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
-        crate::pipelines::setup_taskman_service(&mut self.tasks);
-        crate::pipelines::setup_font_service(&mut self.tasks);
-        crate::pipelines::setup_blossom_service(&mut self.tasks);
-        crate::pipelines::setup_flytrap_service(&mut self.tasks);
 
         stem::sleep_ms(100);
 
@@ -64,6 +63,10 @@ impl Supervisor {
         // --- STAGE 5: User Apps ---
         info!("SPROUT: [Stage 5] Starting Discovered User Apps");
         self.spawn_discovered_apps();
+        */
+
+        self.ensure_app("/sh");
+        self.spawn_apps();
 
         // Enter monitor loop
         info!("SPROUT: Startup complete. Entering monitor loop.");
@@ -145,7 +148,7 @@ impl Supervisor {
                 // But Registry doesn't know about Apps.
                 // Let's defer to Registry scan logic for drivers.
             } else if name.contains("/apps/")
-                || name.ends_with("/clock")
+                // || name.ends_with("/clock")
                 || name.ends_with("/idle")
                 || name.ends_with("/hello_std")
                 || (cfg!(feature = "diagnostic-apps")
@@ -199,48 +202,12 @@ impl Supervisor {
             info!("SPROUT:   describe: <failed>");
         }
 
-        if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
-            let edges = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
-            if edges.trim().is_empty() {
-                info!("SPROUT:   edges: (none)");
-            } else {
-                for line in edges.lines() {
-                    info!("SPROUT:   edge: {}", line);
-                }
-            }
-        } else {
-            info!("SPROUT:   edges: <failed>");
-        }
     }
 
     fn spawn_apps(&mut self) {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
 
-        // Services & Drivers
-        self.ensure_app("/flytrap");
-        self.ensure_app("/fontd");
-        self.ensure_app("/blossom");
-        // netd is spawned by setup_network_pipeline, not here
-
-        // Storage
-        self.ensure_app("/ahci_disk");
-        self.ensure_app("/iso_reader");
-
-        // User Apps
-        self.ensure_app("/font_explorer");
-        self.ensure_app("/fortune");
-        self.ensure_app("/photosynthesis");
-        self.ensure_app("/fetchd");
-        // self.ensure_app("/clock");
-        // self.ensure_app("/drawlist_demo");
-
-        // #[cfg(feature = "diagnostic-apps")]
-        // { ... }
-
-        // Scheduler fairness verification apps (disabled after testing)
-        // self.ensure_app("/scheduler_fairness");
-        // self.ensure_app("/hogger");
-        // self.ensure_app("/tick_printer");
+        self.ensure_app("/sh");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {
@@ -256,8 +223,8 @@ impl Supervisor {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
 
-                        // If it's flytrap, seed initial requests immediately after launch
-                        if task.name.contains("flytrap") {
+                        // If it's bloom, seed initial requests immediately after launch
+                        if task.name.contains("bloom") {
                             seed_asset_requests();
                         }
 
@@ -419,7 +386,7 @@ fn seed_asset_requests() {
     ];
 
     for (name, kind) in requests {
-        if let Ok(req_id) = thingsys::create_node(abi_kinds::KIND_ASSET_REQUEST) {
+        if let Ok(req_id) = thingsys::create_node(abi_kinds::ASSET_REQUEST) {
             if let Ok(name_sym) = thingsys::intern(name) {
                 let _ = thingsys::prop_set(req_id, keys::ASSET_NAME, name_sym as u64);
             }

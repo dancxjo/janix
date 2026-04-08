@@ -81,7 +81,6 @@ impl BatchHeader {
 
 /// Filter flags for RootWatchFilter
 pub const WATCH_F_ALL: u32 = 0; // Match all commits (no filtering)
-pub const WATCH_F_KIND: u32 = 1 << 0; // Filter by kind_id
 pub const WATCH_F_PREDICATE: u32 = 1 << 1; // Filter by predicate_id
 pub const WATCH_F_SUBJECT: u32 = 1 << 2; // Filter by subject ThingId
 
@@ -95,9 +94,8 @@ pub const WATCH_F_SUBJECT: u32 = 1 << 2; // Filter by subject ThingId
 pub struct RootWatchFilter {
     /// Filter flags (combination of WATCH_F_* constants)
     pub flags: u32,
-    /// Kind ID to filter by (requires WATCH_F_KIND flag)
-    /// Must be an interned SymbolId from SYS_ROOT_INTERN
-    pub kind_id: u32,
+    /// Reserved, used to be kind_id
+    pub _reserved1: u32,
     /// Predicate ID to filter by (requires WATCH_F_PREDICATE flag)
     /// Must be an interned SymbolId from SYS_ROOT_INTERN
     pub predicate_id: u32,
@@ -135,14 +133,7 @@ impl RootWatchFilter {
         }
     }
 
-    /// Create a filter for a specific kind
-    pub fn kind(kind_id: u32) -> Self {
-        Self {
-            flags: WATCH_F_KIND,
-            kind_id,
-            ..Default::default()
-        }
-    }
+    // Removed: kind()
 }
 
 /// Helper for reasoning about ThingRef size
@@ -156,4 +147,4 @@ pub fn thing_ref_size(kind: u8) -> usize {
 
 /// Mask of all known filter flags (for validation)
 /// Unknown flag bits should be rejected with EINVAL.
-pub const WATCH_F_KNOWN_MASK: u32 = WATCH_F_KIND | WATCH_F_PREDICATE | WATCH_F_SUBJECT;
+pub const WATCH_F_KNOWN_MASK: u32 = WATCH_F_PREDICATE | WATCH_F_SUBJECT;

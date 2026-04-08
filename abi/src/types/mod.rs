@@ -10,10 +10,7 @@ pub use crate::wire::{BlobId, KindId, PredicateId, SymbolId, ThingId};
 // Re-export Adapter
 pub use crate::ids::HandleId;
 
-// Graph Atoms
-pub mod edge;
-pub mod kind;
-pub mod predicate;
+// Graph atoms removed
 
 // Logic/System
 pub mod log_event;
@@ -31,12 +28,9 @@ pub mod instant;
 
 // Exports
 pub use asset::Asset;
-pub use edge::Edge;
 pub use font::Font;
 pub use instant::{Duration, Instant};
-pub use kind::Kind;
 pub use log_event::LogEvent;
-pub use predicate::Predicate;
 pub use process::Process;
 pub use task::Task;
 pub use thread::Thread;

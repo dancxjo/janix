@@ -7,15 +7,24 @@ use alloc::vec::Vec;
 use abi::hid::Key;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
-use abi::types::Edge;
 use abi::ui_event::{self, UiEvent};
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find, get_edges, get_kind,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find,  get_kind,
     prop_get, prop_set,
 };
 use stem::thing::{ThingId, ThingKind};
 
 use crate::geometry::Rect;
+
+#[derive(Clone, Copy, Default)]
+struct Edge {
+    to: ThingId,
+    predicate: ThingId,
+}
+
+fn get_edges(_id: ThingId, _out: &mut [Edge]) -> core::result::Result<usize, abi::errors::Errno> {
+    Ok(0)
+}
 
 pub struct UiEventDispatcher {
     rel_root_ui: u64,

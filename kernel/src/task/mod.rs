@@ -1,7 +1,3 @@
-pub mod flusher;
-pub mod graph;
-pub mod graph_queue;
-pub mod graphify;
 pub mod loader;
 pub mod registry;
 use crate::sched as scheduler;
@@ -49,9 +45,6 @@ pub struct ProcessInfo {
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
-    /// Pending bytes from the boot console / keyboard, drained by fd 0
-    /// (ConsoleNode::read).
-    pub console_stdin: VecDeque<u8>,
     /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
     /// VFS namespace for this process.
@@ -112,36 +105,7 @@ pub fn init<R: BootRuntime>() {
     crate::task::registry::init::<R>();
     crate::sched::init::<R>();
 
-    // Pre-allocate the graph work queue so that the graph-observer tasks can
-    // start processing events as soon as they are spawned.  This call is safe
-    // even when the Root service is not yet available.
-    crate::task::graph_queue::init();
 }
-
-/// Spawn the optional background graph-observer tasks.
-///
-/// These tasks drain the per-CPU scheduler event rings and push graph updates
-/// to the Root service.  They are **not** required for the scheduler to run —
-/// the system boots and tasks run without them.
-///
-/// Call this after the Root service has been initialized so that the graph
-/// workers can start processing events immediately.
-pub fn init_graph_workers<R: BootRuntime>() {
-    crate::kinfo!("  Creating graph worker tasks...");
-    let _ring_drain_id = spawn::<R>(
-        crate::task::graph::ring_drain_task::<R>,
-        StartupArg::None,
-        TaskPriority::High,
-        Affinity::Any,
-    );
-    let _graph_worker_id = spawn::<R>(
-        crate::task::graph::graph_worker_task::<R>,
-        StartupArg::None,
-        TaskPriority::Normal,
-        Affinity::Any,
-    );
-}
-
 pub fn spawn<R: BootRuntime>(
     entry: extern "C" fn(usize) -> !,
     arg: StartupArg,

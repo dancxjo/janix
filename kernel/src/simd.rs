@@ -22,36 +22,8 @@ pub fn with_simd<R: BootRuntime, T>(rt: &R, f: impl FnOnce() -> T) -> T {
     f()
 }
 
-const HEAP_SIZE: usize = 65536;
-static mut SIMD_HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
-static HEAP_TOP: AtomicUsize = AtomicUsize::new(0);
-
-fn internal_alloc(layout: Layout) -> *mut u8 {
-    loop {
-        let top = HEAP_TOP.load(Ordering::Relaxed);
-        let base = core::ptr::addr_of_mut!(SIMD_HEAP) as usize;
-        let current_ptr = base + top;
-
-        let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();
-        let new_top = top + align_offset + layout.size();
-
-        if new_top > HEAP_SIZE {
-            return core::ptr::null_mut();
-        }
-
-        if HEAP_TOP
-            .compare_exchange(top, new_top, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-        {
-            return (base + top + align_offset) as *mut u8;
-        }
-    }
-}
-
 pub struct SimdState {
-    buffer: *mut u8,
-    #[allow(dead_code)]
-    layout: Layout,
+    buffer: [u8; 544],
     valid: bool,
 }
 
@@ -59,42 +31,38 @@ unsafe impl Send for SimdState {}
 unsafe impl Sync for SimdState {}
 
 impl SimdState {
-    pub fn new<R: BootRuntime>(rt: &R) -> Self {
-        let (size, align) = rt.simd_state_layout();
-        if size == 0 {
-            return Self {
-                buffer: core::ptr::null_mut(),
-                layout: Layout::from_size_align(0, 1).unwrap(),
-                valid: false,
-            };
-        }
-
-        let layout = Layout::from_size_align(size, align).expect("Invalid SIMD layout");
-        let buffer = internal_alloc(layout);
-
-        if buffer.is_null() {
-            panic!("OOM allocating SimdState");
-        }
-
-        unsafe { core::ptr::write_bytes(buffer, 0, size) };
-
+    pub fn new<R: BootRuntime>(_rt: &R) -> Self {
         Self {
-            buffer,
-            layout,
-            valid: true,
+            buffer: [0; 544],
+            valid: false,
         }
+    }
+
+    fn aligned_ptr(&self) -> *mut u8 {
+        let mut addr = self.buffer.as_ptr() as usize;
+        let rem = addr % 16;
+        if rem != 0 {
+            addr = addr + (16 - rem);
+        }
+        addr as *mut u8
     }
 
     pub fn save<R: BootRuntime>(&mut self, rt: &R) {
-        if !self.buffer.is_null() {
-            unsafe { rt.simd_save(self.buffer) };
-            self.valid = true;
+        let ptr = self.aligned_ptr();
+        if (ptr as usize) % 16 != 0 {
+            crate::kinfo!("SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned! ptr={:p}", ptr);
         }
+        unsafe { rt.simd_save(ptr) };
+        self.valid = true;
     }
 
     pub fn restore<R: BootRuntime>(&self, rt: &R) {
-        if !self.buffer.is_null() && self.valid {
-            unsafe { rt.simd_restore(self.buffer) };
+        if self.valid {
+            let ptr = self.aligned_ptr();
+            if (ptr as usize) % 16 != 0 {
+                crate::kinfo!("SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned in restore! ptr={:p}", ptr);
+            }
+            unsafe { rt.simd_restore(ptr) };
         }
     }
 }

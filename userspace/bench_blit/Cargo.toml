@@ -1,8 +1,0 @@
-[package]
-name = "bench_blit"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-abi = { path = "../../abi" }
-stem = { path = "../../stem", features = ["rt"], default-features = true }

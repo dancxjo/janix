@@ -58,6 +58,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TOPIC_SUBSCRIBE => handlers::sys_topic_subscribe(args[0], args[1]),
         SYS_TOPIC_PUBLISH => handlers::sys_topic_publish(args[0], args[1], args[2]),
         SYS_PORT_TRY_RECV => handlers::sys_port_try_recv(args[0], args[1], args[2]),
+        SYS_PORT_SEND_FD => handlers::sys_port_send_fd(args[0], args[1]),
+        SYS_PORT_RECV_FD => handlers::sys_port_recv_fd(args[0], args[1]),
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),

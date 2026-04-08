@@ -48,24 +48,6 @@ impl Registry {
         }
 
         let mut bs_id = ThingId::default();
-        if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
-            let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-            for line in s.lines() {
-                if line.contains("BACKED_BY") && line.contains("bytespace") {
-                    if let Some(arrow) = line.find("->(") {
-                        let rest = &line[arrow + 3..];
-                        if rest.starts_with('t') {
-                            if let Some(colon) = rest.find(':') {
-                                let hex_id = &rest[1..colon];
-                                if let Ok(id_val) = u64::from_str_radix(hex_id, 16) {
-                                    bs_id = ThingId::from_u64(id_val);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         let mut registered = false;
         if bs_id.to_u64_lossy() != 0 {

@@ -59,9 +59,7 @@ pub fn block_current<R: BootRuntime>() {
     };
 
     if let Some(id) = blocked_id {
-        // Queue graph state update outside the lock to prevent deadlock
         // when push_task_state wakes the drain task.
-        crate::sched::ring::push_task_state::<R>(id, "blocked");
     }
 
     if let Some(switch) = switch_params {
@@ -150,9 +148,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
         );
     }
 
-    // 3. Queue graph state update OUTSIDE of all locks
     if was_blocked {
-        crate::sched::ring::push_task_state::<R>(id, "runnable");
     }
 
     // 4. Send IPI OUTSIDE of all locks
@@ -181,7 +177,6 @@ pub unsafe fn wake_task_erased(id: u64) {
     }
 }
 
-/// Initialize blocking hooks during scheduler init
 pub fn init_blocking_hooks<R: BootRuntime>() {
     BLOCK_CURRENT_HOOK.store(
         block_current::<R> as *mut (),

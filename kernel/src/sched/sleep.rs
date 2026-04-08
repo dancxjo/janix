@@ -103,8 +103,6 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             task.state = crate::task::TaskState::Blocked;
         }
 
-        // Queue graph state update to sleeping
-        crate::sched::ring::push_task_state::<R>(current_id, "sleeping");
 
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task

@@ -8,11 +8,12 @@
 
 extern crate alloc;
 
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use alloc::format;
 use core::time::Duration;
 use stem::info;
-use stem::petals::Petals;
+use stem::ui::UiBuilder;
 use stem::thing::sys::{create_node, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -42,44 +43,15 @@ fn render_window_init(
     ip_text: &str,
     status_text: &str,
 ) -> Option<FetchdUiNodes> {
-    let mut ui = Petals::begin_window(window_id);
-    let mut ip_node = None;
-    let mut status_node = None;
+    let panel = UiBuilder::create_panel(window_id);
+    let _label = UiBuilder::create_text(panel, "IP Address");
+    let ip = UiBuilder::create_text(panel, ip_text);
+    let status = UiBuilder::create_text(panel, status_text);
 
-    let root = ui.column(|ui| {
-        let label = ui.text("IP Address")?;
-        let _ = ui.set_font_name(label, "NotoSans-Regular");
-        let _ = ui.set_font_size(label, 16);
-        let _ = ui.set_color(label, 0xFF505050);
-
-        let ip = ui.text(ip_text)?;
-        let _ = ui.set_font_name(ip, "DSEG7Classic-Regular");
-        let _ = ui.set_font_size(ip, 48);
-        let _ = ui.set_color(ip, 0xFF107050);
-        ip_node = Some(ip);
-
-        let status = ui.text(status_text)?;
-        let _ = ui.set_font_name(status, "NotoSans-Regular");
-        let _ = ui.set_font_size(status, 12);
-        let _ = ui.set_color(status, 0xFF707070);
-        status_node = Some(status);
-
-        Ok(())
-    });
-    if let Ok(root) = root {
-        let _ = ui.set_gap(root, 12);
-        let _ = ui.set_padding(root, 20);
-    }
-    if ui.finish().is_err() {
-        return None;
-    }
-    match (ip_node, status_node) {
-        (Some(ip), Some(status)) => Some(FetchdUiNodes {
-            ip_node: ip,
-            status_node: status,
-        }),
-        _ => None,
-    }
+    Some(FetchdUiNodes {
+        ip_node: ip,
+        status_node: status,
+    })
 }
 
 /// Update just the text content on existing nodes and bump scene gen (no new nodes created).
@@ -116,7 +88,18 @@ fn main(_arg: usize) -> ! {
     info!("FETCHD: Waiting for UI Root (Compositor)...");
     let ui_crown = {
         let kind = stem::thing::sys::intern(kinds::UI_CROWN).unwrap_or(0) as u64;
-        stem::thing::discovery::wait_for_kind(kind).unwrap_or_default()
+        let mut found_id = 0;
+        loop {
+            let mut ids = [ThingId::default(); 1];
+            if let Ok(n) = stem::thing::sys::find(kind, &mut ids) {
+                if n > 0 {
+                    found_id = ids[0].to_u64_lossy();
+                    break;
+                }
+            }
+            stem::time::sleep_ms(100);
+        }
+        ThingId::from_u64(found_id)
     };
     info!("FETCHD: Found UI Root: {}", ui_crown.to_u64_lossy());
 

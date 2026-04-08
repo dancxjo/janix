@@ -147,83 +147,8 @@ pub fn sys_root_query(
     out_ptr: usize,
     out_cap: usize,
 ) -> SysResult<usize> {
-    use crate::root::query::PreparedStep;
-    use abi::query::{QueryRow, QueryStep};
-
-    let step_size = core::mem::size_of::<QueryStep>();
-    let total_plan_bytes = plan_len * step_size;
-    validate_user_range(plan_ptr, total_plan_bytes, false)?;
-
-    if plan_len > 8 {
-        return Err(Errno::EINVAL);
-    }
-
-    let mut steps = alloc::vec::Vec::with_capacity(plan_len);
-    for i in 0..plan_len {
-        let ptr = plan_ptr + i * step_size;
-        let mut step: QueryStep = unsafe { core::mem::zeroed() };
-        let slice =
-            unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
-        unsafe {
-            copyin(slice, ptr)?;
-        }
-
-        let sym_id = match step.symbol.tag {
-            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
-            abi::symbols::SYMBOL_REF_TAG_STR => {
-                let s_ptr = step.symbol.ptr_or_id as usize;
-                let s_len = step.symbol.len as usize;
-                if s_len > 256 {
-                    return Err(Errno::EINVAL);
-                }
-                validate_user_range(s_ptr, s_len, false)?;
-                let mut buf = [0u8; 256];
-                unsafe {
-                    copyin(&mut buf[..s_len], s_ptr)?;
-                }
-                let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
-                let intern_msg = RootOp::Intern {
-                    name: String::from(s),
-                };
-                let id = root_call(intern_msg)?;
-                id as u32
-            }
-            _ => return Err(Errno::EINVAL),
-        };
-
-        steps.push(PreparedStep {
-            op: step.op,
-            arg1: step.arg1,
-            arg2: step.arg2,
-            symbol: sym_id,
-        });
-    }
-
-    let row_size = core::mem::size_of::<QueryRow>();
-    let total_out_bytes = out_cap * row_size;
-    validate_user_range(out_ptr, total_out_bytes, true)?;
-
-    let safe_cap = core::cmp::min(out_cap, 1024);
-    let mut kbuf = alloc::vec![QueryRow::default(); safe_cap];
-
-    let msg = RootOp::Query {
-        plan: steps,
-        out_buffer: kbuf.as_mut_ptr() as u64,
-        out_len: (safe_cap * row_size) as u64,
-    };
-
-    let count = root_call(msg)?;
-
-    let rows_found = count;
-    let rows_to_copy = core::cmp::min(rows_found, safe_cap);
-    let bytes_to_copy = rows_to_copy * row_size;
-
-    let src = unsafe { core::slice::from_raw_parts(kbuf.as_ptr() as *const u8, bytes_to_copy) };
-    unsafe {
-        copyout(out_ptr, src)?;
-    }
-
-    Ok(rows_to_copy)
+    let _ = (plan_ptr, plan_len, out_ptr, out_cap);
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
@@ -307,57 +232,11 @@ pub fn sys_root_describe_edge(
 }
 
 pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
-    validate_user_range(out_ptr, len, true)?;
-    let mut kbuf = [0u8; 1024];
-    let kbuf_len = core::cmp::min(len, kbuf.len());
-    let reply = root_svc::enqueue(RootOp::DumpEdges {
-        id: id as u64,
-        buffer: kbuf.as_mut_ptr() as u64,
-        len: kbuf_len as u64,
-    });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    let written = reply.value.load(Ordering::Relaxed) as usize;
-    if status == 0 {
-        unsafe {
-            copyout(out_ptr, &kbuf[..written])?;
-        }
-        return Ok(written);
-    } else {
-        return Err(Errno::EIO);
-    }
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
-    validate_user_range(out_ptr, len, true)?;
-
-    // Allocate a temporary kernel buffer to receive the edges
-    // Must be large enough to hold some edges, but not too large for stack
-    // GraphEdge is now abi::types::Edge (52 bytes).
-    let mut kbuf = [0u8; 4096]; // ~78 edges max per batch
-    let kbuf_len = core::cmp::min(len, kbuf.len());
-
-    let reply = root_svc::enqueue(RootOp::GetEdges {
-        id: id as u64,
-        buffer: kbuf.as_mut_ptr() as u64,
-        len: kbuf_len as u64,
-    });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-    let written = reply.value.load(Ordering::Relaxed) as usize;
-    if status == 0 {
-        let edge_size = core::mem::size_of::<abi::types::Edge>();
-        let actual_count = core::cmp::min(written, kbuf_len / edge_size);
-        let bytes_to_copy = actual_count * edge_size;
-        unsafe {
-            copyout(out_ptr, &kbuf[..bytes_to_copy])?;
-        }
-        return Ok(actual_count);
-    } else {
-        return Err(Errno::EIO);
-    }
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_get_props(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
@@ -455,19 +334,8 @@ pub fn sys_root_bytespace_read(
 }
 
 pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
-    let res = root_call(RootOp::WatchSubscribe {
-        target_id: target as u64,
-        mask: mask as u64,
-    });
-    if let Err(e) = res {
-        crate::kinfo!(
-            "FLAT: sys_root_watch_subscribe target={} mask={} failed: {:?}",
-            target,
-            mask,
-            e
-        );
-    }
-    res
+    let _ = (target, mask);
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysResult<usize> {
@@ -729,159 +597,8 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
     }
 }
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
-    use crate::root::graph::WatchFilter;
-    use crate::root::query::PreparedStep;
-    use abi::query::QueryStep;
-    use abi::root::RootWatchFilter;
-    use abi::types::WatchSpec;
-
-    crate::kdebug!("sys_root_watch_open: ptr={:#x}", spec_ptr);
-    let mut spec = WatchSpec::default();
-    let spec_slice = unsafe {
-        core::slice::from_raw_parts_mut(
-            &mut spec as *mut _ as *mut u8,
-            core::mem::size_of::<WatchSpec>(),
-        )
-    };
-    crate::kdebug!(
-        "sys_root_watch_open: validating range len={}",
-        spec_slice.len()
-    );
-    validate_user_range(spec_ptr, spec_slice.len(), false)?;
-    unsafe { copyin(spec_slice, spec_ptr)? };
-    crate::kdebug!(
-        "sys_root_watch_open: copyin success. mode={} start_seq={}",
-        spec.mode,
-        spec.start_seq
-    );
-
-    // Decode filter if present for logging
-    if spec.filter_ptr != 0 && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64 {
-        // We already validated and copied it later, but let's peek for logging
-        let filter_ptr = spec.filter_ptr as usize;
-        let mut abi_filter = RootWatchFilter::default();
-        if validate_user_range(filter_ptr, core::mem::size_of::<RootWatchFilter>(), false).is_ok() {
-            let filter_slice = unsafe {
-                core::slice::from_raw_parts_mut(
-                    &mut abi_filter as *mut _ as *mut u8,
-                    core::mem::size_of::<RootWatchFilter>(),
-                )
-            };
-            if unsafe { copyin(filter_slice, filter_ptr) }.is_ok() {
-                crate::kdebug!(
-                    "sys_root_watch_open: DECODED FILTER: flags={:#x} kind={} pred={} subj_lo={}",
-                    abi_filter.flags,
-                    abi_filter.kind_id,
-                    abi_filter.predicate_id,
-                    abi_filter.subject_lo
-                );
-            }
-        }
-    } else {
-        crate::kdebug!(
-            "sys_root_watch_open: NO FILTER (filter_ptr={:#x} filter_len={})",
-            spec.filter_ptr,
-            spec.filter_len
-        );
-    }
-
-    // Validate mode enum (must be 0=QueryThenStream or 1=StreamOnly)
-    if abi::types::WatchMode::from_u32(spec.mode).is_none() {
-        crate::kdebug!("sys_root_watch_open: invalid mode={}", spec.mode);
-        return Err(Errno::EINVAL);
-    }
-
-    let plan_ptr = spec.query_ptr as usize;
-    let plan_len = spec.query_len as usize;
-    let step_size = core::mem::size_of::<QueryStep>();
-    let total_plan_bytes = plan_len * step_size;
-
-    if plan_len > 8 {
-        return Err(Errno::EINVAL);
-    }
-    if plan_len > 0 {
-        validate_user_range(plan_ptr, total_plan_bytes, false)?;
-    }
-
-    let mut steps = alloc::vec::Vec::with_capacity(plan_len);
-    for i in 0..plan_len {
-        let ptr = plan_ptr + i * step_size;
-        let mut step: QueryStep = unsafe { core::mem::zeroed() };
-        let slice =
-            unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
-        unsafe { copyin(slice, ptr)? };
-
-        let sym_id = match step.symbol.tag {
-            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
-            abi::symbols::SYMBOL_REF_TAG_STR => {
-                let s_ptr = step.symbol.ptr_or_id as usize;
-                let s_len = step.symbol.len as usize;
-                if s_len > 256 {
-                    return Err(Errno::EINVAL);
-                }
-                validate_user_range(s_ptr, s_len, false)?;
-                let mut buf = [0u8; 256];
-                unsafe { copyin(&mut buf[..s_len], s_ptr)? };
-                let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
-                let intern_msg = RootOp::Intern {
-                    name: String::from(s),
-                };
-                let id = root_call(intern_msg)?;
-                id as u32
-            }
-            _ => return Err(Errno::EINVAL),
-        };
-
-        steps.push(PreparedStep {
-            op: step.op,
-            arg1: step.arg1,
-            arg2: step.arg2,
-            symbol: sym_id,
-        });
-    }
-
-    // Read filter if provided
-    let filter = if spec.filter_ptr != 0
-        && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64
-    {
-        let filter_ptr = spec.filter_ptr as usize;
-        validate_user_range(filter_ptr, core::mem::size_of::<RootWatchFilter>(), false)?;
-        let mut abi_filter = RootWatchFilter::default();
-        let filter_slice = unsafe {
-            core::slice::from_raw_parts_mut(
-                &mut abi_filter as *mut _ as *mut u8,
-                core::mem::size_of::<RootWatchFilter>(),
-            )
-        };
-        unsafe { copyin(filter_slice, filter_ptr)? };
-
-        // Validate filter flags - reject unknown bits
-        if (abi_filter.flags & !abi::root::WATCH_F_KNOWN_MASK) != 0 {
-            crate::kdebug!(
-                "sys_root_watch_open: unknown filter flags={:#x}",
-                abi_filter.flags
-            );
-            return Err(Errno::EINVAL);
-        }
-
-        // Convert ABI filter to kernel filter
-        WatchFilter {
-            flags: abi_filter.flags,
-            kind_id: abi_filter.kind_id,
-            predicate_id: abi_filter.predicate_id,
-            subject_lo: abi_filter.subject_lo,
-        }
-    } else {
-        WatchFilter::default() // flags=0 means match all
-    };
-
-    let msg = RootOp::WatchOpen {
-        mode: spec.mode,
-        start_seq: spec.start_seq,
-        query: steps,
-        filter,
-    };
-    root_call(msg)
+    let _ = spec_ptr;
+    Err(Errno::ENOSYS)
 }
 
 /// Blocking watch read.  Parks the calling task on the watch's wait-queue until
@@ -898,102 +615,7 @@ pub fn sys_root_watch_next(
     out_ptr: usize,
     out_len: usize,
 ) -> SysResult<usize> {
-    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
-    validate_user_range(out_ptr, out_len, true)?;
-
-    let cap = core::cmp::min(out_len, abi::watch::MAX_WATCH_PAYLOAD_BYTES);
-
-    // Hybrid allocation: use stack for small requests, heap for large ones.
-    // Allocated once and reused across retry iterations to avoid repeated heap
-    // allocations when the watch is not immediately ready.
-    let mut stack_buf = [0u8; 1024];
-    let mut heap_buf = alloc::vec::Vec::new();
-
-    let buf_ptr = if cap <= stack_buf.len() {
-        stack_buf.as_mut_ptr()
-    } else {
-        heap_buf.resize(cap, 0);
-        heap_buf.as_mut_ptr()
-    };
-
-    let tid = unsafe { crate::sched::current_tid_current() };
-
-    loop {
-        // 1. Non-blocking attempt: ask the root service for the next event.
-        let reply = root_svc::enqueue(RootOp::WatchNext {
-            id: id as u64,
-            out_seq_ptr: 0,
-            out_ptr: buf_ptr as u64,
-            out_len: cap as u64,
-        });
-
-        wait_reply_block!(reply);
-        let status = reply.status.load(Ordering::Relaxed);
-
-        if status != -11 {
-            // Not EAGAIN: got data, EOVERFLOW, ENOSPC, or a fatal error.
-            if status >= 0 {
-                let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
-                if status == 0 {
-                    unsafe {
-                        let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
-                        copyout(out_ptr, src)?;
-                    }
-                    let seq = reply.p0.load(Ordering::Relaxed);
-                    unsafe {
-                        copyout(out_seq_ptr, &seq.to_le_bytes())?;
-                    }
-                }
-                return Ok(bytes_read);
-            } else {
-                return match status {
-                    -75 => Err(Errno::EOVERFLOW),
-                    -28 => Err(Errno::ENOSPC),
-                    -22 => Err(Errno::EINVAL),
-                    -9 => Err(Errno::EBADF),
-                    _ => {
-                        let tid = unsafe { crate::sched::current_tid_current() };
-                        crate::kinfo!(
-                            "watch_next: UNEXPECTED status={} wid={} tid={}",
-                            status,
-                            id,
-                            tid
-                        );
-                        Err(Errno::EIO)
-                    }
-                };
-            }
-        }
-
-        // 2. EAGAIN: no matching commit is ready yet.
-        //    Register this task as a waiter so the commit path can wake us.
-        let _ = root_call(RootOp::WatchRegisterWaiter {
-            id: id as u64,
-            tid,
-        });
-
-        // 3. Double-check: a commit may have arrived between step 1 and step 2
-        //    (TOCTOU window).  If the watch is now readable, skip parking.
-        let poll_bits = root_call(RootOp::WatchPoll { id: id as u64 }).unwrap_or(0);
-        if (poll_bits & 1) != 0 {
-            let _ = root_call(RootOp::WatchUnregisterWaiter {
-                id: id as u64,
-                tid,
-            });
-            continue;
-        }
-
-        // 4. Park until the root service wakes us (on new commit or watch close).
-        unsafe {
-            crate::sched::block_current_erased();
-        }
-
-        // 5. Woken up. Unregister from the wait queue and retry.
-        let _ = root_call(RootOp::WatchUnregisterWaiter {
-            id: id as u64,
-            tid,
-        });
-    }
+    Err(Errno::ENOSYS)
 }
 
 /// Non-blocking watch read.  Returns `Err(EAGAIN)` immediately when no
@@ -1006,69 +628,7 @@ pub fn sys_root_watch_try_next(
     out_ptr: usize,
     out_len: usize,
 ) -> SysResult<usize> {
-    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
-    validate_user_range(out_ptr, out_len, true)?;
-
-    let cap = core::cmp::min(out_len, abi::watch::MAX_WATCH_PAYLOAD_BYTES);
-
-    // Hybrid allocation: use stack for small requests, heap for large ones.
-    // 1024 bytes covers ~20 small events (49 bytes each), sufficient for most polls.
-    let mut stack_buf = [0u8; 1024];
-    let mut heap_buf = alloc::vec::Vec::new();
-
-    let buf_ptr = if cap <= stack_buf.len() {
-        stack_buf.as_mut_ptr()
-    } else {
-        heap_buf.resize(cap, 0);
-        heap_buf.as_mut_ptr()
-    };
-
-    let reply = root_svc::enqueue(RootOp::WatchNext {
-        id: id as u64,
-        out_seq_ptr: 0,
-        out_ptr: buf_ptr as u64,
-        out_len: cap as u64,
-    });
-
-    wait_reply_block!(reply);
-    let status = reply.status.load(Ordering::Relaxed);
-
-    if status >= 0 {
-        let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
-
-        if status == 0 {
-            // Copy data
-            unsafe {
-                let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
-                copyout(out_ptr, src)?;
-            }
-            // Copy seq
-            let seq = reply.p0.load(Ordering::Relaxed);
-            unsafe {
-                copyout(out_seq_ptr, &seq.to_le_bytes())?;
-            }
-        }
-        return Ok(bytes_read);
-    } else {
-        match status {
-            -75 => return Err(Errno::EOVERFLOW),
-            -28 => return Err(Errno::ENOSPC),
-            -11 => return Err(Errno::EAGAIN),
-            -22 => return Err(Errno::EINVAL), // Invalid handle
-            -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
-            _ => {
-                // Log unexpected status for debugging
-                let tid = unsafe { crate::sched::current_tid_current() };
-                crate::kinfo!(
-                    "watch_try_next: UNEXPECTED status={} wid={} tid={}",
-                    status,
-                    id,
-                    tid
-                );
-                return Err(Errno::EIO);
-            }
-        }
-    }
+    Err(Errno::ENOSYS)
 }
 
 pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
@@ -1094,7 +654,8 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
 }
 
 pub fn sys_root_watch_close(id: usize) -> SysResult<usize> {
-    root_call(RootOp::WatchClose { id: id as u64 })
+    let _ = id;
+    Err(Errno::ENOSYS)
 }
 
 /// Bulk property fetch syscall - get multiple properties in one call

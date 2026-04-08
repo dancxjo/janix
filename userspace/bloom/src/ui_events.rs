@@ -1,953 +1,354 @@
 extern crate alloc;
 
-use alloc::collections::BTreeSet;
-use alloc::string::ToString;
-use alloc::vec::Vec;
-
 use abi::hid::Key;
-use abi::ids::HandleId;
-use abi::schema::{keys, kinds, rels};
-use abi::ui_event::{self, UiEvent};
-use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find, get_kind, prop_get,
-    prop_set,
-};
-use stem::thing::{ThingId, ThingKind};
 
-use crate::geometry::Rect;
-
-#[derive(Clone, Copy, Default)]
-struct Edge {
-    to: ThingId,
-    predicate: ThingId,
-}
-
-fn get_edges(_id: ThingId, _out: &mut [Edge]) -> core::result::Result<usize, abi::errors::Errno> {
-    Ok(0)
-}
-
-pub struct UiEventDispatcher {
-    rel_root_ui: u64,
-    rel_has_child: u64,
-    kind_button: u64,
-    kind_checkbox: u64,
-    focused_text_target: Option<(ThingId, ThingId)>,
-}
-
-impl UiEventDispatcher {
-    pub fn new() -> Self {
-        Self {
-            rel_root_ui: stem::thing::sys::intern(rels::ROOT_UI).unwrap_or(0) as u64,
-            rel_has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0) as u64,
-            kind_button: stem::thing::sys::intern(kinds::UI_BUTTON).unwrap_or(0) as u64,
-            kind_checkbox: stem::thing::sys::intern(kinds::UI_CHECKBOX).unwrap_or(0) as u64,
-            focused_text_target: None,
-        }
-    }
-
-    pub fn dispatch_click(&mut self, screen_x: i32, screen_y: i32, screen_w: i32, screen_h: i32) {
-        if let Some((window_id, rect)) = window_at_point(screen_x, screen_y, screen_w, screen_h) {
-            let local_x = screen_x - rect.x();
-            let local_y = screen_y - rect.y();
-            if let Some(root) = find_root_ui(window_id, self.rel_root_ui) {
-                if let Some((hit, hit_kind)) = hit_test(
-                    root,
-                    local_x,
-                    local_y,
-                    self.rel_has_child,
-                    self.kind_button,
-                    self.kind_checkbox,
-                ) {
-                    if hit_kind == HitKind::TextInput {
-                        self.focused_text_target = Some((window_id, hit));
-                        emit_focus(window_id, hit);
-                        bump_window_gen(window_id);
-                    } else if hit_kind == HitKind::Button {
-                        let action_id = prop_get(hit, keys::UI_BUTTON_ACTION_ID).unwrap_or(0);
-                        emit_clicked(window_id, hit, action_id);
-                        bump_window_gen(window_id);
-                    } else if hit_kind == HitKind::Checkbox {
-                        let checked = prop_get(hit, keys::UI_CHECKBOX_CHECKED).unwrap_or(0) != 0;
-                        let new_checked = if checked { 0 } else { 1 };
-                        let _ = prop_set(hit, keys::UI_CHECKBOX_CHECKED, new_checked);
-                        let value_id = prop_get(hit, keys::UI_CHECKBOX_VALUE_ID).unwrap_or(0);
-                        emit_toggled(window_id, hit, new_checked != 0, value_id);
-                        bump_window_gen(window_id);
-                    } else if hit_kind == HitKind::ListItem {
-                        // Clear selection on all list items under this root, then select clicked one
-                        clear_list_selection(root, self.rel_has_child);
-                        let _ = prop_set(hit, keys::UI_SELECTED, 1);
-                        emit_clicked(window_id, hit, 0);
-                        bump_window_gen(window_id);
-                    }
-                } else {
-                    self.clear_focus();
-                }
-            }
-        }
-    }
-
-    pub fn dispatch_keyboard(&self, pressed: &BTreeSet<Key>, prev: &BTreeSet<Key>) {
-        let Some((window_id, target_id)) = self.focused_text_target else {
-            return;
-        };
-        let shift = pressed.contains(&Key::LeftShift) || pressed.contains(&Key::RightShift);
-        for key in pressed {
-            if prev.contains(key) {
-                continue;
-            }
-            match *key {
-                Key::Backspace => emit_text_backspace(window_id, target_id),
-                Key::Delete => emit_text_delete(window_id, target_id),
-                Key::Enter => emit_submit(window_id, target_id),
-                Key::Left => emit_cursor_move(window_id, target_id, -1),
-                Key::Right => emit_cursor_move(window_id, target_id, 1),
-                Key::Home => emit_cursor_move(window_id, target_id, -4096),
-                Key::End => emit_cursor_move(window_id, target_id, 4096),
-                _ => {
-                    if let Some(ch) = key_to_ascii(*key, shift) {
-                        let mut bytes = [0u8; 4];
-                        let s = ch.encode_utf8(&mut bytes);
-                        emit_text_insert(window_id, target_id, s.as_bytes());
-                    }
-                }
-            }
-        }
-    }
-
-    fn clear_focus(&mut self) {
-        if let Some((window_id, target)) = self.focused_text_target.take() {
-            emit_blur(window_id, target);
-            bump_window_gen(window_id);
-        }
+pub fn hid_to_evdev(key: Key) -> u32 {
+    match key {
+        Key::A => 30,
+        Key::B => 48,
+        Key::C => 46,
+        Key::D => 32,
+        Key::E => 18,
+        Key::F => 33,
+        Key::G => 34,
+        Key::H => 35,
+        Key::I => 23,
+        Key::J => 36,
+        Key::K => 37,
+        Key::L => 38,
+        Key::M => 50,
+        Key::N => 49,
+        Key::O => 24,
+        Key::P => 25,
+        Key::Q => 16,
+        Key::R => 19,
+        Key::S => 31,
+        Key::T => 20,
+        Key::U => 22,
+        Key::V => 47,
+        Key::W => 17,
+        Key::X => 45,
+        Key::Y => 21,
+        Key::Z => 44,
+        Key::Num1 => 2,
+        Key::Num2 => 3,
+        Key::Num3 => 4,
+        Key::Num4 => 5,
+        Key::Num5 => 6,
+        Key::Num6 => 7,
+        Key::Num7 => 8,
+        Key::Num8 => 9,
+        Key::Num9 => 10,
+        Key::Num0 => 11,
+        Key::Enter => 28,
+        Key::Escape => 1,
+        Key::Backspace => 14,
+        Key::Tab => 15,
+        Key::Space => 57,
+        Key::Minus => 12,
+        Key::Equal => 13,
+        Key::LeftBracket => 26,
+        Key::RightBracket => 27,
+        Key::Backslash => 43,
+        Key::Semicolon => 39,
+        Key::Quote => 40,
+        Key::Grave => 41,
+        Key::Comma => 51,
+        Key::Period => 52,
+        Key::Slash => 53,
+        Key::CapsLock => 58,
+        Key::F1 => 59,
+        Key::F2 => 60,
+        Key::F3 => 61,
+        Key::F4 => 62,
+        Key::F5 => 63,
+        Key::F6 => 64,
+        Key::F7 => 65,
+        Key::F8 => 66,
+        Key::F9 => 67,
+        Key::F10 => 68,
+        Key::F11 => 87,
+        Key::F12 => 88,
+        Key::Insert => 110,
+        Key::Home => 102,
+        Key::PageUp => 104,
+        Key::Delete => 111,
+        Key::End => 107,
+        Key::PageDown => 109,
+        Key::Right => 106,
+        Key::Left => 105,
+        Key::Down => 108,
+        Key::Up => 103,
+        Key::LeftCtrl => 29,
+        Key::LeftShift => 42,
+        Key::LeftAlt => 56,
+        Key::LeftMeta => 125,
+        Key::RightCtrl => 97,
+        Key::RightShift => 54,
+        Key::RightAlt => 100,
+        Key::RightMeta => 126,
+        _ => 0,
     }
 }
 
-fn window_at_point(x: i32, y: i32, screen_w: i32, screen_h: i32) -> Option<(ThingId, Rect)> {
-    let mut windows = [ThingId::default(); 128];
-    let count = find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-    let mut best: Option<(ThingId, Rect, i32)> = None;
-    for win in windows.iter().take(count) {
-        let rect = window_rect(*win, screen_w, screen_h);
-        if rect.width() <= 0 || rect.height() <= 0 {
-            continue;
-        }
-        if x >= rect.x()
-            && y >= rect.y()
-            && x < rect.x() + rect.width()
-            && y < rect.y() + rect.height()
-        {
-            let z = prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-            if best.map(|(_, _, bz)| z >= bz).unwrap_or(true) {
-                best = Some((*win, rect, z));
-            }
-        }
-    }
-    best.map(|(id, rect, _)| (id, rect))
-}
-
-fn window_rect(window_id: ThingId, screen_w: i32, screen_h: i32) -> Rect {
-    let mut w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-    let mut h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
-    if w <= 0 || h <= 0 {
-        return Rect::new(0, 0, 0, 0);
-    }
-    let mut x = prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
-    let mut y = prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
-    let inset_right = prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
-    let inset_bottom = prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
-    if inset_right > 0 {
-        x = screen_w - inset_right - w;
-    }
-    if inset_bottom > 0 {
-        y = screen_h - inset_bottom - h;
-    }
-    Rect::new(x, y, w, h)
-}
-
-fn find_root_ui(window_id: ThingId, rel_root_ui: u64) -> Option<ThingId> {
-    let mut edges = [Edge::default(); 64];
-    let count = get_edges(window_id, &mut edges).ok()?;
-    for edge in edges.iter().take(count) {
-        if edge.predicate.to_u64_lossy() == rel_root_ui {
-            return Some(edge.to);
-        }
-    }
-    None
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum HitKind {
-    Button,
-    Checkbox,
-    TextInput,
-    ListItem,
-}
-
-fn hit_test(
-    root: ThingId,
-    x: i32,
-    y: i32,
-    rel_has_child: u64,
-    kind_button: u64,
-    kind_checkbox: u64,
-) -> Option<(ThingId, HitKind)> {
-    let mut stack = Vec::new();
-    stack.push(root);
-    while let Some(id) = stack.pop() {
-        if !node_visible(id) || !node_enabled(id) {
-            continue;
-        }
-        if let Some(rect) = node_rect(id) {
-            if rect.w <= 0 || rect.h <= 0 {
-                continue;
-            }
-            if x < rect.x || y < rect.y || x >= rect.x + rect.w || y >= rect.y + rect.h {
-                continue;
-            }
-            let kind = get_kind(id).unwrap_or(ThingKind::default());
-            if kind.0 == kind_button || kind.0 == kind_checkbox {
-                let hit = if kind.0 == kind_button {
-                    HitKind::Button
-                } else {
-                    HitKind::Checkbox
-                };
-                return Some((id, hit));
-            }
-            let ui_kind_val = prop_get(id, keys::UI_KIND).unwrap_or(0);
-            if ui_kind_val == abi::schema::ui_kind::TEXT_INPUT
-                && prop_get(id, keys::UI_FOCUSABLE).unwrap_or(1) != 0
-            {
-                return Some((id, HitKind::TextInput));
-            }
-            if ui_kind_val == abi::schema::ui_kind::LIST_ITEM {
-                return Some((id, HitKind::ListItem));
-            }
-            let mut edges = [Edge::default(); 64];
-            if let Ok(count) = get_edges(id, &mut edges) {
-                for edge in edges.iter().take(count) {
-                    if edge.predicate.to_u64_lossy() == rel_has_child {
-                        stack.push(edge.to);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Walk the entire UI subtree under `root` and clear `ui.selected` on every list item.
-fn clear_list_selection(root: ThingId, rel_has_child: u64) {
-    let mut stack = Vec::new();
-    stack.push(root);
-    while let Some(id) = stack.pop() {
-        if prop_get(id, keys::UI_KIND).unwrap_or(0) == abi::schema::ui_kind::LIST_ITEM {
-            let _ = prop_set(id, keys::UI_SELECTED, 0);
-        }
-        let mut edges = [Edge::default(); 64];
-        if let Ok(count) = get_edges(id, &mut edges) {
-            for edge in edges.iter().take(count) {
-                if edge.predicate.to_u64_lossy() == rel_has_child {
-                    stack.push(edge.to);
-                }
-            }
-        }
-    }
-}
-
-fn node_rect(id: ThingId) -> Option<RectI32> {
-    let x = prop_get(id, keys::UI_X).ok()? as i32;
-    let y = prop_get(id, keys::UI_Y).ok()? as i32;
-    let w = prop_get(id, keys::UI_WIDTH).ok()? as i32;
-    let h = prop_get(id, keys::UI_HEIGHT).ok()? as i32;
-    Some(RectI32 { x, y, w, h })
-}
-
-fn node_visible(id: ThingId) -> bool {
-    prop_get(id, keys::UI_VISIBLE).unwrap_or(1) != 0
-}
-
-fn node_enabled(id: ThingId) -> bool {
-    prop_get(id, keys::UI_ENABLED).unwrap_or(1) != 0
-}
-
-fn emit_clicked(window_id: ThingId, node_id: ThingId, action_id: u64) {
-    let event = UiEvent::clicked(window_id.to_u64_lossy(), node_id.to_u64_lossy(), action_id);
-    write_event(window_id, &event);
-}
-
-fn emit_toggled(window_id: ThingId, node_id: ThingId, checked: bool, value_id: u64) {
-    let event = UiEvent::toggled(
-        window_id.to_u64_lossy(),
-        node_id.to_u64_lossy(),
-        checked,
-        value_id,
-    );
-    write_event(window_id, &event);
-}
-
-fn emit_focus(window_id: ThingId, node_id: ThingId) {
-    let event = UiEvent::focus(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, &event);
-}
-
-fn emit_blur(window_id: ThingId, node_id: ThingId) {
-    let event = UiEvent::blur(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, &event);
-}
-
-fn emit_text_insert(window_id: ThingId, node_id: ThingId, text: &[u8]) {
-    let event = UiEvent::text_input(window_id.to_u64_lossy(), node_id.to_u64_lossy(), text);
-    write_event(window_id, &event);
-}
-
-fn emit_text_backspace(window_id: ThingId, node_id: ThingId) {
-    let event = UiEvent::text_backspace(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, &event);
-}
-
-fn emit_text_delete(window_id: ThingId, node_id: ThingId) {
-    let event = UiEvent::text_delete(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, &event);
-}
-
-fn emit_cursor_move(window_id: ThingId, node_id: ThingId, delta: i32) {
-    let event = UiEvent::cursor_move(window_id.to_u64_lossy(), node_id.to_u64_lossy(), delta);
-    write_event(window_id, &event);
-}
-
-fn emit_submit(window_id: ThingId, node_id: ThingId) {
-    let event = UiEvent::submit(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, &event);
-}
-
-/// Max encoded event size for the buffer allocation.
-const EVENT_BUF_SIZE: usize = 128;
-
-fn write_event(window_id: ThingId, event: &UiEvent) {
-    let mut buf = [0u8; EVENT_BUF_SIZE];
-    let Some(written) = ui_event::encode(event, &mut buf) else {
-        return;
-    };
-    let existing_log = prop_get(window_id, keys::UI_EVENT_LOG).unwrap_or(0);
-    let (new_log, append_offset) = if existing_log == 0 {
-        match bytespace_create(written, 0, 0) {
-            Ok(id) => {
-                let _ = prop_set(window_id, keys::UI_EVENT_CURSOR, 0);
-                (id, 0usize)
-            }
-            Err(_) => return,
-        }
-    } else {
-        let old_id = ThingId::from_u64(existing_log);
-        let old_len = bytespace_info(old_id).unwrap_or(0);
-        let mut old = alloc::vec![0u8; old_len];
-        if old_len > 0 {
-            let _ = bytespace_read(old_id, 0, &mut old);
-        }
-        let Ok(new_id) = bytespace_create(old_len.saturating_add(written), 0, 0) else {
-            return;
-        };
-        if !old.is_empty() {
-            let _ = bytespace_write(new_id, 0, &old);
-        }
-        (new_id, old_len)
-    };
-    let _ = bytespace_write(new_log, append_offset, &buf[..written]);
-    let _ = prop_set(window_id, keys::UI_EVENT_LOG, new_log.to_u64_lossy());
-    let current = prop_get(window_id, keys::UI_EVENT_GEN).unwrap_or(0);
-    let _ = prop_set(window_id, keys::UI_EVENT_GEN, current.saturating_add(1));
-}
-
-fn bump_window_gen(window_id: ThingId) {
-    let current = prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
-    let _ = prop_set(window_id, keys::UI_SCENE_GEN, current.saturating_add(1));
-}
-
-fn key_to_ascii(key: Key, shift: bool) -> Option<char> {
-    let ch = match key {
-        Key::A => {
-            if shift {
-                'A'
-            } else {
-                'a'
-            }
-        }
-        Key::B => {
-            if shift {
-                'B'
-            } else {
-                'b'
-            }
-        }
-        Key::C => {
-            if shift {
-                'C'
-            } else {
-                'c'
-            }
-        }
-        Key::D => {
-            if shift {
-                'D'
-            } else {
-                'd'
-            }
-        }
-        Key::E => {
-            if shift {
-                'E'
-            } else {
-                'e'
-            }
-        }
-        Key::F => {
-            if shift {
-                'F'
-            } else {
-                'f'
-            }
-        }
-        Key::G => {
-            if shift {
-                'G'
-            } else {
-                'g'
-            }
-        }
-        Key::H => {
-            if shift {
-                'H'
-            } else {
-                'h'
-            }
-        }
-        Key::I => {
-            if shift {
-                'I'
-            } else {
-                'i'
-            }
-        }
-        Key::J => {
-            if shift {
-                'J'
-            } else {
-                'j'
-            }
-        }
-        Key::K => {
-            if shift {
-                'K'
-            } else {
-                'k'
-            }
-        }
-        Key::L => {
-            if shift {
-                'L'
-            } else {
-                'l'
-            }
-        }
-        Key::M => {
-            if shift {
-                'M'
-            } else {
-                'm'
-            }
-        }
-        Key::N => {
-            if shift {
-                'N'
-            } else {
-                'n'
-            }
-        }
-        Key::O => {
-            if shift {
-                'O'
-            } else {
-                'o'
-            }
-        }
-        Key::P => {
-            if shift {
-                'P'
-            } else {
-                'p'
-            }
-        }
-        Key::Q => {
-            if shift {
-                'Q'
-            } else {
-                'q'
-            }
-        }
-        Key::R => {
-            if shift {
-                'R'
-            } else {
-                'r'
-            }
-        }
-        Key::S => {
-            if shift {
-                'S'
-            } else {
-                's'
-            }
-        }
-        Key::T => {
-            if shift {
-                'T'
-            } else {
-                't'
-            }
-        }
-        Key::U => {
-            if shift {
-                'U'
-            } else {
-                'u'
-            }
-        }
-        Key::V => {
-            if shift {
-                'V'
-            } else {
-                'v'
-            }
-        }
-        Key::W => {
-            if shift {
-                'W'
-            } else {
-                'w'
-            }
-        }
-        Key::X => {
-            if shift {
-                'X'
-            } else {
-                'x'
-            }
-        }
-        Key::Y => {
-            if shift {
-                'Y'
-            } else {
-                'y'
-            }
-        }
-        Key::Z => {
-            if shift {
-                'Z'
-            } else {
-                'z'
-            }
-        }
-        Key::Num1 => {
-            if shift {
-                '!'
-            } else {
-                '1'
-            }
-        }
-        Key::Num2 => {
-            if shift {
-                '@'
-            } else {
-                '2'
-            }
-        }
-        Key::Num3 => {
-            if shift {
-                '#'
-            } else {
-                '3'
-            }
-        }
-        Key::Num4 => {
-            if shift {
-                '$'
-            } else {
-                '4'
-            }
-        }
-        Key::Num5 => {
-            if shift {
-                '%'
-            } else {
-                '5'
-            }
-        }
-        Key::Num6 => {
-            if shift {
-                '^'
-            } else {
-                '6'
-            }
-        }
-        Key::Num7 => {
-            if shift {
-                '&'
-            } else {
-                '7'
-            }
-        }
-        Key::Num8 => {
-            if shift {
-                '*'
-            } else {
-                '8'
-            }
-        }
-        Key::Num9 => {
-            if shift {
-                '('
-            } else {
-                '9'
-            }
-        }
-        Key::Num0 => {
-            if shift {
-                ')'
-            } else {
-                '0'
-            }
-        }
-        Key::Space => ' ',
-        Key::Tab => '\t',
-        Key::Minus => {
-            if shift {
-                '_'
-            } else {
-                '-'
-            }
-        }
-        Key::Equal => {
-            if shift {
-                '+'
-            } else {
-                '='
-            }
-        }
-        Key::LeftBracket => {
-            if shift {
-                '{'
-            } else {
-                '['
-            }
-        }
-        Key::RightBracket => {
-            if shift {
-                '}'
-            } else {
-                ']'
-            }
-        }
-        Key::Backslash => {
-            if shift {
-                '|'
-            } else {
-                '\\'
-            }
-        }
-        Key::Semicolon => {
-            if shift {
-                ':'
-            } else {
-                ';'
-            }
-        }
-        Key::Quote => {
-            if shift {
-                '"'
-            } else {
-                '\''
-            }
-        }
-        Key::Grave => {
-            if shift {
-                '~'
-            } else {
-                '`'
-            }
-        }
-        Key::Comma => {
-            if shift {
-                '<'
-            } else {
-                ','
-            }
-        }
-        Key::Period => {
-            if shift {
-                '>'
-            } else {
-                '.'
-            }
-        }
-        Key::Slash => {
-            if shift {
-                '?'
-            } else {
-                '/'
-            }
-        }
-        _ => return None,
-    };
-    Some(ch)
-}
-
-#[derive(Clone, Copy)]
-struct RectI32 {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-}
+pub static XKB_KEYMAP: &str = concat!(
+    "xkb_keymap {\n",
+    "  xkb_keycodes \"evdev\" {\n",
+    "    minimum = 8;\n",
+    "    maximum = 255;\n",
+    "    <ESC> = 9;\n",
+    "    <AE01> = 10;\n",
+    "    <AE02> = 11;\n",
+    "    <AE03> = 12;\n",
+    "    <AE04> = 13;\n",
+    "    <AE05> = 14;\n",
+    "    <AE06> = 15;\n",
+    "    <AE07> = 16;\n",
+    "    <AE08> = 17;\n",
+    "    <AE09> = 18;\n",
+    "    <AE10> = 19;\n",
+    "    <AE11> = 20;\n",
+    "    <AE12> = 21;\n",
+    "    <BKSP> = 22;\n",
+    "    <TAB> = 23;\n",
+    "    <AD01> = 24;\n",
+    "    <AD02> = 25;\n",
+    "    <AD03> = 26;\n",
+    "    <AD04> = 27;\n",
+    "    <AD05> = 28;\n",
+    "    <AD06> = 29;\n",
+    "    <AD07> = 30;\n",
+    "    <AD08> = 31;\n",
+    "    <AD09> = 32;\n",
+    "    <AD10> = 33;\n",
+    "    <AD11> = 34;\n",
+    "    <AD12> = 35;\n",
+    "    <RTRN> = 36;\n",
+    "    <LCTL> = 37;\n",
+    "    <AC01> = 38;\n",
+    "    <AC02> = 39;\n",
+    "    <AC03> = 40;\n",
+    "    <AC04> = 41;\n",
+    "    <AC05> = 42;\n",
+    "    <AC06> = 43;\n",
+    "    <AC07> = 44;\n",
+    "    <AC08> = 45;\n",
+    "    <AC09> = 46;\n",
+    "    <AC10> = 47;\n",
+    "    <AC11> = 48;\n",
+    "    <TLDE> = 49;\n",
+    "    <LFSH> = 50;\n",
+    "    <BKSL> = 51;\n",
+    "    <AB01> = 52;\n",
+    "    <AB02> = 53;\n",
+    "    <AB03> = 54;\n",
+    "    <AB04> = 55;\n",
+    "    <AB05> = 56;\n",
+    "    <AB06> = 57;\n",
+    "    <AB07> = 58;\n",
+    "    <AB08> = 59;\n",
+    "    <AB09> = 60;\n",
+    "    <AB10> = 61;\n",
+    "    <RTSH> = 62;\n",
+    "    <KPMU> = 63;\n",
+    "    <LALT> = 64;\n",
+    "    <SPCE> = 65;\n",
+    "    <CAPS> = 66;\n",
+    "    <FK01> = 67;\n",
+    "    <FK02> = 68;\n",
+    "    <FK03> = 69;\n",
+    "    <FK04> = 70;\n",
+    "    <FK05> = 71;\n",
+    "    <FK06> = 72;\n",
+    "    <FK07> = 73;\n",
+    "    <FK08> = 74;\n",
+    "    <FK09> = 75;\n",
+    "    <FK10> = 76;\n",
+    "    <HOME> = 110;\n",
+    "    <UP> = 111;\n",
+    "    <PGUP> = 112;\n",
+    "    <LEFT> = 113;\n",
+    "    <RGHT> = 114;\n",
+    "    <END> = 115;\n",
+    "    <DOWN> = 116;\n",
+    "    <PGDN> = 117;\n",
+    "    <INS> = 118;\n",
+    "    <DELE> = 119;\n",
+    "    <FK11> = 95;\n",
+    "    <FK12> = 96;\n",
+    "    <RCTL> = 105;\n",
+    "    <RALT> = 108;\n",
+    "    <LWIN> = 133;\n",
+    "    <RWIN> = 134;\n",
+    "  };\n",
+    "  xkb_types \"complete\" {\n",
+    "    virtual_modifiers NumLock,Alt,LevelThree,LAlt,RAlt,RAlt,ScrollLock,LevelFive,AltGr,Meta,Super,Hyper;\n",
+    "    type \"ONE_LEVEL\" {\n",
+    "      modifiers = none;\n",
+    "      level_name[Level1] = \"Any\";\n",
+    "    };\n",
+    "    type \"TWO_LEVEL\" {\n",
+    "      modifiers = Shift;\n",
+    "      map[Shift] = Level2;\n",
+    "      level_name[Level1] = \"Base\";\n",
+    "      level_name[Level2] = \"Shift\";\n",
+    "    };\n",
+    "    type \"ALPHABETIC\" {\n",
+    "      modifiers = Shift+Lock;\n",
+    "      map[Shift] = Level2;\n",
+    "      map[Lock] = Level2;\n",
+    "      level_name[Level1] = \"Base\";\n",
+    "      level_name[Level2] = \"Caps\";\n",
+    "    };\n",
+    "    type \"KEYPAD\" {\n",
+    "      modifiers = Shift+NumLock;\n",
+    "      map[NumLock] = Level2;\n",
+    "      map[Shift] = Level2;\n",
+    "      level_name[Level1] = \"Base\";\n",
+    "      level_name[Level2] = \"Number\";\n",
+    "    };\n",
+    "  };\n",
+    "  xkb_compatibility \"complete\" {\n",
+    "    interpret Any+AnyOf(all) {\n",
+    "      action = SetMods(modifiers=modMapMods,clearLocks);\n",
+    "    };\n",
+    "  };\n",
+    "  xkb_symbols \"pc+us\" {\n",
+    "    name[group1] = \"English (US)\";\n",
+    "    key <ESC> { [ Escape ] };\n",
+    "    key <AE01> { [ 1, exclam ] };\n",
+    "    key <AE02> { [ 2, at ] };\n",
+    "    key <AE03> { [ 3, numbersign ] };\n",
+    "    key <AE04> { [ 4, dollar ] };\n",
+    "    key <AE05> { [ 5, percent ] };\n",
+    "    key <AE06> { [ 6, asciicircum ] };\n",
+    "    key <AE07> { [ 7, ampersand ] };\n",
+    "    key <AE08> { [ 8, asterisk ] };\n",
+    "    key <AE09> { [ 9, parenleft ] };\n",
+    "    key <AE10> { [ 0, parenright ] };\n",
+    "    key <AE11> { [ minus, underscore ] };\n",
+    "    key <AE12> { [ equal, plus ] };\n",
+    "    key <BKSP> { [ BackSpace ] };\n",
+    "    key <TAB> { [ Tab, ISO_Left_Tab ] };\n",
+    "    key <AD01> { [ q, Q ] };\n",
+    "    key <AD02> { [ w, W ] };\n",
+    "    key <AD03> { [ e, E ] };\n",
+    "    key <AD04> { [ r, R ] };\n",
+    "    key <AD05> { [ t, T ] };\n",
+    "    key <AD06> { [ y, Y ] };\n",
+    "    key <AD07> { [ u, U ] };\n",
+    "    key <AD08> { [ i, I ] };\n",
+    "    key <AD09> { [ o, O ] };\n",
+    "    key <AD10> { [ p, P ] };\n",
+    "    key <AD11> { [ bracketleft, braceleft ] };\n",
+    "    key <AD12> { [ bracketright, braceright ] };\n",
+    "    key <RTRN> { [ Return ] };\n",
+    "    key <LCTL> { [ Control_L ] };\n",
+    "    key <AC01> { [ a, A ] };\n",
+    "    key <AC02> { [ s, S ] };\n",
+    "    key <AC03> { [ d, D ] };\n",
+    "    key <AC04> { [ f, F ] };\n",
+    "    key <AC05> { [ g, G ] };\n",
+    "    key <AC06> { [ h, H ] };\n",
+    "    key <AC07> { [ j, J ] };\n",
+    "    key <AC08> { [ k, K ] };\n",
+    "    key <AC09> { [ l, L ] };\n",
+    "    key <AC10> { [ semicolon, colon ] };\n",
+    "    key <AC11> { [ apostrophe, quotedbl ] };\n",
+    "    key <TLDE> { [ grave, asciitilde ] };\n",
+    "    key <LFSH> { [ Shift_L ] };\n",
+    "    key <BKSL> { [ backslash, bar ] };\n",
+    "    key <AB01> { [ z, Z ] };\n",
+    "    key <AB02> { [ x, X ] };\n",
+    "    key <AB03> { [ c, C ] };\n",
+    "    key <AB04> { [ v, V ] };\n",
+    "    key <AB05> { [ b, B ] };\n",
+    "    key <AB06> { [ n, N ] };\n",
+    "    key <AB07> { [ m, M ] };\n",
+    "    key <AB08> { [ comma, less ] };\n",
+    "    key <AB09> { [ period, greater ] };\n",
+    "    key <AB10> { [ slash, question ] };\n",
+    "    key <RTSH> { [ Shift_R ] };\n",
+    "    key <LALT> { [ Alt_L, Meta_L ] };\n",
+    "    key <SPCE> { [ space ] };\n",
+    "    key <CAPS> { [ Caps_Lock ] };\n",
+    "    key <FK01> { [ F1 ] };\n",
+    "    key <FK02> { [ F2 ] };\n",
+    "    key <FK03> { [ F3 ] };\n",
+    "    key <FK04> { [ F4 ] };\n",
+    "    key <FK05> { [ F5 ] };\n",
+    "    key <FK06> { [ F6 ] };\n",
+    "    key <FK07> { [ F7 ] };\n",
+    "    key <FK08> { [ F8 ] };\n",
+    "    key <FK09> { [ F9 ] };\n",
+    "    key <FK10> { [ F10 ] };\n",
+    "    key <FK11> { [ F11 ] };\n",
+    "    key <FK12> { [ F12 ] };\n",
+    "    key <HOME> { [ Home ] };\n",
+    "    key <UP> { [ Up ] };\n",
+    "    key <PGUP> { [ Prior ] };\n",
+    "    key <LEFT> { [ Left ] };\n",
+    "    key <RGHT> { [ Right ] };\n",
+    "    key <END> { [ End ] };\n",
+    "    key <DOWN> { [ Down ] };\n",
+    "    key <PGDN> { [ Next ] };\n",
+    "    key <INS> { [ Insert ] };\n",
+    "    key <DELE> { [ Delete ] };\n",
+    "    key <RCTL> { [ Control_R ] };\n",
+    "    key <RALT> { [ Alt_R, Meta_R ] };\n",
+    "    key <LWIN> { [ Super_L ] };\n",
+    "    key <RWIN> { [ Super_R ] };\n",
+    "    modifier_map Control { <LCTL>, <RCTL> };\n",
+    "    modifier_map Shift { <LFSH>, <RTSH> };\n",
+    "    modifier_map Mod1 { <LALT>, <RALT> };\n",
+    "    modifier_map Lock { <CAPS> };\n",
+    "    modifier_map Mod4 { <LWIN>, <RWIN> };\n",
+    "  };\n",
+    "};\n"
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::ui_event::{self, UiEvent, UiEventKind};
-    use alloc::collections::BTreeMap;
-    use alloc::string::String;
-    use stem::errors::{Error, Result};
-    use stem::petals::graph::{
-        reduce_window_events_with_graph, GraphBackend, UiKey, UiTreeBuilder,
-    };
 
-    #[derive(Default)]
-    struct TestGraph {
-        next_id: u64,
-        props: BTreeMap<(u64, String), u64>,
-        edges: Vec<Edge>,
-        bytespaces: BTreeMap<u64, Vec<u8>>,
-        kinds: BTreeMap<u64, u64>,
-    }
-
-    impl TestGraph {
-        fn new() -> Self {
-            Self {
-                next_id: 1,
-                ..Default::default()
-            }
-        }
-    }
-
-    impl GraphBackend for TestGraph {
-        fn create_node(&mut self, kind: &str) -> Result<ThingId> {
-            let id = ThingId::from_u64(self.next_id);
-            self.next_id += 1;
-            let kind_id = match kind {
-                kinds::UI_BUTTON => 101,
-                kinds::UI_CHECKBOX => 102,
-                kinds::UI_TEXT => 103,
-                kinds::UI_COLUMN => 104,
-                kinds::UI_WINDOW => 105,
-                _ => 1,
-            };
-            self.kinds.insert(id.to_u64_lossy(), kind_id);
-            Ok(id)
-        }
-
-        fn link(&mut self, src: ThingId, rel: &str, dst: ThingId) -> Result<()> {
-            let rel_id = match rel {
-                rels::HAS_CHILD => 201,
-                rels::CHILD_OF => 202,
-                rels::ROOT_UI => 203,
-                _ => 0,
-            };
-            self.edges.push(Edge {
-                from: src,
-                predicate: ThingId::from_u64(rel_id),
-                to: dst,
-                flags: 0,
-            });
-            Ok(())
-        }
-
-        fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()> {
-            self.props
-                .insert((id.to_u64_lossy(), key.to_string()), value);
-            Ok(())
-        }
-
-        fn prop_get(&mut self, id: ThingId, key: &str) -> Result<u64> {
-            Ok(self
-                .props
-                .get(&(id.to_u64_lossy(), key.to_string()))
-                .copied()
-                .unwrap_or(0))
-        }
-
-        fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize> {
-            let mut count = 0usize;
-            for edge in &self.edges {
-                if edge.from == id && count < out.len() {
-                    out[count] = *edge;
-                    count += 1;
-                }
-            }
-            Ok(count)
-        }
-
-        fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
-            let id = ThingId::from_u64(self.next_id);
-            self.next_id += 1;
-            self.bytespaces
-                .insert(id.to_u64_lossy(), alloc::vec![0u8; len]);
-            Ok(id)
-        }
-
-        fn bytespace_info(&mut self, id: ThingId) -> Result<usize> {
-            Ok(self
-                .bytespaces
-                .get(&id.to_u64_lossy())
-                .map(|b| b.len())
-                .unwrap_or(0))
-        }
-
-        fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize> {
-            if let Some(buf) = self.bytespaces.get(&id.to_u64_lossy()) {
-                if offset >= buf.len() {
-                    return Ok(0);
-                }
-                let n = core::cmp::min(out.len(), buf.len() - offset);
-                out[..n].copy_from_slice(&buf[offset..offset + n]);
-                Ok(n)
-            } else {
-                Err(Error::Errno(abi::errors::Errno::ENOENT))
-            }
-        }
-
-        fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
-            if let Some(buf) = self.bytespaces.get_mut(&id.to_u64_lossy()) {
-                let end = offset + bytes.len();
-                if end > buf.len() {
-                    buf.resize(end, 0);
-                }
-                buf[offset..end].copy_from_slice(bytes);
-                Ok(())
-            } else {
-                Err(Error::Errno(abi::errors::Errno::ENOENT))
-            }
-        }
-    }
-
-    fn encode_event(event: &UiEvent) -> Vec<u8> {
-        let mut buf = [0u8; 128];
-        let n = ui_event::encode(event, &mut buf).expect("encode");
-        buf[..n].to_vec()
+    #[test]
+    fn test_hid_to_evdev_letters() {
+        assert_eq!(hid_to_evdev(Key::A), 30);
+        assert_eq!(hid_to_evdev(Key::Z), 44);
+        assert_eq!(hid_to_evdev(Key::Q), 16);
     }
 
     #[test]
-    fn click_toggles_checkbox_and_emits_event() {
-        let graph = TestGraph::new();
-        let window_id = ThingId::from_u64(42);
-        let mut builder = UiTreeBuilder::new(graph, window_id);
-        let _root = builder
-            .column(|b| {
-                b.checkbox("One", 7, false)?;
-                Ok(())
-            })
-            .unwrap();
-        let (_root, mut graph) = builder.finish_with_graph().unwrap();
-
-        // Manually seed bounds for hit testing
-        let checkbox_id = graph
-            .edges
-            .iter()
-            .find(|e| e.predicate.to_u64_lossy() == 201)
-            .map(|e| e.to)
-            .unwrap();
-        graph
-            .props
-            .insert((checkbox_id.to_u64_lossy(), keys::UI_X.to_string()), 0);
-        graph
-            .props
-            .insert((checkbox_id.to_u64_lossy(), keys::UI_Y.to_string()), 0);
-        graph.props.insert(
-            (checkbox_id.to_u64_lossy(), keys::UI_WIDTH.to_string()),
-            100,
-        );
-        graph.props.insert(
-            (checkbox_id.to_u64_lossy(), keys::UI_HEIGHT.to_string()),
-            30,
-        );
-        graph.props.insert(
-            (window_id.to_u64_lossy(), keys::UI_EVENT_LOG.to_string()),
-            0,
-        );
-        graph.props.insert(
-            (window_id.to_u64_lossy(), keys::UI_SCENE_GEN.to_string()),
-            0,
-        );
-
-        let event = UiEvent::toggled(
-            window_id.to_u64_lossy(),
-            checkbox_id.to_u64_lossy(),
-            true,
-            7,
-        );
-        let buf = encode_event(&event);
-        graph.bytespaces.insert(999, buf.clone());
-
-        // Verify roundtrip decode
-        let (decoded, _) = ui_event::decode_one(&buf).unwrap();
-        assert_eq!(decoded.kind(), Some(UiEventKind::Toggled));
+    fn test_hid_to_evdev_numbers() {
+        assert_eq!(hid_to_evdev(Key::Num1), 2);
+        assert_eq!(hid_to_evdev(Key::Num0), 11);
     }
 
     #[test]
-    fn text_input_focus_insert_backspace_reduces_to_graph_state() {
-        let graph = TestGraph::new();
-        let window_id = ThingId::from_u64(77);
-        let mut builder = UiTreeBuilder::new(graph, window_id);
-        let mut input_id = ThingId::default();
-        builder
-            .column(|ui| {
-                input_id = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
-                Ok(())
-            })
-            .unwrap();
-        let (_root, mut graph) = builder.finish_with_graph().unwrap();
-        let log = graph.prop_get(window_id, keys::UI_EVENT_LOG).unwrap();
-        let mut append_at = 0usize;
+    fn test_hid_to_evdev_special() {
+        assert_eq!(hid_to_evdev(Key::Enter), 28);
+        assert_eq!(hid_to_evdev(Key::Escape), 1);
+        assert_eq!(hid_to_evdev(Key::Space), 57);
+        assert_eq!(hid_to_evdev(Key::LeftCtrl), 29);
+        assert_eq!(hid_to_evdev(Key::RightAlt), 100);
+    }
 
-        let focus = UiEvent::focus(window_id.to_u64_lossy(), input_id.to_u64_lossy());
-        let buf = encode_event(&focus);
-        graph
-            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
-            .unwrap();
-        append_at += buf.len();
-        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
+    #[test]
+    fn test_hid_to_evdev_function_keys() {
+        assert_eq!(hid_to_evdev(Key::F1), 59);
+        assert_eq!(hid_to_evdev(Key::F11), 87);
+        assert_eq!(hid_to_evdev(Key::F12), 88);
+    }
 
-        let insert = UiEvent::text_input(window_id.to_u64_lossy(), input_id.to_u64_lossy(), b"hi");
-        let buf = encode_event(&insert);
-        graph
-            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
-            .unwrap();
-        append_at += buf.len();
-        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
-
-        let backspace = UiEvent::text_backspace(window_id.to_u64_lossy(), input_id.to_u64_lossy());
-        let buf = encode_event(&backspace);
-        graph
-            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
-            .unwrap();
-        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
-
-        let text_bs = graph.prop_get(input_id, keys::UI_TEXT).unwrap();
-        let bytes = graph
-            .bytespaces
-            .get(&text_bs)
-            .cloned()
-            .unwrap_or_else(Vec::new);
-        assert_eq!(core::str::from_utf8(&bytes).unwrap_or(""), "h");
-        assert_eq!(graph.prop_get(input_id, keys::UI_CURSOR).unwrap_or(0), 1);
+    #[test]
+    fn test_hid_to_evdev_nav() {
+        assert_eq!(hid_to_evdev(Key::Up), 103);
+        assert_eq!(hid_to_evdev(Key::Down), 108);
+        assert_eq!(hid_to_evdev(Key::Left), 105);
+        assert_eq!(hid_to_evdev(Key::Right), 106);
+        assert_eq!(hid_to_evdev(Key::Home), 102);
+        assert_eq!(hid_to_evdev(Key::End), 107);
+        assert_eq!(hid_to_evdev(Key::Delete), 111);
+        assert_eq!(hid_to_evdev(Key::Insert), 110);
     }
 }

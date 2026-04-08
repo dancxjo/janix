@@ -902,7 +902,7 @@ fn main(arg: usize) -> ! {
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_cursor_buttons = cursor.buttons();
-    let mut ui_dispatch = ui_events::UiEventDispatcher::new();
+    // Input is now delivered via Wayland protocol (wl_pointer/wl_keyboard)
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
     let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> =
@@ -923,7 +923,8 @@ fn main(arg: usize) -> ! {
     let mut cursor_metrics = CursorMetrics::default();
 
     let mut wayland_server =
-        crate::wayland::server::WaylandServer::new().expect("Failed to start WaylandServer");
+        crate::wayland::server::WaylandServer::new(screen_w as u32, screen_h as u32)
+            .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
@@ -1590,7 +1591,7 @@ fn main(arg: usize) -> ! {
                             keys::UI_Z_INDEX,
                             (max_z as u64).saturating_add(1),
                         );
-                        ui_dispatch.dispatch_click(cursor.x, cursor.y, screen_w, screen_h);
+                        // Click delivered to Wayland client via wl_pointer (see wayland_server)
                     }
                 } else {
                     set_focus(&mut focused_window, None);
@@ -1686,7 +1687,7 @@ fn main(arg: usize) -> ! {
                 }
             }
 
-            ui_dispatch.dispatch_keyboard(&pressed_keys, &prev_keys);
+            // Keyboard events delivered to Wayland client via wl_keyboard (see wayland_server)
 
             // Alt-Tab logic moved handled earlier (lines 656+)
 

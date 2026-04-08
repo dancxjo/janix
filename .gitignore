@@ -27,3 +27,5 @@ qemu_pid
 kernel/errors.txt
 patch*.py
 
+# Reproducible upstream snapshot for the Thing-OS smallsh port
+/userspace/smallsh/upstream/

@@ -1,7 +1,7 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
-use abi::schema::kinds as abi_kinds;
 use abi::schema::keys;
+use abi::schema::kinds as abi_kinds;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -201,7 +201,6 @@ impl Supervisor {
         } else {
             info!("SPROUT:   describe: <failed>");
         }
-
     }
 
     fn spawn_apps(&mut self) {

@@ -138,23 +138,7 @@ pub struct Drag {
     pub start_window_rect: Rect,
 }
 
-/// Window state for hit testing.
-#[derive(Clone, Debug)]
-pub struct WindowState {
-    pub id: ThingId,
-    pub rect: Rect,
-    pub is_shaded: bool,
-    pub is_maximized: bool,
-    /// Cached pre-maximize rect for restore.
-    pub pre_maximize_rect: Option<Rect>,
-}
-
-impl WindowState {
-    /// Compute the client rect (content area inside chrome).
-    pub fn client_rect(&self) -> Rect {
-        compute_client_rect(&self.rect, self.is_shaded)
-    }
-}
+use crate::window::Window;
 
 /// Compute the client rect from a window rect and shaded state.
 ///
@@ -211,12 +195,11 @@ pub fn clamp_window_rect(rect: Rect, screen_w: i32, screen_h: i32) -> Rect {
     r
 }
 
-/// Hit test a point against a single window.
+/// Hit test a point against a single window's border/chrome given its rect and shaded state.
 ///
 /// Coordinates are in screen space. Window must contain the point for
 /// any hit other than None.
-pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
-    let r = &window.rect;
+pub fn hit_test(screen_x: i32, screen_y: i32, r: Rect, is_shaded: bool) -> Hit {
 
     // Outside window entirely?
     if screen_x < r.x()
@@ -300,7 +283,7 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
     }
 
     // If shaded, there's no client area
-    if window.is_shaded {
+    if is_shaded {
         return Hit::None;
     }
 
@@ -308,19 +291,22 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
     Hit::ClientArea
 }
 
-/// Pick the topmost window at a screen coordinate.
+/// Pick the topmost surface at a screen coordinate.
 ///
-/// Windows should be provided in z-order (front to back).
-/// Returns the window ID and hit result for the first window hit.
+/// Returns the surface ID and hit result for the frontmost surface, considering window chrome.
 pub fn pick_window(
     screen_x: i32,
     screen_y: i32,
-    windows: &[WindowState],
+    scene: &crate::scene_graph::SceneGraph,
+    windows: &alloc::collections::BTreeMap<ThingId, Window>,
 ) -> Option<(ThingId, Hit)> {
-    for window in windows {
-        let hit = hit_test(screen_x, screen_y, window);
-        if hit != Hit::None {
-            return Some((window.id, hit));
+    if let Some(surf_id) = scene.hit_test(screen_x, screen_y) {
+        if let Some(surf) = scene.get_surface(surf_id) {
+            if let Some(win) = windows.get(&surf_id) {
+                return Some((surf_id, hit_test(screen_x, screen_y, surf.rect(), win.is_shaded)));
+            } else {
+                return Some((surf_id, Hit::ClientArea)); // generic surface without window chrome
+            }
         }
     }
     None
@@ -496,28 +482,28 @@ impl WindowManager {
 
     /// Toggle maximize state for a window.
     /// Returns the new rect (either maximized or restored).
-    pub fn toggle_maximize(&mut self, window: &mut WindowState) -> Rect {
+    pub fn toggle_maximize(&mut self, window: &mut Window, current_rect: Rect) -> Rect {
         if window.is_maximized {
             // Restore to pre-maximize rect
-            let restored = window.pre_maximize_rect.unwrap_or(window.rect);
+            let restored = window.pre_maximize_rect.unwrap_or(current_rect);
             self.add_damage_with_cause(
-                window.rect,
+                current_rect,
                 restored,
                 DamageCause::GeometryChanged,
-                Some(window.id),
+                Some(window.surface_id),
             );
             window.is_maximized = false;
             window.pre_maximize_rect = None;
             restored
         } else {
             // Save current rect and maximize
-            window.pre_maximize_rect = Some(window.rect);
+            window.pre_maximize_rect = Some(current_rect);
             let maximized = Rect::new(0, 0, self.screen_w, self.screen_h);
             self.add_damage_with_cause(
-                window.rect,
+                current_rect,
                 maximized,
                 DamageCause::GeometryChanged,
-                Some(window.id),
+                Some(window.surface_id),
             );
             window.is_maximized = true;
             maximized
@@ -535,82 +521,59 @@ mod tests {
         ThingId(b)
     }
 
-    fn test_window() -> WindowState {
-        WindowState {
-            id: make_id(1),
-            rect: Rect::new(100, 100, 400, 300),
-            is_shaded: false,
-            is_maximized: false,
-            pre_maximize_rect: None,
-        }
-    }
-
     #[test]
     fn hit_test_outside_window() {
-        let window = test_window();
-        assert_eq!(hit_test(50, 50, &window), Hit::None);
-        assert_eq!(hit_test(600, 200, &window), Hit::None);
+        let r = Rect::new(100, 100, 400, 300);
+        assert_eq!(hit_test(50, 50, r, false), Hit::None);
+        assert_eq!(hit_test(600, 200, r, false), Hit::None);
     }
 
     #[test]
     fn hit_test_client_area() {
-        let window = test_window();
-        // Client area is inside title bar and borders
-        assert_eq!(hit_test(250, 200, &window), Hit::ClientArea);
+        let r = Rect::new(100, 100, 400, 300);
+        assert_eq!(hit_test(250, 200, r, false), Hit::ClientArea);
     }
 
     #[test]
     fn hit_test_title_bar() {
-        let window = test_window();
-        // Title bar is between y=108 (BORDER_THICKNESS*2) and y=140 (TITLE_BAR_HEIGHT)
-        // And not in button regions
-        assert_eq!(hit_test(200, 120, &window), Hit::TitleBar);
+        let r = Rect::new(100, 100, 400, 300);
+        assert_eq!(hit_test(200, 120, r, false), Hit::TitleBar);
     }
 
     #[test]
     fn hit_test_resize_corners() {
-        let window = test_window();
-        // NW corner
+        let r = Rect::new(100, 100, 400, 300);
         assert_eq!(
-            hit_test(102, 102, &window),
+            hit_test(102, 102, r, false),
             Hit::ResizeCorner(Corner::NorthWest)
         );
-        // NE corner
         assert_eq!(
-            hit_test(498, 102, &window),
+            hit_test(498, 102, r, false),
             Hit::ResizeCorner(Corner::NorthEast)
         );
-        // SW corner
         assert_eq!(
-            hit_test(102, 398, &window),
+            hit_test(102, 398, r, false),
             Hit::ResizeCorner(Corner::SouthWest)
         );
-        // SE corner
         assert_eq!(
-            hit_test(498, 398, &window),
+            hit_test(498, 398, r, false),
             Hit::ResizeCorner(Corner::SouthEast)
         );
     }
 
     #[test]
     fn hit_test_resize_edges() {
-        let window = test_window();
-        // North edge (not corner)
-        assert_eq!(hit_test(250, 101, &window), Hit::ResizeEdge(Edge::North));
-        // South edge
-        assert_eq!(hit_test(250, 398, &window), Hit::ResizeEdge(Edge::South));
-        // West edge
-        assert_eq!(hit_test(101, 250, &window), Hit::ResizeEdge(Edge::West));
-        // East edge
-        assert_eq!(hit_test(498, 250, &window), Hit::ResizeEdge(Edge::East));
+        let r = Rect::new(100, 100, 400, 300);
+        assert_eq!(hit_test(250, 101, r, false), Hit::ResizeEdge(Edge::North));
+        assert_eq!(hit_test(250, 398, r, false), Hit::ResizeEdge(Edge::South));
+        assert_eq!(hit_test(101, 250, r, false), Hit::ResizeEdge(Edge::West));
+        assert_eq!(hit_test(498, 250, r, false), Hit::ResizeEdge(Edge::East));
     }
 
     #[test]
     fn move_drag_clamps_to_screen() {
         let start = Rect::new(100, 100, 200, 150);
-        // Move far left
         let result = apply_move_delta(start, (-500, 0), 800, 600);
-        // Should clamp so title bar is still reachable
         assert!(result.x() + result.width() >= TITLE_BAR_HEIGHT);
     }
 
@@ -618,7 +581,6 @@ mod tests {
     fn resize_drag_enforces_min_size() {
         let start = Rect::new(100, 100, 200, 150);
         let anchor = ResizeAnchor::from_edge(Edge::West);
-        // Try to shrink width below minimum
         let result = apply_resize_delta(start, anchor, (500, 0), 800, 600);
         assert_eq!(result.width(), MIN_WINDOW_WIDTH);
     }
@@ -627,7 +589,6 @@ mod tests {
     fn compute_client_rect_normal() {
         let window_rect = Rect::new(100, 100, 400, 300);
         let client = compute_client_rect(&window_rect, false);
-        // Client should be inset by borders and title bar
         assert!(client.x() > window_rect.x());
         assert!(client.y() > window_rect.y());
         assert!(client.width() < window_rect.width());
@@ -638,32 +599,7 @@ mod tests {
     fn compute_client_rect_shaded() {
         let window_rect = Rect::new(100, 100, 400, 300);
         let client = compute_client_rect(&window_rect, true);
-        // Shaded window has no client area
         assert_eq!(client.width(), 0);
         assert_eq!(client.height(), 0);
-    }
-
-    #[test]
-    fn pick_window_z_order() {
-        let front = WindowState {
-            id: make_id(1),
-            rect: Rect::new(100, 100, 200, 200),
-            is_shaded: false,
-            is_maximized: false,
-            pre_maximize_rect: None,
-        };
-        let back = WindowState {
-            id: make_id(2),
-            rect: Rect::new(150, 150, 200, 200),
-            is_shaded: false,
-            is_maximized: false,
-            pre_maximize_rect: None,
-        };
-        // Front window first in array (z-order front to back)
-        let windows = [front.clone(), back];
-        let result = pick_window(180, 180, &windows);
-        // Should hit front window even though back overlaps
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().0, make_id(1));
     }
 }

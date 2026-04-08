@@ -1,11 +1,10 @@
 //! DHCPv4 client using smoltcp
 
 use smoltcp::iface::Interface;
+use smoltcp::phy::Device;
 use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
-use smoltcp::time::Duration;
+use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::Ipv4Address;
-
-use crate::ipc_device::IpcNicDevice;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -21,7 +20,11 @@ pub struct DhcpConfig {
     pub dns: Ipv4Address,
 }
 
-pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<DhcpConfig, DhcpError> {
+fn now() -> Instant {
+    Instant::from_millis(stem::time::now().as_millis() as i64)
+}
+
+pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
 
@@ -30,16 +33,16 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<Dhcp
 
     stem::info!("DHCP: Starting discovery...");
 
-    let start = IpcNicDevice::now();
+    let start = now();
     let timeout = start + Duration::from_secs(30);
 
     loop {
-        let now = IpcNicDevice::now();
-        if now > timeout {
+        let ts = now();
+        if ts > timeout {
             return Err(DhcpError::Timeout);
         }
 
-        iface.poll(now, device, &mut socket_set);
+        iface.poll(ts, device, &mut socket_set);
 
         let dhcp_socket = socket_set.get_mut::<Dhcpv4Socket>(dhcp_handle);
 
@@ -80,11 +83,8 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<Dhcp
             }
         }
 
-        let delay = iface.poll_delay(now, &socket_set);
-        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
-
-        let mut wait_set = stem::wait_set::WaitSet::new();
-        let _ = wait_set.add_port_readable(device.rx_port() as u64);
-        let _ = wait_set.wait(Some(core::time::Duration::from_millis(wait_ms as u64)));
+        let delay = iface.poll_delay(ts, &socket_set);
+        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(10).min(10);
+        stem::time::sleep_ms(wait_ms as u64);
     }
 }

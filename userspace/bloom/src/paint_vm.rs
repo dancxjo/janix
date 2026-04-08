@@ -18,7 +18,7 @@ use crate::drawlist::{DrawCmd, DrawList};
 use crate::frame::AssetGeneration;
 use crate::geometry::{Color, EdgeAA, Rect};
 use crate::raster;
-use crate::surface::Surface;
+use crate::surface::PixelBuffer;
 use alloc::sync::Arc;
 use core::cmp::{max, min};
 
@@ -81,6 +81,7 @@ impl PaintPipeline {
 
     pub fn process_updates<F>(
         &mut self,
+        scene: &mut crate::scene_graph::SceneGraph,
         screen_w: i32,
         screen_h: i32,
         rescan_windows: bool,
@@ -101,7 +102,7 @@ impl PaintPipeline {
 
         let mut damage = Vec::new();
         if rescan_windows || self.scan_required {
-            self.sync_windows(screen_w, screen_h, &mut damage, &mut on_progress);
+            self.sync_windows(scene, screen_w, screen_h, &mut damage, &mut on_progress);
         } else if refresh_paint {
             self.refresh_window_paint_state(&mut on_progress);
         }
@@ -161,7 +162,7 @@ impl PaintPipeline {
                     let mut buffer = vec![0u32; len];
 
                     let mut surface = unsafe {
-                        Surface::new(
+                        PixelBuffer::new(
                             buffer.as_mut_ptr() as *mut u8,
                             len * 4,
                             w as u32,
@@ -185,6 +186,15 @@ impl PaintPipeline {
                     });
 
                     self.render_state.insert_window_raster(cache_key, image);
+
+                    if let Some(surf) = scene.get_surface_mut(id) {
+                        surf.resize(w as i32, h as i32);
+                        let ptr = buffer.as_ptr() as *const u8;
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(ptr, surf.buffer.as_mut_ptr(), len * 4);
+                        }
+                        surf.add_damage(Rect::new(0, 0, w as i32, h as i32));
+                    }
                 }
 
                 rebuilds_this_frame += 1;
@@ -228,6 +238,7 @@ impl PaintPipeline {
 
     fn sync_windows<F>(
         &mut self,
+        scene: &mut crate::scene_graph::SceneGraph,
         screen_w: i32,
         screen_h: i32,
         damage: &mut Vec<Rect>,
@@ -298,6 +309,25 @@ impl PaintPipeline {
                 entry.raster_dirty = true;
                 self.dirty_windows.insert(*id);
             }
+
+            // Sync SceneGraph state
+            use crate::surface::Surface;
+            use abi::pixel::PixelFormat;
+            
+            if scene.get_surface(*id).is_none() {
+                scene.insert_surface(
+                    *id,
+                    Surface::new(rect.width(), rect.height(), PixelFormat::Bgra8888),
+                );
+            }
+            
+            if let Some(surf) = scene.get_surface_mut(*id) {
+                surf.x = rect.x();
+                surf.y = rect.y();
+                surf.z_index = props.z;
+                surf.visible = !props.hidden;
+            }
+            scene.resort();
         }
 
         let removed: Vec<ThingId> = self
@@ -311,6 +341,7 @@ impl PaintPipeline {
                 self.dirty_windows.remove(&id);
                 damage.push(prev.rect);
             }
+            scene.remove_surface(id);
         }
 
         self.scan_required = false;
@@ -450,26 +481,17 @@ impl PaintPipeline {
 
     /// Compose the scene into the framebuffer surface using occlusion culling.
     pub fn compose(
-        &mut self,
-        surface: &mut Surface,
+        &self,
+        scene: &crate::scene_graph::SceneGraph,
+        surface: &mut PixelBuffer,
         damage: &[Rect],
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
-        use crate::render_state::RasterCacheKey;
-        use abi::pixel::PixelFormat;
-
-        // Build list of (window_id, state_ref) for iteration
-        let window_list: Vec<(ThingId, &WindowPaintState)> = self
-            .windows
-            .iter()
-            .filter(|(_, w)| !w.hidden)
-            .map(|(id, state)| (*id, state))
-            .collect();
-
-        // Sort by Z descending (top to bottom) for occlusion
-        let mut ordered = window_list;
-        ordered.sort_by_key(|(_, w)| -w.z);
+        // Build list of surface IDs for iteration. SceneGraph is ordered back-to-front.
+        // We need front-to-back for occlusion culling.
+        let mut ordered_surfaces = scene.ordered_surfaces.clone();
+        ordered_surfaces.reverse();
 
         crate::trace_span!("bloom.compose");
 
@@ -482,55 +504,41 @@ impl PaintPipeline {
             );
             let mut remaining: Vec<Rect> = vec![d_rect];
 
-            for (win_id, win) in &ordered {
+            for surf_id in &ordered_surfaces {
                 if remaining.is_empty() {
                     break;
                 }
 
+                let surf = scene.surfaces.get(surf_id).unwrap();
+                if !surf.visible {
+                    continue;
+                }
+
                 let mut next_remaining = Vec::with_capacity(remaining.len() * 2);
-                let w_rect = win.rect;
+                let w_rect = surf.rect();
 
                 for r in remaining {
                     let inter = Rect::intersection(&r, &w_rect);
                     if let Some(vis) = inter {
-                        let mut rendered = false;
-                        // This part of 'r' is covered by 'win'.
-                        // Fetch cached image and blit
-                        let cache_key = RasterCacheKey::new(
-                            *win_id,
-                            win.paint_gen,
-                            win.geometry_gen,
-                            win.asset_gen,
-                            1.0,
-                            EdgeAA::None,
-                            PixelFormat::Bgra8888,
+                        let src_x = vis.x() - w_rect.x();
+                        let src_y = vis.y() - w_rect.y();
+                        
+                        let pixels: &[u32] = unsafe {
+                            core::slice::from_raw_parts(
+                                surf.buffer.as_ptr() as *const u32,
+                                surf.width as usize * surf.height as usize,
+                            )
+                        };
+
+                        blit_rect(
+                            surface,
+                            vis,
+                            pixels,
+                            surf.width as usize,
+                            Rect::new(src_x, src_y, vis.width(), vis.height()),
                         );
-
-                        if let Some(cached_image) = self.render_state.get_window_raster(&cache_key)
-                        {
-                            if cached_image.width > 0 && cached_image.height > 0 {
-                                // Calculate src rect in window coordinates
-                                let src_x = vis.x() - w_rect.x();
-                                let src_y = vis.y() - w_rect.y();
-
-                                // Blit logic
-                                blit_rect(
-                                    surface,
-                                    vis,
-                                    &cached_image.pixels,
-                                    cached_image.width as usize,
-                                    Rect::new(src_x, src_y, vis.width(), vis.height()),
-                                );
-                                rendered = true;
-                            }
-                        }
-
-                        if rendered {
-                            // Only occlude regions we actually painted.
-                            next_remaining.extend(subtract_rect(r, vis));
-                        } else {
-                            next_remaining.push(r);
-                        }
+                        
+                        next_remaining.extend(subtract_rect(r, vis));
                     } else {
                         next_remaining.push(r);
                     }
@@ -596,7 +604,7 @@ fn subtract_rect(base: Rect, cut: Rect) -> Vec<Rect> {
 }
 
 fn blit_rect(
-    dst: &mut Surface,
+    dst: &mut PixelBuffer,
     dst_rect: Rect,
     src_pixels: &[u32],
     src_stride: usize,
@@ -697,7 +705,7 @@ fn blend_pixel(src: u32, dst: u32) -> u32 {
     (0xFF << 24) | (r << 16) | (g << 8) | b
 }
 
-fn fill_rect(dst: &mut Surface, rect: Rect, color: Color) {
+fn fill_rect(dst: &mut PixelBuffer, rect: Rect, color: Color) {
     let c = color.to_u32();
     let dw = dst.width();
     let dh = dst.height();
@@ -718,7 +726,7 @@ fn fill_rect(dst: &mut Surface, rect: Rect, color: Color) {
     }
 }
 
-fn blit_wallpaper_tiled(dst: &mut Surface, rect: Rect, wp: &Image) {
+fn blit_wallpaper_tiled(dst: &mut PixelBuffer, rect: Rect, wp: &Image) {
     // Similar to fill_rect logic but sampling wp
     let dw = dst.width();
     let dh = dst.height();

@@ -2,11 +2,14 @@
 
 use alloc::vec::Vec;
 use smoltcp::iface::Interface;
+use smoltcp::phy::Device;
 use smoltcp::socket::udp::{self, PacketMetadata, Socket as UdpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-use crate::ipc_device::IpcNicDevice;
+fn now() -> Instant {
+    Instant::from_millis(stem::time::now().as_millis() as i64)
+}
 
 #[derive(Debug)]
 pub enum DnsError {
@@ -15,9 +18,9 @@ pub enum DnsError {
     NoAnswer,
 }
 
-pub fn lookup_a(
+pub fn lookup_a<D: Device>(
     iface: &mut Interface,
-    device: &mut IpcNicDevice,
+    device: &mut D,
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
@@ -49,20 +52,20 @@ pub fn lookup_a(
 
     stem::info!("DNS: Querying {} for {}", dns_server, name);
 
-    let start = IpcNicDevice::now();
+    let start = now();
     let timeout = start + Duration::from_secs(5);
 
     let mut sent = false;
     let mut poll_count = 0u32;
 
     loop {
-        let now = IpcNicDevice::now();
-        if now > timeout {
+        let t = now();
+        if t > timeout {
             stem::info!("DNS: Timeout after {} polls", poll_count);
             return Err(DnsError::Timeout);
         }
 
-        iface.poll(now, device, &mut socket_set);
+        iface.poll(t, device, &mut socket_set);
         poll_count += 1;
 
         let socket = socket_set.get_mut::<UdpSocket>(udp_handle);

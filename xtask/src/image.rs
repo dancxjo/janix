@@ -46,7 +46,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-
         ProgramConfig {
             name: "ps2_kbd",
             is_init: true,
@@ -56,6 +55,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "sh",
             is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "smallsh",
+            is_init: false,
             boot_module: true,
             features: vec![],
         },
@@ -101,8 +106,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-
-
         ProgramConfig {
             name: "virtio_netd",
             is_init: false,

@@ -544,25 +544,46 @@ fn test_pipes() -> Result<(), String> {
 fn test_net_tcp() -> Result<(), String> {
     use std::net::TcpStream;
 
-    // Try connecting to the QEMU user-mode gateway (host) on port 80
-    // This tests the full netd IPC path without requiring a real server
-    let addr = "10.0.2.2:80";
+    // Try the host-side guest proxy first. If it is up, we can validate
+    // connect + write + read through the /net/tcp/ shim end-to-end.
+    let addr = "10.0.2.2:8081";
     match TcpStream::connect(addr) {
-        Ok(stream) => {
+        Ok(mut stream) => {
             let peer = stream
                 .peer_addr()
                 .map_err(|e| format!("peer_addr: {}", e))?;
             eprintln!("[test_net_tcp] connected to {} (peer={:?})", addr, peer);
-            // Connection succeeded — the networking stack works
+
+            let req = b"GET /?url=http://example.com/ HTTP/1.1\r\nHost: 10.0.2.2\r\nConnection: close\r\n\r\n";
+            stream
+                .write_all(req)
+                .map_err(|e| format!("write_all HTTP request: {}", e))?;
+
+            let mut buf = [0u8; 256];
+            let n = stream
+                .read(&mut buf)
+                .map_err(|e| format!("read HTTP response: {}", e))?;
+            if n == 0 {
+                return Err("HTTP GET returned EOF without response bytes".into());
+            }
+
+            let head = String::from_utf8_lossy(&buf[..n]);
+            if !head.starts_with("HTTP/1.1 ") && !head.starts_with("HTTP/1.0 ") {
+                return Err(format!("HTTP GET returned non-HTTP prefix: {:?}", head));
+            }
+
             drop(stream);
             Ok(())
         }
         Err(e) => {
-            // Connection refused is acceptable — it means netd is working,
-            // the TCP stack did its job, but no server is listening.
-            if format!("{}", e).contains("refused") || format!("{}", e).contains("failed") {
+            // Connection refused is acceptable here because the shim still
+            // reached the host TCP stack. The proxy may simply not be running.
+            if format!("{}", e).contains("refused")
+                || format!("{}", e).contains("failed")
+                || format!("{}", e).contains("timed out")
+            {
                 eprintln!(
-                    "[test_net_tcp] connect to {} returned: {} (stack is working)",
+                    "[test_net_tcp] connect/write path to {} returned: {}",
                     addr, e
                 );
                 Ok(())

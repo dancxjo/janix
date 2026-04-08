@@ -266,6 +266,13 @@ pub const SYS_VFS_MOUNT: u32 = 0x22B;
 /// Unmount the userland VFS provider at a path prefix.
 /// Args: path_ptr, path_len. Returns 0 or errno.
 pub const SYS_VFS_UMOUNT: u32 = 0x22C;
+/// Poll a set of file descriptors for readiness.
+/// Args: pollfds_ptr (pointer to array of PollFd), nfds, timeout_ms (u64, -1 = infinite).
+/// Returns number of ready fds, or errno.
+pub const SYS_VFS_POLL: u32 = 0x22D;
+/// Seek within a file descriptor.
+/// Args: fd, offset (i64 as two words hi/lo), whence. Returns new offset or errno.
+pub const SYS_VFS_SEEK: u32 = 0x22E;
 
 pub mod vfs_flags {
     /// Open for reading.
@@ -282,4 +289,33 @@ pub mod vfs_flags {
     pub const O_APPEND: u32 = 0x0400;
     /// Non-blocking I/O.
     pub const O_NONBLOCK: u32 = 0x0800;
+}
+
+/// Events/flags used by [`SYS_VFS_POLL`].
+pub mod poll_flags {
+    /// Data available to read.
+    pub const POLLIN: u16 = 0x0001;
+    /// Ready to accept writes.
+    pub const POLLOUT: u16 = 0x0004;
+    /// An error condition has occurred.
+    pub const POLLERR: u16 = 0x0008;
+    /// The file descriptor was closed on the other end (hangup).
+    pub const POLLHUP: u16 = 0x0010;
+    /// fd is not open.
+    pub const POLLNVAL: u16 = 0x0020;
+}
+
+/// Entry in the `pollfds` array passed to [`SYS_VFS_POLL`].
+///
+/// Layout mirrors POSIX `struct pollfd` so that future libc ports can
+/// alias this directly.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct PollFd {
+    /// File descriptor to watch.
+    pub fd: i32,
+    /// Events to wait for (input, using [`poll_flags`]).
+    pub events: u16,
+    /// Events that occurred (output, filled by the kernel).
+    pub revents: u16,
 }

@@ -1,5 +1,5 @@
 //! VFS syscall handlers: open, close, read, write, stat, readdir,
-//!                       unlink, mkdir, dup, dup2, pipe.
+//!                       unlink, mkdir, dup, dup2, pipe, poll.
 //!
 //! These handlers implement the janix VFS syscall interface:
 //!
@@ -12,11 +12,12 @@
 //! - [`sys_dup`]        — duplicate a file descriptor to the lowest free slot
 //! - [`sys_dup2`]       — duplicate a file descriptor to a specific slot
 //! - [`sys_pipe`]       — create an anonymous pipe, allocating two fds
+//! - [`sys_vfs_poll`]   — poll a set of fds for readiness (POSIX-style)
 
 use alloc::vec;
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::vfs_flags;
+use abi::syscall::{poll_flags, vfs_flags, PollFd};
 
 use crate::syscall::validate::{copyin, copyout, validate_user_range};
 use crate::vfs::{self, OpenFlags};
@@ -355,4 +356,129 @@ pub fn sys_vfs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     vfs::mount::umount(path)?;
     crate::kinfo!("vfs: unmounted userland provider at {}", path);
     Ok(0)
+}
+
+// ── poll ────────────────────────────────────────────────────────────────────
+
+/// POSIX-style poll over VFS file descriptors.
+///
+/// Examines each entry in the `pollfds` array and sets `revents` on those
+/// that are immediately ready.  `timeout_ms` is currently **ignored** — the
+/// syscall returns immediately (non-blocking poll).  A blocking variant that
+/// parks the calling task will be added once a generic fd-readiness wait
+/// mechanism is in place.
+///
+/// # Arguments
+/// - `pollfds_ptr` — pointer to a `[PollFd; nfds]` in user memory (read/write)
+/// - `nfds`         — number of entries in the array
+/// - `_timeout_ms`  — milliseconds to wait (currently unused; returns immediately)
+///
+/// # Returns
+/// The number of entries with non-zero `revents`, or an errno on error.
+pub fn sys_vfs_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysResult<usize> {
+    const MAX_POLLFDS: usize = 256;
+    if nfds == 0 {
+        return Ok(0);
+    }
+    if nfds > MAX_POLLFDS {
+        return Err(Errno::EINVAL);
+    }
+
+    let byte_len = nfds * core::mem::size_of::<PollFd>();
+    validate_user_range(pollfds_ptr, byte_len, true)?;
+
+    // Copy all PollFd entries from userspace.
+    let mut kfds = vec![PollFd::default(); nfds];
+    unsafe {
+        copyin(
+            core::slice::from_raw_parts_mut(kfds.as_mut_ptr() as *mut u8, byte_len),
+            pollfds_ptr,
+        )?
+    };
+
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let mut ready_count = 0usize;
+
+    for kfd in kfds.iter_mut() {
+        kfd.revents = 0;
+
+        if kfd.fd < 0 {
+            // Negative fd → skip (POSIX says ignore these).
+            continue;
+        }
+
+        let fd = kfd.fd as u32;
+
+        // Try to get the node; POLLNVAL if the fd is not open.
+        let node_opt = {
+            let lock = pinfo_arc.lock();
+            lock.fd_table.get(fd).ok().map(|f| f.node.clone())
+        };
+
+        let node = match node_opt {
+            Some(n) => n,
+            None => {
+                kfd.revents |= poll_flags::POLLNVAL;
+                ready_count += 1;
+                continue;
+            }
+        };
+
+        // Determine readiness by checking the node's stat.  For now we use a
+        // simple heuristic: regular files and character devices are always
+        // ready; pipes report readiness based on whether any data is available.
+        let stat = node.stat().unwrap_or_default();
+        let is_pipe = stat.is_fifo();
+        let is_chr = stat.is_chr();
+        let is_reg = stat.is_reg();
+        let is_dir = stat.is_dir();
+
+        let mut revents: u16 = 0;
+
+        if (kfd.events & poll_flags::POLLIN) != 0 {
+            // Regular files and char devices are always readable.
+            if is_reg || is_dir {
+                revents |= poll_flags::POLLIN;
+            } else if is_chr {
+                // Character device (e.g. /dev/console): probe by attempting a
+                // non-blocking zero-byte-sized read — the node signals
+                // readiness by succeeding rather than returning EAGAIN.
+                let mut probe = [0u8; 0];
+                match node.read(0, &mut probe) {
+                    Err(Errno::EAGAIN) => {} // not ready
+                    _ => revents |= poll_flags::POLLIN,
+                }
+            } else if is_pipe {
+                // Attempt a zero-byte read; EAGAIN means no data available.
+                let mut probe = [0u8; 0];
+                match node.read(0, &mut probe) {
+                    Err(Errno::EAGAIN) => {}
+                    _ => revents |= poll_flags::POLLIN,
+                }
+            }
+        }
+
+        if (kfd.events & poll_flags::POLLOUT) != 0 {
+            // Files and character devices (including pipes write end) are
+            // assumed always writable for this initial implementation.
+            if is_reg || is_chr || is_pipe {
+                revents |= poll_flags::POLLOUT;
+            }
+        }
+
+        kfd.revents = revents;
+        if revents != 0 {
+            ready_count += 1;
+        }
+    }
+
+    // Write the updated PollFd array back to userspace.
+    unsafe {
+        copyout(
+            pollfds_ptr,
+            core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+        )?
+    };
+
+    Ok(ready_count)
 }

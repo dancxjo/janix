@@ -77,8 +77,8 @@ pub use port::{
     topic_create, topic_publish, topic_subscribe, PortHandle,
 };
 pub use vfs::{
-    vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_read, vfs_readdir, vfs_umount, vfs_unlink,
-    vfs_write,
+    dup, dup2, pipe, vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,
+    vfs_umount, vfs_unlink, vfs_write,
 };
 pub use wait::wait_many;
 

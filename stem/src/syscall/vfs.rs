@@ -6,8 +6,9 @@
 
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{
-    SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_READDIR,
-    SYS_VFS_UMOUNT, SYS_VFS_UNLINK, SYS_VFS_WRITE,
+    PollFd, SYS_DUP, SYS_DUP2, SYS_PIPE, SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT,
+    SYS_VFS_OPEN, SYS_VFS_POLL, SYS_VFS_READ, SYS_VFS_READDIR, SYS_VFS_UMOUNT, SYS_VFS_UNLINK,
+    SYS_VFS_WRITE,
 };
 
 use super::arch::raw_syscall6;
@@ -165,4 +166,73 @@ pub fn vfs_umount(path: &str) -> SysResult<()> {
         )
     };
     abi::errors::errno(ret).map(|_| ())
+}
+
+/// Duplicate `old_fd` to the lowest available file descriptor.
+///
+/// Returns the new file descriptor on success.
+pub fn dup(old_fd: u32) -> SysResult<u32> {
+    let ret = unsafe { raw_syscall6(SYS_DUP, old_fd as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Duplicate `old_fd` to `new_fd`, closing `new_fd` first if it is open.
+///
+/// Returns `new_fd` on success.
+pub fn dup2(old_fd: u32, new_fd: u32) -> SysResult<u32> {
+    let ret =
+        unsafe { raw_syscall6(SYS_DUP2, old_fd as usize, new_fd as usize, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Create an anonymous VFS pipe, writing the read and write file descriptors
+/// into `pipefd[0]` and `pipefd[1]` respectively.
+///
+/// Returns `Ok(())` on success.
+pub fn pipe(pipefd: &mut [u32; 2]) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_PIPE,
+            pipefd.as_mut_ptr() as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Poll a set of VFS file descriptors for I/O readiness.
+///
+/// Fills in `pollfds[i].revents` for each entry and returns the number of
+/// entries with non-zero `revents`.  `timeout_ms` is the maximum number of
+/// milliseconds to wait; pass `-1i64 as u64` to wait indefinitely (note:
+/// blocking is not yet implemented — the call returns immediately).
+///
+/// # Example
+/// ```no_run
+/// use abi::syscall::{PollFd, poll_flags};
+/// use stem::syscall::vfs_poll;
+/// let mut fds = [PollFd { fd: 0, events: poll_flags::POLLIN, revents: 0 }];
+/// let n = vfs_poll(&mut fds, u64::MAX).unwrap();
+/// if n > 0 { /* fd 0 is readable */ }
+/// ```
+pub fn vfs_poll(pollfds: &mut [PollFd], timeout_ms: u64) -> SysResult<usize> {
+    if pollfds.is_empty() {
+        return Ok(0);
+    }
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_POLL,
+            pollfds.as_mut_ptr() as usize,
+            pollfds.len(),
+            timeout_ms as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
 }

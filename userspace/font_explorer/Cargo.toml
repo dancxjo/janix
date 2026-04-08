@@ -1,8 +1,0 @@
-[package]
-name = "font_explorer"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-stem = { path = "../../stem", features = ["rt"] }
-abi = { path = "../../abi" }

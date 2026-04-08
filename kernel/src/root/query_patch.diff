@@ -1,0 +1,85 @@
+--- kernel/src/syscall/handlers/root_handlers.rs
++++ kernel/src/syscall/handlers/root_handlers.rs
+@@ -148,82 +148,7 @@
+     out_cap: usize,
+ ) -> SysResult<usize> {
+-    use crate::root::query::PreparedStep;
+-    use abi::query::{QueryRow, QueryStep};
+-
+-    let step_size = core::mem::size_of::<QueryStep>();
+-    let total_plan_bytes = plan_len * step_size;
+-    validate_user_range(plan_ptr, total_plan_bytes, false)?;
+-
+-    if plan_len > 8 {
+-        return Err(Errno::EINVAL);
+-    }
+-
+-    let mut steps = alloc::vec::Vec::with_capacity(plan_len);
+-    for i in 0..plan_len {
+-        let ptr = plan_ptr + i * step_size;
+-        let mut step: QueryStep = unsafe { core::mem::zeroed() };
+-        let slice =
+-            unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
+-        unsafe {
+-            copyin(slice, ptr)?;
+-        }
+-
+-        let sym_id = match step.symbol.tag {
+-            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
+-            abi::symbols::SYMBOL_REF_TAG_STR => {
+-                let s_ptr = step.symbol.ptr_or_id as usize;
+-                let s_len = step.symbol.len as usize;
+-                if s_len > 256 {
+-                    return Err(Errno::EINVAL);
+-                }
+-                validate_user_range(s_ptr, s_len, false)?;
+-                let mut buf = [0u8; 256];
+-                unsafe {
+-                    copyin(&mut buf[..s_len], s_ptr)?;
+-                }
+-                let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+-                let intern_msg = RootOp::Intern {
+-                    name: String::from(s),
+-                };
+-                let id = root_call(intern_msg)?;
+-                id as u32
+-            }
+-            _ => return Err(Errno::EINVAL),
+-        };
+-
+-        steps.push(PreparedStep {
+-            op: step.op,
+-            arg1: step.arg1,
+-            arg2: step.arg2,
+-            symbol: sym_id,
+-        });
+-    }
+-
+-    let row_size = core::mem::size_of::<QueryRow>();
+-    let total_out_bytes = out_cap * row_size;
+-    validate_user_range(out_ptr, total_out_bytes, true)?;
+-
+-    let safe_cap = core::cmp::min(out_cap, 1024);
+-    let mut kbuf = alloc::vec![QueryRow::default(); safe_cap];
+-
+-    let msg = RootOp::Query {
+-        plan: steps,
+-        out_buffer: kbuf.as_mut_ptr() as u64,
+-        out_len: (safe_cap * row_size) as u64,
+-    };
+-
+-    let count = root_call(msg)?;
+-
+-    let rows_found = count;
+-    let rows_to_copy = core::cmp::min(rows_found, safe_cap);
+-    let bytes_to_copy = rows_to_copy * row_size;
+-
+-    let src = unsafe { core::slice::from_raw_parts(kbuf.as_ptr() as *const u8, bytes_to_copy) };
+-    unsafe {
+-        copyout(out_ptr, src)?;
+-    }
+-
+-    Ok(rows_to_copy)
++    let _ = (plan_ptr, plan_len, out_ptr, out_cap);
++    Err(Errno::ENOSYS)
+ }

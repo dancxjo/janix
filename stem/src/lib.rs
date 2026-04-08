@@ -16,21 +16,21 @@ pub mod console;
 pub mod css;
 pub mod device;
 pub mod errors;
-pub mod graph_wait;
+
 #[cfg(feature = "global-alloc")]
 pub mod heap;
 pub mod html;
 pub mod i18n;
 #[cfg(feature = "rt")]
 pub mod memory;
-pub mod net;
+
 /// Platform Abstraction Layer - explicit platform contract
 pub mod pal;
 pub mod panic;
 pub mod pci;
 pub mod perf;
 pub mod petals;
-pub mod root_watch;
+
 pub mod rt;
 pub mod simd;
 pub mod stack;

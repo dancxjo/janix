@@ -1,6 +1,8 @@
 //! Shared types used in syscall payloads.
 //! Must be #[repr(C)] to ensure stable layout.
 
+use crate::{SymbolId, BlobId};
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TimeSpec {

@@ -1,5 +1,7 @@
 //! Disk Probe Utility
-//!
+//! 
+//! TODO: Convert this to a `vfs_provider` like `vfs_hello`.
+//! 
 //! Lists all detected disks in the system graph and displays their properties.
 //! This is a diagnostic tool to verify disk discovery is working.
 

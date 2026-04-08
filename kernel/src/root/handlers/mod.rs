@@ -1,21 +1,14 @@
 //! Root service message handlers, organized by domain.
 
-pub mod batch;
 pub mod bytespace;
-pub mod debug;
-pub mod encode;
-pub mod graph;
-pub mod logging;
-pub mod stream;
-pub mod watch_payload;
-
 pub use bytespace::*;
-pub use debug::*;
-pub use graph::*;
-pub use logging::*;
-pub use stream::*;
-pub mod watch;
-pub use watch::*;
+
+use crate::root::symbols::Interner;
 
 /// Common handler result type: (status, value)
 pub type HandlerResult = (i32, u64);
+
+pub fn handle_intern(interner: &mut Interner, name: &str) -> HandlerResult {
+    let id = interner.intern(name);
+    (0, id as u64)
+}

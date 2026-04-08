@@ -13,12 +13,8 @@ pub mod driver_frame;
 pub mod errors;
 pub mod geometry;
 pub mod ids;
-pub mod kinds;
 pub mod module;
 pub mod module_manifest;
-pub mod names;
-
-pub mod query;
 pub mod root;
 pub mod schema;
 pub mod service_contract;
@@ -31,7 +27,6 @@ pub mod ui_event;
 pub mod ui_paint;
 pub mod vm;
 pub mod wait;
-pub mod watch;
 
 pub mod font;
 pub mod font_protocol;
@@ -40,7 +35,7 @@ pub mod logging;
 pub mod pixel;
 pub mod svg_protocol;
 
-pub mod graphable;
+
 pub mod macros;
 pub mod packed;
 pub mod thing;
@@ -50,7 +45,6 @@ pub mod wire_schema;
 
 pub use abi_macros::Graphable;
 pub use errors::{Error, Result};
-pub use graphable::Graphable;
 pub use thing::Thing;
 pub use wire::{BlobId, KindId, PredicateId, SymbolId, ThingId, WireSafe};
 pub use wire_schema::{Field, Schema, WireType};

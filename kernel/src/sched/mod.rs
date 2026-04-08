@@ -8,12 +8,9 @@
 //! - `stack`: User stack allocation and fault handling
 //! - `sleep`: Timing and yield functions
 //! - `events`: Lock-free scheduler event types
-//! - `ring`: SPSC ring buffer for scheduler events
 
 pub(crate) mod blocking;
-pub mod events;
 mod hooks;
-pub(crate) mod ring;
 mod sleep;
 mod spawn;
 mod stack;
@@ -277,17 +274,12 @@ pub fn init<R: BootRuntime>() {
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
-        // Initialize per-CPU event rings
         let cpu_total = if let Some(ptr) = *lock {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
             sched.total_cpu_count
         } else {
             1
         };
-        for cpu in 0..cpu_total {
-            ring::init_ring(cpu);
-        }
-        crate::kinfo!("  Initialized {} event ring(s)", cpu_total);
         crate::contract!("Scheduler initialized");
     }
 }
@@ -364,18 +356,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     // Boot task runs on CPU 0
     sched.state.per_cpu[0].current = Some(0);
 
-    // Queue graph node creation for the boot task
-    crate::sched::ring::push_task_created::<R>(
-        0,
-        TaskPriority::Normal as u8,
-        false,
-        Some("boot"),
-        None,
-        0,
-    );
-    crate::sched::ring::push_task_state::<R>(0, "running");
     // Link boot task to CPU 0
-    crate::sched::ring::push_task_location::<R>(0, 0);
 
     crate::kinfo!("  Creating idle tasks...");
 
@@ -408,8 +389,6 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         if let Some(mut t) = crate::task::registry::get_task_mut::<R>(idle_id) {
             t.affinity = crate::task::Affinity::Pinned(i);
         }
-        crate::sched::ring::push_task_affinity::<R>(idle_id, i);
-        crate::sched::ring::push_task_name::<R>(idle_id, Some(&alloc::format!("idle/{}", i)));
     }
 
     crate::kinfo!("  Boot task initialized");
@@ -560,7 +539,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                     }
 
-                    crate::sched::ring::push_task_state::<R>(tid, "runnable");
                 }
             } else {
                 break;
@@ -916,10 +894,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         let waiters = mark_task_exited::<R>(self, current_id, code);
 
-        // Queue graph state update and exit code (processed asynchronously by
-        // the graph-observer background task — no Root call here).
-        crate::sched::ring::push_task_state::<R>(current_id, "dead");
-        crate::sched::ring::push_task_exited::<R>(current_id, code);
 
         // Release any claimed devices
         crate::device_registry::REGISTRY
@@ -939,8 +913,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
             crate::task::registry::get_registry::<R>().tasks[idx].priority = priority;
             crate::task::registry::get_registry::<R>().tasks[idx].base_priority = priority; // Update base priority for anti-starvation
 
-            // Queue graph priority property update
-            crate::sched::ring::push_task_priority::<R>(id, priority as u8);
 
             // If it's runnable and in a runq, move it to the new runq
             if crate::task::registry::get_registry::<R>().tasks[idx].state == TaskState::Runnable {
@@ -1178,12 +1150,8 @@ fn wake_waiters(waiters: &[u64]) {
     }
 }
 
-/// Get the graph ThingId for the current task, if any.
 fn graph_thing_for_current_impl<R: BootRuntime>() -> Option<u64> {
-    let rt = crate::runtime::<R>();
-    let tid = rt.current_tid();
-    // Delegate to the graph layer's TASK_GRAPH map (no SCHEDULER.lock() needed).
-    crate::task::graphify::graph_thing_for_tid(tid)
+    None
 }
 
 pub fn exit<R: BootRuntime>(code: i32) {
@@ -1255,10 +1223,6 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
                             !tids.is_empty()
                         });
 
-                        // Queue graph state update (processed asynchronously by
-                        // the graph-observer background task — no Root call here).
-                        crate::sched::ring::push_task_state::<R>(tid, "dead");
-                        crate::sched::ring::push_task_exited::<R>(tid, -9);
 
                         // Release any claimed devices
                         crate::device_registry::REGISTRY
@@ -1462,7 +1426,6 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
 
     // Enter scheduler loop via the hook which bootstraps this CPU.
     // The run_scheduler hook will call bootstrap_cpu to set up this CPU's
-    // current task before entering the yield loop.
     if let Some(hook) = unsafe { hooks::RUN_SCHEDULER_HOOK } {
         hook();
     } else {

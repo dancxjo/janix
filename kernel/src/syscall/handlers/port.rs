@@ -337,3 +337,52 @@ pub fn sys_topic_publish(topic_id: usize, ptr: usize, len: usize) -> SysResult<u
     let topic_id = crate::ipc::TopicId(topic_id as u32);
     crate::ipc::publish_topic(topic_id, &buf[..len])
 }
+
+pub fn sys_port_send_fd(handle: usize, fd: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let vfs_node = {
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        file.node.clone()
+    };
+
+    let handle = crate::ipc::Handle(handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(handle, crate::ipc::HandleMode::Write)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    port.send_cap(vfs_node);
+    Ok(0)
+}
+
+pub fn sys_port_recv_fd(handle: usize, out_fd_ptr: usize) -> SysResult<usize> {
+    validate_user_range(out_fd_ptr, 4, true)?;
+
+    let handle = crate::ipc::Handle(handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(handle, crate::ipc::HandleMode::Read)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    let cap = port.try_recv_cap().ok_or(Errno::EAGAIN)?;
+
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let new_fd = pinfo_arc
+        .lock()
+        .fd_table
+        .open(cap, crate::vfs::OpenFlags::read_write())?;
+
+    let new_fd_bytes = new_fd.to_ne_bytes();
+    unsafe { super::copyout(out_fd_ptr, &new_fd_bytes)? };
+
+    Ok(0)
+}

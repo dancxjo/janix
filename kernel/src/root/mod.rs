@@ -26,8 +26,6 @@ use spin::Mutex;
 
 pub mod abi;
 pub mod async_ops;
-pub mod graph;
-pub mod graph_anchors;
 pub mod handlers;
 pub mod journal;
 pub mod pci;
@@ -447,8 +445,24 @@ pub mod debug {
         }
     }
 }
-pub mod boot_register;
-pub mod debug_dump;
-pub mod debug_fmt;
-pub mod query;
 pub mod symbols;
+
+// Dummy structs to satisfy legacy `RootOp` payload types while they are being phased out
+pub mod query {
+    #[derive(Debug, Clone)]
+    pub struct PreparedStep {
+        pub op: u8,
+        pub arg1: u64,
+        pub arg2: u64,
+        pub symbol: u32,
+    }
+}
+pub mod graph {
+    #[derive(Debug, Clone, Default)]
+    pub struct WatchFilter {
+        pub flags: u32,
+        pub kind_id: u32,
+        pub predicate_id: u32,
+        pub subject_lo: u64,
+    }
+}

@@ -1,7 +1,0 @@
-[package]
-name = "scheduler_fairness"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-stem = { path = "../../stem", default-features = true, features = ["rt"] }

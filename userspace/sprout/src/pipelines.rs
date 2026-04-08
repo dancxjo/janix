@@ -703,29 +703,12 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_taskman_service(tasks: &mut Vec<ManagedTask>) {
-    match stem::syscall::spawn_process("/taskman", 0) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned taskman (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2); // Normal priority
-            tasks.push(ManagedTask {
-                name: "/taskman".to_string(),
-                kind: TaskKind::Service("svc.taskman".to_string()),
-                module_path: "/taskman".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-            });
-        }
-        Err(e) => {
-            warn!("SPROUT: Failed to spawn taskman: {:?}", e);
-        }
-    }
+pub fn setup_taskman_service(_tasks: &mut Vec<ManagedTask>) {
+    // Taskman removed
 }
 
 pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
     spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
-    spawn_ui_service(tasks, "/fontd", "svc.fontd", 2);
     spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
 }
 
@@ -733,8 +716,8 @@ pub fn setup_blossom_service(tasks: &mut Vec<ManagedTask>) {
     spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
 }
 
-pub fn setup_font_service(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/fontd", "svc.fontd", 2);
+pub fn setup_font_service(_tasks: &mut Vec<ManagedTask>) {
+    // Font handling is integrated into Bloom directly
 }
 
 pub fn setup_flytrap_service(tasks: &mut Vec<ManagedTask>) {

@@ -1,9 +1,7 @@
 use abi::ids::HandleId;
-use abi::query::QueryRow;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
-use stem::thing::query::RestrictedQuery;
 use stem::thing::sys::get_kind;
 use stem::thing::ThingId;
 
@@ -822,26 +820,7 @@ impl UiSnapshot {
     }
 
     fn fetch_children(&self, id: ThingId, _keys: &UiKeys) -> Vec<ThingId> {
-        let mut children = Vec::new();
-        // Use stack buffer for query rows
-        let mut q_buf = [QueryRow::default(); 64];
-        let mut q = RestrictedQuery::new(&mut q_buf);
-
-        {
-            crate::trace_span!("snap.refresh_node_edges");
-            crate::trace_counter!("snap.syscalls.query", 1);
-            // Use "has_child" directly to filter in kernel
-            if let Ok(count) = q.get_edges(id, Some("has_child"), 64) {
-                for i in 0..count {
-                    let row = &q.buf[i];
-                    let target_id = ThingId::from_u64(row.val_dst);
-                    if target_id != id {
-                        children.push(target_id);
-                    }
-                }
-            }
-        }
-        children
+        Vec::new()
     }
 
     fn fetch_properties(

@@ -16,17 +16,9 @@ mod dhcp;
 mod dns;
 mod driver_protocol;
 mod ipc_device;
-mod net_mirror;
 mod socket_api;
-
 use abi::schema::keys;
-use alloc::format;
-use alloc::vec;
 use ipc_device::IpcNicDevice;
-use net_mirror::{
-    default_routes_from_gateway, stable_iface_key_from_mac, AddressSnapshot, IfaceSnapshot,
-    NetGraphMirror, NetSnapshot,
-};
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use socket_api::SocketApi;
@@ -44,8 +36,15 @@ fn main(_arg: usize) -> ! {
 
     // Wait for virtio_netd to be ready via the Graph
     info!("NETD: Looking for virtio_netd driver service...");
-    let kind = stem::thing::sys::intern(KIND_NET_DRIVER).unwrap_or(0) as u64;
-    let _ = stem::thing::discovery::wait_for_kind(kind);
+    loop {
+        let mut ids = [ThingId::default(); 1];
+        if let Ok(n) = thingsys::find(KIND_NET_DRIVER, &mut ids) {
+            if n > 0 {
+                break;
+            }
+        }
+        stem::time::sleep_ms(100);
+    }
 
     let (tx_port, rx_port, mac, initial_link_up, iface_mtu) = find_driver_service()
         .expect("NETD: Driver disappeared immediately after graph discovery");
@@ -97,36 +96,6 @@ fn main(_arg: usize) -> ! {
 
     info!("NETD: Published initial stack node {:?} to graph", net_id);
 
-    let mut _net_mirror = match NetGraphMirror::new() {
-        Ok(m) => m,
-        Err(e) => {
-            warn!("NETD: Failed to initialize net graph mirror: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
-    // Defer first graph refresh to allow network I/O to process unimpeded.
-    // Graph operations block on Root service IPC and can stall for 100s+ ms,
-    // which would freeze the entire network stack if triggered early.
-    let boot_ms = stem::time::now().as_millis() as u64;
-    let mut _next_mirror_refresh_ms = boot_ms.saturating_add(60_000);
-    let _bootstrap_snapshot = NetSnapshot {
-        iface: IfaceSnapshot {
-            stable_key: stable_iface_key_from_mac(mac),
-            name: "eth0".into(),
-            mac_packed,
-            mtu: device.mtu(),
-            link_up: device.link_up(),
-            driver: KIND_NET_DRIVER.into(),
-            speed_mbps: None,
-        },
-        addrs: vec![],
-        routes: vec![],
-    };
-    // DEFERRED: bootstrap graph apply moved to cold path in main loop.
-    // net_mirror.apply blocks on Root service IPC which can stall the entire
-    // network stack before it even starts processing frames.
     let mut _last_link_state = device.link_up();
 
     // Start DHCP
@@ -180,34 +149,6 @@ fn main(_arg: usize) -> ! {
         dhcp_config.ip, dhcp_config.gateway, dhcp_config.dns
     );
 
-    let gateway = dhcp_config.gateway.as_bytes();
-    let mut routes = default_routes_from_gateway([gateway[0], gateway[1], gateway[2], gateway[3]]);
-    let _initial_snapshot = NetSnapshot {
-        iface: IfaceSnapshot {
-            stable_key: stable_iface_key_from_mac(mac),
-            name: "eth0".into(),
-            mac_packed,
-            mtu: device.mtu(),
-            link_up: device.link_up(),
-            driver: KIND_NET_DRIVER.into(),
-            speed_mbps: None,
-        },
-        addrs: vec![AddressSnapshot {
-            family: "ipv4".into(),
-            ip: format!(
-                "{}.{}.{}.{}",
-                dhcp_config.ip.as_bytes()[0],
-                dhcp_config.ip.as_bytes()[1],
-                dhcp_config.ip.as_bytes()[2],
-                dhcp_config.ip.as_bytes()[3]
-            ),
-            prefix: dhcp_config.prefix_len,
-        }],
-        routes: routes.clone(),
-    };
-    // DEFERRED: initial graph snapshot moved to cold path in main loop.
-    // net_mirror.apply blocks on Root service IPC.
-    // The very first cold path iteration will apply the full snapshot.
 
     info!("NETD: Network stack ready, entering service loop");
 

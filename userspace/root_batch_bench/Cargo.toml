@@ -1,8 +1,0 @@
-[package]
-name = "root_batch_bench"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-stem = { path = "../../stem", features = ["rt"] }
-abi = { path = "../../abi" }

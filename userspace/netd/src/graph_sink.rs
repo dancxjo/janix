@@ -1,6 +1,6 @@
 //! Graph storage for fetched network resources
 
-use abi::kinds::*;
+use abi::schema::kinds::*;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;

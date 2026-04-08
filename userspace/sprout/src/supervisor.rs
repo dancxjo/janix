@@ -1,6 +1,6 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
-use abi::kinds as abi_kinds;
+use abi::schema::kinds as abi_kinds;
 use abi::schema::keys;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -47,10 +47,6 @@ impl Supervisor {
         /*
         crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
-        crate::pipelines::setup_taskman_service(&mut self.tasks);
-        crate::pipelines::setup_font_service(&mut self.tasks);
-        crate::pipelines::setup_blossom_service(&mut self.tasks);
-        crate::pipelines::setup_flytrap_service(&mut self.tasks);
 
         stem::sleep_ms(100);
 
@@ -206,18 +202,6 @@ impl Supervisor {
             info!("SPROUT:   describe: <failed>");
         }
 
-        if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
-            let edges = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
-            if edges.trim().is_empty() {
-                info!("SPROUT:   edges: (none)");
-            } else {
-                for line in edges.lines() {
-                    info!("SPROUT:   edge: {}", line);
-                }
-            }
-        } else {
-            info!("SPROUT:   edges: <failed>");
-        }
     }
 
     fn spawn_apps(&mut self) {
@@ -239,8 +223,8 @@ impl Supervisor {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
 
-                        // If it's flytrap, seed initial requests immediately after launch
-                        if task.name.contains("flytrap") {
+                        // If it's bloom, seed initial requests immediately after launch
+                        if task.name.contains("bloom") {
                             seed_asset_requests();
                         }
 
@@ -402,7 +386,7 @@ fn seed_asset_requests() {
     ];
 
     for (name, kind) in requests {
-        if let Ok(req_id) = thingsys::create_node(abi_kinds::KIND_ASSET_REQUEST) {
+        if let Ok(req_id) = thingsys::create_node(abi_kinds::ASSET_REQUEST) {
             if let Ok(name_sym) = thingsys::intern(name) {
                 let _ = thingsys::prop_set(req_id, keys::ASSET_NAME, name_sym as u64);
             }

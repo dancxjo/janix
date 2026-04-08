@@ -85,7 +85,10 @@ pub const SYS_TOPIC_SUBSCRIBE: u32 = 0x88;
 pub const SYS_TOPIC_PUBLISH: u32 = 0x89;
 /// Non-blocking receive. Returns EAGAIN when no message is queued.
 pub const SYS_PORT_TRY_RECV: u32 = 0x8A;
-
+/// Send a file descriptor alongside an empty or tiny payload. Args: handle, fd.
+pub const SYS_PORT_SEND_FD: u32 = 0x8B;
+/// Receive a file descriptor. Args: handle, out_fd_ptr.
+pub const SYS_PORT_RECV_FD: u32 = 0x8C;
 pub mod port_wait {
     pub const READABLE: u32 = 1 << 0;
     pub const WRITABLE: u32 = 1 << 1;

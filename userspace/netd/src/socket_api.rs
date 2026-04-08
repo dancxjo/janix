@@ -13,8 +13,6 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::dns;
 use crate::ipc_device::IpcNicDevice;
-use stem::net;
-use stem::net::conn_graph;
 use stem::thing::ThingId;
 use stem::{debug, info, trace, warn};
 
@@ -181,28 +179,12 @@ impl SocketApi {
         format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
     }
 
-    fn socket_key(owner_tid: u64, socket_id: u64, kind: SocketType) -> u64 {
-        let proto_tag = match kind {
-            SocketType::Tcp => 1u64,
-            SocketType::Udp => 2u64,
-        };
-        conn_graph::hash64_u64s(&[owner_tid, socket_id, proto_tag])
+    fn socket_key(_owner_tid: u64, _socket_id: u64, _kind: SocketType) -> u64 {
+        0
     }
 
-    fn connection_key(owner_tid: u64, local: EndpointV4, remote: EndpointV4, start_ms: u64) -> u64 {
-        let l = local.ip.as_bytes();
-        let r = remote.ip.as_bytes();
-        let local_ip = u32::from_le_bytes([l[0], l[1], l[2], l[3]]) as u64;
-        let remote_ip = u32::from_le_bytes([r[0], r[1], r[2], r[3]]) as u64;
-        conn_graph::hash64_u64s(&[
-            1, // tcp
-            owner_tid,
-            local_ip,
-            local.port as u64,
-            remote_ip,
-            remote.port as u64,
-            start_ms,
-        ])
+    fn connection_key(_owner_tid: u64, _local: EndpointV4, _remote: EndpointV4, _start_ms: u64) -> u64 {
+        0
     }
 
     fn tcp_state_label(state: TcpState) -> &'static str {
@@ -302,208 +284,17 @@ impl SocketApi {
         managed
     }
 
-    fn sync_local_edge(managed: &ManagedSocket) {
-        if let Some(local) = managed.local {
-            let ip = Self::endpoint_ip_string(local);
-            if let Ok(local_id) =
-                conn_graph::ensure_endpoint_node(managed.proto_str(), &ip, local.port)
-            {
-                net::ensure_edge(managed.socket_node, net::preds::SOCKET_HAS_LOCAL, local_id).ok();
-            }
-        }
-    }
+    fn sync_local_edge(_managed: &ManagedSocket) {}
 
-    fn sync_remote_edge(managed: &ManagedSocket) {
-        if let Some(remote) = managed.remote {
-            let ip = Self::endpoint_ip_string(remote);
-            if let Ok(remote_id) =
-                conn_graph::ensure_endpoint_node(managed.proto_str(), &ip, remote.port)
-            {
-                net::ensure_edge(
-                    managed.socket_node,
-                    net::preds::SOCKET_HAS_REMOTE,
-                    remote_id,
-                )
-                .ok();
-                if let Some(conn_id) = managed.connection_node {
-                    net::ensure_edge(conn_id, net::preds::CONNECTION_PEER, remote_id).ok();
-                }
-            }
-        }
-    }
+    fn sync_remote_edge(_managed: &ManagedSocket) {}
 
-    fn ensure_tcp_connection(managed: &mut ManagedSocket, now_ms: u64, initial_state: &str) {
-        if managed.kind != SocketType::Tcp || managed.connection_node.is_some() {
-            return;
-        }
-        let (Some(local), Some(remote)) = (managed.local, managed.remote) else {
-            return;
-        };
+    fn ensure_tcp_connection(_managed: &mut ManagedSocket, _now_ms: u64, _initial_state: &str) {}
 
-        let conn_key = Self::connection_key(managed.owner_tid, local, remote, now_ms);
-        let Ok(conn_id) = conn_graph::ensure_connection_node(conn_key) else {
-            return;
-        };
+    fn flush_managed_socket_tcp<'a>(_managed: &mut ManagedSocket, _socket_set: &mut SocketSet<'a>, _now_ms: u64) {}
 
-        conn_graph::set_sym_if_changed(conn_id, net::props::CONN_STATE, initial_state).ok();
-        conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_TX, managed.bytes_tx).ok();
-        conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_RX, managed.bytes_rx).ok();
-        conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_TX, managed.packets_tx).ok();
-        conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_RX, managed.packets_rx).ok();
-        conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
+    fn flush_managed_socket_udp(_managed: &ManagedSocket, _now_ms: u64) {}
 
-        net::ensure_edge(
-            managed.socket_node,
-            net::preds::SOCKET_HAS_CONNECTION,
-            conn_id,
-        )
-        .ok();
-        managed.connection_node = Some(conn_id);
-        Self::sync_remote_edge(managed);
-    }
-
-    fn flush_managed_socket_tcp<'a>(
-        managed: &mut ManagedSocket,
-        socket_set: &mut SocketSet<'a>,
-        now_ms: u64,
-    ) {
-        let state = if managed.is_listener {
-            TcpState::Listen
-        } else {
-            socket_set.get_mut::<TcpSocket>(managed.handle).state()
-        };
-        conn_graph::set_sym_if_changed(
-            managed.socket_node,
-            net::props::SOCK_STATE,
-            Self::socket_state_label(managed, Some(state)),
-        )
-        .ok();
-
-        if let Some(conn_id) = managed.connection_node {
-            conn_graph::set_sym_if_changed(
-                conn_id,
-                net::props::CONN_STATE,
-                Self::tcp_state_label(state),
-            )
-            .ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_TX, managed.bytes_tx).ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_RX, managed.bytes_rx).ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_TX, managed.packets_tx)
-                .ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_RX, managed.packets_rx)
-                .ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
-            if managed.last_error_sym != 0 {
-                conn_graph::set_if_changed(
-                    conn_id,
-                    net::props::CONN_LAST_ERROR,
-                    managed.last_error_sym,
-                )
-                .ok();
-            }
-        }
-    }
-
-    fn flush_managed_socket_udp(managed: &ManagedSocket, now_ms: u64) {
-        conn_graph::set_sym_if_changed(
-            managed.socket_node,
-            net::props::SOCK_STATE,
-            Self::socket_state_label(managed, None),
-        )
-        .ok();
-        if let Some(conn_id) = managed.connection_node {
-            conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_TX, managed.bytes_tx).ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_BYTES_RX, managed.bytes_rx).ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_TX, managed.packets_tx)
-                .ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_PACKETS_RX, managed.packets_rx)
-                .ok();
-            conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
-            if managed.last_error_sym != 0 {
-                conn_graph::set_if_changed(
-                    conn_id,
-                    net::props::CONN_LAST_ERROR,
-                    managed.last_error_sym,
-                )
-                .ok();
-            }
-        }
-    }
-
-    pub fn flush_graph<'a>(&mut self, socket_set: &mut SocketSet<'a>, now_ms: u64) {
-        if now_ms < self.next_graph_flush_ms {
-            return;
-        }
-        self.next_graph_flush_ms = now_ms.saturating_add(10_000);
-
-        let handles: Vec<u32> = self.sockets.keys().copied().collect();
-        for api_handle in handles {
-            let Some(managed) = self.sockets.get_mut(&api_handle) else {
-                continue;
-            };
-
-            // Lazily initialize graph nodes for new sockets
-            if managed.graph_dirty {
-                if let Some(key) = managed.socket_key {
-                    if let Ok(node) = conn_graph::ensure_socket_node(key) {
-                        managed.socket_node = node;
-                        conn_graph::set_sym_if_changed(
-                            node,
-                            net::props::SOCK_PROTO,
-                            managed.proto_str(),
-                        )
-                        .ok();
-                        conn_graph::set_sym_if_changed(
-                            node,
-                            net::props::SOCK_STATE,
-                            if managed.is_listener {
-                                "listening"
-                            } else if managed.local.is_some() {
-                                "bound"
-                            } else {
-                                "created"
-                            },
-                        )
-                        .ok();
-                        conn_graph::set_if_changed(node, net::props::SOCK_FD, api_handle as u64)
-                            .ok();
-                        conn_graph::set_if_changed(node, net::props::SOCK_PID, managed.owner_tid)
-                            .ok();
-                        conn_graph::set_if_changed(
-                            node,
-                            net::props::SOCK_CREATED_AT,
-                            managed.last_seen_ms,
-                        )
-                        .ok();
-
-                        if managed.owner_tid != 0 {
-                            if let Some(owner_node) =
-                                conn_graph::find_thread_node_by_tid(managed.owner_tid)
-                                    .ok()
-                                    .flatten()
-                            {
-                                net::ensure_edge(owner_node, net::preds::PROC_OWNS_SOCKET, node)
-                                    .ok();
-                            }
-                        }
-                    }
-                }
-                managed.graph_dirty = false;
-                managed.socket_key = None; // Consumed
-            }
-
-            // Only sync graph edges if the socket node was successfully initialized
-            if managed.socket_node != ThingId::default() {
-                Self::sync_local_edge(managed);
-                Self::sync_remote_edge(managed);
-                if managed.kind == SocketType::Tcp {
-                    Self::flush_managed_socket_tcp(managed, socket_set, now_ms);
-                } else {
-                    Self::flush_managed_socket_udp(managed, now_ms);
-                }
-            }
-        }
-    }
+    pub fn flush_graph<'a>(&mut self, _socket_set: &mut SocketSet<'a>, _now_ms: u64) {}
 
     /// Handle a TCP_LISTEN request
     pub fn handle_listen<'a>(

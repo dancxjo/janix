@@ -78,6 +78,7 @@ impl core::ops::BitOrAssign for VmMapFlags {
 #[derive(Debug, Clone, Copy)]
 pub enum VmBacking {
     Anonymous { zeroed: bool },
+    File { fd: u32, offset: u64 },
 }
 
 #[repr(C)]
@@ -154,6 +155,7 @@ pub struct VmQueryResp {
 pub enum VmBackingKind {
     Anonymous = 0,
     Guard = 1,
+    File = 2,
     Unknown = 255,
 }
 

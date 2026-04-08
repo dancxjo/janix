@@ -7,7 +7,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
 use stem::thing::{HandleId, ThingId};
-use stem::{debug, info, root_watch, syscall, warn};
+use stem::{debug, info,  syscall, warn};
 
 pub static ASSETS: AssetBank = AssetBank::new();
 
@@ -95,97 +95,8 @@ pub extern "C" fn font_loader_entry() -> ! {
     let mut watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
     let mut watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
 
-    let process_payload = |buf: &[u8]| {
-        let mut cursor = 0usize;
-        while cursor < buf.len() {
-            if let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) {
-                cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
-                let mut is_dirty = false;
-                if header.predicate == abi::watch::WATCH_PRED_KIND && value.len() == 4 {
-                    let kid = u32::from_le_bytes(value.try_into().unwrap());
-                    if kid == k_file || kid == k_family || kid == k_face || kid == k_super {
-                        is_dirty = true;
-                    }
-                } else {
-                    let pred = header.predicate.to_u32_lossy();
-                    for &k in &dirty_keys {
-                        if pred == k {
-                            is_dirty = true;
-                            break;
-                        }
-                    }
-                    if pred == p_bs || pred == p_sz || pred == p_name {
-                        is_dirty = true;
-                    }
-                }
-                if is_dirty {
-                    font_graph::mark_dirty();
-                    let node_id = header.subject;
-                    if let (Ok(bs), Ok(sz)) = (
-                        prop_get(node_id, keys::FONT_BYTESPACE),
-                        prop_get(node_id, keys::FONT_SIZE_BYTES),
-                    ) {
-                        let name = prop_get(node_id, keys::FONT_NAME)
-                            .ok()
-                            .and_then(|id| {
-                                let bs_id = ThingId::from_u64(id);
-                                let size = bytespace_info(bs_id).ok()?;
-                                let mut b = alloc::vec![0u8; size];
-                                let l = bytespace_read(bs_id, 0, &mut b).ok()?;
-                                Some(alloc::string::String::from(
-                                    core::str::from_utf8(&b[..l]).ok()?,
-                                ))
-                            })
-                            .unwrap_or_else(|| "font.bin".into());
-                        ASSETS.enqueue_font_load(ThingId::from_u64(bs), sz as usize, &name);
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-    };
-
-    for kid in watch_kinds.into_iter().filter(|k| *k != 0) {
-        let filter = RootWatchFilter::kind(kid);
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
-            start_seq: 0,
-            filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-            ..Default::default()
-        };
-        if let Ok(wid) = syscall::root_watch_open(&spec) {
-            watch_ids.push(wid);
-            watch_bufs.push([0u8; 4096]);
-            watch_seq.push(0);
-            let _ = root_watch::watch_drain(wid, watch_bufs.last_mut().unwrap(), |_, bytes| {
-                process_payload(bytes)
-            });
-        }
-    }
     loop {
-        let mut any_activity = false;
-        for idx in 0..watch_ids.len() {
-            match syscall::root_watch_try_next(
-                watch_ids[idx],
-                &mut watch_seq[idx],
-                &mut watch_bufs[idx],
-            ) {
-                Ok(len) if len > 0 => {
-                    any_activity = true;
-                    process_payload(&watch_bufs[idx][..len]);
-                }
-                Err(abi::errors::Errno::EAGAIN) => {}
-                Err(abi::errors::Errno::EOVERFLOW) => {
-                    font_graph::mark_dirty();
-                }
-                _ => {}
-            }
-        }
-        if !any_activity {
-            stem::sleep_ms(100);
-        }
+        stem::syscall::sleep_ms(10000);
     }
 }
 

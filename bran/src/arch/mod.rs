@@ -175,5 +175,14 @@ fn init_x86_64_ioapic() {
     x86_64::ioapic::unmask_pin(gsi12 as u8);
     kinfo!("IOAPIC: IRQ12 -> GSI {} -> 0x2C", gsi12);
 
+    // IRQ4 (serial COM1) -> vector 0x24
+    let (gsi4, active_low4, level4) = madt_info.irq_to_gsi(4);
+    let mut entry4 = x86_64::ioapic::RedirEntry::new_fixed(0x24, 0);
+    entry4.active_low = active_low4;
+    entry4.level_triggered = level4;
+    x86_64::ioapic::write_redir(gsi4 as u8, entry4);
+    x86_64::ioapic::unmask_pin(gsi4 as u8);
+    kinfo!("IOAPIC: IRQ4 -> GSI {} -> 0x24", gsi4);
+
     kinfo!("IOAPIC: Init complete");
 }

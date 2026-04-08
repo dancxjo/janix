@@ -34,6 +34,42 @@ pub struct X86_64Runtime {
 
     started_cpu_count: AtomicUsize,
     trampoline_ready: AtomicUsize,
+
+    serial_buf: spin::Mutex<SerialBuffer>,
+}
+
+pub struct SerialBuffer {
+    data: [u8; 1024],
+    head: usize,
+    tail: usize,
+}
+
+impl SerialBuffer {
+    pub const fn new() -> Self {
+        Self {
+            data: [0; 1024],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    pub fn push(&mut self, val: u8) {
+        let next_head = (self.head + 1) % self.data.len();
+        if next_head != self.tail {
+            self.data[self.head] = val;
+            self.head = next_head;
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<u8> {
+        if self.head == self.tail {
+            None
+        } else {
+            let val = self.data[self.tail];
+            self.tail = (self.tail + 1) % self.data.len();
+            Some(val)
+        }
+    }
 }
 
 pub static mut CPU_IDS: [CpuId; acpi::MAX_CPUS] = [CpuId(0); acpi::MAX_CPUS];
@@ -58,6 +94,24 @@ impl X86_64Runtime {
             Err(_) => CpuId(0),
         }
     }
+
+    pub fn poll_serial(&self) {
+        loop {
+            let lsr: u8;
+            unsafe {
+                core::arch::asm!("in al, dx", out("al") lsr, in("dx") 0x3fdu16, options(nostack, preserves_flags));
+            }
+            if (lsr & 0x01) != 0 {
+                let ch: u8;
+                unsafe {
+                    core::arch::asm!("in al, dx", out("al") ch, in("dx") 0x3f8u16, options(nostack, preserves_flags));
+                }
+                self.serial_buf.lock().push(ch);
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 const BOOT_TEMP_MAP_BASE: u64 = 0xffffff10_00000000;
@@ -73,6 +127,7 @@ impl X86_64Runtime {
             timer_init_cnt: AtomicUsize::new(0),
             started_cpu_count: AtomicUsize::new(1),
             trampoline_ready: AtomicUsize::new(0),
+            serial_buf: spin::Mutex::new(SerialBuffer::new()),
         }
     }
 
@@ -251,6 +306,12 @@ impl ArchRuntime for X86_64Runtime {
 
         // Initialize IOAPIC for interrupt routing (after IDT is set up)
         crate::arch::init_ioapic();
+
+        // Enable UART COM1 interrupts (Received Data Available)
+        unsafe {
+            let port = 0x3f9u16; // IER
+            core::arch::asm!("out dx, al", in("dx") port, in("al") 1u8);
+        }
     }
 
     fn putchar(&self, c: u8) {
@@ -261,19 +322,14 @@ impl ArchRuntime for X86_64Runtime {
     }
 
     fn getchar(&self) -> Option<u8> {
-        let lsr: u8;
-        unsafe {
-            core::arch::asm!("in al, dx", out("al") lsr, in("dx") 0x3fdu16, options(nostack, preserves_flags));
+        // Try buffer first
+        if let Some(c) = self.serial_buf.lock().pop() {
+            return Some(c);
         }
-        if (lsr & 0x01) != 0 {
-            let ch: u8;
-            unsafe {
-                core::arch::asm!("in al, dx", out("al") ch, in("dx") 0x3f8u16, options(nostack, preserves_flags));
-            }
-            Some(ch)
-        } else {
-            None
-        }
+
+        // Otherwise poll hardware
+        self.poll_serial();
+        self.serial_buf.lock().pop()
     }
 
     fn halt(&self) -> ! {

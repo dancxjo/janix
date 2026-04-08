@@ -8,6 +8,7 @@ use kernel::kinfo;
 
 static IRQ12_COUNT: AtomicU64 = AtomicU64::new(0);
 static IRQ1_COUNT: AtomicU64 = AtomicU64::new(0);
+static IRQ4_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -72,6 +73,7 @@ unsafe extern "C" {
     fn irq_tlb_shootdown_handler_shim();
     fn irq_keyboard_handler_shim();
     fn irq_mouse_handler_shim();
+    fn irq_serial_handler_shim();
     fn invalid_opcode_handler_shim();
     fn div0_handler_shim();
 }
@@ -394,6 +396,40 @@ core::arch::global_asm!(
         swapgs
     2:
         iretq
+    .global irq_serial_handler_shim
+    irq_serial_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0x24, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
+        iretq
 "#,
     options(att_syntax)
 );
@@ -493,6 +529,14 @@ pub unsafe fn init() {
             0x8E,
         );
 
+        // Dedicated Serial Vector (0x24) - Bypass Common Shim/ISR lookup
+        IDT.entries[0x24].set_handler(
+            irq_serial_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
             offset: core::ptr::addr_of!(IDT) as u64,
@@ -557,10 +601,15 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
     // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();
 
-    // Legacy PIC EOI if needed (vectors 0x20-0x2F or 0xF0-0xFF depending on remap)
-    // Even if "disabled", spurious IRQ7/15 or misconfigured hardware might fire.
     if (resolved >= 0x20 && resolved <= 0x2F) || (resolved >= 0xF0) {
         crate::arch::x86_64::pic::send_eoi(resolved);
+    }
+
+    if resolved == 0x24 {
+        let count = IRQ4_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count <= 3 || (count % 128 == 0) {
+            kinfo!("IRQ4 (serial) fired (count={})", count);
+        }
     }
 
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
@@ -575,6 +624,9 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
         //     now_ticks = ((high as u64) << 32) | (low as u64);
         // }
         // crate::theme::try_tick(now_ticks);
+    } else if resolved == 0x24 {
+        // Serial interrupt - poll into buffer
+        crate::RUNTIME.arch.poll_serial();
     } else if resolved == IRQ_RESCHED_VECTOR {
         kernel::sched::on_resched_ipi::<crate::arch::CurrentRuntime>();
     } else if resolved == IRQ_TLB_SHOOTDOWN_VECTOR {

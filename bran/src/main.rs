@@ -17,7 +17,7 @@ use kernel::BootRuntime;
 
 use requests::{BASE_REVISION, FRAMEBUFFER_REQUEST};
 
-static RUNTIME: arch::CurrentRuntime = arch::create_runtime();
+pub static RUNTIME: arch::CurrentRuntime = arch::create_runtime();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {

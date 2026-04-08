@@ -4,6 +4,7 @@ use abi::schema::kinds;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use stem::info;
+use stem::syscall::vfs::{vfs_close, vfs_open};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 
@@ -19,36 +20,50 @@ impl Registry {
     }
 
     pub fn scan(&mut self) {
-        info!("SPROUT: Scanning boot modules...");
-        let mut modules = [ThingId::default(); 64];
-        let count = thingsys::find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-        for i in 0..count {
-            self.scan_module(modules[i]);
+        info!("SPROUT: Scanning boot modules via /boot...");
+        let fd = match vfs_open("/boot", abi::syscall::vfs_flags::O_RDONLY) {
+            Ok(fd) => fd,
+            Err(_) => {
+                info!("SPROUT: Failed to open /boot");
+                return;
+            }
+        };
+
+        let mut buf = [0u8; 4096];
+        let n = match stem::syscall::vfs::vfs_readdir(fd, &mut buf) {
+            Ok(n) => n,
+            Err(_) => {
+                let _ = vfs_close(fd);
+                return;
+            }
+        };
+        let _ = vfs_close(fd);
+
+        let mut offset = 0usize;
+        while offset < n {
+            let mut end = offset;
+            while end < n && buf[end] != 0 {
+                end += 1;
+            }
+            if end > offset {
+                if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                    if name != "." && name != ".." {
+                        self.scan_module_name(name);
+                    }
+                }
+            }
+            offset = end.saturating_add(1);
         }
+
         info!(
             "SPROUT: Registry scan complete. Found {} drivers.",
             self.drivers.len()
         );
     }
 
-    fn scan_module(&mut self, mod_id: ThingId) {
-        let mut buf = [0u8; 1024];
-        let mut mod_name = String::new();
-        if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {
-            let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-            if let Some(pos) = s.find("name: \"") {
-                let rest = &s[pos + 7..];
-                if let Some(end) = rest.find('"') {
-                    mod_name = rest[..end].to_string();
-                }
-            }
-        }
-        if mod_name.is_empty() {
-            return;
-        }
-
+    fn scan_module_name(&mut self, mod_name: &str) {
         let path = format!("/boot/{}", mod_name);
-        if let Ok(fd) = thingsys::open(&path, abi::syscall::vfs_flags::O_RDONLY) {
+        if let Ok(fd) = vfs_open(&path, abi::syscall::vfs_flags::O_RDONLY) {
             if let Some(header) = self.read_manifest(fd) {
                 if let ModuleKind::Driver = header.kind {
                     let raw = &header.device_kind;

@@ -133,6 +133,7 @@ impl VfsDriver for DevFs {
                     Err(Errno::ENOENT)
                 }
             }
+            "rtc" => Ok(Arc::new(RtcNode)),
             _ => Err(Errno::ENOENT),
         }
     }
@@ -168,6 +169,8 @@ impl VfsNode for DevDirNode {
             entries.extend_from_slice(b"fb0");
             entries.push(0);
         }
+        entries.extend_from_slice(b"rtc");
+        entries.push(0);
         {
             let reg = DEVICE_REGISTRY.lock();
             for name in reg.keys() {
@@ -395,6 +398,48 @@ impl VfsNode for FbNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: FB_INFO_PAYLOAD_SIZE as u64,
             ino: 4,
+        })
+    }
+}
+
+// ── /dev/rtc ─────────────────────────────────────────────────────────────────
+
+pub struct RtcNode;
+
+impl VfsNode for RtcNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        // Return unix seconds as a 64-bit value or text.
+        // For compatibility with sprout: it expects properties, but since it's now path-based,
+        // we can return a simple string or binary. Let's return the string first.
+        let mono_ns = crate::runtime_base().mono_ticks() as u128 * 1_000_000_000
+            / crate::runtime_base().mono_freq_hz() as u128;
+        let sys_ns = if crate::time::is_anchored() {
+            crate::time::get_system_time_ns(mono_ns as u64)
+        } else {
+            0
+        };
+        let text = format!("{}\n", sys_ns / 1_000_000_000);
+        let slice = text.as_bytes();
+
+        let off = offset as usize;
+        if off >= slice.len() {
+            return Ok(0);
+        }
+        let avail = &slice[off..];
+        let n = avail.len().min(buf.len());
+        buf[..n].copy_from_slice(&avail[..n]);
+        Ok(n)
+    }
+
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EROFS)
+    }
+
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFCHR | 0o444,
+            size: 0,
+            ino: 5,
         })
     }
 }

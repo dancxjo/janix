@@ -6,8 +6,10 @@
 
 use abi::schema::{keys, kinds, snapshot_mode};
 use alloc::vec::Vec;
-use stem::thing::sys::{find, prop_get};
+use stem::syscall::vfs::{vfs_close, vfs_open};
+use stem::thing::sys::{prop_get};
 use stem::thing::{HandleId, ThingId};
+use crate::session_fs::{list_dir, WINDOWS_ROOT};
 
 use crate::surface::PixelBuffer;
 use core::fmt;
@@ -67,10 +69,11 @@ pub struct SnapshotMeta {
 }
 
 pub fn collect_windows(screen_w: i32, screen_h: i32) -> Vec<WindowSnapshot> {
-    let mut windows = [ThingId::default(); 64];
-    let count = find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
+    let window_ids = list_dir(WINDOWS_ROOT);
     let mut out = Vec::new();
-    for &id in &windows[..count] {
+    for id_str in window_ids {
+        // Map string ID back to ThingId (hash or parsing)
+        let id = crate::session_fs::scene_id_from_name(&id_str);
         if let Some(win) = read_window(id, screen_w, screen_h) {
             out.push(win);
         }
@@ -80,13 +83,19 @@ pub fn collect_windows(screen_w: i32, screen_h: i32) -> Vec<WindowSnapshot> {
 }
 
 fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapshot> {
-    let width = prop_get(id, keys::UI_WIDTH).unwrap_or(0) as u32;
-    let height = prop_get(id, keys::UI_HEIGHT).unwrap_or(0) as u32;
-    let mut x = prop_get(id, keys::UI_X).unwrap_or(0) as i32;
-    let mut y = prop_get(id, keys::UI_Y).unwrap_or(0) as i32;
-    let inset_right = prop_get(id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
-    let inset_bottom = prop_get(id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
-    let z_index = prop_get(id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
+    let id_str = alloc::format!("{:x}", id.to_u64_lossy());
+    let base = crate::session_fs::window_path(&id_str);
+
+    let width = crate::session_fs::read_u64(&format!("{}/shell/current/width", base)).unwrap_or(0) as u32;
+    let height = crate::session_fs::read_u64(&format!("{}/shell/current/height", base)).unwrap_or(0) as u32;
+    let mut x = crate::session_fs::read_u64(&format!("{}/shell/current/x", base)).unwrap_or(0) as i32;
+    let mut y = crate::session_fs::read_u64(&format!("{}/shell/current/y", base)).unwrap_or(0) as i32;
+    let z_index = crate::session_fs::read_u64(&format!("{}/shell/current/z", base)).unwrap_or(0) as i32;
+
+    // Insets are not standard in the new shell VFS yet, but for now we can default to 0
+    // or keep them if they are in the graph still (unlikely since we are eradicating).
+    let inset_right = 0i32;
+    let inset_bottom = 0i32;
 
     if inset_right > 0 {
         x = screen_w - inset_right - width as i32;
@@ -95,54 +104,49 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
         y = screen_h - inset_bottom - height as i32;
     }
 
-    let bytespace = ThingId::from_u64(prop_get(id, keys::UI_SNAPSHOT_BYTESPACE).unwrap_or(0));
-    let epoch = prop_get(id, keys::UI_PRESENT_EPOCH).unwrap_or(0);
-    let mode = prop_get(id, keys::UI_SNAPSHOT_MODE).unwrap_or(snapshot_mode::WRITE_ONCE);
-    let frozen = prop_get(id, keys::UI_SNAPSHOT_FROZEN).unwrap_or(0) != 0;
-    let dirty = prop_get(id, keys::UI_SNAPSHOT_DIRTY).unwrap_or(0);
+    // Snapshot info
+    let surface_id_str = crate::session_fs::read_text(&format!("{}/bind/surface", base)).unwrap_or_default();
+    if surface_id_str.is_empty() {
+        return Some(WindowSnapshot {
+            id, x, y, width, height, z_index,
+            snapshot: None,
+            geometry_gen: compute_geometry_generation(x, y, width, height),
+            paint_gen: 0,
+        });
+    }
 
-    // Compute generation counters for damage tracking
-    // Geometry generation: changes when position or size changes
-    let geometry_gen = compute_geometry_generation(x, y, width, height);
+    let s_base = crate::session_fs::surface_path(&surface_id_str);
+    let epoch = crate::session_fs::read_u64(&format!("{}/status/last_commit", s_base)).unwrap_or(0);
+    let s_width = crate::session_fs::read_u64(&format!("{}/status/width", s_base)).unwrap_or(0) as u32;
+    let s_height = crate::session_fs::read_u64(&format!("{}/status/height", s_base)).unwrap_or(0) as u32;
+    let s_mapped = crate::session_fs::read_u64(&format!("{}/status/mapped", s_base)).unwrap_or(0) != 0;
 
-    // Paint generation: changes when visual properties change (we use epoch for this)
-    let paint_gen = epoch;
+    if !s_mapped || s_width == 0 || s_height == 0 {
+        return Some(WindowSnapshot {
+            id, x, y, width, height, z_index,
+            snapshot: None,
+            geometry_gen: compute_geometry_generation(x, y, width, height),
+            paint_gen: epoch,
+        });
+    }
 
-    let snapshot = if bytespace.to_u64_lossy() != 0 && epoch > 0 {
-        // Validate mode-specific invariants
-        if mode == snapshot_mode::MUTABLE_DIRTY {
-            // MUTABLE_DIRTY: skip if dirty flag is set
-            if dirty != 0 {
-                // Snapshot is being updated, skip this frame
-                return Some(WindowSnapshot {
-                    id,
-                    x,
-                    y,
-                    width,
-                    height,
-                    z_index,
-                    snapshot: None, // Skip dirty snapshot
-                    geometry_gen,
-                    paint_gen,
-                });
-            }
-        }
-        // Note: For WRITE_ONCE mode, we trust the contract.
-        // In debug builds, the kernel will assert on mutation attempts.
+    // For now, we assume the bytespace (memfd) is passed out of band or we need to find it.
+    // In Wayland style, the buffer is attached.
+    // session_fs.rs has parse_attach_payload.
+    let attach_text = crate::session_fs::read_text(&format!("{}/attach", s_base)).unwrap_or_default();
+    let attached = crate::session_fs::parse_attach_payload(&attach_text);
 
-        // Asset generation: use epoch as proxy for now
-        let asset_gen = epoch;
-
+    let snapshot = if let Some(att) = attached {
         Some(SnapshotMeta {
-            bytespace,
-            width: prop_get(id, keys::UI_SNAPSHOT_WIDTH).unwrap_or(width as u64) as u32,
-            height: prop_get(id, keys::UI_SNAPSHOT_HEIGHT).unwrap_or(height as u64) as u32,
-            stride: prop_get(id, keys::UI_SNAPSHOT_STRIDE).unwrap_or((width * 4) as u64) as u32,
-            format: prop_get(id, keys::UI_SNAPSHOT_FORMAT).unwrap_or(0) as u32,
+            bytespace: ThingId::from_u64(att.fd as u64),
+            width: att.width,
+            height: att.height,
+            stride: att.stride,
+            format: att.format,
             epoch,
-            mode,
-            frozen,
-            asset_gen,
+            mode: snapshot_mode::WRITE_ONCE, // Default
+            frozen: true,
+            asset_gen: epoch,
         })
     } else {
         None
@@ -156,8 +160,8 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
         height,
         z_index,
         snapshot,
-        geometry_gen,
-        paint_gen,
+        geometry_gen: compute_geometry_generation(x, y, width, height),
+        paint_gen: epoch,
     })
 }
 

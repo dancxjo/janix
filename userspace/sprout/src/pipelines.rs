@@ -20,23 +20,53 @@ pub struct DisplayHandles {
     pub backend_name: &'static str,
 }
 
-fn has_kind(kind: &str) -> bool {
-    let mut buf = [ThingId::default(); 1];
-    matches!(thingsys::find(kind, &mut buf), Ok(count) if count > 0)
+fn has_sys_device(class_prefix: &str) -> bool {
+    let fd = match vfs_open("/sys/devices", O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return false,
+    };
+
+    let mut buf = [0u8; 4096];
+    let n = match stem::syscall::vfs::vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = vfs_close(fd);
+            return false;
+        }
+    };
+    let _ = vfs_close(fd);
+
+    let mut offset = 0usize;
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                if name.starts_with("pci-") {
+                    let class_path = alloc::format!("/sys/devices/{}/class", name);
+                    if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
+                        let mut class_buf = [0u8; 16];
+                        if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
+                            let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
+                            if class_str.trim().starts_with(class_prefix) {
+                                let _ = vfs_close(class_fd);
+                                return true;
+                            }
+                        }
+                        let _ = vfs_close(class_fd);
+                    }
+                }
+            }
+        }
+        offset = end.saturating_add(1);
+    }
+    false
 }
 
 fn has_ahci_controller() -> bool {
-    let mut funcs = [ThingId::default(); 64];
-    let count = thingsys::find(kinds::DEV_PCI_FUNCTION, &mut funcs).unwrap_or(0);
-    for f in funcs.iter().take(count) {
-        let class = thingsys::prop_get(*f, keys::CLASS_CODE).unwrap_or(0);
-        let sub = thingsys::prop_get(*f, keys::SUBCLASS_CODE).unwrap_or(0);
-        let prog = thingsys::prop_get(*f, keys::PROG_IF).unwrap_or(0);
-        if class == 0x01 && sub == 0x06 && prog == 0x01 {
-            return true;
-        }
-    }
-    false
+    has_sys_device("0x010601")
 }
 
 fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
@@ -84,7 +114,13 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
 }
 
 pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
-    let needs_stubd = has_kind(kinds::DEV_PCI_FUNCTION);
+    let needs_stubd = match vfs_open("/sys/devices", O_RDONLY) {
+        Ok(fd) => {
+            let _ = vfs_close(fd);
+            true
+        }
+        Err(_) => false,
+    };
 
     if !needs_stubd {
         return;
@@ -110,16 +146,18 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
 }
 
 pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
-    let mut rtcs = [ThingId::default(); 1];
-    let count = thingsys::find(kinds::DEV_RTC_CMOS, &mut rtcs).unwrap_or(0);
-    if count == 0 {
-        info!("SPROUT: No RTC CMOS device found, skipping rtc_cmos");
-        return;
-    }
+    let fd = match vfs_open("/dev/rtc", O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => {
+            info!("SPROUT: No /dev/rtc found, skipping rtc_cmos");
+            return;
+        }
+    };
+    let _ = vfs_close(fd);
 
-    let rtc = rtcs[0];
-    let arg = DriverCtx { device_id: rtc }.to_raw();
-    match stem::syscall::spawn_process("/rtc_cmos", arg) {
+    // Note: rtc_cmos driver will now just open /dev/rtc itself or use sys_time_now.
+    // For legacy arg passing, we can still use a fake device ID or just pass 0.
+    match stem::syscall::spawn_process("/rtc_cmos", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned rtc_cmos (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
@@ -160,7 +198,8 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
-    if has_kind(kinds::DEV_BUS_LEGACY_IO) {
+    // Check for legacy IDE/ATA via PCI class 01 01
+    if has_sys_device("0x0101") {
         match stem::syscall::spawn_process("/ata_disk", 0) {
             Ok(pid) => {
                 info!("SPROUT: Spawned ata_disk (PID={})", pid);
@@ -226,58 +265,22 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         );
     }
 
-    // Check for VirtIO GPU first (preferred for accelerated display)
-    let mut gpu_buf = [ThingId::default(); 1];
+    // Check for VirtIO GPU first via PCI class 03 00 00 and vendor 0x1af4 device 0x1010/0x1050
     if driver_name.is_none() && backend_name != "BootFB" {
-        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
-            if count > 0 {
-                display_device = Some(gpu_buf[0]);
-
-                // Read native resolution from boot framebuffer if available
-                let mut fb_buf = [ThingId::default(); 1];
-                if let Ok(fb_count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
-                    if fb_count > 0 {
-                        let fb = fb_buf[0];
-                        display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
-                        display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
-                    }
-                }
-
-                // Fall back to reasonable default if no bootfb
-                if display_width == 0 || display_height == 0 {
-                    display_width = 1024;
-                    display_height = 768;
-                }
-
-                display_stride = display_width * 4;
-                display_format = 1;
-                driver_name = Some("/display_virtio_gpu");
-                backend_name = "VirtIO-GPU";
-                info!(
-                    "SPROUT: Using VirtIO GPU at {}x{}",
-                    display_width, display_height
-                );
-            }
+        // virtio-gpu: class 0x030000, vendor 0x1af4
+        if has_sys_device("0x0300") {
+            display_stride = display_width * 4;
+            display_format = 1;
+            driver_name = Some("/display_virtio_gpu");
+            backend_name = "VirtIO-GPU";
+            info!(
+                "SPROUT: Using VirtIO GPU at {}x{}",
+                display_width, display_height
+            );
         }
     }
 
-    // Fallback to BootFB if no VirtIO GPU found
-    if driver_name.is_none() && backend_name != "BootFB" {
-        let mut fb_buf = [ThingId::default(); 1];
-        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
-            if count > 0 {
-                let fb = fb_buf[0];
-                display_device = Some(fb);
-                display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(0) as u32;
-                display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(0) as u32;
-                display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
-                display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
-                driver_name = Some("/display_bootfb");
-                backend_name = "BootFB";
-                info!("SPROUT: Using boot framebuffer (fallback)");
-            }
-        }
-    }
+    // Fallback to BootFB already handled by probe_bootfb_vfs() at start of function
 
     // Fallback to display_fake if no other display found (ensures Bloom launches)
     if driver_name.is_none() && backend_name != "BootFB" {
@@ -766,15 +769,8 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
-    // Check for VirtIO Sound device
-    let mut snd_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_SOUND, &mut snd_buf) {
-        if count > 0 {
-            let snd = snd_buf[0];
-            info!("SPROUT: Found Sound device {:?}", snd);
-
-            // Spawn virtio_sound driver
-            match stem::syscall::spawn_process("/virtio_sound", snd.to_u64_lossy() as usize) {
+            // Spawn virtio_sound driver if VirtIO Sound PCI device (0x040100)
+            match stem::syscall::spawn_process("/virtio_sound", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned virtio_sound (PID={})", pid);
                     let _ = stem::thread::set_priority(pid, 2);
@@ -795,8 +791,6 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
         } else {
             info!("SPROUT: No Sound device found");
         }
-    } else {
-        info!("SPROUT: No Sound device found");
     }
 }
 

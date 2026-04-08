@@ -30,7 +30,7 @@ impl Default for SysFs {
 impl VfsDriver for SysFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
         match SysPath::parse(path)? {
-            SysPath::Root => Ok(Arc::new(StaticDirNode::new(300, &["devices"]))),
+            SysPath::Root => Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"]))),
             SysPath::Devices => Ok(Arc::new(DevicesDirNode)),
             SysPath::DeviceDir(name) => {
                 let (_, entry) = find_device_by_slot(name)?;
@@ -41,6 +41,24 @@ impl VfsDriver for SysFs {
                 let node = lookup_device_file(entry, file)?;
                 Ok(Arc::new(node))
             }
+            SysPath::Firmware => Ok(Arc::new(StaticDirNode::new(302, &["acpi", "dtb"]))),
+            SysPath::FirmwareFile("acpi") => {
+                if let Some(rsdp) = crate::boot_info::get().acpi_rsdp {
+                    let text = format!("0x{:016x}\n", rsdp);
+                    Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 303)))
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
+            SysPath::FirmwareFile("dtb") => {
+                if let Some(dtb) = crate::boot_info::get().dtb_ptr {
+                    let text = format!("0x{:016x}\n", dtb);
+                    Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 304)))
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
+            SysPath::FirmwareFile(_) => Err(Errno::ENOENT),
         }
     }
 }
@@ -50,6 +68,8 @@ enum SysPath<'a> {
     Devices,
     DeviceDir(&'a str),
     DeviceFile(&'a str, &'a str),
+    Firmware,
+    FirmwareFile(&'a str),
 }
 
 impl<'a> SysPath<'a> {
@@ -63,6 +83,8 @@ impl<'a> SysPath<'a> {
             (Some("devices"), None, None, None) => Ok(Self::Devices),
             (Some("devices"), Some(dev), None, None) => Ok(Self::DeviceDir(dev)),
             (Some("devices"), Some(dev), Some(file), None) => Ok(Self::DeviceFile(dev, file)),
+            (Some("firmware"), None, None, None) => Ok(Self::Firmware),
+            (Some("firmware"), Some(file), None, None) => Ok(Self::FirmwareFile(file)),
             _ => Err(Errno::ENOENT),
         }
     }

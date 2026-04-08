@@ -593,6 +593,29 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing global allocator...");
     memory::global_alloc::init(runtime);
 
+    if let Some(fb) = runtime.framebuffer() {
+        let fb_graph_id = 0xFB00_0000;
+
+        {
+            let mut reg = crate::device_registry::REGISTRY.lock();
+            let mut bars = [0; 6];
+            let mut sizes = [0; 6];
+            bars[0] = fb.addr as u64;
+            sizes[0] = fb.byte_len as u64;
+            reg.register(crate::device_registry::DeviceEntry::new_mmio(
+                "display_fb",
+                fb_graph_id,
+                bars,
+                sizes,
+            ));
+        }
+
+        crate::vfs::devfs::register(
+            "fb0",
+            alloc::sync::Arc::new(crate::vfs::devfs::FbNode::new(fb, fb_graph_id)),
+        );
+    }
+
     contract!("Seeding entropy pool...");
     crate::entropy::seed_from_hardware();
 

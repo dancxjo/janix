@@ -11,7 +11,7 @@ mod supervisor;
 mod task;
 
 #[stem::main]
-fn main(_arg0: usize) -> ! {
+fn main(arg0: usize) -> ! {
     let cpu = stem::arch::whoami();
     info!(
         "[sprout] whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
@@ -32,7 +32,7 @@ fn main(_arg0: usize) -> ! {
     }
 
     stem::info!("SPROUT: About to create Supervisor...");
-    let mut sup = supervisor::Supervisor::new();
+    let mut sup = supervisor::Supervisor::new(arg0);
     stem::info!("SPROUT: Supervisor created, calling run_forever...");
     sup.run_forever()
 }

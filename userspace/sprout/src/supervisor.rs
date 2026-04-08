@@ -12,13 +12,15 @@ use stem::thing::ThingId;
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
     registry: Registry,
+    registry_ptr: usize,
 }
 
 impl Supervisor {
-    pub fn new() -> Self {
+    pub fn new(registry_ptr: usize) -> Self {
         Self {
             tasks: Vec::new(),
             registry: Registry::new(),
+            registry_ptr,
         }
     }
 
@@ -111,50 +113,41 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        info!("SPROUT: Discovering modules...");
-        let mut modules = [ThingId::default(); 64];
-        let count =
-            thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-        info!("SPROUT: Found {} modules", count);
+        info!("SPROUT: Discovering modules from registry at 0x{:x}...", self.registry_ptr);
+
+        if self.registry_ptr == 0 {
+            info!("SPROUT: No boot registry provided!");
+            return;
+        }
+
+        let count = unsafe { *(self.registry_ptr as *const usize) };
+        info!("SPROUT: Found {} modules natively from BootRegistry", count);
+
+        // Registry holds: [count: usize] followed by array of [ptr: usize, len: usize]
+        let entries_ptr = (self.registry_ptr + core::mem::size_of::<usize>()) as *const usize;
 
         for i in 0..count {
-            // Log name
-            let s = self.get_module_name(modules[i]);
-            info!("SPROUT: Module[{}] = '{}'", i, s);
-            if i >= modules.len() {
-                info!("SPROUT: Module index {} out of bounds!", i);
-                break;
-            }
-            let mod_id = modules[i];
-            let name = self.get_module_name(mod_id);
+            let name_ptr = unsafe { *entries_ptr.add(i * 2) };
+            let name_len = unsafe { *entries_ptr.add(i * 2 + 1) };
+
+            let name_bytes = unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
+            let name = core::str::from_utf8(name_bytes).unwrap_or("").to_string();
+
+            info!("SPROUT: Module[{}] = '{}'", i, name);
+
             if name.is_empty() {
-                info!("SPROUT: Module {} has empty name", mod_id.to_u64_lossy());
-                self.debug_module(mod_id);
                 continue;
             }
 
-            // Heuristic Partitioning
-            // "Drivers live at: /boot/modules/drivers/<name>"
-            // "Apps live at: /boot/modules/apps/<name>"
-            // But current setup might be flat "/boot/modules/clock".
-            // So I will iterate known apps if strict path not found?
-            // "Implement a simple convention for now"
-
             if name.contains("/drivers/") {
-                // It's a driver. Register it.
-                // We use Registry's logic to parse the manifest.
-                // Modifying Registry to accept external ID is hard without refactor.
-                // I will just let Registry scan ALL modules internally?
-                // But Registry doesn't know about Apps.
-                // Let's defer to Registry scan logic for drivers.
+                // Handled natively by registry if needed, though they aren't parsed dynamically in phase 1.
             } else if name.contains("/apps/")
-                // || name.ends_with("/clock")
                 || name.ends_with("/idle")
                 || name.ends_with("/hello_std")
+                || name.ends_with("/wayland_hello")
                 || (cfg!(feature = "diagnostic-apps")
                     && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {
-                // Treat as App
                 info!("SPROUT: Discovered app: {}", name);
                 self.tasks.push(ManagedTask {
                     name: name.clone(),
@@ -164,16 +157,14 @@ impl Supervisor {
                     restarts: 0,
                     spawn_arg: 0,
                 });
-            } else {
-                // Unknown or Driver in flat dir?
-                // Let's assume everything else is potential driver for Registry to check.
             }
         }
 
-        // Let registry scan for drivers (it iterates all modules itself currently)
-        self.registry.scan();
+        // We comment out self.registry.scan() since it uses sys_root_find.
+        // self.registry.scan();
     }
 
+    // `get_module_name` and `debug_module` are no longer practically used (but kept to avoid unused warnings below).
     fn get_module_name(&self, mod_id: ThingId) -> String {
         let mut buf = [0u8; 1024];
         if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {

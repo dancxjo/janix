@@ -3857,6 +3857,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayland_hello"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"

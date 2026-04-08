@@ -46,6 +46,7 @@ mod ui;
 mod ui_events;
 mod vir;
 mod window_manager;
+mod wayland;
 
 pub use painter_resources::ASSETS;
 
@@ -788,6 +789,9 @@ fn main(arg: usize) -> ! {
     let mut overlay_state = DamageOverlayState::default();
     let mut cursor_metrics = CursorMetrics::default();
 
+    let mut wayland_server = crate::wayland::server::WaylandServer::new().expect("Failed to start WaylandServer");
+    stem::info!("bloom: WaylandServer started at /run/wayland-0");
+
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
     let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu
@@ -906,6 +910,7 @@ fn main(arg: usize) -> ! {
     let mut last_loop_start_ns = stem::monotonic_ns();
 
     let mut current_bs_id = final_bs_id;
+    let mut latest_wayland_commit: Option<crate::wayland::server::WaylandSurfaceCommit> = None;
     let mut current_age = final_age;
 
     loop {
@@ -919,6 +924,14 @@ fn main(arg: usize) -> ! {
         }
         last_loop_start_ns = loop_start_ns;
         loop_ctrl.next();
+        
+        wayland_server.pump();
+        for commit in wayland_server.committed_surfaces.drain(..) {
+            stem::info!("Wayland frame committed! bs_id={}, w={}, h={}", commit.bs_id, commit.width, commit.height);
+            latest_wayland_commit = Some(commit);
+            paint_pending_rebuilds = true; // force repaint to show the latest buffer
+        }
+
         invalidation_causes.clear();
         let updates = ASSETS.publish_pending();
         if updates.wallpaper_changed {
@@ -1753,6 +1766,26 @@ fn main(arg: usize) -> ! {
 
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
+
+            if let Some(ref commit) = latest_wayland_commit {
+                if let Ok(ptr) = stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(commit.bs_id)) {
+                    let w = commit.width.min(screen_w as u32) as i32;
+                    let h = commit.height.min(screen_h as u32) as i32;
+                    let wb = commit.stride as usize;
+                    unsafe {
+                        let src = ptr as *const u8;
+                        let dst = surface.ptr;
+                        for y in 0..h {
+                            core::ptr::copy_nonoverlapping(
+                                src.add((y as usize) * wb),
+                                dst.add((y as usize) * surface.stride_bytes),
+                                (w as usize) * 4,
+                            );
+                        }
+                    }
+                    let _ = stem::thing::sys::bytespace_unmap(stem::thing::ThingId::from_u64(commit.bs_id), ptr);
+                }
+            }
 
             // GPU composition path (when enabled)
             // Uploads window textures and submits virgl BLIT commands

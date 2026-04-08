@@ -54,6 +54,7 @@ members = [
     "userspace/hello_std",
     "userspace/vfs_hello",
     "userspace/stdio_demo",
+    "userspace/wayland_hello",
 ]
 
 # Exclude wasm32 theme crates (different target)

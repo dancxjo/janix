@@ -291,6 +291,64 @@ impl VfsNode for ZeroNode {
     }
 }
 
+// ── /dev/fb0 ─────────────────────────────────────────────────────────────────
+
+pub struct FbNode {
+    fb: crate::FramebufferInfo,
+    graph_id: u64,
+}
+
+impl FbNode {
+    pub const fn new(fb: crate::FramebufferInfo, graph_id: u64) -> Self {
+        Self { fb, graph_id }
+    }
+}
+
+impl VfsNode for FbNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
+        
+        let payload = FbInfoPayload {
+            graph_id: self.graph_id,
+            width: self.fb.width,
+            height: self.fb.height,
+            stride: self.fb.pitch,
+            bpp: self.fb.bpp as u32,
+            format: self.fb.format as u32,
+        };
+
+        let slice = unsafe {
+            core::slice::from_raw_parts(
+                &payload as *const _ as *const u8,
+                FB_INFO_PAYLOAD_SIZE,
+            )
+        };
+
+        let off = offset as usize;
+        if off >= slice.len() {
+            return Ok(0);
+        }
+
+        let avail = &slice[off..];
+        let n = avail.len().min(buf.len());
+        buf[..n].copy_from_slice(&avail[..n]);
+        Ok(n)
+    }
+
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EROFS)
+    }
+
+    fn stat(&self) -> SysResult<VfsStat> {
+        use abi::display_driver_protocol::FB_INFO_PAYLOAD_SIZE;
+        Ok(VfsStat {
+            mode: VfsStat::S_IFCHR | 0o444,
+            size: FB_INFO_PAYLOAD_SIZE as u64,
+            ino: 4,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,7 +1,7 @@
 //! Socket API module for netd
 //!
-//! Provides a high-level socket API over IPC ports that allows applications
-//! to perform TCP/UDP operations without directly managing the TCP/IP stack.
+//! Provides a high-level socket management API used by the VFS provider
+//! to implement the `/net/` tree with smoltcp TCP/UDP sockets.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
@@ -19,21 +19,6 @@ use stem::{debug, info, trace, warn};
 pub static mut CONN_RX: [[u8; 8192]; 256] = [[0; 8192]; 256];
 pub static mut CONN_TX: [[u8; 32768]; 256] = [[0; 32768]; 256];
 
-// Socket API message types
-pub const MSG_TCP_CONNECT: u16 = 0x0200;
-pub const MSG_TCP_SEND: u16 = 0x0201;
-pub const MSG_TCP_RECV: u16 = 0x0202;
-pub const MSG_TCP_CLOSE: u16 = 0x0203;
-pub const MSG_TCP_LISTEN: u16 = 0x0204;
-pub const MSG_TCP_ACCEPT: u16 = 0x0205;
-
-pub const MSG_UDP_BIND: u16 = 0x0300;
-pub const MSG_UDP_SEND_TO: u16 = 0x0301;
-pub const MSG_UDP_RECV_FROM: u16 = 0x0302;
-pub const MSG_NET_JOIN_MULTICAST: u16 = 0x0400;
-
-pub const MSG_DNS_QUERY: u16 = 0x0500;
-
 // Response types
 pub const RESP_OK: u16 = 0x0000;
 pub const RESP_ERROR: u16 = 0x0001;
@@ -42,23 +27,6 @@ pub const RESP_DATA: u16 = 0x0003;
 pub const RESP_ACCEPT: u16 = 0x0004;
 pub const RESP_EMPTY: u16 = 0x0005;
 pub const RESP_CLOSED: u16 = 0x0006;
-
-pub fn is_known_msg_type(msg_type: u16) -> bool {
-    matches!(
-        msg_type,
-        MSG_TCP_CONNECT
-            | MSG_TCP_SEND
-            | MSG_TCP_RECV
-            | MSG_TCP_CLOSE
-            | MSG_TCP_LISTEN
-            | MSG_TCP_ACCEPT
-            | MSG_UDP_BIND
-            | MSG_UDP_SEND_TO
-            | MSG_UDP_RECV_FROM
-            | MSG_NET_JOIN_MULTICAST
-            | MSG_DNS_QUERY
-    )
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SocketType {
@@ -1223,184 +1191,6 @@ impl SocketApi {
     /// Return the number of currently tracked sockets
     pub fn socket_count(&self) -> usize {
         self.sockets.len()
-    }
-
-    /// Process an incoming API message
-    #[allow(dead_code)]
-    pub fn process_message<'a, D: smoltcp::phy::Device>(
-        &mut self,
-        iface: &mut Interface,
-        device: &mut D,
-        socket_set: &mut SocketSet<'a>,
-        msg: &[u8],
-        caller_tid: Option<u64>,
-        dns_server: Option<Ipv4Address>,
-    ) -> Vec<u8> {
-        if msg.len() < 4 {
-            return encode_error();
-        }
-
-        let msg_type = u16::from_le_bytes([msg[0], msg[1]]);
-        let payload_len = u16::from_le_bytes([msg[2], msg[3]]) as usize;
-        let owner_tid = caller_tid.unwrap_or(0);
-
-        if msg.len() < 4 + payload_len {
-            warn!(
-                "SOCKET_API: Message too short for declared payload_len (type=0x{:04x}, len={}, expected={})",
-                msg_type,
-                msg.len(),
-                4 + payload_len
-            );
-            return encode_error();
-        }
-
-        // The actual payload starts at index 4 (after type and length)
-        let body = &msg[4..4 + payload_len];
-
-        match msg_type {
-            MSG_TCP_CONNECT => {
-                if body.len() < 6 {
-                    return encode_error();
-                }
-                let Some(buf_idx) = self.alloc_buffer() else {
-                    warn!("SOCKET_API: Out of socket buffers (TCP_CONNECT)");
-                    return encode_error();
-                };
-                let ip = Ipv4Address::from_bytes(&body[0..4]);
-                let port = u16::from_le_bytes([body[4], body[5]]);
-                self.handle_connect(iface, device, socket_set, owner_tid, ip, port, buf_idx)
-            }
-            MSG_TCP_LISTEN => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let Some(buf_idx) = self.alloc_buffer() else {
-                    warn!("SOCKET_API: Out of socket buffers (TCP_LISTEN)");
-                    return encode_error();
-                };
-                let port = u16::from_le_bytes([body[0], body[1]]);
-                let backlog = u16::from_le_bytes([body[2], body[3]]);
-                self.handle_listen(socket_set, owner_tid, port, backlog, buf_idx)
-            }
-            MSG_TCP_ACCEPT => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let listen_handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                let alloc_res = {
-                    let s = match self.sockets.get(&listen_handle) {
-                        Some(s) if s.is_listener => s,
-                        _ => return encode_error(),
-                    };
-                    let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
-                    let has_conn = state == TcpState::Established
-                        || s.listen_pool.iter().any(|&(h, _)| {
-                            socket_set.get_mut::<TcpSocket>(h).state() == TcpState::Established
-                        });
-                    if has_conn {
-                        self.alloc_buffer()
-                    } else {
-                        None
-                    } // Only alloc if connection is ready so it won't leak
-                };
-
-                if let Some(buf_idx) = alloc_res {
-                    self.handle_accept(socket_set, listen_handle, owner_tid, buf_idx)
-                } else if self
-                    .pending_accepts
-                    .get(&listen_handle)
-                    .map(|v| v.len())
-                    .unwrap_or(0)
-                    > 0
-                {
-                    // Note: Actually handle_accept pops pending without needing new buf_idx.
-                    // To keep it simple, we just pass 0, it's not used if pending is popped.
-                    self.handle_accept(socket_set, listen_handle, owner_tid, 0)
-                } else {
-                    encode_empty()
-                }
-            }
-            MSG_TCP_SEND => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                let data = &body[4..];
-                self.handle_send(socket_set, handle, data)
-            }
-            MSG_TCP_RECV => {
-                if body.len() < 6 {
-                    return encode_error();
-                }
-                let handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                let max_len = u16::from_le_bytes([body[4], body[5]]);
-                self.handle_recv(socket_set, handle, max_len)
-            }
-            MSG_TCP_CLOSE => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                self.handle_close(socket_set, handle)
-            }
-            MSG_UDP_BIND => {
-                if body.len() < 2 {
-                    return encode_error();
-                }
-                let Some(buf_idx) = self.alloc_buffer() else {
-                    warn!("SOCKET_API: Out of socket buffers (UDP_BIND)");
-                    return encode_error();
-                };
-                let port = u16::from_le_bytes([body[0], body[1]]);
-                unsafe {
-                    let (rx_meta, rx_payload) = split_packet_buffer(&mut CONN_RX[buf_idx]);
-                    let (tx_meta, tx_payload) = split_packet_buffer(&mut CONN_TX[buf_idx]);
-                    self.handle_udp_bind(
-                        socket_set, owner_tid, port, rx_meta, rx_payload, tx_meta, tx_payload,
-                        buf_idx,
-                    )
-                }
-            }
-            MSG_UDP_SEND_TO => {
-                if body.len() < 10 {
-                    return encode_error();
-                }
-                let handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                let ip = Ipv4Address::from_bytes(&body[4..8]);
-                let port = u16::from_le_bytes([body[8], body[9]]);
-                let data = &body[10..];
-                self.handle_udp_send_to(socket_set, handle, ip, port, data)
-            }
-            MSG_UDP_RECV_FROM => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                self.handle_udp_recv_from(socket_set, handle)
-            }
-            MSG_NET_JOIN_MULTICAST => {
-                if body.len() < 4 {
-                    return encode_error();
-                }
-                let ip = Ipv4Address::from_bytes(&body[0..4]);
-                self.handle_multicast_join(iface, device, ip)
-            }
-            MSG_DNS_QUERY => {
-                if let Some(dns_server) = dns_server {
-                    if let Ok(hostname) = core::str::from_utf8(body) {
-                        self.handle_dns_query(iface, device, dns_server, hostname)
-                    } else {
-                        encode_error()
-                    }
-                } else {
-                    encode_error()
-                }
-            }
-            _ => {
-                warn!("SOCKET_API: Unknown message type 0x{:04x}", msg_type);
-                encode_error()
-            }
-        }
     }
 }
 

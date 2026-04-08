@@ -31,15 +31,12 @@ impl Supervisor {
         info!("SPROUT: [Stage 1] Hardware Discovery and Core Drivers");
         self.discover();
 
-        /*
-        // crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
         crate::pipelines::setup_audio_driver(&mut self.tasks);
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
-        */
 
         // Settle hardware phase
         stem::sleep_ms(100);
@@ -48,7 +45,8 @@ impl Supervisor {
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
         self.ensure_service("/devd", "svc.devd");
         self.ensure_service("/netd", "svc.net");
-        /*
+        self.ensure_service("/fontd", "svc.FontD");
+
         crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
 
@@ -67,7 +65,6 @@ impl Supervisor {
         // --- STAGE 5: User Apps ---
         info!("SPROUT: [Stage 5] Starting Discovered User Apps");
         self.spawn_discovered_apps();
-        */
 
         self.ensure_app("/sh");
         self.spawn_apps();

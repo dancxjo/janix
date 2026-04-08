@@ -1231,9 +1231,35 @@ impl AssetBank {
     }
 
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
-        debug!("[asset_bank] load_wallpaper_immediate: {}", path);
-        let (id, size) = Self::probe_asset(path)?;
-        Self::load_wallpaper_immediate_from_bs_with_size(id, size, path)
+        debug!("[asset_bank] load_wallpaper_immediate via VFS: {}", path);
+        
+        let file_path = if path.starts_with('/') {
+            alloc::format!("{}", path)
+        } else {
+            alloc::format!("/boot/{}", path) // Fallback to /boot/
+        };
+
+        let data = std::fs::read(&file_path).map_err(|e| {
+            warn!("[asset_bank] failed to read {}: {:?}", file_path, e);
+        }).ok()?;
+
+        debug!("[asset_bank] decoding BMP for '{}'...", path);
+        let res = crate::bmp::decode(&data).ok().map(|bmp| {
+            debug!(
+                "[asset_bank] BMP decoded: {}x{} for '{}'",
+                bmp.width, bmp.height, path
+            );
+            Image {
+                width: bmp.width,
+                height: bmp.height,
+                pixels: Arc::from(bmp.pixels.as_slice()),
+                gen: AssetGeneration::ZERO, // Will be set on promotion
+                name: Arc::from(path),
+                id: None, // No bytespace ID anymore
+            }
+        });
+
+        res
     }
 
     pub fn load_cursor_from_graph(path: &str) -> Option<CursorAsset> {

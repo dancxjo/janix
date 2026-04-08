@@ -46,6 +46,7 @@ members = [
     "userspace/cat",
     "userspace/bloom",
     "userspace/disk_probe",
+    "userspace/fontd",
 
     "userspace/iso9660",
     "userspace/iso9660d",

@@ -797,6 +797,10 @@ fn main(arg: usize) -> ! {
     stem::info!("bloom: UI CROWN initialized!");
 
     let _ = ui_crown;
+    
+    // Initialize IPC client to connect to fontd service
+    crate::font_client::init();
+
     let mut paint_pipeline = PaintPipeline::new();
     let mut scene = crate::scene_graph::SceneGraph::new();
 

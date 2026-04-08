@@ -89,6 +89,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "fontd",
+            is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "ps2_mouse",
             is_init: true,
             boot_module: true,

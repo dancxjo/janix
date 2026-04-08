@@ -446,5 +446,8 @@ where
 /// Poll global font client for updates
 pub fn poll() -> bool {
     let mut guard = FONT_CLIENT.lock();
+    if guard.is_none() {
+        *guard = FontClient::discover();
+    }
     guard.as_mut().map(|c| c.poll()).unwrap_or(false)
 }

@@ -10,7 +10,7 @@ pub struct SysDevice {
     pub slot: String,
     pub vendor_id: u16,
     pub device_id: u16,
-    pub class_code: u8,
+    pub class_code: u32, // Full class triplet: class << 16 | subclass << 8 | prog_if
     pub device_handle: u64,
     pub present: bool,
 }
@@ -34,7 +34,7 @@ pub fn scan_devices() -> Result<Vec<SysDevice>, Errno> {
             slot,
             vendor_id,
             device_id,
-            class_code: ((class_triplet >> 16) & 0xff) as u8,
+            class_code: class_triplet,
             device_handle,
             present: status == "present",
         });

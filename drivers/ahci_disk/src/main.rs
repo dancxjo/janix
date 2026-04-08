@@ -20,6 +20,7 @@ use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::abi::schema::kinds;
 use stem::block::{BlockDevice, BlockError};
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
@@ -205,33 +206,79 @@ fn start_port(hba_base: u64, port: u32) {
 }
 
 fn find_ahci_controller() -> Option<(ThingId, u64)> {
-    let mut pci_funcs = [ThingId([0; 16]); 32];
-    let count = match thingsys::find("dev.pci.Function", &mut pci_funcs) {
-        Ok(c) => {
-            info!("AHCI: Found {} PCI functions", c);
-            c
-        }
-        Err(e) => {
-            info!("AHCI: Error finding PCI functions: {:?}", e);
+    let fd = match vfs_open("/sys/devices", abi::syscall::vfs_flags::O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return None,
+    };
+
+    let mut buf = [0u8; 4096];
+    let n = match vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = vfs_close(fd);
             return None;
         }
     };
+    let _ = vfs_close(fd);
 
-    for i in 0..count {
-        let func_id = pci_funcs[i];
-        let class = thingsys::prop_get(func_id, "class_code").unwrap_or(0);
-        let subclass = thingsys::prop_get(func_id, "subclass_code").unwrap_or(0);
-        let prog_if = thingsys::prop_get(func_id, "prog_if").unwrap_or(0);
+    let mut offset = 0usize;
+    while offset < n {
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+        if end > offset {
+            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                if name.starts_with("pci-") {
+                    let class_path = alloc::format!("/sys/devices/{}/class", name);
+                    if let Ok(class_fd) = vfs_open(&class_path, abi::syscall::vfs_flags::O_RDONLY) {
+                        let mut class_buf = [0u8; 16];
+                        if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
+                            let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
+                            if class_str.trim().starts_with("0x010601") {
+                                let _ = vfs_close(class_fd);
+                                
+                                // Found it. Now get the BAR5 and ID.
+                                let bar5_path = alloc::format!("/sys/devices/{}/bar5", name);
+                                let bar5 = if let Ok(bar_fd) = vfs_open(&bar5_path, abi::syscall::vfs_flags::O_RDONLY) {
+                                    let mut bar_buf = [0u8; 32];
+                                    let val = if let Ok(bn) = vfs_read(bar_fd, &mut bar_buf) {
+                                        let s = core::str::from_utf8(&bar_buf[..bn]).unwrap_or("");
+                                        u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
+                                    } else {
+                                        0
+                                    };
+                                    let _ = vfs_close(bar_fd);
+                                    val
+                                } else {
+                                    0
+                                };
 
-        if class == PCI_CLASS_STORAGE && subclass == PCI_SUBCLASS_SATA && prog_if == PCI_PROGIF_AHCI
-        {
-            info!("AHCI: Found AHCI controller at PCI func {:?}", func_id);
-            let bar5 = thingsys::prop_get(func_id, "bar5").unwrap_or(0);
-            if bar5 != 0 {
-                info!("AHCI: BAR5=0x{:x}", bar5);
-                return Some((func_id, bar5));
+                                let id_path = alloc::format!("/sys/devices/{}/id", name);
+                                let id = if let Ok(id_fd) = vfs_open(&id_path, abi::syscall::vfs_flags::O_RDONLY) {
+                                    let mut id_buf = [0u8; 32];
+                                    let val = if let Ok(idn) = vfs_read(id_fd, &mut id_buf) {
+                                        let s = core::str::from_utf8(&id_buf[..idn]).unwrap_or("");
+                                        u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
+                                    } else {
+                                        0
+                                    };
+                                    let _ = vfs_close(id_fd);
+                                    val
+                                } else {
+                                    0
+                                };
+
+                                info!("AHCI: Found controller via VFS: {} (BAR5=0x{:x}, ID=0x{:x})", name, bar5, id);
+                                return Some((ThingId::from_u64(id), bar5));
+                            }
+                        }
+                        let _ = vfs_close(class_fd);
+                    }
+                }
             }
         }
+        offset = end.saturating_add(1);
     }
     None
 }

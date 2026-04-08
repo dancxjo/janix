@@ -151,57 +151,14 @@ fn main(arg: usize) -> ! {
 
     // Anchor the system clock!
     stem::syscall::time_anchor(unix_secs);
-    info!("System clock anchored");
+    info!("RTC: System clock anchored to {} unix_secs", unix_secs);
 
-    // Update Kernel TimeState to Anchored (1)
-    let mut kernel_ids = [stem::thing::ThingId::default(); 1];
-    if let Ok(1) = thingsys::find(stem::abi::schema::kinds::PROC_KERNEL, &mut kernel_ids) {
-        let kernel = kernel_ids[0];
-        if let Err(e) = thingsys::prop_set(kernel, "sys.TimeState", 1) {
-            warn!("RTC: Failed to set sys.TimeState: {:?}", e);
-        } else {
-            info!("RTC: Set sys.TimeState = 1 (Anchored)");
-        }
-    } else {
-        warn!("RTC: Failed to find kernel node to update TimeState");
-    }
-
-    // Create time.source node in the graph
-    let src = match thingsys::create_node("time.Source") {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Failed to create time.source: {:?}", e);
-            stem::syscall::exit(1);
-        }
-    };
-
-    if let Err(e) = thingsys::link(dev_id, "provides", src) {
-        warn!("Failed to link provides: {:?}", e);
-    }
-
-    // Create time.WallClockSample for the graph
-    let sample = match thingsys::create_node("time.WallClockSample") {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Failed to create time.WallClockSample: {:?}", e);
-            stem::syscall::exit(1);
-        }
-    };
-
-    if let Err(e) = thingsys::link(src, "current", sample) {
-        warn!("Failed to link current: {:?}", e);
-    }
-
-    thingsys::prop_set(sample, "unix_seconds", unix_secs).ok();
-    thingsys::prop_set(sample, "confidence", 50).ok(); // CMOS is janky
-
-    info!("Publishing time. Entering maintenance loop.");
-
-    // Periodically re-read and update graph (but don't re-anchor; that's a one-time thing)
+    info!("RTC: Entering maintenance loop.");
+ 
     loop {
-        stem::sleep(core::time::Duration::from_secs(60));
+        stem::sleep(core::time::Duration::from_secs(3600)); // Update once per hour
         let (year, month, day, hour, minute, second) = read_rtc();
         let unix_secs = rtc_to_unix(year, month, day, hour, minute, second);
-        thingsys::prop_set(sample, "unix_seconds", unix_secs).ok();
+        stem::syscall::time_anchor(unix_secs);
     }
 }

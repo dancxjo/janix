@@ -85,7 +85,6 @@ impl Supervisor {
         self.discover();
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
-        crate::pipelines::setup_storage_pipeline(&mut self.tasks);
         crate::pipelines::setup_audio_driver(&mut self.tasks);
 
         self.spawn_apps();

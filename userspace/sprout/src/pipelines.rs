@@ -65,10 +65,6 @@ fn has_sys_device(class_prefix: &str) -> bool {
     false
 }
 
-fn has_ahci_controller() -> bool {
-    has_sys_device("0x010601")
-}
-
 fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
     let fd = match vfs_open("/dev/fb0", O_RDONLY) {
         Ok(fd) => fd,
@@ -175,30 +171,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     }
 }
-
 pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up storage pipeline...");
-    if has_ahci_controller() {
-        match stem::syscall::spawn_process("/ahci_disk", 0) {
-            Ok(pid) => {
-                info!("SPROUT: Spawned ahci_disk (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "/ahci_disk".to_string(),
-                    kind: TaskKind::Driver("dev.storage.Ahci".to_string()),
-                    module_path: "/ahci_disk".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: 0,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
-            }
-        }
-    }
-
-    // Check for legacy IDE/ATA via PCI class 01 01
     if has_sys_device("0x0101") {
         match stem::syscall::spawn_process("/ata_disk", 0) {
             Ok(pid) => {
@@ -768,7 +741,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
             return;
         }
     }
-
+    if has_sys_device("0x0401") {
             // Spawn virtio_sound driver if VirtIO Sound PCI device (0x040100)
             match stem::syscall::spawn_process("/virtio_sound", 0) {
                 Ok(pid) => {
@@ -792,7 +765,6 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
             info!("SPROUT: No Sound device found");
         }
     }
-}
 
 pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Spawning beeper...");

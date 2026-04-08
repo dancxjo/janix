@@ -1528,9 +1528,9 @@ fn main(arg: usize) -> ! {
             }
 
             if pressed_keys.contains(&Key::F7) && !prev_keys.contains(&Key::F7) {
-                tile_windows(screen_w, screen_h);
+                // tile_windows(screen_w, screen_h);
                 invalidation_causes.push(SnapshotInvalidation::Forced);
-                stem::info!("[bloom] F7 pressed, auto-tiling windows");
+                stem::info!("[bloom] F7 pressed, auto-tiling (DEPRECATED/NOT IMPLEMENTED)");
             }
 
             // Alt-Tab Loading (use cached state)

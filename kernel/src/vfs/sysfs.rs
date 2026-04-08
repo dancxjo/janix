@@ -43,7 +43,7 @@ impl VfsDriver for SysFs {
             }
             SysPath::Firmware => Ok(Arc::new(StaticDirNode::new(302, &["acpi", "dtb"]))),
             SysPath::FirmwareFile("acpi") => {
-                if let Some(rsdp) = crate::boot_info::get().acpi_rsdp {
+                if let Some(rsdp) = crate::boot_info::get().and_then(|i| i.acpi_rsdp) {
                     let text = format!("0x{:016x}\n", rsdp);
                     Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 303)))
                 } else {
@@ -51,7 +51,7 @@ impl VfsDriver for SysFs {
                 }
             }
             SysPath::FirmwareFile("dtb") => {
-                if let Some(dtb) = crate::boot_info::get().dtb_ptr {
+                if let Some(dtb) = crate::boot_info::get().and_then(|i| i.dtb_ptr) {
                     let text = format!("0x{:016x}\n", dtb);
                     Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 304)))
                 } else {

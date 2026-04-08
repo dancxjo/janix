@@ -106,6 +106,7 @@ pub fn publish_stub_device(
     let entry = DeviceEntry::new_mmio(spec.kind, stub_node, *bar_addrs, *bar_sizes);
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
+        reg.set_pci_identity(idx, vendor_id, device_id, class_code, subclass, prog_if);
         reg.set_pci_info(idx, PciLocation { bus, dev, func }, None, None);
         crate::kinfo!(
             "PCI: Registered {} (graph_id={}, idx={})",

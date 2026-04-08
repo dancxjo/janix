@@ -200,7 +200,6 @@ pub fn clamp_window_rect(rect: Rect, screen_w: i32, screen_h: i32) -> Rect {
 /// Coordinates are in screen space. Window must contain the point for
 /// any hit other than None.
 pub fn hit_test(screen_x: i32, screen_y: i32, r: Rect, is_shaded: bool) -> Hit {
-
     // Outside window entirely?
     if screen_x < r.x()
         || screen_x >= r.x() + r.width()
@@ -303,7 +302,10 @@ pub fn pick_window(
     if let Some(surf_id) = scene.hit_test(screen_x, screen_y) {
         if let Some(surf) = scene.get_surface(surf_id) {
             if let Some(win) = windows.get(&surf_id) {
-                return Some((surf_id, hit_test(screen_x, screen_y, surf.rect(), win.is_shaded)));
+                return Some((
+                    surf_id,
+                    hit_test(screen_x, screen_y, surf.rect(), win.is_shaded),
+                ));
             } else {
                 return Some((surf_id, Hit::ClientArea)); // generic surface without window chrome
             }

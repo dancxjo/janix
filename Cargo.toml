@@ -30,6 +30,7 @@ members = [
     "drivers/proto_driver_wasm",
     "drivers/virtio_sound",
     "drivers/beeper",
+    "drivers/devd",
     "drivers/virtio_netd",
     "drivers/rtc_cmos",
     "drivers/ps2_kbd",

@@ -104,7 +104,6 @@ pub struct Task<R: BootRuntime> {
 pub fn init<R: BootRuntime>() {
     crate::task::registry::init::<R>();
     crate::sched::init::<R>();
-
 }
 pub fn spawn<R: BootRuntime>(
     entry: extern "C" fn(usize) -> !,

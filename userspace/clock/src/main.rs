@@ -11,12 +11,12 @@ use stem::petals::{
     add_rule, attach_window_stylesheet, create_stylesheet, set_node_classes, Declarations,
     SelectorKind, StyleSelector,
 };
-use stem::ui::UiBuilder;
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
 };
 use stem::thing::ThingId;
+use stem::ui::UiBuilder;
 use time::OffsetDateTime;
 
 fn search_for_icon(suffix: &str) -> Option<ThingId> {
@@ -201,7 +201,7 @@ fn render_window_init(window_id: ThingId, time_text: &str) -> Option<ThingId> {
 
     let panel = UiBuilder::create_panel(window_id);
     // Ignore gap and padding for now since UiBuilder doesn't have them
-    
+
     let text_id = UiBuilder::create_text(panel, time_text);
     if let Ok(key_sym) = stem::thing::sys::intern("time") {
         let _ = stem::thing::sys::prop_set(text_id, abi::schema::keys::UI_KEY, key_sym as u64);

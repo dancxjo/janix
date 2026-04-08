@@ -1,8 +1,8 @@
+use crate::geometry::Rect;
+use crate::surface::Surface;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use stem::thing::ThingId;
-use crate::surface::Surface;
-use crate::geometry::Rect;
 
 /// A simple compositional scene graph tree.
 /// It holds Surfaces directly, and tracks the z-order stacking and damage calculation.

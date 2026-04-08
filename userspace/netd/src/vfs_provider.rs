@@ -1050,14 +1050,7 @@ impl NetVfsProvider {
                 // Derive network address by masking
                 format!(
                     "default via {}.{}.{}.{} dev eth0\n{}.{}.{}.0/{} dev eth0\n",
-                    gw[0],
-                    gw[1],
-                    gw[2],
-                    gw[3],
-                    net_b[0],
-                    net_b[1],
-                    net_b[2],
-                    c.prefix_len
+                    gw[0], gw[1], gw[2], gw[3], net_b[0], net_b[1], net_b[2], c.prefix_len
                 )
             }
             None => "# no routes\n".into(),

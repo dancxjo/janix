@@ -14,8 +14,8 @@
 //!
 //! The public entry point is [`resolve`].
 
-use alloc::string::String;
 use abi::errors::{Errno, SysResult};
+use alloc::string::String;
 
 /// Maximum number of components allowed in a path before returning `ENAMETOOLONG`.
 const MAX_COMPONENTS: usize = 64;

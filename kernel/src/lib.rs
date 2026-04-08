@@ -664,7 +664,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     crate::root::init_root_service::<R>();
 
-
     // The Root service is now available.
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());

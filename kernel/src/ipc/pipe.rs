@@ -317,7 +317,11 @@ impl crate::vfs::VfsNode for PipeReadNode {
     }
 
     fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
-        Ok(crate::vfs::VfsStat { mode: crate::vfs::VfsStat::S_IFIFO | 0o400, size: 0, ino: 0 })
+        Ok(crate::vfs::VfsStat {
+            mode: crate::vfs::VfsStat::S_IFIFO | 0o400,
+            size: 0,
+            ino: 0,
+        })
     }
 
     fn close(&self) {
@@ -369,7 +373,11 @@ impl crate::vfs::VfsNode for PipeWriteNode {
     }
 
     fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
-        Ok(crate::vfs::VfsStat { mode: crate::vfs::VfsStat::S_IFIFO | 0o200, size: 0, ino: 0 })
+        Ok(crate::vfs::VfsStat {
+            mode: crate::vfs::VfsStat::S_IFIFO | 0o200,
+            size: 0,
+            ino: 0,
+        })
     }
 
     fn close(&self) {
@@ -425,7 +433,11 @@ pub fn create_fd_pair_with_id(
     alloc::sync::Arc<dyn crate::vfs::VfsNode>,
     alloc::sync::Arc<dyn crate::vfs::VfsNode>,
 ) {
-    let cap = if capacity == 0 { DEFAULT_PIPE_CAPACITY } else { capacity as usize };
+    let cap = if capacity == 0 {
+        DEFAULT_PIPE_CAPACITY
+    } else {
+        capacity as usize
+    };
     let inner = Arc::new(Mutex::new(PipeInner {
         buf: RingBuf::new(cap),
         readers: 1,
@@ -436,8 +448,10 @@ pub fn create_fd_pair_with_id(
     }));
     let id = NEXT_PIPE_ID.fetch_add(1, Ordering::Relaxed);
     PIPES.lock().insert(id, inner.clone());
-    let read_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
-        Arc::new(PipeReadNode { inner: inner.clone(), pipe_id: id });
+    let read_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> = Arc::new(PipeReadNode {
+        inner: inner.clone(),
+        pipe_id: id,
+    });
     let write_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
         Arc::new(PipeWriteNode { inner, pipe_id: id });
     (id, read_node, write_node)
@@ -457,4 +471,3 @@ pub fn create_fd_pair(
     let (_id, r, w) = create_fd_pair_with_id(capacity, nonblock);
     (r, w)
 }
-

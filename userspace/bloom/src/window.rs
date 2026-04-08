@@ -7,19 +7,19 @@ pub struct Window {
     pub surface_id: ThingId, // Corresponds to the Surface in the SceneGraph
     pub app_id: String,
     pub title: String,
-    
+
     // Size hints
     pub min_width: i32,
     pub min_height: i32,
     pub max_width: i32,
     pub max_height: i32,
-    
+
     // State
     pub is_maximized: bool,
     pub is_fullscreen: bool,
     pub is_shaded: bool,
     pub manual_position: bool,
-    
+
     // Insets / Decorations
     pub inset_right: i32,
     pub inset_bottom: i32,

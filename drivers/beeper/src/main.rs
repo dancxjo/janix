@@ -9,10 +9,10 @@ mod tone;
 use abi::schema::keys::WRITE_PORT_HANDLE;
 use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
 use alloc::vec::Vec;
+use stem::info;
 use stem::syscall::port::{port_send, port_wait, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::info;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
@@ -23,8 +23,6 @@ fn main(_arg: usize) -> ! {
     let mut write_port_handle = 0;
 
     info!("Beeper: Waiting for sound device write port handle...");
-
-
 
     while write_port_handle == 0 {
         let mut devices = [ThingId::default(); 1];

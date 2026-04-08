@@ -23,10 +23,11 @@ pub mod path;
 pub mod procfs;
 pub mod provider;
 pub mod ramfs;
+pub mod sysfs;
 pub mod union;
 
-use alloc::sync::Arc;
 use abi::errors::{Errno, SysResult};
+use alloc::sync::Arc;
 
 // ── Open flags ─────────────────────────────────────────────────────────────
 
@@ -201,6 +202,7 @@ impl NamespaceRef {
 /// - `/`         ← root tmpfs (layered over bootfs via union)
 /// - `/dev`      ← device filesystem
 /// - `/proc`     ← process info (stub)
+/// - `/sys`      ← kernel device discovery metadata
 /// - `/tmp`      ← temporary filesystem (writable, volatile)
 /// - `/run`      ← transient runtime state (tmpfs)
 /// - `/services` ← populated by userland daemons (tmpfs stub for now)
@@ -222,6 +224,10 @@ pub fn init() {
     // Process info filesystem
     mount::mount("/proc", Arc::new(procfs::ProcFs::new()));
     crate::kinfo!("vfs: mounted procfs at /proc");
+
+    // Kernel device metadata
+    mount::mount("/sys", Arc::new(sysfs::SysFs::new()));
+    crate::kinfo!("vfs: mounted sysfs at /sys");
 
     // Temporary filesystem — scratch space for userland.
     mount::mount("/tmp", Arc::new(ramfs::RamFs::new()));
@@ -288,16 +294,28 @@ mod tests {
 
     #[test]
     fn test_vfs_stat_type_bits() {
-        let dir = VfsStat { mode: VfsStat::S_IFDIR | 0o755, size: 0, ino: 1 };
+        let dir = VfsStat {
+            mode: VfsStat::S_IFDIR | 0o755,
+            size: 0,
+            ino: 1,
+        };
         assert!(dir.is_dir());
         assert!(!dir.is_reg());
         assert!(!dir.is_chr());
 
-        let chr = VfsStat { mode: VfsStat::S_IFCHR | 0o666, size: 0, ino: 2 };
+        let chr = VfsStat {
+            mode: VfsStat::S_IFCHR | 0o666,
+            size: 0,
+            ino: 2,
+        };
         assert!(chr.is_chr());
         assert!(!chr.is_dir());
 
-        let reg = VfsStat { mode: VfsStat::S_IFREG | 0o644, size: 42, ino: 3 };
+        let reg = VfsStat {
+            mode: VfsStat::S_IFREG | 0o644,
+            size: 42,
+            ino: 3,
+        };
         assert!(reg.is_reg());
     }
 
@@ -327,7 +345,10 @@ mod tests {
 
     #[test]
     fn test_mem_node_read_eof() {
-        let node = MemNode { data: vec![], mode: VfsStat::S_IFREG | 0o444 };
+        let node = MemNode {
+            data: vec![],
+            mode: VfsStat::S_IFREG | 0o444,
+        };
         let mut buf = [0u8; 4];
         let n = node.read(0, &mut buf).unwrap();
         assert_eq!(n, 0);

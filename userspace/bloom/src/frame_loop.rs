@@ -51,7 +51,7 @@ impl FrameLoop {
     pub fn sleep_until_input(&self, input_handle: Option<PortHandle>) {
         let now = stem::time::now();
         let elapsed = now.saturating_sub(self.frame_start);
-        
+
         if elapsed.as_nanos() >= self.target_duration.as_nanos() {
             stem::yield_now();
             return;

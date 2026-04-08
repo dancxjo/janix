@@ -42,7 +42,7 @@ use spin::Mutex;
 
 use abi::{
     errors::{Errno, SysResult},
-    vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_RESP},
+    vfs_rpc::{VFS_RPC_MAX_RESP, VfsRpcOp, VfsRpcReqHeader},
 };
 
 use super::{VfsDriver, VfsNode, VfsStat};

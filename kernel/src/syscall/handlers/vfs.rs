@@ -185,7 +185,10 @@ pub fn sys_dup(old_fd: usize) -> SysResult<usize> {
 /// this is a no-op.  Returns `new_fd` on success.
 pub fn sys_dup2(old_fd: usize, new_fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    let result = pinfo_arc.lock().fd_table.dup2(old_fd as u32, new_fd as u32)?;
+    let result = pinfo_arc
+        .lock()
+        .fd_table
+        .dup2(old_fd as u32, new_fd as u32)?;
     Ok(result as usize)
 }
 
@@ -207,7 +210,10 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
         let read_fd = lock
             .fd_table
             .open(read_node, crate::vfs::OpenFlags::read_only())?;
-        match lock.fd_table.open(write_node, crate::vfs::OpenFlags::write_only()) {
+        match lock
+            .fd_table
+            .open(write_node, crate::vfs::OpenFlags::write_only())
+        {
             Ok(wfd) => (read_fd, wfd),
             Err(e) => {
                 let _ = lock.fd_table.close(read_fd);
@@ -306,4 +312,3 @@ pub fn sys_vfs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     crate::kinfo!("vfs: unmounted userland provider at {}", path);
     Ok(0)
 }
-

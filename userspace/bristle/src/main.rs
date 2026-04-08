@@ -348,19 +348,27 @@ fn main(packed_handles: usize) -> ! {
     if kbd_read != 0 {
         match ws.add_port_readable(kbd_read as u64) {
             Ok(tok) => kbd_tok = Some(tok),
-            Err(e) => info!("bristle: failed to watch kbd_read port {}: {:?}", kbd_read, e),
+            Err(e) => info!(
+                "bristle: failed to watch kbd_read port {}: {:?}",
+                kbd_read, e
+            ),
         }
     }
     if mouse_read != 0 {
         match ws.add_port_readable(mouse_read as u64) {
             Ok(tok) => mouse_tok = Some(tok),
-            Err(e) => info!("bristle: failed to watch mouse_read port {}: {:?}", mouse_read, e),
+            Err(e) => info!(
+                "bristle: failed to watch mouse_read port {}: {:?}",
+                mouse_read, e
+            ),
         }
     }
 
     if kbd_tok.is_none() && mouse_tok.is_none() {
         info!("bristle: no valid input ports to watch, shutting down loop");
-        loop { stem::sleep_ms(1000); }
+        loop {
+            stem::sleep_ms(1000);
+        }
     }
 
     loop {
@@ -387,191 +395,195 @@ fn main(packed_handles: usize) -> ! {
             };
 
             if let Ok(n) = port_recv(ready_handle, &mut recv_buf) {
-            if n > 0 {
-                let mut cursor = 0;
-                while cursor < n {
-                    let to_copy = (n - cursor).min(64 - accum_len);
-                    event_accum[accum_len..accum_len + to_copy]
-                        .copy_from_slice(&recv_buf[cursor..cursor + to_copy]);
-                    accum_len += to_copy;
-                    cursor += to_copy;
+                if n > 0 {
+                    let mut cursor = 0;
+                    while cursor < n {
+                        let to_copy = (n - cursor).min(64 - accum_len);
+                        event_accum[accum_len..accum_len + to_copy]
+                            .copy_from_slice(&recv_buf[cursor..cursor + to_copy]);
+                        accum_len += to_copy;
+                        cursor += to_copy;
 
-                    while accum_len >= BristleEventHeader::SIZE {
-                        // Check if we have enough bytes for the header + payload
-                        let mut header_bytes = [0u8; BristleEventHeader::SIZE];
-                        header_bytes.copy_from_slice(&event_accum[..BristleEventHeader::SIZE]);
+                        while accum_len >= BristleEventHeader::SIZE {
+                            // Check if we have enough bytes for the header + payload
+                            let mut header_bytes = [0u8; BristleEventHeader::SIZE];
+                            header_bytes.copy_from_slice(&event_accum[..BristleEventHeader::SIZE]);
 
-                        if let Ok(header) = BristleEventHeader::from_bytes(&header_bytes) {
-                            let total_len = BristleEventHeader::SIZE + header.payload_len as usize;
-                            if accum_len >= total_len {
-                                let event_bytes = &event_accum[..total_len];
+                            if let Ok(header) = BristleEventHeader::from_bytes(&header_bytes) {
+                                let total_len =
+                                    BristleEventHeader::SIZE + header.payload_len as usize;
+                                if accum_len >= total_len {
+                                    let event_bytes = &event_accum[..total_len];
 
-                                // Parse hotkeys and contract logs
-                                if header.event_type == EventType::KeyDown as u16
-                                    && header.payload_len >= 4
-                                {
-                                    let mut p = [0u8; 4];
-                                    p.copy_from_slice(&event_bytes[20..24]);
-                                    let payload = KeyEventPayload::from_bytes(&p);
+                                    // Parse hotkeys and contract logs
+                                    if header.event_type == EventType::KeyDown as u16
+                                        && header.payload_len >= 4
+                                    {
+                                        let mut p = [0u8; 4];
+                                        p.copy_from_slice(&event_bytes[20..24]);
+                                        let payload = KeyEventPayload::from_bytes(&p);
 
-                                    crate::info!(
-                                        "[CONTRACT] CONTRACT: input key_event key={} edge=down mods=0x{:02x} repeat={}",
-                                        payload.key().name(),
-                                        payload.mods,
-                                        payload.is_repeat()
-                                    );
-                                    if let Some(node) = node_id {
-                                        update_keyboard_graph_state(
-                                            node,
-                                            &mut graph_state,
-                                            payload,
-                                            true,
+                                        crate::info!(
+                                            "[CONTRACT] CONTRACT: input key_event key={} edge=down mods=0x{:02x} repeat={}",
+                                            payload.key().name(),
+                                            payload.mods,
+                                            payload.is_repeat()
                                         );
-                                    }
-
-                                    match payload.key() {
-                                        Key::F2 => {
-                                            info!("bristle: F2 pressed - dumping tasks...");
-                                            stem::syscall::task_dump();
-                                        }
-                                        Key::F10 => {
-                                            info!("bristle: F10 pressed - dumping graph...");
-                                            let _ = thingsys::dump_graph(0);
-                                        }
-                                        Key::Delete => {
-                                            if payload.mods().has_ctrl() && payload.mods().has_alt()
-                                            {
-                                                info!(
-                                                    "bristle: Ctrl+Alt+Del - rebooting system..."
-                                                );
-                                                stem::syscall::reboot();
-                                            }
-                                        }
-                                        Key::F12 => {
-                                            info!(
-                                                "bristle: F12 pressed - resetting userspace and respawning sprout..."
+                                        if let Some(node) = node_id {
+                                            update_keyboard_graph_state(
+                                                node,
+                                                &mut graph_state,
+                                                payload,
+                                                true,
                                             );
-                                            reset_userspace_and_respawn_sprout();
                                         }
-                                        _ => {}
-                                    }
-                                } else if header.event_type == EventType::KeyUp as u16
-                                    && header.payload_len >= 4
-                                {
-                                    let mut p = [0u8; 4];
-                                    p.copy_from_slice(&event_bytes[20..24]);
-                                    let payload = KeyEventPayload::from_bytes(&p);
 
-                                    crate::info!(
-                                        "[CONTRACT] CONTRACT: input key_event key={} edge=up mods=0x{:02x}",
-                                        payload.key().name(),
-                                        payload.mods
-                                    );
-                                    if let Some(node) = node_id {
-                                        update_keyboard_graph_state(
-                                            node,
-                                            &mut graph_state,
-                                            payload,
-                                            false,
+                                        match payload.key() {
+                                            Key::F2 => {
+                                                info!("bristle: F2 pressed - dumping tasks...");
+                                                stem::syscall::task_dump();
+                                            }
+                                            Key::F10 => {
+                                                info!("bristle: F10 pressed - dumping graph...");
+                                                let _ = thingsys::dump_graph(0);
+                                            }
+                                            Key::Delete => {
+                                                if payload.mods().has_ctrl()
+                                                    && payload.mods().has_alt()
+                                                {
+                                                    info!(
+                                                        "bristle: Ctrl+Alt+Del - rebooting system..."
+                                                    );
+                                                    stem::syscall::reboot();
+                                                }
+                                            }
+                                            Key::F12 => {
+                                                info!(
+                                                    "bristle: F12 pressed - resetting userspace and respawning sprout..."
+                                                );
+                                                reset_userspace_and_respawn_sprout();
+                                            }
+                                            _ => {}
+                                        }
+                                    } else if header.event_type == EventType::KeyUp as u16
+                                        && header.payload_len >= 4
+                                    {
+                                        let mut p = [0u8; 4];
+                                        p.copy_from_slice(&event_bytes[20..24]);
+                                        let payload = KeyEventPayload::from_bytes(&p);
+
+                                        crate::info!(
+                                            "[CONTRACT] CONTRACT: input key_event key={} edge=up mods=0x{:02x}",
+                                            payload.key().name(),
+                                            payload.mods
                                         );
-                                    }
-                                } else if header.event_type == EventType::PointerMove as u16
-                                    && header.payload_len >= 4
-                                {
-                                    let mut p = [0u8; 4];
-                                    p.copy_from_slice(&event_bytes[20..24]);
-                                    let payload = PointerMovePayload::from_bytes(&p);
-                                    if let Some(node) = node_id {
-                                        update_pointer_move_graph_state(
-                                            node,
-                                            &mut graph_state,
-                                            payload,
+                                        if let Some(node) = node_id {
+                                            update_keyboard_graph_state(
+                                                node,
+                                                &mut graph_state,
+                                                payload,
+                                                false,
+                                            );
+                                        }
+                                    } else if header.event_type == EventType::PointerMove as u16
+                                        && header.payload_len >= 4
+                                    {
+                                        let mut p = [0u8; 4];
+                                        p.copy_from_slice(&event_bytes[20..24]);
+                                        let payload = PointerMovePayload::from_bytes(&p);
+                                        if let Some(node) = node_id {
+                                            update_pointer_move_graph_state(
+                                                node,
+                                                &mut graph_state,
+                                                payload,
+                                            );
+                                        }
+                                        let dx = payload.dx;
+                                        let dy = payload.dy;
+                                        crate::info!(
+                                            "[CONTRACT] CONTRACT: input pointer_move dx={} dy={}",
+                                            dx,
+                                            dy
                                         );
-                                    }
-                                    let dx = payload.dx;
-                                    let dy = payload.dy;
-                                    crate::info!(
-                                        "[CONTRACT] CONTRACT: input pointer_move dx={} dy={}",
-                                        dx,
-                                        dy
-                                    );
-                                } else if header.event_type == EventType::PointerButtonDown as u16
-                                    && header.payload_len >= PointerButtonPayload::SIZE as u32
-                                {
-                                    let mut p = [0u8; PointerButtonPayload::SIZE];
-                                    p.copy_from_slice(
-                                        &event_bytes[20..20 + PointerButtonPayload::SIZE],
-                                    );
-                                    let payload = PointerButtonPayload::from_bytes(&p);
-                                    if let Some(node) = node_id {
-                                        update_pointer_button_graph_state(
-                                            node,
-                                            &mut graph_state,
-                                            payload,
-                                            true,
+                                    } else if header.event_type
+                                        == EventType::PointerButtonDown as u16
+                                        && header.payload_len >= PointerButtonPayload::SIZE as u32
+                                    {
+                                        let mut p = [0u8; PointerButtonPayload::SIZE];
+                                        p.copy_from_slice(
+                                            &event_bytes[20..20 + PointerButtonPayload::SIZE],
                                         );
-                                    }
-                                } else if header.event_type == EventType::PointerButtonUp as u16
-                                    && header.payload_len >= PointerButtonPayload::SIZE as u32
-                                {
-                                    let mut p = [0u8; PointerButtonPayload::SIZE];
-                                    p.copy_from_slice(
-                                        &event_bytes[20..20 + PointerButtonPayload::SIZE],
-                                    );
-                                    let payload = PointerButtonPayload::from_bytes(&p);
-                                    if let Some(node) = node_id {
-                                        update_pointer_button_graph_state(
-                                            node,
-                                            &mut graph_state,
-                                            payload,
-                                            false,
+                                        let payload = PointerButtonPayload::from_bytes(&p);
+                                        if let Some(node) = node_id {
+                                            update_pointer_button_graph_state(
+                                                node,
+                                                &mut graph_state,
+                                                payload,
+                                                true,
+                                            );
+                                        }
+                                    } else if header.event_type == EventType::PointerButtonUp as u16
+                                        && header.payload_len >= PointerButtonPayload::SIZE as u32
+                                    {
+                                        let mut p = [0u8; PointerButtonPayload::SIZE];
+                                        p.copy_from_slice(
+                                            &event_bytes[20..20 + PointerButtonPayload::SIZE],
                                         );
+                                        let payload = PointerButtonPayload::from_bytes(&p);
+                                        if let Some(node) = node_id {
+                                            update_pointer_button_graph_state(
+                                                node,
+                                                &mut graph_state,
+                                                payload,
+                                                false,
+                                            );
+                                        }
                                     }
-                                }
 
-                                if port_send_all(legacy_evt_write, event_bytes).is_err() {
-                                    drop_counter += 1;
-                                }
+                                    if port_send_all(legacy_evt_write, event_bytes).is_err() {
+                                        drop_counter += 1;
+                                    }
 
-                                if legacy_evt_echo_write != 0
-                                    && port_send_all(legacy_evt_echo_write, event_bytes).is_err()
-                                {
-                                    drop_counter += 1;
-                                }
+                                    if legacy_evt_echo_write != 0
+                                        && port_send_all(legacy_evt_echo_write, event_bytes)
+                                            .is_err()
+                                    {
+                                        drop_counter += 1;
+                                    }
 
-                                event_count += 1;
-                                if let Some(tid) = topic_id {
-                                    let _ = topic_publish(tid, event_bytes);
-                                }
+                                    event_count += 1;
+                                    if let Some(tid) = topic_id {
+                                        let _ = topic_publish(tid, event_bytes);
+                                    }
 
-                                // Shift remaining bytes
-                                accum_len -= total_len;
-                                if accum_len > 0 {
-                                    event_accum.copy_within(total_len..total_len + accum_len, 0);
+                                    // Shift remaining bytes
+                                    accum_len -= total_len;
+                                    if accum_len > 0 {
+                                        event_accum
+                                            .copy_within(total_len..total_len + accum_len, 0);
+                                    }
+                                } else {
+                                    // Wait for more payload bytes
+                                    break;
                                 }
                             } else {
-                                // Wait for more payload bytes
-                                break;
-                            }
-                        } else {
-                            // Invalid header, drop 1 byte to try resync
-                            resync_counter = resync_counter.wrapping_add(1);
-                            if resync_counter <= 4 || resync_counter % 100 == 0 {
-                                info!(
-                                    "bristle: resyncing raw stream after invalid header (count={}, accum_len={})",
-                                    resync_counter, accum_len
-                                );
-                            }
-                            accum_len -= 1;
-                            if accum_len > 0 {
-                                event_accum.copy_within(1..1 + accum_len, 0);
+                                // Invalid header, drop 1 byte to try resync
+                                resync_counter = resync_counter.wrapping_add(1);
+                                if resync_counter <= 4 || resync_counter % 100 == 0 {
+                                    info!(
+                                        "bristle: resyncing raw stream after invalid header (count={}, accum_len={})",
+                                        resync_counter, accum_len
+                                    );
+                                }
+                                accum_len -= 1;
+                                if accum_len > 0 {
+                                    event_accum.copy_within(1..1 + accum_len, 0);
+                                }
                             }
                         }
                     }
                 }
-            }
-        } // close if Ok(n)
-
+            } // close if Ok(n)
         } // close for ev in events
 
         if drop_counter > 0 && drop_counter % 100 == 0 {

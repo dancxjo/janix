@@ -216,8 +216,8 @@ fn handle_stat(resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
 
     let (mode, size): (u32, u64) = match handle {
@@ -248,14 +248,38 @@ struct DirEntry {
 }
 
 const DIR_ENTRIES: &[DirEntry] = &[
-    DirEntry { name: "ctl",      handle: HANDLE_CTL      },
-    DirEntry { name: "status",   handle: HANDLE_STATUS   },
-    DirEntry { name: "mac",      handle: HANDLE_MAC      },
-    DirEntry { name: "mtu",      handle: HANDLE_MTU      },
-    DirEntry { name: "rx",       handle: HANDLE_RX       },
-    DirEntry { name: "tx",       handle: HANDLE_TX       },
-    DirEntry { name: "features", handle: HANDLE_FEATURES },
-    DirEntry { name: "events",   handle: HANDLE_EVENTS   },
+    DirEntry {
+        name: "ctl",
+        handle: HANDLE_CTL,
+    },
+    DirEntry {
+        name: "status",
+        handle: HANDLE_STATUS,
+    },
+    DirEntry {
+        name: "mac",
+        handle: HANDLE_MAC,
+    },
+    DirEntry {
+        name: "mtu",
+        handle: HANDLE_MTU,
+    },
+    DirEntry {
+        name: "rx",
+        handle: HANDLE_RX,
+    },
+    DirEntry {
+        name: "tx",
+        handle: HANDLE_TX,
+    },
+    DirEntry {
+        name: "features",
+        handle: HANDLE_FEATURES,
+    },
+    DirEntry {
+        name: "events",
+        handle: HANDLE_EVENTS,
+    },
 ];
 
 fn handle_readdir(resp_port: PortHandle, payload: &[u8]) {
@@ -264,12 +288,18 @@ fn handle_readdir(resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8],  payload[9],  payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]) as usize;
     let max_bytes =
         u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
@@ -307,19 +337,25 @@ fn handle_read(state: &mut NetVfsState, resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8],  payload[9],  payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]) as usize;
-    let len =
-        u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+    let len = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
 
     match handle {
         HANDLE_STATUS => {
-            let text = format!(
+            let text =
+                format!(
                 "state: {}\nlink: {}\nmac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\nmtu: {}\n",
                 if state.link_up { "up" } else { "down" },
                 if state.link_up { "up" } else { "down" },
@@ -332,8 +368,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: PortHandle, payload: &[u8]) {
         HANDLE_MAC => {
             let text = format!(
                 "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
-                state.mac[0], state.mac[1], state.mac[2],
-                state.mac[3], state.mac[4], state.mac[5],
+                state.mac[0], state.mac[1], state.mac[2], state.mac[3], state.mac[4], state.mac[5],
             );
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
@@ -395,8 +430,8 @@ fn handle_write(
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     // bytes 8..16: offset (ignored for these files)
     let data_len =
@@ -441,8 +476,7 @@ fn handle_write(
                 send_err(resp_port, E_INVAL);
                 return;
             }
-            let frame_len =
-                u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+            let frame_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
             if data.len() < 4 + frame_len {
                 send_err(resp_port, E_INVAL);
                 return;
@@ -470,17 +504,25 @@ fn handle_poll(state: &NetVfsState, resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     // bytes 8..12: requested events (ignored — we check readiness unconditionally)
 
     let revents: u32 = match handle {
         HANDLE_RX => {
-            if !state.rx_queue.is_empty() { POLLIN } else { 0 }
+            if !state.rx_queue.is_empty() {
+                POLLIN
+            } else {
+                0
+            }
         }
         HANDLE_EVENTS => {
-            if !state.events_queue.is_empty() { POLLIN } else { 0 }
+            if !state.events_queue.is_empty() {
+                POLLIN
+            } else {
+                0
+            }
         }
         // These text files are always readable.
         HANDLE_STATUS | HANDLE_MAC | HANDLE_MTU | HANDLE_FEATURES => POLLIN,

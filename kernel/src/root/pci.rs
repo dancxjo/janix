@@ -231,7 +231,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     link(parent_node, rels::HAS_DEVICE, node);
 
-
     // BARs - collect MMIO BARs for device registry
     let mut bar_addrs: [u64; 6] = [0; 6];
     let mut bar_sizes: [u64; 6] = [0; 6];
@@ -287,8 +286,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         }
     }
 
-
-
     // PCI capabilities: MSI/MSI-X
     let msi_cap = find_capability(bus, dev, func, 0x05);
     let msix_cap = find_capability(bus, dev, func, 0x11);
@@ -302,7 +299,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Virtio GPU detection (vendor 0x1af4, class 0x03 display controller)
     if vendor_id == 0x1af4 && class_code == 0x03 {
-
         register_virtio_gpu(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -318,13 +314,11 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // LPC/ISA Bridge detection - class 0x06, subclass 0x01
     if class_code == 0x06 && subclass == 0x01 {
-
         publish_lpc_bridge(node, create, set, link, intern);
     }
 
     // AHCI SATA controller detection - class 0x01, subclass 0x06, prog_if 0x01
     if class_code == 0x01 && subclass == 0x06 && prog_if == 0x01 {
-
         register_ahci_controller(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap,
         );
@@ -333,7 +327,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     // Virtio network device detection (vendor 0x1af4, class 0x02 network controller)
     // Device IDs: 0x1000 (transitional), 0x1041 (modern)
     if vendor_id == 0x1af4 && class_code == 0x02 {
-
         register_virtio_net(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -341,7 +334,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Virtio sound device detection (vendor 0x1af4, device 0x1059)
     if vendor_id == 0x1af4 && device_id == 0x1059 {
-
         register_virtio_sound(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -388,9 +380,17 @@ fn register_virtio_gpu(
     parse_virtio_capabilities(bus, dev, func, gpu_node, set);
 
     let entry = DeviceEntry::new_mmio(kinds::DEV_DISPLAY_GPU, gpu_node, *bar_addrs, *bar_sizes);
+    let id_reg = unsafe { pci_read_config(bus, dev, func, 0x00) };
+    let class_reg = unsafe { pci_read_config(bus, dev, func, 0x08) };
+    let vendor_id = (id_reg & 0xFFFF) as u16;
+    let device_id = (id_reg >> 16) as u16;
+    let prog_if = ((class_reg >> 8) & 0xFF) as u8;
+    let subclass = ((class_reg >> 16) & 0xFF) as u8;
+    let class_code = ((class_reg >> 24) & 0xFF) as u8;
 
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
+        reg.set_pci_identity(idx, vendor_id, device_id, class_code, subclass, prog_if);
         let msi_info = msi_cap.map(|offset| {
             let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
             MsiCapability {
@@ -413,7 +413,6 @@ fn register_virtio_gpu(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-
     } else {
         crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
     }
@@ -469,14 +468,12 @@ fn parse_virtio_capabilities(
                 VIRTIO_PCI_CAP_COMMON_CFG => {
                     set(gpu_node, keys::VIRTIO_COMMON_BAR, bar as u64);
                     set(gpu_node, keys::VIRTIO_COMMON_OFFSET, offset as u64);
-
                 }
                 VIRTIO_PCI_CAP_NOTIFY_CFG => {
                     let multiplier = unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
                     set(gpu_node, keys::VIRTIO_NOTIFY_BAR, bar as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_OFFSET, offset as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER, multiplier as u64);
-
                 }
                 VIRTIO_PCI_CAP_ISR_CFG => {
                     set(gpu_node, keys::VIRTIO_ISR_BAR, bar as u64);
@@ -513,9 +510,17 @@ fn register_ahci_controller(
     // AHCI uses BAR5 for ABAR (AHCI Base Address Register)
     // But our DeviceEntry stores all BARs anyway
     let entry = DeviceEntry::new_mmio("dev.storage.Ahci", graph_id, *bar_addrs, *bar_sizes);
+    let id_reg = unsafe { pci_read_config(bus, dev, func, 0x00) };
+    let class_reg = unsafe { pci_read_config(bus, dev, func, 0x08) };
+    let vendor_id = (id_reg & 0xFFFF) as u16;
+    let device_id = (id_reg >> 16) as u16;
+    let prog_if = ((class_reg >> 8) & 0xFF) as u8;
+    let subclass = ((class_reg >> 16) & 0xFF) as u8;
+    let class_code = ((class_reg >> 24) & 0xFF) as u8;
 
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
+        reg.set_pci_identity(idx, vendor_id, device_id, class_code, subclass, prog_if);
         let msi_info = msi_cap.map(|offset| {
             let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
             MsiCapability {
@@ -538,7 +543,6 @@ fn register_ahci_controller(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-
     } else {
         crate::kinfo!("PCI: Failed to register AHCI controller - registry full");
     }
@@ -618,8 +622,6 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
             ps2_id,
         ));
     }
-
-
 }
 
 /// Helper struct to hold parsed VirtIO capabilities
@@ -722,9 +724,17 @@ fn register_virtio_net(
     parse_virtio_capabilities(bus, dev, func, net_node, set);
 
     let entry = DeviceEntry::new_mmio(kinds::DEV_NET_NIC, net_node, *bar_addrs, *bar_sizes);
+    let id_reg = unsafe { pci_read_config(bus, dev, func, 0x00) };
+    let class_reg = unsafe { pci_read_config(bus, dev, func, 0x08) };
+    let vendor_id = (id_reg & 0xFFFF) as u16;
+    let device_id = (id_reg >> 16) as u16;
+    let prog_if = ((class_reg >> 8) & 0xFF) as u8;
+    let subclass = ((class_reg >> 16) & 0xFF) as u8;
+    let class_code = ((class_reg >> 24) & 0xFF) as u8;
 
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
+        reg.set_pci_identity(idx, vendor_id, device_id, class_code, subclass, prog_if);
         let msi_info = msi_cap.map(|offset| {
             let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
             MsiCapability {
@@ -801,9 +811,17 @@ fn register_virtio_sound(
     parse_virtio_capabilities(bus, dev, func, snd_node, set);
 
     let entry = DeviceEntry::new_mmio(kinds::DEV_SOUND, snd_node, *bar_addrs, *bar_sizes);
+    let id_reg = unsafe { pci_read_config(bus, dev, func, 0x00) };
+    let class_reg = unsafe { pci_read_config(bus, dev, func, 0x08) };
+    let vendor_id = (id_reg & 0xFFFF) as u16;
+    let device_id = (id_reg >> 16) as u16;
+    let prog_if = ((class_reg >> 8) & 0xFF) as u8;
+    let subclass = ((class_reg >> 16) & 0xFF) as u8;
+    let class_code = ((class_reg >> 24) & 0xFF) as u8;
 
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
+        reg.set_pci_identity(idx, vendor_id, device_id, class_code, subclass, prog_if);
         let msi_info = msi_cap.map(|offset| {
             let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
             MsiCapability {

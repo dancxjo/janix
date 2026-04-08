@@ -2,9 +2,9 @@
 #![feature(restricted_std)]
 extern crate alloc;
 
-use alloc::vec::Vec;
-use stem::syscall::{vfs_open, vfs_write, sleep_ms};
 use abi::syscall::vfs_flags::O_RDWR;
+use alloc::vec::Vec;
+use stem::syscall::{sleep_ms, vfs_open, vfs_write};
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
@@ -30,7 +30,7 @@ fn main(_arg: usize) -> ! {
     encode_header(1, 1, 12, &mut buf);
     buf.extend_from_slice(&2u32.to_ne_bytes());
     let _ = vfs_write(fd, &buf);
-    
+
     // Bind compositor
     // object_id=2 (registry), opcode=0 (bind), name=1(compositor), (string), version=1, new_id=3
     let mut buf = Vec::new();
@@ -39,8 +39,10 @@ fn main(_arg: usize) -> ! {
     let mut str_bytes = name.as_bytes().to_vec();
     str_bytes.push(0);
     let padding = (4 - (str_bytes.len() % 4)) % 4;
-    for _ in 0..padding { str_bytes.push(0); }
-    
+    for _ in 0..padding {
+        str_bytes.push(0);
+    }
+
     let size = 8 + 4 + 4 + str_bytes.len() as u16 + 4 + 4;
     encode_header(2, 0, size, &mut buf);
     buf.extend_from_slice(&1u32.to_ne_bytes()); // name
@@ -58,7 +60,9 @@ fn main(_arg: usize) -> ! {
     let mut str_bytes = name.as_bytes().to_vec();
     str_bytes.push(0);
     let padding = (4 - (str_bytes.len() % 4)) % 4;
-    for _ in 0..padding { str_bytes.push(0); }
+    for _ in 0..padding {
+        str_bytes.push(0);
+    }
     let size = 8 + 4 + 4 + str_bytes.len() as u16 + 4 + 4;
     encode_header(2, 0, size, &mut buf);
     buf.extend_from_slice(&2u32.to_ne_bytes()); // name
@@ -80,17 +84,18 @@ fn main(_arg: usize) -> ! {
     let height: u32 = 200;
     let stride: u32 = width * 4;
     let size: u32 = stride * height;
-    
-    let bs_id = stem::thing::sys::bytespace_create(size as usize, 0, 0).expect("Failed to create bytespace");
+
+    let bs_id = stem::thing::sys::bytespace_create(size as usize, 0, 0)
+        .expect("Failed to create bytespace");
     let ptr = stem::thing::sys::bytespace_map(bs_id).expect("Failed to map bytespace");
-    
+
     unsafe {
         let pixels = core::slice::from_raw_parts_mut(ptr as *mut u32, (width * height) as usize);
         for i in 0..pixels.len() {
             pixels[i] = 0xFFFF0088; // Pinkish Red
         }
     }
-    
+
     // Create pool
     // object_id=4 (shm), opcode=0 (create_pool), new_id=6, fd=bs_id.to_u64, size
     let mut buf = Vec::new();
@@ -128,19 +133,20 @@ fn main(_arg: usize) -> ! {
     let _ = vfs_write(fd, &buf);
 
     stem::info!("wayland_hello: Sent attach and commit! We should see a 200x200 pink square now.");
-    
+
     // Now loop and update color
     loop {
         for color in [0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF] {
             sleep_ms(300);
             unsafe {
-                let pixels = core::slice::from_raw_parts_mut(ptr as *mut u32, (width * height) as usize);
+                let pixels =
+                    core::slice::from_raw_parts_mut(ptr as *mut u32, (width * height) as usize);
                 for i in 0..pixels.len() {
                     pixels[i] = color;
                 }
             }
-            
-            // Re-attach and commit 
+
+            // Re-attach and commit
             let mut buf = Vec::new();
             encode_header(5, 1, 8 + 12, &mut buf);
             buf.extend_from_slice(&7u32.to_ne_bytes());

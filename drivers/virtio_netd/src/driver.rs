@@ -75,6 +75,10 @@ impl VirtioNetDriver {
 
         // Find a dev.net.nic node
         let nic_id = find_nic_device()?;
+        Self::claim_device(nic_id)
+    }
+
+    pub fn claim_device(nic_id: u64) -> Result<Self, Errno> {
         info!("VirtIO-NET: Found NIC device t{:x}", nic_id);
 
         // Create VirtIO device wrapper

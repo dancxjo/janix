@@ -40,10 +40,7 @@ enum RamfsEntry {
 
 impl RamfsEntry {
     fn new_dir() -> Arc<Self> {
-        Arc::new(RamfsEntry::Dir(
-            Mutex::new(BTreeMap::new()),
-            alloc_ino(),
-        ))
+        Arc::new(RamfsEntry::Dir(Mutex::new(BTreeMap::new()), alloc_ino()))
     }
 
     fn new_file(data: Vec<u8>) -> Arc<Self> {
@@ -60,9 +57,7 @@ impl RamfsEntry {
     /// Look up a child by name inside a directory entry.
     fn lookup_child(&self, name: &str) -> SysResult<Arc<RamfsEntry>> {
         match self {
-            RamfsEntry::Dir(children, _) => {
-                children.lock().get(name).cloned().ok_or(Errno::ENOENT)
-            }
+            RamfsEntry::Dir(children, _) => children.lock().get(name).cloned().ok_or(Errno::ENOENT),
             _ => Err(Errno::ENOTDIR),
         }
     }
@@ -299,7 +294,7 @@ fn split_last(path: &str) -> Option<(&str, &str)> {
     }
     match trimmed.rfind('/') {
         Some(idx) => {
-            let parent = &trimmed[..idx];  // parent dir (no trailing slash)
+            let parent = &trimmed[..idx]; // parent dir (no trailing slash)
             let name = &trimmed[idx + 1..];
             if name.is_empty() {
                 None

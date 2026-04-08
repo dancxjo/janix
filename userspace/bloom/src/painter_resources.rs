@@ -7,7 +7,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
 use stem::thing::{HandleId, ThingId};
-use stem::{debug, info,  syscall, warn};
+use stem::{debug, info, syscall, warn};
 
 pub static ASSETS: AssetBank = AssetBank::new();
 

@@ -103,10 +103,10 @@ unsafe extern "C" fn user_trampoline() -> ! {
         "msr spsel, #1",
         "mov sp, x9",
         // Set the user-mode register state.
-        "msr sp_el0,   x20",    // user stack pointer
-        "msr elr_el1,  x19",    // user entry PC
-        "msr ttbr0_el1, x21",   // user address space
-        "isb",                   // ensure TTBR0 is visible before eret
+        "msr sp_el0,   x20",  // user stack pointer
+        "msr elr_el1,  x19",  // user entry PC
+        "msr ttbr0_el1, x21", // user address space
+        "isb",                // ensure TTBR0 is visible before eret
         // SPSR_EL1 = 0 → EL0t mode, DAIF bits 0 (interrupts unmasked)
         "msr spsr_el1, xzr",
         // Forward startup argument to x0; clear all other general registers.

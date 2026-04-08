@@ -67,7 +67,11 @@ struct PortBlockDevice {
 impl PortBlockDevice {
     fn new(port: PortHandle) -> Option<Self> {
         let (resp_w, resp_r) = port_create(256 * 1024).ok()?;
-        Some(Self { port, resp_w, resp_r })
+        Some(Self {
+            port,
+            resp_w,
+            resp_r,
+        })
     }
 }
 
@@ -76,7 +80,10 @@ impl BlockDevice for PortBlockDevice {
         let mut req = [0u8; 4 + 1 + core::mem::size_of::<ReadRequest>()];
         req[0..4].copy_from_slice(&(self.resp_w as u32).to_le_bytes());
         req[4] = BlockDeviceRequest::Read as u8;
-        let read_req = ReadRequest { lba, sector_count: count as u32 };
+        let read_req = ReadRequest {
+            lba,
+            sector_count: count as u32,
+        };
         let req_bytes = unsafe {
             core::slice::from_raw_parts(
                 &read_req as *const ReadRequest as *const u8,
@@ -86,9 +93,8 @@ impl BlockDevice for PortBlockDevice {
         req[5..].copy_from_slice(req_bytes);
         port_send(self.port, &req).map_err(|_| BlockError::IoError)?;
 
-        let expected = core::mem::size_of::<ReadResponse>()
-            + (count as usize * ISO_SECTOR_SIZE as usize)
-            + 1;
+        let expected =
+            core::mem::size_of::<ReadResponse>() + (count as usize * ISO_SECTOR_SIZE as usize) + 1;
         let mut resp_buf = alloc::vec![0u8; expected];
         let n = port_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
         if n < core::mem::size_of::<ReadResponse>() + 1 {
@@ -108,9 +114,12 @@ impl BlockDevice for PortBlockDevice {
             return Err(BlockError::IoError);
         }
         let header_bytes = &resp_buf[1..1 + core::mem::size_of::<ReadResponse>()];
-        let data_len =
-            u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], header_bytes[3]])
-                as usize;
+        let data_len = u32::from_le_bytes([
+            header_bytes[0],
+            header_bytes[1],
+            header_bytes[2],
+            header_bytes[3],
+        ]) as usize;
         let data_start = 1 + core::mem::size_of::<ReadResponse>();
         let data_end = data_start + data_len;
         if data_end > n || data_len > buf.len() {
@@ -256,12 +265,18 @@ fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payloa
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8], payload[9], payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]);
     let len = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
 
@@ -276,7 +291,10 @@ fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payloa
         return;
     }
 
-    let iso_file = iso9660::IsoFile { extent_lba: lba, size };
+    let iso_file = iso9660::IsoFile {
+        extent_lba: lba,
+        size,
+    };
     let clamped_len = len.min((size as u64 - offset) as usize);
 
     match iso_file.read_range(dev, offset, clamped_len) {
@@ -302,12 +320,18 @@ fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payl
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8], payload[9], payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]);
     let max_bytes =
         u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
@@ -349,8 +373,8 @@ fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let (lba, size) = decode_handle(handle);
 
@@ -366,7 +390,11 @@ fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload
         !entries.is_empty()
     };
 
-    let mode = if is_dir { S_IFDIR | 0o555 } else { S_IFREG | 0o444 };
+    let mode = if is_dir {
+        S_IFDIR | 0o555
+    } else {
+        S_IFREG | 0o444
+    };
     let ino = handle; // reuse handle as inode number
 
     let mut resp = [0u8; 21]; // 1 + 4 + 8 + 8
@@ -426,8 +454,10 @@ fn main(_arg: usize) -> ! {
             //    We pass the *write* end to the kernel so it can send us RPCs.
             match vfs_mount(req_write, "/boot/iso") {
                 Ok(()) => {
-                    info!("iso9660d: mounted at /boot/iso (provider port w={} r={})",
-                        req_write, req_read);
+                    info!(
+                        "iso9660d: mounted at /boot/iso (provider port w={} r={})",
+                        req_write, req_read
+                    );
                     mounted = Some((fs, block_dev, req_write, req_read));
                     break;
                 }
@@ -469,4 +499,3 @@ fn main(_arg: usize) -> ! {
         }
     }
 }
-

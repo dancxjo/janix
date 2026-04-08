@@ -12,7 +12,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use stem::thing::sys;
 use stem::thing::HandleId;
 
-
 // === Observability Counters ===
 // These track diagnostic events for XML-based SVG traversal
 

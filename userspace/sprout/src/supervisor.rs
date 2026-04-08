@@ -46,6 +46,8 @@ impl Supervisor {
 
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
+        self.ensure_service("/devd", "svc.devd");
+        self.ensure_service("/netd", "svc.net");
         /*
         crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
@@ -113,7 +115,10 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        info!("SPROUT: Discovering modules from registry at 0x{:x}...", self.registry_ptr);
+        info!(
+            "SPROUT: Discovering modules from registry at 0x{:x}...",
+            self.registry_ptr
+        );
 
         if self.registry_ptr == 0 {
             info!("SPROUT: No boot registry provided!");
@@ -130,7 +135,8 @@ impl Supervisor {
             let name_ptr = unsafe { *entries_ptr.add(i * 2) };
             let name_len = unsafe { *entries_ptr.add(i * 2 + 1) };
 
-            let name_bytes = unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
+            let name_bytes =
+                unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
             let name = core::str::from_utf8(name_bytes).unwrap_or("").to_string();
 
             info!("SPROUT: Module[{}] = '{}'", i, name);
@@ -252,6 +258,23 @@ impl Supervisor {
         self.tasks.push(ManagedTask {
             name: full.clone(),
             kind: TaskKind::App,
+            module_path: full,
+            pid: None,
+            restarts: 0,
+            spawn_arg: 0,
+        });
+    }
+
+    fn ensure_service(&mut self, name: &str, service_kind: &str) {
+        if self.tasks.iter().any(|t| t.name.contains(name)) {
+            return;
+        }
+
+        let full = format!("/boot{}", name);
+        info!("SPROUT: Adding managed service '{}'", full);
+        self.tasks.push(ManagedTask {
+            name: full.clone(),
+            kind: TaskKind::Service(service_kind.to_string()),
             module_path: full,
             pid: None,
             restarts: 0,

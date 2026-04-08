@@ -6,7 +6,7 @@ extern crate alloc;
 use abi::device::PCI_IRQ_MODE_MSIX;
 use core::ptr::write_volatile;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
+use stem::abi::module_manifest::{MANIFEST_MAGIC, ManifestHeader, ModuleKind};
 use stem::device::device_enable_msi;
 use stem::syscall::{device_alloc_dma, device_dma_phys, device_irq_subscribe, device_irq_wait};
 use stem::thing::sys as thingsys;

@@ -754,7 +754,13 @@ impl PaintBuilder {
         let mut pixels = alloc::vec![0u32; len / 4];
 
         let mut surf = unsafe {
-            crate::surface::PixelBuffer::new(pixels.as_mut_ptr() as *mut u8, len, w, h, stride as u32)
+            crate::surface::PixelBuffer::new(
+                pixels.as_mut_ptr() as *mut u8,
+                len,
+                w,
+                h,
+                stride as u32,
+            )
         };
 
         let mut list = crate::drawlist::DrawList::new();

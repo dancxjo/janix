@@ -236,7 +236,7 @@ pub struct Surface {
     pub height: i32,
     pub stride_bytes: usize,
     pub format: PixelFormat,
-    
+
     pub x: i32,
     pub y: i32,
     pub z_index: i32,
@@ -306,7 +306,8 @@ impl Surface {
     }
 
     pub fn add_damage(&mut self, rect: Rect) {
-        if let Some(clipped) = Rect::intersection(&rect, &Rect::new(0, 0, self.width, self.height)) {
+        if let Some(clipped) = Rect::intersection(&rect, &Rect::new(0, 0, self.width, self.height))
+        {
             self.damage.push(clipped);
         }
     }

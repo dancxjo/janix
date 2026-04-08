@@ -95,7 +95,11 @@ struct RasterContext<'a> {
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(surface: &'a mut PixelBuffer, cache: &'a mut BytespaceMapCache, solid_text: bool) -> Self {
+    fn new(
+        surface: &'a mut PixelBuffer,
+        cache: &'a mut BytespaceMapCache,
+        solid_text: bool,
+    ) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,
@@ -907,7 +911,14 @@ fn stroke_rect_clipped_blend(
         }
     }
 }
-pub fn fill_circle_blend(surface: &mut PixelBuffer, cx: i32, cy: i32, r: i32, color: u32, clip: &Rect) {
+pub fn fill_circle_blend(
+    surface: &mut PixelBuffer,
+    cx: i32,
+    cy: i32,
+    r: i32,
+    color: u32,
+    clip: &Rect,
+) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 0 {
         return;
@@ -2861,8 +2872,9 @@ mod tests {
 
     fn make_surface(width: u32, height: u32) -> (PixelBuffer, Vec<u8>) {
         let mut buffer = vec![0u8; (width * height * 4) as usize];
-        let surface =
-            unsafe { PixelBuffer::zeroed(buffer.as_mut_ptr(), buffer.len(), width, height, width * 4) };
+        let surface = unsafe {
+            PixelBuffer::zeroed(buffer.as_mut_ptr(), buffer.len(), width, height, width * 4)
+        };
         (surface, buffer)
     }
 

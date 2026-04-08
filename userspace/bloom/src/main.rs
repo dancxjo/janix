@@ -33,11 +33,10 @@ mod raster;
 mod reclaimer;
 mod render_graph;
 mod render_state;
+mod scene_graph;
 pub mod snapshot;
 mod state;
 mod surface;
-mod scene_graph;
-mod window;
 mod svg;
 mod tessellate;
 mod text_cache;
@@ -45,8 +44,9 @@ mod text_render;
 mod ui;
 mod ui_events;
 mod vir;
-mod window_manager;
 mod wayland;
+mod window;
+mod window_manager;
 
 pub use painter_resources::ASSETS;
 
@@ -789,7 +789,8 @@ fn main(arg: usize) -> ! {
     let mut overlay_state = DamageOverlayState::default();
     let mut cursor_metrics = CursorMetrics::default();
 
-    let mut wayland_server = crate::wayland::server::WaylandServer::new().expect("Failed to start WaylandServer");
+    let mut wayland_server =
+        crate::wayland::server::WaylandServer::new().expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
@@ -924,10 +925,15 @@ fn main(arg: usize) -> ! {
         }
         last_loop_start_ns = loop_start_ns;
         loop_ctrl.next();
-        
+
         wayland_server.pump();
         for commit in wayland_server.committed_surfaces.drain(..) {
-            stem::info!("Wayland frame committed! bs_id={}, w={}, h={}", commit.bs_id, commit.width, commit.height);
+            stem::info!(
+                "Wayland frame committed! bs_id={}, w={}, h={}",
+                commit.bs_id,
+                commit.width,
+                commit.height
+            );
             latest_wayland_commit = Some(commit);
             paint_pending_rebuilds = true; // force repaint to show the latest buffer
         }
@@ -1366,13 +1372,16 @@ fn main(arg: usize) -> ! {
             if left_down && !left_prev {
                 crate::trace_counter!("bloom.win_cache.hittest.count", 1);
                 if let Some(hit_id) = scene.hit_test(cursor.x, cursor.y) {
-                    let hit_rect = scene.get_surface(hit_id).map(|s| s.rect()).unwrap_or_default();
+                    let hit_rect = scene
+                        .get_surface(hit_id)
+                        .map(|s| s.rect())
+                        .unwrap_or_default();
                     crate::trace_counter!("bloom.win_cache.avoided_find", 1);
                     set_focus(&mut focused_window, Some(hit_id));
-                    
+
                     use crate::window_manager::{hit_test, Hit};
                     let hit_result = hit_test(cursor.x, cursor.y, hit_rect, false);
-                    
+
                     if hit_result == Hit::TitleBar {
                         let inset_right =
                             stem::thing::sys::prop_get(hit_id, keys::UI_INSET_RIGHT).unwrap_or(0);
@@ -1768,7 +1777,9 @@ fn main(arg: usize) -> ! {
             raster::execute_with_damage(&mut surface, &list, &damage, false);
 
             if let Some(ref commit) = latest_wayland_commit {
-                if let Ok(ptr) = stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(commit.bs_id)) {
+                if let Ok(ptr) =
+                    stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(commit.bs_id))
+                {
                     let w = commit.width.min(screen_w as u32) as i32;
                     let h = commit.height.min(screen_h as u32) as i32;
                     let wb = commit.stride as usize;
@@ -1783,7 +1794,10 @@ fn main(arg: usize) -> ! {
                             );
                         }
                     }
-                    let _ = stem::thing::sys::bytespace_unmap(stem::thing::ThingId::from_u64(commit.bs_id), ptr);
+                    let _ = stem::thing::sys::bytespace_unmap(
+                        stem::thing::ThingId::from_u64(commit.bs_id),
+                        ptr,
+                    );
                 }
             }
 

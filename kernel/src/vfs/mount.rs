@@ -22,8 +22,7 @@ struct MountEntry {
 }
 
 static MOUNT_TABLE: Mutex<Vec<MountEntry>> = Mutex::new(Vec::new());
-static INIT_DONE: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
+static INIT_DONE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// Initialise the mount table storage.  Must be called once before any
 /// [`mount`] or [`lookup`] call.
@@ -147,7 +146,11 @@ pub fn mounts_text() -> alloc::string::String {
 fn normalise(p: &str) -> String {
     // Strip trailing slash unless it is the root itself.
     let s = p.trim_end_matches('/');
-    if s.is_empty() { String::from("/") } else { String::from(s) }
+    if s.is_empty() {
+        String::from("/")
+    } else {
+        String::from(s)
+    }
 }
 
 /// Returns the relative portion of `path` after `prefix`, if `path` starts
@@ -169,17 +172,25 @@ fn strip_prefix<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfs::{VfsDriver, VfsNode, VfsStat};
+    use abi::errors::Errno;
     use alloc::sync::Arc;
     use alloc::vec;
-    use abi::errors::Errno;
-    use crate::vfs::{VfsDriver, VfsNode, VfsStat};
 
     struct DummyNode;
     impl VfsNode for DummyNode {
-        fn read(&self, _: u64, _: &mut [u8]) -> abi::errors::SysResult<usize> { Ok(0) }
-        fn write(&self, _: u64, _: &[u8]) -> abi::errors::SysResult<usize> { Ok(0) }
+        fn read(&self, _: u64, _: &mut [u8]) -> abi::errors::SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, _: &[u8]) -> abi::errors::SysResult<usize> {
+            Ok(0)
+        }
         fn stat(&self) -> abi::errors::SysResult<VfsStat> {
-            Ok(VfsStat { mode: VfsStat::S_IFCHR | 0o666, size: 0, ino: 99 })
+            Ok(VfsStat {
+                mode: VfsStat::S_IFCHR | 0o666,
+                size: 0,
+                ino: 99,
+            })
         }
     }
 

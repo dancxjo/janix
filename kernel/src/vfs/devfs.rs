@@ -24,10 +24,10 @@
 //! shadow built-in names when needed (last registration wins).  The global
 //! registry is protected by a spin-lock.
 
+use abi::errors::{Errno, SysResult};
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
-use abi::errors::{Errno, SysResult};
 use spin::Mutex;
 
 use super::{VfsDriver, VfsNode, VfsStat};
@@ -39,8 +39,7 @@ use super::{VfsDriver, VfsNode, VfsStat};
 /// Keys are bare device names (no leading `/dev/`).  The table is consulted
 /// *after* the built-in match, so built-in names (`null`, `zero`, `console`)
 /// can still be overridden if needed.
-static DEVICE_REGISTRY: Mutex<BTreeMap<String, Arc<dyn VfsNode>>> =
-    Mutex::new(BTreeMap::new());
+static DEVICE_REGISTRY: Mutex<BTreeMap<String, Arc<dyn VfsNode>>> = Mutex::new(BTreeMap::new());
 
 /// Register a device node under the name `name` in `/dev`.
 ///
@@ -149,7 +148,8 @@ impl VfsNode for DevDirNode {
     }
 }
 
-static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> = Mutex::new(alloc::collections::VecDeque::new());
+static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> =
+    Mutex::new(alloc::collections::VecDeque::new());
 
 /// Character device node for `/dev/console`.
 ///
@@ -306,8 +306,8 @@ impl FbNode {
 
 impl VfsNode for FbNode {
     fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
-        
+        use abi::display_driver_protocol::{FB_INFO_PAYLOAD_SIZE, FbInfoPayload};
+
         let payload = FbInfoPayload {
             graph_id: self.graph_id,
             width: self.fb.width,
@@ -318,10 +318,7 @@ impl VfsNode for FbNode {
         };
 
         let slice = unsafe {
-            core::slice::from_raw_parts(
-                &payload as *const _ as *const u8,
-                FB_INFO_PAYLOAD_SIZE,
-            )
+            core::slice::from_raw_parts(&payload as *const _ as *const u8, FB_INFO_PAYLOAD_SIZE)
         };
 
         let off = offset as usize;
@@ -436,10 +433,18 @@ mod tests {
     fn test_register_and_lookup_dynamic_device() {
         struct TestDev;
         impl VfsNode for TestDev {
-            fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> { Ok(0) }
-            fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> { Ok(buf.len()) }
+            fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+                Ok(0)
+            }
+            fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+                Ok(buf.len())
+            }
             fn stat(&self) -> SysResult<VfsStat> {
-                Ok(VfsStat { mode: VfsStat::S_IFCHR | 0o666, size: 0, ino: 999 })
+                Ok(VfsStat {
+                    mode: VfsStat::S_IFCHR | 0o666,
+                    size: 0,
+                    ino: 999,
+                })
             }
         }
 
@@ -454,10 +459,18 @@ mod tests {
     fn test_unregister_removes_device() {
         struct TestDev2;
         impl VfsNode for TestDev2 {
-            fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> { Ok(0) }
-            fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> { Ok(buf.len()) }
+            fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+                Ok(0)
+            }
+            fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+                Ok(buf.len())
+            }
             fn stat(&self) -> SysResult<VfsStat> {
-                Ok(VfsStat { mode: VfsStat::S_IFCHR | 0o666, size: 0, ino: 998 })
+                Ok(VfsStat {
+                    mode: VfsStat::S_IFCHR | 0o666,
+                    size: 0,
+                    ino: 998,
+                })
             }
         }
 
@@ -465,6 +478,9 @@ mod tests {
         assert!(DevFs::new().lookup("test_unique_dev_99").is_ok());
         let removed = unregister("test_unique_dev_99");
         assert!(removed);
-        assert!(matches!(DevFs::new().lookup("test_unique_dev_99"), Err(Errno::ENOENT)));
+        assert!(matches!(
+            DevFs::new().lookup("test_unique_dev_99"),
+            Err(Errno::ENOENT)
+        ));
     }
 }

@@ -15,7 +15,6 @@ use super::types::{ScheduleReason, Scheduler};
 pub fn yield_now<R: BootRuntime>() -> bool {
     use core::sync::atomic::{AtomicU64, Ordering};
 
-
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
@@ -38,7 +37,6 @@ pub fn yield_now<R: BootRuntime>() -> bool {
     };
 
     if let Some(switch) = switch_params {
-
         rt.tasking().activate_address_space(switch.to_aspace);
 
         unsafe {
@@ -102,7 +100,6 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         if let Some(mut task) = crate::task::registry::get_task_mut::<R>(current_id) {
             task.state = crate::task::TaskState::Blocked;
         }
-
 
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task

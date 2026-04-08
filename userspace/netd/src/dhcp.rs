@@ -24,10 +24,7 @@ fn now() -> Instant {
     Instant::from_millis(stem::time::now().as_millis() as i64)
 }
 
-pub fn run_dhcp<D: Device>(
-    iface: &mut Interface,
-    device: &mut D,
-) -> Result<DhcpConfig, DhcpError> {
+pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [SocketStorage; 1] = Default::default();
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
     let dhcp_handle = socket_set.add(Dhcpv4Socket::new());

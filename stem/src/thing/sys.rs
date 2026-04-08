@@ -215,8 +215,6 @@ pub fn describe_edge<S: IntoSymbolRef>(
     errno(ret).map(|v| v as usize)
 }
 
-
-
 pub fn get_props(id: ThingId, out: &mut [abi::types::GraphProp]) -> Result<usize, Errno> {
     let ret = unsafe {
         syscall6(

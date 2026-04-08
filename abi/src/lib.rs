@@ -35,7 +35,6 @@ pub mod logging;
 pub mod pixel;
 pub mod svg_protocol;
 
-
 pub mod macros;
 pub mod packed;
 pub mod thing;

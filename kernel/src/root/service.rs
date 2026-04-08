@@ -2,9 +2,9 @@
 
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
+use crate::BootRuntime;
 use crate::root::handlers as root_handlers;
 use crate::root::handlers::bytespace::BytespaceManager;
-use crate::BootRuntime;
 use core::sync::atomic::Ordering;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
@@ -26,11 +26,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         // We use a larger limit (128) than before to improve throughput for logging storms.
         while processed_this_round < 128 {
             if let Some(msg) = super::pop_msg() {
-                handle_msg::<R>(
-                    &mut bytespaces,
-                    &mut interner,
-                    msg,
-                );
+                handle_msg::<R>(&mut bytespaces, &mut interner, msg);
                 processed_this_round += 1;
             } else {
                 break;
@@ -128,25 +124,27 @@ fn handle_msg<R: BootRuntime>(
     interner: &mut Interner,
     msg: RootMsg,
 ) {
-
-
     let (status, value) = match msg.op {
         RootOp::Intern { name } => root_handlers::handle_intern(interner, &name),
 
         RootOp::BytespaceCreate { len, flags, format } => {
-            root_handlers::bytespace::handle_bytespace_create::<R>(
-                bytespaces, len, flags, format,
-            )
+            root_handlers::bytespace::handle_bytespace_create::<R>(bytespaces, len, flags, format)
         }
         RootOp::BytespaceCreateFromPtr { ptr, len } => {
             root_handlers::bytespace::handle_bytespace_create_from_ptr::<R>(bytespaces, ptr, len)
         }
-        RootOp::BytespaceWrite { id, offset, ptr, len } => {
-            root_handlers::bytespace::handle_bytespace_write(bytespaces, id, offset, ptr, len)
-        }
-        RootOp::BytespaceRead { id, offset, ptr, len } => {
-            root_handlers::bytespace::handle_bytespace_read(bytespaces, id, offset, ptr, len)
-        }
+        RootOp::BytespaceWrite {
+            id,
+            offset,
+            ptr,
+            len,
+        } => root_handlers::bytespace::handle_bytespace_write(bytespaces, id, offset, ptr, len),
+        RootOp::BytespaceRead {
+            id,
+            offset,
+            ptr,
+            len,
+        } => root_handlers::bytespace::handle_bytespace_read(bytespaces, id, offset, ptr, len),
         RootOp::BytespaceInfo { id } => {
             root_handlers::bytespace::handle_bytespace_info(bytespaces, &msg, id)
         }
@@ -164,36 +162,36 @@ fn handle_msg<R: BootRuntime>(
         }
 
         // All graph-related operations stubbed out
-        RootOp::GetKind { .. } |
-        RootOp::CreateNode { .. } |
-        RootOp::Link { .. } |
-        RootOp::Find { .. } |
-        RootOp::Query { .. } |
-        RootOp::PropGet { .. } |
-        RootOp::PropSet { .. } |
-        RootOp::PropsGetMany { .. } |
-        RootOp::ResolvePath { .. } |
-        RootOp::Unlink { .. } |
-        RootOp::DirList { .. } |
-        RootOp::OrphanThing { .. } |
-        RootOp::CleanupTaskThings { .. } |
-        RootOp::WatchSubscribe { .. } |
-        RootOp::StreamPoll { .. } |
-        RootOp::WatchOpen { .. } |
-        RootOp::WatchNext { .. } |
-        RootOp::WatchPoll { .. } |
-        RootOp::WatchRegisterWaiter { .. } |
-        RootOp::WatchUnregisterWaiter { .. } |
-        RootOp::WatchClose { .. } |
-        RootOp::DescribeThing { .. } |
-        RootOp::DescribeSymbol { .. } |
-        RootOp::DescribeEdge { .. } |
-        RootOp::DumpEdges { .. } |
-        RootOp::GetEdges { .. } |
-        RootOp::GetProps { .. } |
-        RootOp::DumpGraph { .. } |
-        RootOp::LogEvent { .. } |
-        RootOp::ApplyBatch { .. } => (-38, 0), // ENOSYS
+        RootOp::GetKind { .. }
+        | RootOp::CreateNode { .. }
+        | RootOp::Link { .. }
+        | RootOp::Find { .. }
+        | RootOp::Query { .. }
+        | RootOp::PropGet { .. }
+        | RootOp::PropSet { .. }
+        | RootOp::PropsGetMany { .. }
+        | RootOp::ResolvePath { .. }
+        | RootOp::Unlink { .. }
+        | RootOp::DirList { .. }
+        | RootOp::OrphanThing { .. }
+        | RootOp::CleanupTaskThings { .. }
+        | RootOp::WatchSubscribe { .. }
+        | RootOp::StreamPoll { .. }
+        | RootOp::WatchOpen { .. }
+        | RootOp::WatchNext { .. }
+        | RootOp::WatchPoll { .. }
+        | RootOp::WatchRegisterWaiter { .. }
+        | RootOp::WatchUnregisterWaiter { .. }
+        | RootOp::WatchClose { .. }
+        | RootOp::DescribeThing { .. }
+        | RootOp::DescribeSymbol { .. }
+        | RootOp::DescribeEdge { .. }
+        | RootOp::DumpEdges { .. }
+        | RootOp::GetEdges { .. }
+        | RootOp::GetProps { .. }
+        | RootOp::DumpGraph { .. }
+        | RootOp::LogEvent { .. }
+        | RootOp::ApplyBatch { .. } => (-38, 0), // ENOSYS
     };
 
     if let Some(reply) = msg.reply {

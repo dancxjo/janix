@@ -276,7 +276,7 @@ fn read_sectors(
 
 fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     use stem::abi::schema::keys;
-    
+
     let disk_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
         Ok(id) => id,
         Err(e) => {
@@ -286,7 +286,7 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     };
 
     disk.graph_id = disk_id;
-    
+
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match port_create(4096) {
         Ok(handles) => handles,
@@ -296,7 +296,7 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
         }
     };
     disk.read_port_handle = Some(read_handle);
-    
+
     // Set block device properties
     thingsys::prop_set(disk_id, keys::SECTOR_SIZE, disk.sector_size as u64).ok();
     thingsys::prop_set(disk_id, keys::SECTOR_COUNT, disk.sector_count).ok();
@@ -304,8 +304,9 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
         disk_id,
         keys::LBA48,
         if disk.supports_lba48 { 1u64 } else { 0u64 },
-    ).ok();
-    
+    )
+    .ok();
+
     // Convert model to string and set
     let model_str = core::str::from_utf8(&disk.model)
         .unwrap_or("Unknown")
@@ -313,13 +314,19 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     if let Ok(model_sym) = thingsys::intern(model_str) {
         thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
     }
-    
+
     // Publish write handle for clients to send requests to
     thingsys::prop_set(disk_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
-    
+
     info!(
         "ATA_DISK: Registered disk {} ch={} drv={} sectors={} lba48={} model='{}' rpc_port={}",
-        disk_id.to_u64_lossy(), channel, drive, disk.sector_count, disk.supports_lba48, model_str, write_handle
+        disk_id.to_u64_lossy(),
+        channel,
+        drive,
+        disk.sector_count,
+        disk.supports_lba48,
+        model_str,
+        write_handle
     );
 }
 
@@ -504,7 +511,7 @@ fn ata_outw(port: u16, val: u16) {
 
 fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     use stem::abi::schema::keys;
-    
+
     let node_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
         Ok(id) => id,
         Err(e) => {
@@ -514,7 +521,7 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     };
 
     dev.graph_id = node_id;
-    
+
     // Create RPC port for block device service (4KB buffer)
     let (write_handle, read_handle) = match port_create(4096) {
         Ok(handles) => handles,
@@ -524,13 +531,13 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
         }
     };
     dev.read_port_handle = Some(read_handle);
-    
+
     // Set block device properties
     thingsys::prop_set(node_id, keys::SECTOR_SIZE, dev.sector_size as u64).ok();
     if dev.sector_count > 0 {
         thingsys::prop_set(node_id, keys::SECTOR_COUNT, dev.sector_count).ok();
     }
-    
+
     // Convert model to string and set
     let model_str = core::str::from_utf8(&dev.model)
         .unwrap_or("ATAPI Device")
@@ -538,13 +545,17 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     if let Ok(model_sym) = thingsys::intern(model_str) {
         thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
     }
-    
+
     // Publish write handle for clients to send requests to
     thingsys::prop_set(node_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
-    
+
     info!(
         "ATA_DISK: Registered ATAPI {} ch={} drv={} model='{}' rpc_port={}",
-        node_id.to_u64_lossy(), channel, drive, model_str, write_handle
+        node_id.to_u64_lossy(),
+        channel,
+        drive,
+        model_str,
+        write_handle
     );
 }
 
@@ -607,7 +618,7 @@ fn main(_arg: usize) -> ! {
     );
 
     info!("ATA_DISK: Entering RPC service loop");
-    
+
     // Collect all port handles for waiting on requests
     let mut handles: Vec<PortHandle> = Vec::new();
     for disk in &disks {
@@ -620,14 +631,14 @@ fn main(_arg: usize) -> ! {
             handles.push(h);
         }
     }
-    
+
     if handles.is_empty() {
         info!("ATA_DISK: No active devices to service");
         loop {
             stem::syscall::sleep_ms(60_000);
         }
     }
-    
+
     // Main service loop
     loop {
         // Wait for a request on any port (blocking)
@@ -639,7 +650,7 @@ fn main(_arg: usize) -> ! {
                 continue;
             }
         };
-        
+
         // Find the device that has data
         let mut found = false;
         for disk in &disks {
@@ -658,7 +669,7 @@ fn main(_arg: usize) -> ! {
                 break;
             }
         }
-        
+
         if !found {
             for dev in &atapi_devs {
                 if dev.read_port_handle == Some(ready_handle) {
@@ -685,9 +696,9 @@ fn handle_ata_request(disk: &AtaDisk, request_data: &[u8], port_handle: PortHand
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
+
     let request_type = request_data[0];
-    
+
     match request_type {
         0 => handle_ata_identify(disk, port_handle),
         1 => handle_ata_read(disk, &request_data[1..], port_handle),
@@ -704,12 +715,16 @@ fn handle_ata_identify(disk: &AtaDisk, port_handle: PortHandle) {
         sector_count: disk.sector_count,
         model: disk.model,
         serial: disk.serial,
-        flags: if disk.supports_lba48 { device_flags::LBA48 } else { 0 },
+        flags: if disk.supports_lba48 {
+            device_flags::LBA48
+        } else {
+            0
+        },
     };
-    
+
     let mut response_buf = [0u8; core::mem::size_of::<IdentifyResponse>() + 1];
     response_buf[0] = BlockDeviceResponse::Ok as u8;
-    
+
     unsafe {
         core::ptr::copy_nonoverlapping(
             &response as *const _ as *const u8,
@@ -717,7 +732,7 @@ fn handle_ata_identify(disk: &AtaDisk, port_handle: PortHandle) {
             core::mem::size_of::<IdentifyResponse>(),
         );
     }
-    
+
     if let Err(e) = port_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Identify response: {:?}", e);
     }
@@ -729,26 +744,26 @@ fn handle_ata_read(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle)
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
-    let req: ReadRequest = unsafe {
-        core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
-    };
-    
+
+    let req: ReadRequest =
+        unsafe { core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest) };
+
     // Validate sector count (max 7 sectors of 512 bytes to fit in 4KB port buffer)
     if req.sector_count == 0 || req.sector_count > 7 {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
-    if disk.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > disk.sector_count {
+
+    if disk.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > disk.sector_count
+    {
         send_error_response(port_handle, BlockDeviceError::OutOfRange);
         return;
     }
-    
+
     // Read the data
     let bytes_to_read = (req.sector_count as usize) * 512;
     let mut data = vec![0u8; bytes_to_read];
-    
+
     match read_sectors(disk, req.lba, req.sector_count as u16, &mut data) {
         Ok(_) => send_read_response(port_handle, &data),
         Err(_) => send_error_response(port_handle, BlockDeviceError::IoError),
@@ -761,9 +776,9 @@ fn handle_atapi_request(dev: &AtapiDevice, request_data: &[u8], port_handle: Por
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
+
     let request_type = request_data[0];
-    
+
     match request_type {
         0 => handle_atapi_identify(dev, port_handle),
         1 => handle_atapi_read(dev, &request_data[1..], port_handle),
@@ -782,10 +797,10 @@ fn handle_atapi_identify(dev: &AtapiDevice, port_handle: PortHandle) {
         serial: dev.serial,
         flags: 0,
     };
-    
+
     let mut response_buf = [0u8; core::mem::size_of::<IdentifyResponse>() + 1];
     response_buf[0] = BlockDeviceResponse::Ok as u8;
-    
+
     unsafe {
         core::ptr::copy_nonoverlapping(
             &response as *const _ as *const u8,
@@ -793,7 +808,7 @@ fn handle_atapi_identify(dev: &AtapiDevice, port_handle: PortHandle) {
             core::mem::size_of::<IdentifyResponse>(),
         );
     }
-    
+
     if let Err(e) = port_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Identify response: {:?}", e);
     }
@@ -805,26 +820,25 @@ fn handle_atapi_read(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHa
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
-    let req: ReadRequest = unsafe {
-        core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
-    };
-    
+
+    let req: ReadRequest =
+        unsafe { core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest) };
+
     // Validate sector count (max 1 sector of 2048 bytes to fit in 4KB port buffer)
     if req.sector_count == 0 || req.sector_count > 1 {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }
-    
+
     if dev.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > dev.sector_count {
         send_error_response(port_handle, BlockDeviceError::OutOfRange);
         return;
     }
-    
+
     // Read the data
     let bytes_to_read = (req.sector_count as usize) * 2048;
     let mut data = vec![0u8; bytes_to_read];
-    
+
     match atapi_read_sectors(dev, req.lba, req.sector_count, &mut data) {
         Ok(_) => send_read_response(port_handle, &data),
         Err(_) => send_error_response(port_handle, BlockDeviceError::IoError),
@@ -836,21 +850,21 @@ fn send_read_response(port_handle: PortHandle, data: &[u8]) {
     let header = ReadResponse {
         data_len: data.len() as u32,
     };
-    
+
     let response_size = 1 + core::mem::size_of::<ReadResponse>() + data.len();
     let mut response_buf = vec![0u8; response_size];
     response_buf[0] = BlockDeviceResponse::Ok as u8;
-    
+
     unsafe {
         let header_bytes = core::slice::from_raw_parts(
             &header as *const _ as *const u8,
             core::mem::size_of::<ReadResponse>(),
         );
-        response_buf[1..1+core::mem::size_of::<ReadResponse>()].copy_from_slice(header_bytes);
+        response_buf[1..1 + core::mem::size_of::<ReadResponse>()].copy_from_slice(header_bytes);
     }
-    
-    response_buf[1+core::mem::size_of::<ReadResponse>()..].copy_from_slice(data);
-    
+
+    response_buf[1 + core::mem::size_of::<ReadResponse>()..].copy_from_slice(data);
+
     if let Err(e) = port_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Read response: {:?}", e);
     }
@@ -862,10 +876,10 @@ fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
         error_code: error_code as u8,
         _reserved: [0; 3],
     };
-    
+
     let mut response_buf = [0u8; 1 + core::mem::size_of::<ErrorResponse>()];
     response_buf[0] = BlockDeviceResponse::Error as u8;
-    
+
     unsafe {
         core::ptr::copy_nonoverlapping(
             &error_resp as *const _ as *const u8,
@@ -873,7 +887,7 @@ fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
             core::mem::size_of::<ErrorResponse>(),
         );
     }
-    
+
     if let Err(e) = port_send(port_handle, &response_buf) {
         error!("ATA_DISK: Failed to send Error response: {:?}", e);
     }

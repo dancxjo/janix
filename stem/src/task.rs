@@ -4,18 +4,18 @@
 //! Operations return `Poll::Pending` and register their `WaitSpec` dynamically.
 
 use crate::errors::Errno;
-use crate::wait_set::{WaitSet, WaitToken, WaitEvents};
-use alloc::sync::Arc;
+use crate::wait_set::{WaitEvents, WaitSet, WaitToken};
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::future::Future;
 use core::pin::Pin;
-use core::task::{Context, Poll, Waker, RawWaker, RawWakerVTable};
 use core::sync::atomic::{AtomicPtr, Ordering};
+use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 /// A global pointer to the currently running reactor.
 /// While ThingOS is mostly single-threaded, `AtomicPtr` safe-guards concurrent
-/// thread setups if each thread invokes `block_on` sequentially. 
+/// thread setups if each thread invokes `block_on` sequentially.
 static CURRENT_REACTOR: AtomicPtr<Reactor> = AtomicPtr::new(core::ptr::null_mut());
 
 /// The active I/O reactor instance backing `block_on`.
@@ -63,7 +63,9 @@ struct DummyWaker;
 
 impl DummyWaker {
     fn raw_waker() -> RawWaker {
-        unsafe fn clone(_: *const ()) -> RawWaker { DummyWaker::raw_waker() }
+        unsafe fn clone(_: *const ()) -> RawWaker {
+            DummyWaker::raw_waker()
+        }
         unsafe fn wake(_: *const ()) {}
         unsafe fn wake_by_ref(_: *const ()) {}
         unsafe fn drop(_: *const ()) {}
@@ -77,7 +79,7 @@ impl DummyWaker {
 pub fn block_on<F: Future>(future: F) -> F::Output {
     let reactor = Box::new(Reactor::new());
     let reactor_ptr = Box::into_raw(reactor);
-    
+
     // Install reactor
     CURRENT_REACTOR.store(reactor_ptr, Ordering::SeqCst);
 
@@ -107,7 +109,8 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
                 continue;
             }
             // Block until event
-            ws.wait(None::<crate::time::Duration>).expect("WaitSet failure")
+            ws.wait(None::<crate::time::Duration>)
+                .expect("WaitSet failure")
         };
 
         // For each fired token, we trigger the wakers via wake() and remove the token.
@@ -145,7 +148,7 @@ impl AsyncPort {
         self.handle
     }
 
-    /// Read asynchronously from the port. 
+    /// Read asynchronously from the port.
     /// If empty, it registers into the active `Reactor` to await `WaitKind::Port`.
     pub fn recv<'a>(&'a self, buf: &'a mut [u8]) -> RecvFuture<'a> {
         RecvFuture {
@@ -171,7 +174,9 @@ impl<'a> Future for RecvFuture<'a> {
             Err(Errno::EAGAIN) => {
                 if let Some(reactor) = Reactor::current() {
                     if self.registered_token.is_none() {
-                        if let Ok(token) = reactor.add_port_readable(self.port.handle, cx.waker().clone()) {
+                        if let Ok(token) =
+                            reactor.add_port_readable(self.port.handle, cx.waker().clone())
+                        {
                             self.registered_token = Some(token);
                         }
                     } else {

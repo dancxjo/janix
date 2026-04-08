@@ -3,11 +3,11 @@
 
 use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;
+use abi::ids::HandleId;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]

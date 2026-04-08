@@ -4,9 +4,9 @@
 //! length-prefixed wire format:
 //! `[4 bytes little-endian frame length][raw Ethernet frame bytes...]`
 
+use abi::syscall::vfs_flags;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use abi::syscall::vfs_flags;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};

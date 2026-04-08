@@ -549,77 +549,8 @@ pub fn setup_compositor(
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network stack...");
-
-    // Prefer native RTL8168 driver if present.
-    let mut rtl_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_NET_PCI_STUB, &mut rtl_buf) {
-        if count > 0 {
-            let rtl_dev = rtl_buf[0];
-            let vendor = thingsys::prop_get(rtl_dev, keys::VENDOR_ID).unwrap_or(0) as u16;
-            let device = thingsys::prop_get(rtl_dev, keys::DEVICE_ID).unwrap_or(0) as u16;
-
-            if vendor == 0x10ec && device == 0x8168 {
-                info!("SPROUT: Found RTL8168 NIC {:?}, spawning rtl8168d", rtl_dev);
-
-                match stem::syscall::spawn_process("/rtl8168d", 0) {
-                    Ok(pid) => {
-                        info!("SPROUT: Spawned rtl8168d (PID={})", pid);
-                        let _ = stem::thread::set_priority(pid, 2);
-                        tasks.push(ManagedTask {
-                            name: "/rtl8168d".to_string(),
-                            kind: TaskKind::Driver("dev.net.rtl8168".to_string()),
-                            module_path: "/rtl8168d".to_string(),
-                            pid: Some(pid),
-                            restarts: 0,
-                            spawn_arg: 0,
-                        });
-                    }
-                    Err(e) => {
-                        warn!("SPROUT: Failed to spawn rtl8168d: {:?}", e);
-                        return;
-                    }
-                }
-
-                spawn_netd(tasks);
-            }
-        }
-    }
-
-    // Fall back to VirtIO NIC device
-    let mut nic_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_NET_NIC, &mut nic_buf) {
-        if count > 0 {
-            let nic = nic_buf[0];
-            info!("SPROUT: Found NIC device {:?}", nic);
-
-            // Spawn virtio_netd first - the hardware driver that owns the NIC
-            match stem::syscall::spawn_process("/virtio_netd", nic.to_u64_lossy() as usize) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned virtio_netd (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
-                    tasks.push(ManagedTask {
-                        name: "/virtio_netd".to_string(),
-                        kind: TaskKind::Driver("dev.net.virtio".to_string()),
-                        module_path: "/virtio_netd".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                        spawn_arg: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn virtio_netd: {:?}", e);
-                }
-            }
-
-            spawn_netd(tasks);
-        } else {
-            info!("SPROUT: No NIC device found, starting net services without NIC driver");
-            spawn_netd(tasks);
-        }
-    } else {
-        info!("SPROUT: No NIC device found, starting net services without NIC driver");
-        spawn_netd(tasks);
-    }
+    info!("SPROUT: Network drivers are launched by devd");
+    spawn_netd(tasks);
 }
 
 fn spawn_netd(tasks: &mut Vec<ManagedTask>) {

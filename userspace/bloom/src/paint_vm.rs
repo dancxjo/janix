@@ -313,14 +313,14 @@ impl PaintPipeline {
             // Sync SceneGraph state
             use crate::surface::Surface;
             use abi::pixel::PixelFormat;
-            
+
             if scene.get_surface(*id).is_none() {
                 scene.insert_surface(
                     *id,
                     Surface::new(rect.width(), rect.height(), PixelFormat::Bgra8888),
                 );
             }
-            
+
             if let Some(surf) = scene.get_surface_mut(*id) {
                 surf.x = rect.x();
                 surf.y = rect.y();
@@ -522,7 +522,7 @@ impl PaintPipeline {
                     if let Some(vis) = inter {
                         let src_x = vis.x() - w_rect.x();
                         let src_y = vis.y() - w_rect.y();
-                        
+
                         let pixels: &[u32] = unsafe {
                             core::slice::from_raw_parts(
                                 surf.buffer.as_ptr() as *const u32,
@@ -537,7 +537,7 @@ impl PaintPipeline {
                             surf.width as usize,
                             Rect::new(src_x, src_y, vis.width(), vis.height()),
                         );
-                        
+
                         next_remaining.extend(subtract_rect(r, vis));
                     } else {
                         next_remaining.push(r);

@@ -1,4 +1,4 @@
-use crate::{SymbolId, BlobId, ThingId};
+use crate::{BlobId, SymbolId, ThingId};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C, packed)]

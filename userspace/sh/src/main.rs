@@ -4,7 +4,7 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::syscall::{argv_get, vfs_write, vfs_read};
+use stem::syscall::{argv_get, vfs_read, vfs_write};
 
 fn prompt() {
     let _ = vfs_write(1, b"petals> ");
@@ -42,7 +42,7 @@ fn spawn_program(cmd: &str, args: &[&str]) -> abi::errors::SysResult<()> {
     } else {
         alloc::format!("/{}", cmd)
     };
-    
+
     // Convert args to Vec<Vec<u8>>
     let mut argv = Vec::new();
     argv.push(path.as_bytes().to_vec());
@@ -50,9 +50,9 @@ fn spawn_program(cmd: &str, args: &[&str]) -> abi::errors::SysResult<()> {
         argv.push(arg.as_bytes().to_vec());
     }
     let argv_slices: Vec<&[u8]> = argv.iter().map(|v| v.as_slice()).collect();
-    
+
     let env = alloc::collections::BTreeMap::new();
-    
+
     match stem::syscall::spawn_process_ex(
         &path,
         &argv_slices,
@@ -77,7 +77,7 @@ fn spawn_program(cmd: &str, args: &[&str]) -> abi::errors::SysResult<()> {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let _ = vfs_write(1, b"janix sh\n");
-    
+
     loop {
         prompt();
         let line = read_line();
@@ -85,17 +85,17 @@ fn main(_arg: usize) -> ! {
         if trimmed.is_empty() {
             continue;
         }
-        
+
         let mut parts = trimmed.split_whitespace();
         let cmd = parts.next().unwrap_or("");
         let args: Vec<&str> = parts.collect();
-        
+
         if cmd == "exit" {
             break;
         } else {
             let _ = spawn_program(cmd, &args);
         }
     }
-    
+
     stem::syscall::exit(0)
 }

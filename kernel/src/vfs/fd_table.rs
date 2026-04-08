@@ -12,8 +12,8 @@
 //! # Limits
 //! `MAX_FDS` open files per process.  This is intentionally small for now.
 
-use alloc::sync::Arc;
 use abi::errors::{Errno, SysResult};
+use alloc::sync::Arc;
 use spin::Mutex;
 
 use super::{OpenFlags, VfsNode};
@@ -198,16 +198,24 @@ impl Default for FdTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::sync::Arc;
-    use abi::errors::Errno;
     use crate::vfs::{VfsNode, VfsStat};
+    use abi::errors::Errno;
+    use alloc::sync::Arc;
 
     struct NullNode;
     impl VfsNode for NullNode {
-        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> { Ok(0) }
-        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> { Ok(buf.len()) }
+        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+            Ok(buf.len())
+        }
         fn stat(&self) -> SysResult<VfsStat> {
-            Ok(VfsStat { mode: VfsStat::S_IFCHR | 0o666, size: 0, ino: 1 })
+            Ok(VfsStat {
+                mode: VfsStat::S_IFCHR | 0o666,
+                size: 0,
+                ino: 1,
+            })
         }
     }
 
@@ -226,9 +234,15 @@ mod tests {
     fn test_open_skips_occupied_slots() {
         let mut table = FdTable::new();
         // Pre-populate slots 0-2 (simulate stdio setup).
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
-        table.insert_at(1, null_node(), OpenFlags::write_only()).unwrap();
-        table.insert_at(2, null_node(), OpenFlags::write_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only())
+            .unwrap();
+        table
+            .insert_at(2, null_node(), OpenFlags::write_only())
+            .unwrap();
         let fd = table.open(null_node(), OpenFlags::read_only()).unwrap();
         assert_eq!(fd, 3, "first non-stdio VFS fd should be 3");
     }
@@ -237,9 +251,15 @@ mod tests {
     fn test_open_sequential_fds() {
         let mut table = FdTable::new();
         // Pre-populate slots 0-2 (simulate stdio setup).
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
-        table.insert_at(1, null_node(), OpenFlags::write_only()).unwrap();
-        table.insert_at(2, null_node(), OpenFlags::write_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only())
+            .unwrap();
+        table
+            .insert_at(2, null_node(), OpenFlags::write_only())
+            .unwrap();
         let fd1 = table.open(null_node(), OpenFlags::read_only()).unwrap();
         let fd2 = table.open(null_node(), OpenFlags::read_only()).unwrap();
         assert_eq!(fd1, 3);
@@ -279,9 +299,15 @@ mod tests {
     #[test]
     fn test_insert_at_populates_specific_slot() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
-        table.insert_at(1, null_node(), OpenFlags::write_only()).unwrap();
-        table.insert_at(2, null_node(), OpenFlags::write_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only())
+            .unwrap();
+        table
+            .insert_at(2, null_node(), OpenFlags::write_only())
+            .unwrap();
         assert!(table.get(0).is_ok());
         assert!(table.get(1).is_ok());
         assert!(table.get(2).is_ok());
@@ -290,7 +316,9 @@ mod tests {
     #[test]
     fn test_insert_at_rejects_occupied_slot() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
         assert!(matches!(
             table.insert_at(0, null_node(), OpenFlags::read_only()),
             Err(Errno::EBADF)
@@ -309,7 +337,9 @@ mod tests {
     #[test]
     fn test_dup_clones_to_next_free() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
         let new_fd = table.dup(0).unwrap();
         assert_eq!(new_fd, 1, "dup should use first free slot after 0");
         assert!(table.get(1).is_ok());
@@ -324,7 +354,9 @@ mod tests {
     #[test]
     fn test_dup2_creates_alias() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
         let result = table.dup2(0, 5).unwrap();
         assert_eq!(result, 5);
         assert!(table.get(5).is_ok());
@@ -335,8 +367,12 @@ mod tests {
     #[test]
     fn test_dup2_closes_existing_target() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
-        table.insert_at(1, null_node(), OpenFlags::write_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only())
+            .unwrap();
         // dup2(0, 1) should close slot 1 and replace it with a dup of slot 0.
         table.dup2(0, 1).unwrap();
         assert!(table.get(1).is_ok());
@@ -345,7 +381,9 @@ mod tests {
     #[test]
     fn test_dup2_same_fd_is_noop() {
         let mut table = FdTable::new();
-        table.insert_at(3, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(3, null_node(), OpenFlags::read_only())
+            .unwrap();
         let result = table.dup2(3, 3).unwrap();
         assert_eq!(result, 3);
         assert!(table.get(3).is_ok());
@@ -360,7 +398,9 @@ mod tests {
     #[test]
     fn test_dup_shares_offset() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
         let new_fd = table.dup(0).unwrap();
         // Advance the original fd's offset.
         *table.get(0).unwrap().offset.lock() = 42;
@@ -372,7 +412,9 @@ mod tests {
     #[test]
     fn test_dup2_shares_offset() {
         let mut table = FdTable::new();
-        table.insert_at(0, null_node(), OpenFlags::read_only()).unwrap();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only())
+            .unwrap();
         table.dup2(0, 5).unwrap();
         // Advance via fd 5.
         *table.get(5).unwrap().offset.lock() = 100;

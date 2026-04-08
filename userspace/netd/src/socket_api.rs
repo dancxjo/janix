@@ -187,7 +187,12 @@ impl SocketApi {
         0
     }
 
-    fn connection_key(_owner_tid: u64, _local: EndpointV4, _remote: EndpointV4, _start_ms: u64) -> u64 {
+    fn connection_key(
+        _owner_tid: u64,
+        _local: EndpointV4,
+        _remote: EndpointV4,
+        _start_ms: u64,
+    ) -> u64 {
         0
     }
 
@@ -294,7 +299,12 @@ impl SocketApi {
 
     fn ensure_tcp_connection(_managed: &mut ManagedSocket, _now_ms: u64, _initial_state: &str) {}
 
-    fn flush_managed_socket_tcp<'a>(_managed: &mut ManagedSocket, _socket_set: &mut SocketSet<'a>, _now_ms: u64) {}
+    fn flush_managed_socket_tcp<'a>(
+        _managed: &mut ManagedSocket,
+        _socket_set: &mut SocketSet<'a>,
+        _now_ms: u64,
+    ) {
+    }
 
     fn flush_managed_socket_udp(_managed: &ManagedSocket, _now_ms: u64) {}
 
@@ -514,8 +524,7 @@ impl SocketApi {
         };
         match sf {
             SF_DATA => {
-                let socket =
-                    socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
+                let socket = socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
                 let mut ready = 0u32;
                 if socket.can_recv() {
                     ready |= 0x0001;
@@ -551,13 +560,19 @@ impl SocketApi {
         match socket.connect(iface.context(), endpoint, local_port) {
             Ok(()) => {
                 if let Some(m) = self.sockets.get_mut(&api_handle) {
-                    m.remote = Some(EndpointV4 { ip: remote_ip, port: remote_port });
+                    m.remote = Some(EndpointV4 {
+                        ip: remote_ip,
+                        port: remote_port,
+                    });
                     m.local = Some(EndpointV4 {
                         ip: Ipv4Address::new(0, 0, 0, 0),
                         port: local_port,
                     });
                 }
-                info!("SOCKET_API: connect_existing handle={} to {}:{}", api_handle, remote_ip, remote_port);
+                info!(
+                    "SOCKET_API: connect_existing handle={} to {}:{}",
+                    api_handle, remote_ip, remote_port
+                );
                 true
             }
             Err(e) => {
@@ -578,7 +593,10 @@ impl SocketApi {
     ) -> bool {
         if let Some(m) = self.sockets.get_mut(&api_handle) {
             if m.kind == SocketType::Udp {
-                m.remote = Some(EndpointV4 { ip: remote_ip, port: remote_port });
+                m.remote = Some(EndpointV4 {
+                    ip: remote_ip,
+                    port: remote_port,
+                });
                 return true;
             }
         }

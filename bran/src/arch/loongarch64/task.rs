@@ -105,13 +105,13 @@ unsafe extern "C" fn user_trampoline() -> ! {
     unsafe {
         asm!(
             // Load address space registers
-            "csrwr $s2, 0x19",          // PGDL ← s2
-            "csrwr $s3, 0x1a",          // PGDH ← s3
+            "csrwr $s2, 0x19", // PGDL ← s2
+            "csrwr $s3, 0x1a", // PGDH ← s3
             // Configure PRMD: PLV=3 (user), clear PIE (bit 2)
-            "csrrd $t0, 0x1",           // read PRMD
-            "ori   $t0, $t0, 3",        // set PLV bits to 3 (user)
-            "andi  $t0, $t0, 0xFB",     // clear PIE (bit 2)
-            "csrwr $t0, 0x1",           // write PRMD
+            "csrrd $t0, 0x1",       // read PRMD
+            "ori   $t0, $t0, 3",    // set PLV bits to 3 (user)
+            "andi  $t0, $t0, 0xFB", // clear PIE (bit 2)
+            "csrwr $t0, 0x1",       // write PRMD
             // Set ERA (exception return address = user entry PC)
             "csrwr $s0, 0x6",
             // Set user stack pointer and argument

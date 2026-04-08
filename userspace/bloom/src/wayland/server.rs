@@ -1,10 +1,10 @@
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
-use alloc::string::{String, ToString};
-use stem::syscall::{port_create, vfs_mount, port_try_recv, PortHandle, port_send};
-use abi::vfs_rpc::{VfsRpcReqHeader, VfsRpcOp, VFS_RPC_MAX_REQ, DirentWire, VFS_RPC_MAX_RESP};
-use core::sync::atomic::{AtomicU32, Ordering};
 use crate::wayland::protocol::{decode_header, MessageBuilder};
+use abi::vfs_rpc::{DirentWire, VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ, VFS_RPC_MAX_RESP};
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
+use stem::syscall::{port_create, port_send, port_try_recv, vfs_mount, PortHandle};
 
 static NEXT_HANDLE: AtomicU32 = AtomicU32::new(10);
 
@@ -14,9 +14,21 @@ pub enum WaylandObject {
     Registry,
     Compositor,
     Shm,
-    ShmPool { bs_id: u64, size: u32 },
-    Buffer { pool_id: u32, offset: u32, width: u32, height: u32, stride: u32, format: u32 },
-    Surface { buffer_id: Option<u32> },
+    ShmPool {
+        bs_id: u64,
+        size: u32,
+    },
+    Buffer {
+        pool_id: u32,
+        offset: u32,
+        width: u32,
+        height: u32,
+        stride: u32,
+        format: u32,
+    },
+    Surface {
+        buffer_id: Option<u32>,
+    },
 }
 
 pub struct ClientConnection {
@@ -58,7 +70,7 @@ impl ClientConnection {
 pub struct WaylandServer {
     pub req_port: PortHandle,
     pub clients: BTreeMap<u64, ClientConnection>,
-    // For bloom compositor integration: surfaces mapped by buffer IDs 
+    // For bloom compositor integration: surfaces mapped by buffer IDs
     pub committed_surfaces: Vec<crate::wayland::server::WaylandSurfaceCommit>,
 }
 
@@ -76,7 +88,7 @@ impl WaylandServer {
     pub fn new() -> Option<Self> {
         let (req_write, req_read) = port_create(65536).ok()?;
         stem::syscall::vfs_mount(req_write, "/run/wayland-0").ok()?;
-        
+
         Some(Self {
             req_port: req_read,
             clients: BTreeMap::new(),
@@ -87,7 +99,9 @@ impl WaylandServer {
     pub fn pump(&mut self) {
         let mut buf = [0u8; VFS_RPC_MAX_REQ];
         while let Ok(len) = port_try_recv(self.req_port, &mut buf) {
-            if len < core::mem::size_of::<VfsRpcReqHeader>() { continue; }
+            if len < core::mem::size_of::<VfsRpcReqHeader>() {
+                continue;
+            }
             let mut hdr_bytes = [0u8; core::mem::size_of::<VfsRpcReqHeader>()];
             hdr_bytes.copy_from_slice(&buf[..core::mem::size_of::<VfsRpcReqHeader>()]);
             let hdr: VfsRpcReqHeader = unsafe { core::mem::transmute(hdr_bytes) };
@@ -103,7 +117,7 @@ impl WaylandServer {
                 // Return a new client handle
                 let handle = NEXT_HANDLE.fetch_add(1, Ordering::SeqCst) as u64;
                 self.clients.insert(handle, ClientConnection::new(handle));
-                
+
                 let mut resp = alloc::vec![0u8; 9];
                 resp[0] = 0; // OK
                 resp[1..9].copy_from_slice(&handle.to_le_bytes());
@@ -111,9 +125,11 @@ impl WaylandServer {
                 stem::info!("Wayland: New client connected. Handle={}", handle);
             }
             Some(VfsRpcOp::Read) => {
-                if payload.len() < 12 { return; }
+                if payload.len() < 12 {
+                    return;
+                }
                 let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
-                
+
                 if let Some(client) = self.clients.get_mut(&handle) {
                     if client.out_buf.is_empty() {
                         // Pend the read
@@ -132,13 +148,17 @@ impl WaylandServer {
                 }
             }
             Some(VfsRpcOp::Write) => {
-                if payload.len() < 12 { return; }
+                if payload.len() < 12 {
+                    return;
+                }
                 let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
                 // let offset = u64::from_le_bytes(payload[8..16].try_into().unwrap());
                 let data_len = u32::from_le_bytes(payload[16..20].try_into().unwrap()) as usize;
-                
-                if payload.len() < 20 + data_len { return; }
-                let data = &payload[20..20+data_len];
+
+                if payload.len() < 20 + data_len {
+                    return;
+                }
+                let data = &payload[20..20 + data_len];
 
                 // Send response early (write successful)
                 let mut resp = alloc::vec![0u8; 5];
@@ -152,7 +172,9 @@ impl WaylandServer {
                 }
             }
             Some(VfsRpcOp::Stat) => {
-                if payload.len() < 8 { return; }
+                if payload.len() < 8 {
+                    return;
+                }
                 let mut resp = alloc::vec![0u8; 21];
                 let mode: u32 = 0o020000 | 0o666; // S_IFCHR
                 resp[0] = 0; // OK
@@ -162,7 +184,9 @@ impl WaylandServer {
                 let _ = port_send(hdr.resp_port, &resp);
             }
             Some(VfsRpcOp::Close) => {
-                if payload.len() < 8 { return; }
+                if payload.len() < 8 {
+                    return;
+                }
                 let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
                 self.clients.remove(&handle);
                 let _ = port_send(hdr.resp_port, &[0u8]);
@@ -177,7 +201,7 @@ impl WaylandServer {
     fn process_client_input(&mut self, handle: u64) {
         let mut consumed = 0;
         let mut surfaces_to_commit = Vec::new();
-        
+
         {
             let client = self.clients.get_mut(&handle).unwrap();
             while client.in_buf.len() - consumed >= 8 {
@@ -186,18 +210,25 @@ impl WaylandServer {
                 if buf.len() < size as usize {
                     break;
                 }
-                
+
                 let payload = &buf[8..size as usize];
-                stem::info!("Wayland: Client {} Obj={} Op={} Size={}", handle, obj_id, opcode, size);
-                
+                stem::info!(
+                    "Wayland: Client {} Obj={} Op={} Size={}",
+                    handle,
+                    obj_id,
+                    opcode,
+                    size
+                );
+
                 let obj_clone = client.objects.get(&obj_id).cloned();
-                
+
                 match obj_clone {
                     Some(WaylandObject::Display) => {
-                        if opcode == 1 { // get_registry (new_id)
+                        if opcode == 1 {
+                            // get_registry (new_id)
                             let new_id = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
                             client.objects.insert(new_id, WaylandObject::Registry);
-                            
+
                             // Send .global event for compositor
                             let mut mb = MessageBuilder::new(new_id, 0); // opcode 0: global
                             mb.push_u32(1); // name
@@ -214,12 +245,14 @@ impl WaylandServer {
                         }
                     }
                     Some(WaylandObject::Registry) => {
-                        if opcode == 0 { // bind (name, string, version, new_id)
+                        if opcode == 0 {
+                            // bind (name, string, version, new_id)
                             let name = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
                             // Simple parsing: skip string, read new_id at end
                             let new_id_offset = payload.len() - 4;
-                            let new_id = u32::from_ne_bytes(payload[new_id_offset..].try_into().unwrap());
-                            
+                            let new_id =
+                                u32::from_ne_bytes(payload[new_id_offset..].try_into().unwrap());
+
                             if name == 1 {
                                 client.objects.insert(new_id, WaylandObject::Compositor);
                             } else if name == 2 {
@@ -232,48 +265,86 @@ impl WaylandServer {
                         }
                     }
                     Some(WaylandObject::Compositor) => {
-                        if opcode == 0 { // create_surface (new_id)
+                        if opcode == 0 {
+                            // create_surface (new_id)
                             let new_id = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
-                            client.objects.insert(new_id, WaylandObject::Surface { buffer_id: None });
+                            client
+                                .objects
+                                .insert(new_id, WaylandObject::Surface { buffer_id: None });
                         }
                     }
                     Some(WaylandObject::Shm) => {
-                        if opcode == 0 { // create_pool (new_id, fd, size)
+                        if opcode == 0 {
+                            // create_pool (new_id, fd, size)
                             let new_id = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
                             let fd = u32::from_ne_bytes(payload[4..8].try_into().unwrap()); // fd is bs_id!
                             let size = u32::from_ne_bytes(payload[8..12].try_into().unwrap());
-                            client.objects.insert(new_id, WaylandObject::ShmPool { bs_id: fd as u64, size });
-                            stem::info!("Wayland: created shm_pool={}, bs_id={}, size={}", new_id, fd, size);
+                            client.objects.insert(
+                                new_id,
+                                WaylandObject::ShmPool {
+                                    bs_id: fd as u64,
+                                    size,
+                                },
+                            );
+                            stem::info!(
+                                "Wayland: created shm_pool={}, bs_id={}, size={}",
+                                new_id,
+                                fd,
+                                size
+                            );
                         }
                     }
                     Some(WaylandObject::ShmPool { bs_id: _, size: _ }) => {
-                        if opcode == 0 { // create_buffer (new_id, offset, w, h, stride, format)
+                        if opcode == 0 {
+                            // create_buffer (new_id, offset, w, h, stride, format)
                             let new_id = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
                             let offset = u32::from_ne_bytes(payload[4..8].try_into().unwrap());
                             let width = u32::from_ne_bytes(payload[8..12].try_into().unwrap());
                             let height = u32::from_ne_bytes(payload[12..16].try_into().unwrap());
                             let stride = u32::from_ne_bytes(payload[16..20].try_into().unwrap());
                             let format = u32::from_ne_bytes(payload[20..24].try_into().unwrap());
-                            
-                            client.objects.insert(new_id, WaylandObject::Buffer { 
-                                pool_id: obj_id, offset, width, height, stride, format 
-                            });
+
+                            client.objects.insert(
+                                new_id,
+                                WaylandObject::Buffer {
+                                    pool_id: obj_id,
+                                    offset,
+                                    width,
+                                    height,
+                                    stride,
+                                    format,
+                                },
+                            );
                         }
                     }
                     _ => {}
                 }
 
                 // Handle mutating surface state separately
-                if let Some(WaylandObject::Surface { ref mut buffer_id }) = client.objects.get_mut(&obj_id) {
-                    if opcode == 1 { // attach (buffer_id, x, y)
+                if let Some(WaylandObject::Surface { ref mut buffer_id }) =
+                    client.objects.get_mut(&obj_id)
+                {
+                    if opcode == 1 {
+                        // attach (buffer_id, x, y)
                         let bid = u32::from_ne_bytes(payload[0..4].try_into().unwrap());
                         if bid != 0 {
                             *buffer_id = Some(bid);
                         }
-                    } else if opcode == 6 { // commit
+                    } else if opcode == 6 {
+                        // commit
                         if let Some(bid) = *buffer_id {
-                            if let Some(WaylandObject::Buffer { pool_id, width, height, stride, format, .. }) = client.objects.get(&bid).cloned() {
-                                if let Some(WaylandObject::ShmPool { bs_id, .. }) = client.objects.get(&pool_id).cloned() {
+                            if let Some(WaylandObject::Buffer {
+                                pool_id,
+                                width,
+                                height,
+                                stride,
+                                format,
+                                ..
+                            }) = client.objects.get(&bid).cloned()
+                            {
+                                if let Some(WaylandObject::ShmPool { bs_id, .. }) =
+                                    client.objects.get(&pool_id).cloned()
+                                {
                                     surfaces_to_commit.push(WaylandSurfaceCommit {
                                         client_handle: handle,
                                         surface_id: obj_id,
@@ -291,11 +362,11 @@ impl WaylandServer {
 
                 consumed += size as usize;
             }
-            
+
             client.in_buf.drain(0..consumed);
             client.flush_read_if_pending();
         }
-        
+
         self.committed_surfaces.extend(surfaces_to_commit);
     }
 }

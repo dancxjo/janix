@@ -538,7 +538,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     if actual_cpu != current_cpu_index::<R>() {
                         crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                     }
-
                 }
             } else {
                 break;
@@ -894,7 +893,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         let waiters = mark_task_exited::<R>(self, current_id, code);
 
-
         // Release any claimed devices
         crate::device_registry::REGISTRY
             .lock()
@@ -912,7 +910,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
             let old_priority = crate::task::registry::get_registry::<R>().tasks[idx].priority;
             crate::task::registry::get_registry::<R>().tasks[idx].priority = priority;
             crate::task::registry::get_registry::<R>().tasks[idx].base_priority = priority; // Update base priority for anti-starvation
-
 
             // If it's runnable and in a runq, move it to the new runq
             if crate::task::registry::get_registry::<R>().tasks[idx].state == TaskState::Runnable {
@@ -1222,7 +1219,6 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
                             tids.retain(|&t| t != tid);
                             !tids.is_empty()
                         });
-
 
                         // Release any claimed devices
                         crate::device_registry::REGISTRY
@@ -1559,7 +1555,11 @@ mod tests {
         TICK_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
     }
 
-    fn make_task(id: TaskId, state: TaskState, priority: TaskPriority) -> crate::task::Task<MockRuntime> {
+    fn make_task(
+        id: TaskId,
+        state: TaskState,
+        priority: TaskPriority,
+    ) -> crate::task::Task<MockRuntime> {
         crate::task::Task {
             id,
             state,
@@ -2481,13 +2481,13 @@ mod tests {
     fn test_poll_task_exit_reports_pending_dead_and_missing_targets() {
         init_test_env();
 
-        crate::task::registry::get_registry::<MockRuntime>()
-            .insert(alloc::boxed::Box::new(make_task(8301, TaskState::Runnable, TaskPriority::Normal)));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_task(8301, TaskState::Runnable, TaskPriority::Normal),
+        ));
 
         let mut dead = make_task(8302, TaskState::Dead, TaskPriority::Normal);
         dead.exit_code = Some(17);
-        crate::task::registry::get_registry::<MockRuntime>()
-            .insert(alloc::boxed::Box::new(dead));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(dead));
 
         assert_eq!(poll_task_exit::<MockRuntime>(8301).unwrap(), None);
         assert_eq!(poll_task_exit::<MockRuntime>(8302).unwrap(), Some(17));
@@ -2502,8 +2502,7 @@ mod tests {
         init_test_env();
 
         let target = make_task(8401, TaskState::Runnable, TaskPriority::Normal);
-        crate::task::registry::get_registry::<MockRuntime>()
-            .insert(alloc::boxed::Box::new(target));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(target));
 
         register_task_exit_waiter::<MockRuntime>(8401, 8402).unwrap();
         register_task_exit_waiter::<MockRuntime>(8401, 8403).unwrap();
@@ -2532,7 +2531,10 @@ mod tests {
         register_timeout_wake::<MockRuntime>(8501, 42);
         register_timeout_wake::<MockRuntime>(8502, 42);
 
-        assert_eq!(sched.state.sleep_queue.get(&42).cloned().unwrap(), alloc::vec![8501, 8502]);
+        assert_eq!(
+            sched.state.sleep_queue.get(&42).cloned().unwrap(),
+            alloc::vec![8501, 8502]
+        );
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;
@@ -2554,8 +2556,14 @@ mod tests {
 
         unregister_timeout_wake::<MockRuntime>(8602);
 
-        assert_eq!(sched.state.sleep_queue.get(&11).cloned().unwrap(), alloc::vec![8601]);
-        assert_eq!(sched.state.sleep_queue.get(&12).cloned().unwrap(), alloc::vec![8603]);
+        assert_eq!(
+            sched.state.sleep_queue.get(&11).cloned().unwrap(),
+            alloc::vec![8601]
+        );
+        assert_eq!(
+            sched.state.sleep_queue.get(&12).cloned().unwrap(),
+            alloc::vec![8603]
+        );
 
         unregister_timeout_wake::<MockRuntime>(8603);
         assert!(!sched.state.sleep_queue.contains_key(&12));

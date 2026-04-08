@@ -214,12 +214,7 @@ impl WaitSet {
         tok
     }
 
-    fn push_spec(
-        &mut self,
-        kind: WaitKind,
-        flags: u32,
-        object: u64,
-    ) -> Result<WaitToken, Errno> {
+    fn push_spec(&mut self, kind: WaitKind, flags: u32, object: u64) -> Result<WaitToken, Errno> {
         if self.specs.len() >= WAIT_MANY_MAX_ITEMS {
             return Err(Errno::ENOSPC);
         }

@@ -72,23 +72,31 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
                         }
                     }
                 }
-                VmBacking::File { fd, offset: file_offset } => {
+                VmBacking::File {
+                    fd,
+                    offset: file_offset,
+                } => {
                     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
                     let node = {
                         let lock = pinfo_arc.lock();
                         let file = lock.fd_table.get(fd)?;
                         file.node.clone()
                     };
-                    
+
                     let hhdm_virt = phys + hhdm;
-                    let slice = unsafe { core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size) };
-                    
+                    let slice =
+                        unsafe { core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size) };
+
                     let current_offset = file_offset + (virt - addr as u64);
                     let bytes_read = node.read(current_offset, slice)?;
-                    
+
                     if bytes_read < page_size {
                         unsafe {
-                            core::ptr::write_bytes((hhdm_virt + bytes_read as u64) as *mut u8, 0, page_size - bytes_read);
+                            core::ptr::write_bytes(
+                                (hhdm_virt + bytes_read as u64) as *mut u8,
+                                0,
+                                page_size - bytes_read,
+                            );
                         }
                     }
                 }

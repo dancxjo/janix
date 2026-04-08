@@ -25,11 +25,15 @@ use stem::{error, info, warn};
 use vfs_provider::{handle_vfs_rpc, NetVfsState};
 
 #[stem::main]
-fn main(_arg: usize) -> ! {
+fn main(arg: usize) -> ! {
     info!("VIRTIO_NETD: Starting VirtIO-NET driver service...");
 
     // Initialize VirtIO-NET driver.
-    let mut driver = match VirtioNetDriver::find_and_claim() {
+    let mut driver = match if arg != 0 {
+        VirtioNetDriver::claim_device(arg as u64)
+    } else {
+        VirtioNetDriver::find_and_claim()
+    } {
         Ok(d) => {
             info!("VIRTIO_NETD: Driver initialized successfully");
             d

@@ -20,9 +20,9 @@
 //!
 //! [`VfsDriver`]: super::VfsDriver
 
+use abi::errors::{Errno, SysResult};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use abi::errors::{Errno, SysResult};
 
 use super::{VfsDriver, VfsNode};
 
@@ -89,8 +89,8 @@ impl VfsDriver for UnionFs {
         for driver in self.layers.iter().rev() {
             match driver.lookup(path) {
                 Ok(node) => return Ok(node),
-                Err(Errno::ENOENT) => continue,  // try lower layer
-                Err(e) => return Err(e),          // hard error — stop
+                Err(Errno::ENOENT) => continue, // try lower layer
+                Err(e) => return Err(e),        // hard error — stop
             }
         }
         Err(Errno::ENOENT)
@@ -102,8 +102,8 @@ impl VfsDriver for UnionFs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::errors::Errno;
     use crate::vfs::{VfsNode, VfsStat};
+    use abi::errors::Errno;
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -122,7 +122,10 @@ mod tests {
     impl VfsDriver for SingleFileFs {
         fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
             if path == self.name {
-                Ok(Arc::new(StaticNode { content: self.content, ino: self.ino }))
+                Ok(Arc::new(StaticNode {
+                    content: self.content,
+                    ino: self.ino,
+                }))
             } else {
                 Err(Errno::ENOENT)
             }
@@ -137,22 +140,32 @@ mod tests {
     impl VfsNode for StaticNode {
         fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
             let off = offset as usize;
-            if off >= self.content.len() { return Ok(0); }
+            if off >= self.content.len() {
+                return Ok(0);
+            }
             let avail = &self.content[off..];
             let n = avail.len().min(buf.len());
             buf[..n].copy_from_slice(&avail[..n]);
             Ok(n)
         }
-        fn write(&self, _: u64, _: &[u8]) -> SysResult<usize> { Err(Errno::EROFS) }
+        fn write(&self, _: u64, _: &[u8]) -> SysResult<usize> {
+            Err(Errno::EROFS)
+        }
         fn stat(&self) -> SysResult<VfsStat> {
-            Ok(VfsStat { mode: VfsStat::S_IFREG | 0o444, size: self.content.len() as u64, ino: self.ino })
+            Ok(VfsStat {
+                mode: VfsStat::S_IFREG | 0o444,
+                size: self.content.len() as u64,
+                ino: self.ino,
+            })
         }
     }
 
     // Error-producing driver.
     struct ErrFs(Errno);
     impl VfsDriver for ErrFs {
-        fn lookup(&self, _: &str) -> SysResult<Arc<dyn VfsNode>> { Err(self.0) }
+        fn lookup(&self, _: &str) -> SysResult<Arc<dyn VfsNode>> {
+            Err(self.0)
+        }
     }
 
     // ── Tests ────────────────────────────────────────────────────────────────

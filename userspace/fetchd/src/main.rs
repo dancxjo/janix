@@ -13,9 +13,9 @@ use abi::schema::{keys, kinds, rels};
 use alloc::format;
 use core::time::Duration;
 use stem::info;
-use stem::ui::UiBuilder;
 use stem::thing::sys::{create_node, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
+use stem::ui::UiBuilder;
 
 /// Graph kind for the network stack service (published by netd)
 const KIND_NET_STACK: &str = "svc.net.Stack";

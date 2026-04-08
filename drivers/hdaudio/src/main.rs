@@ -260,7 +260,7 @@ fn main(_arg: usize) -> ! {
                 } else {
                     Some(stem::time::Duration::from_millis(10)) // Max 10ms delay between DMA updates when playing
                 };
-                
+
                 let mut ws = stem::wait_set::WaitSet::new();
                 if let Ok(_) = ws.add_port_readable(read_handle as u64) {
                     let _ = ws.wait(timeout_ms);
@@ -547,7 +547,7 @@ impl HdaController {
 
         let start = stem::time::monotonic_ns();
         let timeout_ns = 500_000_000; // 500ms timeout
-        
+
         loop {
             let wp = self.read_u16(REG_RIRBWP) & 0x00ff;
             if wp != self.rirb_rp {
@@ -601,7 +601,7 @@ impl HdaController {
         let mut gctl = self.read_u32(REG_GCTL);
         gctl &= !GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
-        
+
         let mut ok = false;
         let start = stem::time::monotonic_ns();
         loop {
@@ -614,10 +614,10 @@ impl HdaController {
             }
             stem::sleep_ms(1);
         }
-        
+
         gctl |= GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
-        
+
         let start2 = stem::time::monotonic_ns();
         loop {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) != 0 {

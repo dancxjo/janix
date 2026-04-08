@@ -50,7 +50,10 @@ impl SimdState {
     pub fn save<R: BootRuntime>(&mut self, rt: &R) {
         let ptr = self.aligned_ptr();
         if (ptr as usize) % 16 != 0 {
-            crate::kinfo!("SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned! ptr={:p}", ptr);
+            crate::kinfo!(
+                "SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned! ptr={:p}",
+                ptr
+            );
         }
         unsafe { rt.simd_save(ptr) };
         self.valid = true;
@@ -60,7 +63,10 @@ impl SimdState {
         if self.valid {
             let ptr = self.aligned_ptr();
             if (ptr as usize) % 16 != 0 {
-                crate::kinfo!("SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned in restore! ptr={:p}", ptr);
+                crate::kinfo!(
+                    "SIMD ALIGNMENT ERROR! buffer is NOT 16-byte aligned in restore! ptr={:p}",
+                    ptr
+                );
             }
             unsafe { rt.simd_restore(ptr) };
         }

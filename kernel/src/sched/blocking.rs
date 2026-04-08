@@ -148,8 +148,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
         );
     }
 
-    if was_blocked {
-    }
+    if was_blocked {}
 
     // 4. Send IPI OUTSIDE of all locks
     if is_remote {

@@ -126,8 +126,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
         // Link affinity and initial location
-        if let Affinity::Pinned(cpu) = affinity {
-        }
+        if let Affinity::Pinned(cpu) = affinity {}
         // Initial location matches target runq
 
         id
@@ -252,8 +251,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
         // Link affinity and initial location
-        if let Affinity::Pinned(cpu) = affinity {
-        }
+        if let Affinity::Pinned(cpu) = affinity {}
         // Initial location matches target runq
 
         id
@@ -351,8 +349,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
         // Link affinity and initial location
-        if let Affinity::Pinned(cpu) = affinity {
-        }
+        if let Affinity::Pinned(cpu) = affinity {}
         // Initial location matches target runq
 
         Some(id)
@@ -549,7 +546,10 @@ fn setup_stdio_fds<R: BootRuntime>(
             .and_then(|task| task.process_info.clone())
             .and_then(|pi| {
                 let lock = pi.lock();
-                lock.fd_table.get(fd).ok().map(|f| (f.node.clone(), f.flags))
+                lock.fd_table
+                    .get(fd)
+                    .ok()
+                    .map(|f| (f.node.clone(), f.flags))
             })
     };
 
@@ -922,8 +922,8 @@ mod tests {
 
         for &(raw_arg, expected) in cases {
             let id = sched.spawn_user_thread(
-                0x4000,          // mock entry address
-                0x8000,          // mock user stack pointer
+                0x4000, // mock entry address
+                0x8000, // mock user stack pointer
                 StartupArg::Raw(raw_arg),
                 stack_info,
                 TaskPriority::Normal,
@@ -934,7 +934,8 @@ mod tests {
             // MockRuntime::init_user_context stores spec.arg in MockContext.0
             assert_eq!(
                 task.ctx.0, expected,
-                "user thread arg mismatch for raw_arg={:#x}", raw_arg
+                "user thread arg mismatch for raw_arg={:#x}",
+                raw_arg
             );
         }
     }

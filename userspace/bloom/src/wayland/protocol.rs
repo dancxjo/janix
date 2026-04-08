@@ -1,5 +1,5 @@
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -34,7 +34,7 @@ impl MessageBuilder {
     pub fn new(object_id: u32, opcode: u16) -> Self {
         let mut buf = Vec::new();
         buf.resize(8, 0); // Reserve space for header
-        
+
         let mut b = Self { buf };
         encode_header(object_id, opcode, 8, &mut b.buf);
         b

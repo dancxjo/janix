@@ -349,7 +349,7 @@ fn main(arg: usize) -> ! {
                         has_req_readable = true;
                     }
                 }
-                
+
                 if has_req_readable {
                     match port_recv(drv_req_read, &mut buf) {
                         Ok(n) => {

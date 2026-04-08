@@ -76,7 +76,10 @@ pub use port::{
     port_close, port_create, port_recv, port_send, port_send_all, port_try_recv, port_wait,
     topic_create, topic_publish, topic_subscribe, PortHandle,
 };
-pub use vfs::{vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_read, vfs_readdir, vfs_umount, vfs_unlink, vfs_write};
+pub use vfs::{
+    vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_read, vfs_readdir, vfs_umount, vfs_unlink,
+    vfs_write,
+};
 pub use wait::wait_many;
 
 pub fn yield_now() {
@@ -547,11 +550,7 @@ pub fn root_watch_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<u
 /// Prefer this inside drain loops that follow a
 /// [`WaitSet::wait`](crate::wait_set::WaitSet) / `SYS_WAIT_MANY` call, so
 /// the loop terminates quickly once all queued events have been consumed.
-pub fn root_watch_try_next(
-    id: usize,
-    seq_out: &mut u64,
-    out: &mut [u8],
-) -> Result<usize, Errno> {
+pub fn root_watch_try_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe {
         match raw_syscall6(
             SYS_ROOT_WATCH_TRY_NEXT,

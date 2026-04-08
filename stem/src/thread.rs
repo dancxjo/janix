@@ -95,10 +95,10 @@ where
 {
     // Reconstruct the Box and take ownership of the closure
     let b = unsafe { Box::from_raw(arg as *mut BoxWrapper<F>) };
-    
+
     // Execute the closure
     (b.f)();
-    
+
     // Exit securely with status 0 upon successful completion
     crate::syscall::exit(0);
 }
@@ -131,11 +131,11 @@ where
 {
     let b = Box::new(BoxWrapper { f });
     let ptr = Box::into_raw(b) as usize;
-    
+
     let stack = Stack::alloc_growing_stack(StackSpec::default())?;
-    
+
     let tid = crate::syscall::spawn_thread(generic_thread_trampoline::<F> as usize, ptr, &stack)
         .map(|id| id as ThreadId)?;
-    
+
     Ok(JoinHandle { tid })
 }

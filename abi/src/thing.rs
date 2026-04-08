@@ -21,9 +21,6 @@ impl<T> Thing<T> {
 
     /// Create a new Thing with a specific ID.
     pub fn with_id(id: ThingId, value: T) -> Self {
-        Self {
-            id,
-            value,
-        }
+        Self { id, value }
     }
 }

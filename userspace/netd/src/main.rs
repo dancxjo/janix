@@ -35,7 +35,10 @@ const VIRTIO0_PATH: &str = "/dev/net/virtio0";
 fn main(_arg: usize) -> ! {
     info!("NETD: Starting network service (Phase 3 — /net/ VFS provider)");
 
-    info!("NETD: Waiting for virtio_netd VFS provider at {}...", VIRTIO0_PATH);
+    info!(
+        "NETD: Waiting for virtio_netd VFS provider at {}...",
+        VIRTIO0_PATH
+    );
     let (rx_fd, tx_fd, events_fd, mac, iface_mtu, initial_link_up) = open_nic_device();
     let mtu = iface_mtu as usize;
 

@@ -9,8 +9,8 @@ use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::ui_event::{self, UiEvent};
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find,  get_kind,
-    prop_get, prop_set,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find, get_kind, prop_get,
+    prop_set,
 };
 use stem::thing::{ThingId, ThingKind};
 

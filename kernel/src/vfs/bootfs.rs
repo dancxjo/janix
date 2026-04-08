@@ -20,8 +20,8 @@
 //! This makes the boot filesystem available immediately after the allocator
 //! is initialised, without any I/O or initialisation step.
 
-use alloc::sync::Arc;
 use abi::errors::{Errno, SysResult};
+use alloc::sync::Arc;
 
 use super::{VfsDriver, VfsNode, VfsStat};
 
@@ -168,7 +168,11 @@ mod tests {
         let mut buf = [0u8; 64];
         let n = node.read(0, &mut buf).unwrap();
         assert!(n > 0);
-        assert!(core::str::from_utf8(&buf[..n]).unwrap().contains("Thing-OS"));
+        assert!(
+            core::str::from_utf8(&buf[..n])
+                .unwrap()
+                .contains("Thing-OS")
+        );
     }
 
     #[test]

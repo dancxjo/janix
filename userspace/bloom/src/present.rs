@@ -221,7 +221,8 @@ impl DriverPresenter {
                     // block the driver, and starve input handling in the compositor.
                     self.pump();
                     wait_count = wait_count.wrapping_add(1);
-                    if wait_count == 200 { // reduced threshold since wait takes time
+                    if wait_count == 200 {
+                        // reduced threshold since wait takes time
                         stem::warn!(
                             "bloom: request port {} remained full while sending {} bytes",
                             self.req_write,

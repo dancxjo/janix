@@ -51,6 +51,11 @@ pub struct DeviceEntry {
     pub graph_id: u64,                        // ThingId in the graph
     pub mmio_bars: [u64; MAX_BARS],           // BAR physical addresses
     pub mmio_sizes: [u64; MAX_BARS],          // BAR sizes
+    pub vendor_id: u16,
+    pub device_id: u16,
+    pub class_code: u8,
+    pub subclass: u8,
+    pub prog_if: u8,
     pub pci_location: Option<PciLocation>,
     pub msi_cap: Option<MsiCapability>,
     pub msix_cap: Option<MsixCapability>,
@@ -70,6 +75,11 @@ impl DeviceEntry {
             graph_id,
             mmio_bars: [0; MAX_BARS],
             mmio_sizes: [0; MAX_BARS],
+            vendor_id: 0,
+            device_id: 0,
+            class_code: 0,
+            subclass: 0,
+            prog_if: 0,
             pci_location: None,
             msi_cap: None,
             msix_cap: None,
@@ -90,6 +100,11 @@ impl DeviceEntry {
             graph_id,
             mmio_bars: bars,
             mmio_sizes: sizes,
+            vendor_id: 0,
+            device_id: 0,
+            class_code: 0,
+            subclass: 0,
+            prog_if: 0,
             pci_location: None,
             msi_cap: None,
             msix_cap: None,
@@ -175,6 +190,41 @@ impl DeviceRegistry {
             return true;
         }
         false
+    }
+
+    pub fn set_pci_identity(
+        &mut self,
+        device_index: usize,
+        vendor_id: u16,
+        device_id: u16,
+        class_code: u8,
+        subclass: u8,
+        prog_if: u8,
+    ) -> bool {
+        if device_index >= self.device_count {
+            return false;
+        }
+        if let Some(device) = self.devices[device_index].as_mut() {
+            device.vendor_id = vendor_id;
+            device.device_id = device_id;
+            device.class_code = class_code;
+            device.subclass = subclass;
+            device.prog_if = prog_if;
+            return true;
+        }
+        false
+    }
+
+    pub fn len(&self) -> usize {
+        self.device_count
+    }
+
+    pub fn entry_copy(&self, index: usize) -> Option<DeviceEntry> {
+        if index < self.device_count {
+            self.devices[index]
+        } else {
+            None
+        }
     }
 
     /// Get device by index

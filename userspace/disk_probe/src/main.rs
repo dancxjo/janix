@@ -1,5 +1,5 @@
 //! Disk Probe VFS Provider
-//! 
+//!
 //! Exposes a virtual filesystem at `/dev/disks` where each block device
 //! discovered in the system is represented as a file (e.g. `/dev/disks/0`).
 //! Reading the file outputs its properties.
@@ -64,9 +64,9 @@ fn render_disk_info(index: usize) -> Option<alloc::string::String> {
         return None;
     }
     let disk_id = disks[index];
-    
+
     let mut out = format!("Disk {} (Thing {:?})\n", index, disk_id.0);
-    
+
     match prop_get(disk_id, "sector_count") {
         Ok(sectors) => {
             let size_mb = (sectors * 512) / (1024 * 1024);
@@ -89,7 +89,7 @@ fn render_disk_info(index: usize) -> Option<alloc::string::String> {
         }
         Err(_) => out.push_str("LBA48 support: (unavailable)\n"),
     }
-    
+
     Some(out)
 }
 
@@ -170,12 +170,18 @@ fn handle_read(resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8], payload[9], payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]) as usize;
     let len = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
 
@@ -214,14 +220,21 @@ fn handle_readdir(resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
     let offset = u64::from_le_bytes([
-        payload[8], payload[9], payload[10], payload[11],
-        payload[12], payload[13], payload[14], payload[15],
+        payload[8],
+        payload[9],
+        payload[10],
+        payload[11],
+        payload[12],
+        payload[13],
+        payload[14],
+        payload[15],
     ]) as usize;
-    let max_bytes = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+    let max_bytes =
+        u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
 
     if handle != 0 {
         // Not a directory
@@ -265,8 +278,8 @@ fn handle_stat(resp_port: PortHandle, payload: &[u8]) {
         return;
     }
     let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3],
-        payload[4], payload[5], payload[6], payload[7],
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
     ]);
 
     let mode;
@@ -306,17 +319,24 @@ fn main(_arg: usize) -> ! {
         Ok(p) => p,
         Err(e) => {
             info!("disk_probe: failed to create provider port: {:?}", e);
-            loop { stem::sleep(core::time::Duration::from_secs(60)); }
+            loop {
+                stem::sleep(core::time::Duration::from_secs(60));
+            }
         }
     };
 
     match vfs_mount(req_write, "/dev/disks") {
         Ok(()) => {
-            info!("disk_probe: mounted at /dev/disks (provider port w={} r={})", req_write, req_read);
+            info!(
+                "disk_probe: mounted at /dev/disks (provider port w={} r={})",
+                req_write, req_read
+            );
         }
         Err(e) => {
             info!("disk_probe: vfs_mount failed: {:?}", e);
-            loop { stem::sleep(core::time::Duration::from_secs(60)); }
+            loop {
+                stem::sleep(core::time::Duration::from_secs(60));
+            }
         }
     }
 

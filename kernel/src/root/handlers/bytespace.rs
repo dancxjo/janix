@@ -2,10 +2,10 @@
 
 use crate::BootRuntime;
 use crate::root::RootMsg;
-use crate::root::resources::{ResourceHandle, bytespace};
 use crate::root::resources::bytespace::Provenance;
-use core::sync::atomic::Ordering;
+use crate::root::resources::{ResourceHandle, bytespace};
 use alloc::collections::BTreeMap;
+use core::sync::atomic::Ordering;
 
 pub type HandlerResult = (i32, u64);
 
@@ -55,7 +55,8 @@ pub fn handle_bytespace_create_from_ptr<R: BootRuntime>(
     let rt = crate::runtime::<R>();
     let hhdm_offset = rt.phys_to_virt_offset();
     let id = manager.alloc();
-    let handle = bytespace::create_from_ptr(ptr as usize, len as usize, hhdm_offset, Provenance::Boot);
+    let handle =
+        bytespace::create_from_ptr(ptr as usize, len as usize, hhdm_offset, Provenance::Boot);
     manager.spaces.insert(id, ResourceHandle::Bytespace(handle));
     (0, id)
 }
@@ -112,7 +113,11 @@ pub fn handle_bytespace_read(
     }
 }
 
-pub fn handle_bytespace_info(manager: &mut BytespaceManager, msg: &RootMsg, id: u64) -> HandlerResult {
+pub fn handle_bytespace_info(
+    manager: &mut BytespaceManager,
+    msg: &RootMsg,
+    id: u64,
+) -> HandlerResult {
     if let Some(ResourceHandle::Bytespace(handle)) = manager.spaces.get(&id) {
         let lock = handle.lock();
         if let Some(reply) = msg.reply.as_ref() {
@@ -125,7 +130,12 @@ pub fn handle_bytespace_info(manager: &mut BytespaceManager, msg: &RootMsg, id: 
     }
 }
 
-pub fn handle_bytespace_map(manager: &mut BytespaceManager, msg: &RootMsg, id: u64, tid: u64) -> HandlerResult {
+pub fn handle_bytespace_map(
+    manager: &mut BytespaceManager,
+    msg: &RootMsg,
+    id: u64,
+    tid: u64,
+) -> HandlerResult {
     if let Some(ResourceHandle::Bytespace(handle)) = manager.spaces.get(&id) {
         let lock = handle.lock();
         let user_va = crate::memory::alloc_user_va(lock.len);
@@ -148,7 +158,11 @@ pub fn handle_bytespace_unmap(id: u64, user_va: u64, tid: u64) -> HandlerResult 
     }
 }
 
-pub fn handle_bytespace_phys(manager: &mut BytespaceManager, msg: &RootMsg, id: u64) -> HandlerResult {
+pub fn handle_bytespace_phys(
+    manager: &mut BytespaceManager,
+    msg: &RootMsg,
+    id: u64,
+) -> HandlerResult {
     if let Some(ResourceHandle::Bytespace(handle)) = manager.spaces.get(&id) {
         let lock = handle.lock();
         if let Some(reply) = msg.reply.as_ref() {
@@ -160,7 +174,11 @@ pub fn handle_bytespace_phys(manager: &mut BytespaceManager, msg: &RootMsg, id: 
     }
 }
 
-pub fn handle_bytespace_truncate(manager: &mut BytespaceManager, id: u64, new_len: u64) -> HandlerResult {
+pub fn handle_bytespace_truncate(
+    manager: &mut BytespaceManager,
+    id: u64,
+    new_len: u64,
+) -> HandlerResult {
     if let Some(ResourceHandle::Bytespace(handle)) = manager.spaces.get(&id) {
         let mut lock = handle.lock();
         let new_len = new_len as usize;

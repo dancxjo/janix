@@ -36,8 +36,8 @@ unsafe impl GlobalAlloc for TracingAllocator {
 
         // Workaround for linked_list_allocator bug with small leftover holes:
         // By aligning the size to 32 bytes and ensuring a minimum of 32 bytes,
-        // we guarantee that any leftover block is at least 32 bytes long 
-        // (which is > maximum alignment padding + Hole size), preventing it from 
+        // we guarantee that any leftover block is at least 32 bytes long
+        // (which is > maximum alignment padding + Hole size), preventing it from
         // creating < 24 byte holes that corrupt the free list.
         let align = orig_align.max(8);
         let mut size = orig_size.max(32);

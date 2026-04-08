@@ -40,6 +40,7 @@ use super::{VfsDriver, VfsNode, VfsStat};
 /// *after* the built-in match, so built-in names (`null`, `zero`, `console`)
 /// can still be overridden if needed.
 static DEVICE_REGISTRY: Mutex<BTreeMap<String, Arc<dyn VfsNode>>> = Mutex::new(BTreeMap::new());
+static BOOT_FB_INFO: Mutex<Option<(crate::FramebufferInfo, u64)>> = Mutex::new(None);
 
 /// Register a device node under the name `name` in `/dev`.
 ///
@@ -61,6 +62,10 @@ pub fn register(name: &str, node: Arc<dyn VfsNode>) {
 /// not registered.
 pub fn unregister(name: &str) -> bool {
     DEVICE_REGISTRY.lock().remove(name).is_some()
+}
+
+pub fn set_boot_fb(fb: crate::FramebufferInfo, graph_id: u64) {
+    *BOOT_FB_INFO.lock() = Some((fb, graph_id));
 }
 
 // ── DevFs driver ─────────────────────────────────────────────────────────────
@@ -101,6 +106,13 @@ impl VfsDriver for DevFs {
             "console" => Ok(Arc::new(ConsoleNode)),
             "null" => Ok(Arc::new(NullNode)),
             "zero" => Ok(Arc::new(ZeroNode)),
+            "fb0" => {
+                if let Some((fb, graph_id)) = *BOOT_FB_INFO.lock() {
+                    Ok(Arc::new(FbNode::new(fb, graph_id)))
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
             _ => Err(Errno::ENOENT),
         }
     }
@@ -132,11 +144,15 @@ impl VfsNode for DevDirNode {
             entries.extend_from_slice(name.as_bytes());
             entries.push(0);
         }
+        if BOOT_FB_INFO.lock().is_some() {
+            entries.extend_from_slice(b"fb0");
+            entries.push(0);
+        }
         {
             let reg = DEVICE_REGISTRY.lock();
             for name in reg.keys() {
                 // Avoid duplicating names already listed above.
-                if !matches!(name.as_str(), "console" | "null" | "zero") {
+                if !matches!(name.as_str(), "console" | "null" | "zero" | "fb0") {
                     entries.extend_from_slice(name.as_bytes());
                     entries.push(0);
                 }
@@ -356,7 +372,7 @@ impl VfsNode for FbNode {
     fn stat(&self) -> SysResult<VfsStat> {
         use abi::display_driver_protocol::FB_INFO_PAYLOAD_SIZE;
         Ok(VfsStat {
-            mode: VfsStat::S_IFCHR | 0o444,
+            mode: VfsStat::S_IFCHR | 0o666,
             size: FB_INFO_PAYLOAD_SIZE as u64,
             ino: 4,
         })

@@ -657,6 +657,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             ));
         }
 
+        crate::vfs::devfs::set_boot_fb(fb, fb_graph_id);
         crate::vfs::devfs::register(
             "fb0",
             alloc::sync::Arc::new(crate::vfs::devfs::FbNode::new(fb, fb_graph_id)),

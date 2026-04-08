@@ -12,7 +12,7 @@ const MAX_BACKOFF_MS: u64 = 5_000;
 
 pub struct ManagedDriver {
     pub slot: String,
-    pub graph_id: u64,
+    pub device_handle: u64,
     pub driver: &'static str,
     pub mount_path: Option<String>,
     pub pid: Option<u64>,
@@ -24,7 +24,7 @@ impl ManagedDriver {
     pub fn new(device: &SysDevice, binding: Binding, mount_path: Option<String>) -> Self {
         Self {
             slot: device.slot.clone(),
-            graph_id: device.graph_id,
+            device_handle: device.device_handle,
             driver: binding.driver,
             mount_path,
             pid: None,
@@ -44,11 +44,11 @@ impl ManagedDriver {
             return;
         }
 
-        match spawn_process(self.driver, self.graph_id as usize) {
+        match spawn_process(self.driver, self.device_handle as usize) {
             Ok(pid) => {
                 info!(
-                    "DEVD: launched driver {} for {} (graph_id={}, pid={})",
-                    self.driver, self.slot, self.graph_id, pid
+                    "DEVD: launched driver {} for {} (device_handle={}, pid={})",
+                    self.driver, self.slot, self.device_handle, pid
                 );
                 self.pid = Some(pid);
             }

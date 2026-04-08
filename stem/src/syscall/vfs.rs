@@ -7,8 +7,8 @@
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{
     PollFd, SYS_FS_CLOSE, SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_OPEN,
-    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_UMOUNT,
-    SYS_FS_UNLINK, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_UMOUNT,
+    SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -255,4 +255,60 @@ pub fn vfs_poll(pollfds: &mut [PollFd], timeout_ms: u64) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret)
+}
+
+/// Watch a file descriptor for changes.
+///
+/// `mask` is a bitmask of [`abi::vfs_watch::mask`] events.
+/// `flags` is a bitmask of [`abi::vfs_watch::flags`].
+/// Returns a new watch file descriptor.
+pub fn vfs_watch_fd(fd: u32, mask: u32, flags: u32) -> SysResult<u32> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_WATCH_FD,
+            fd as usize,
+            mask as usize,
+            flags as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Watch a path for changes.
+///
+/// `mask` is a bitmask of [`abi::vfs_watch::mask`] events.
+/// `flags` is a bitmask of [`abi::vfs_watch::flags`].
+/// Returns a new watch file descriptor.
+pub fn vfs_watch_path(path: &str, mask: u32, flags: u32) -> SysResult<u32> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_WATCH_PATH,
+            path.as_ptr() as usize,
+            path.len(),
+            mask as usize,
+            flags as usize,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Rename a file or directory from `old_path` to `new_path`.
+pub fn vfs_rename(old_path: &str, new_path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_RENAME,
+            old_path.as_ptr() as usize,
+            old_path.len(),
+            new_path.as_ptr() as usize,
+            new_path.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
 }

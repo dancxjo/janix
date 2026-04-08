@@ -15,6 +15,7 @@
 //! - [`SYS_FS_poll`]   — poll a set of fds for readiness (POSIX-style)
 
 use alloc::vec;
+use alloc::sync::Arc;
 
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{PollFd, poll_flags, vfs_flags};
@@ -169,18 +170,15 @@ pub fn SYS_FS_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     let offset = *offset_cell.lock();
     let n = node.write(offset, &kbuf)?;
 
-    // O_APPEND semantics (positioning at EOF before write) are handled by the
-    // node implementation; the offset is still updated here to track position.
     if n > 0 {
         *offset_cell.lock() = offset.saturating_add(n as u64);
+        // Emit MODIFY event
+        crate::vfs::watch::emit_event(&*node, abi::vfs_watch::mask::MODIFY, None, 0);
     }
 
     Ok(n)
 }
 
-// ── unlink ──────────────────────────────────────────────────────────────────
-
-/// Remove a file or empty directory at `path`.
 pub fn SYS_FS_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {
@@ -189,7 +187,17 @@ pub fn SYS_FS_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    
+    // Resolve parent to emit event
+    let (parent_path, name) = split_parent(path);
+    let parent_node = vfs::mount::lookup(parent_path).ok();
+
     vfs::mount::unlink(path)?;
+
+    if let Some(parent) = parent_node {
+        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::REMOVE, Some(name), 0);
+    }
+
     Ok(0)
 }
 
@@ -204,7 +212,17 @@ pub fn SYS_FS_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    
+    // Resolve parent to emit event
+    let (parent_path, name) = split_parent(path);
+    let parent_node = vfs::mount::lookup(parent_path).ok();
+
     vfs::mount::mkdir(path)?;
+
+    if let Some(parent) = parent_node {
+        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::CREATE, Some(name), 0);
+    }
+
     Ok(0)
 }
 
@@ -500,4 +518,94 @@ pub fn SYS_FS_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> 
     
     *file.offset.lock() = new_offset;
     Ok(new_offset as usize)
+}
+
+// ── watch ───────────────────────────────────────────────────────────────────
+
+pub fn sys_watch_fd(fd: usize, mask: usize, flags: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    
+    let node = {
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        file.node.clone()
+    };
+
+    let watch = Arc::new(crate::vfs::watch::Watch::new(mask as u32, flags as u32));
+    crate::vfs::watch::register_watch(&node, watch.clone())?;
+
+    // Return the watch as a new file descriptor
+    let watch_fd = pinfo_arc.lock().fd_table.open(watch, crate::vfs::OpenFlags::read_only())?;
+    Ok(watch_fd as usize)
+}
+
+pub fn sys_watch_path(path_ptr: usize, path_len: usize, mask: usize, flags: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let node = vfs::mount::lookup(path)?;
+    let watch = Arc::new(crate::vfs::watch::Watch::new(mask as u32, flags as u32));
+    crate::vfs::watch::register_watch(&node, watch.clone())?;
+
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let watch_fd = pinfo_arc.lock().fd_table.open(watch, crate::vfs::OpenFlags::read_only())?;
+    Ok(watch_fd as usize)
+}
+
+// ── rename ──────────────────────────────────────────────────────────────────
+
+static NEXT_COOKIE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
+
+pub fn SYS_FS_rename(
+    _old_dirfd: usize,
+    old_const_ptr: usize,
+    old_len: usize,
+    _new_dirfd: usize,
+    new_const_ptr: usize,
+    new_len: usize,
+) -> SysResult<usize> {
+    validate_user_range(old_const_ptr, old_len, false)?;
+    validate_user_range(new_const_ptr, new_len, false)?;
+
+    let mut old_path_buf = vec![0u8; old_len];
+    let mut new_path_buf = vec![0u8; new_len];
+    unsafe {
+        copyin(&mut old_path_buf, old_const_ptr)?;
+        copyin(&mut new_path_buf, new_const_ptr)?;
+    }
+    let old_path = core::str::from_utf8(&old_path_buf).map_err(|_| Errno::EINVAL)?;
+    let new_path = core::str::from_utf8(&new_path_buf).map_err(|_| Errno::EINVAL)?;
+
+    // Resolve parents for events
+    let (old_parent_path, old_name) = split_parent(old_path);
+    let (new_parent_path, new_name) = split_parent(new_path);
+    let old_parent_node = vfs::mount::lookup(old_parent_path).ok();
+    let new_parent_node = vfs::mount::lookup(new_parent_path).ok();
+
+    // Perform rename (VFS mount layer needs a rename method too, which redirects to driver)
+    vfs::mount::rename(old_path, new_path)?;
+
+    // Emit MOVE events
+    let cookie = NEXT_COOKIE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    if let Some(parent) = old_parent_node {
+        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::MOVE_FROM, Some(old_name), cookie);
+    }
+    if let Some(parent) = new_parent_node {
+        crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::MOVE_TO, Some(new_name), cookie);
+    }
+
+    Ok(0)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn split_parent(path: &str) -> (&str, &str) {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rfind('/') {
+        Some(0) => ("/", &trimmed[1..]),
+        Some(idx) => (&trimmed[..idx], &trimmed[idx + 1..]),
+        None => ("/", trimmed),
+    }
 }

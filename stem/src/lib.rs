@@ -16,6 +16,7 @@ pub mod console;
 pub mod css;
 pub mod device;
 pub mod errors;
+pub mod fs;
 
 #[cfg(feature = "global-alloc")]
 pub mod heap;

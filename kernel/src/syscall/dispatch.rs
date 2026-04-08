@@ -4,6 +4,11 @@ use abi::syscall::*;
 
 pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let syscall_id = n as u32;
+    let tid = unsafe { crate::sched::current_tid_current() };
+
+    if tid >= 15 {
+        crate::kinfo!("DISPATCH [tid={}]: n=0x{:x} args={:x?}", tid, syscall_id, args);
+    }
 
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
@@ -115,6 +120,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_WRITE => handlers::vfs::SYS_FS_write(args[0], args[1], args[2]),
         SYS_FS_DUP => handlers::vfs::SYS_FS_DUP(args[0]),
         SYS_FS_DUP2 => handlers::vfs::SYS_FS_DUP2(args[0], args[1]),
+        SYS_FS_RENAME => handlers::vfs::SYS_FS_rename(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYS_PIPE => handlers::vfs::sys_pipe(args[0]),
         SYS_FS_UNLINK => handlers::vfs::SYS_FS_unlink(args[0], args[1]),
         SYS_FS_MKDIR => handlers::vfs::SYS_FS_mkdir(args[0], args[1]),
@@ -122,9 +128,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_UMOUNT => handlers::vfs::SYS_FS_umount(args[0], args[1]),
         SYS_FS_POLL => handlers::vfs::SYS_FS_poll(args[0], args[1], args[2]),
         SYS_FS_SEEK => handlers::vfs::SYS_FS_seek(args[0], args[1], args[2]),
+        SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
+        SYS_FS_WATCH_PATH => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
 
         _ => {
-            crate::kprintln!("SYSCALL: Unknown syscall #{} (0x{:x})", syscall_id, syscall_id);
+            if tid >= 15 {
+                crate::kinfo!("DISPATCH [tid={}]: Unknown syscall #{} (0x{:x}) args={:x?}", tid, syscall_id, syscall_id, args);
+            }
             Err(abi::errors::Errno::ENOSYS)
         }
     };

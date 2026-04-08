@@ -246,12 +246,12 @@ index 00000000..93bf392d
 +
 +use crate::sys::pal::raw_syscall6;
 +
-+const SYS_SLEEP_NS: u32 = 0x11;
-+const SYS_TIME_MONOTONIC: u32 = 0x20;
-+const SYS_VFS_OPEN: u32 = 0x220;
-+const SYS_VFS_CLOSE: u32 = 0x221;
-+const SYS_VFS_READ: u32 = 0x222;
-+const SYS_VFS_WRITE: u32 = 0x223;
++const SYS_SLEEP_NS: u32 = 0x1200;
++const SYS_TIME_MONOTONIC: u32 = 0x1202;
++const SYS_VFS_OPEN: u32 = 0x4000;
++const SYS_VFS_CLOSE: u32 = 0x4001;
++const SYS_VFS_READ: u32 = 0x4002;
++const SYS_VFS_WRITE: u32 = 0x4003;
 +
 +const O_RDONLY: u32 = 0x0000;
 +const O_WRONLY: u32 = 0x0001;

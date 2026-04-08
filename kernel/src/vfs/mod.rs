@@ -26,6 +26,7 @@ pub mod provider;
 pub mod ramfs;
 pub mod sysfs;
 pub mod union;
+pub mod watch;
 
 use abi::errors::{Errno, SysResult};
 use alloc::sync::Arc;
@@ -142,6 +143,18 @@ pub trait VfsNode: Send + Sync {
     fn phys_region(&self) -> SysResult<(u64, usize)> {
         Err(Errno::ENOSYS)
     }
+
+    /// Poll this node for readiness.
+    /// Returns the current readiness mask (using [`abi::syscall::poll_flags`]).
+    fn poll(&self) -> u16 {
+        abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
+    }
+
+    /// Add a task to the wait queue for this node.
+    fn add_waiter(&self, _tid: u64) {}
+
+    /// Remove a task from the wait queue for this node.
+    fn remove_waiter(&self, _tid: u64) {}
 }
 
 // ── VfsDriver ───────────────────────────────────────────────────────────────
@@ -174,6 +187,13 @@ pub trait VfsDriver: Send + Sync {
     ///
     /// The default implementation returns `EROFS`.
     fn unlink(&self, _path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::EROFS)
+    }
+
+    /// Rename a file or directory from `old_path` to `new_path`.
+    ///
+    /// The default implementation returns `EROFS`.
+    fn rename(&self, _old_path: &str, _new_path: &str) -> SysResult<()> {
         Err(abi::errors::Errno::EROFS)
     }
 }

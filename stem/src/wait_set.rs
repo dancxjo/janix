@@ -245,12 +245,9 @@ impl WaitSet {
         self.push_spec(WaitKind::Port, interest::WRITABLE, handle)
     }
 
-    /// Watch a root-graph (commit) stream for new events.
-    ///
-    /// `watch_id` is the handle returned by `root_watch_open` /
-    /// [`crate::graph_wait::GraphWatch::open_all`].
-    pub fn add_root_watch(&mut self, watch_id: usize) -> Result<WaitToken, Errno> {
-        self.push_spec(WaitKind::RootWatch, interest::READABLE, watch_id as u64)
+    /// Watch a VFS file descriptor (e.g. a watch FD or a pipe) for readability.
+    pub fn add_vfs_watch(&mut self, fd: u32) -> Result<WaitToken, Errno> {
+        self.push_spec(WaitKind::Fd, interest::READABLE, fd as u64)
     }
 
     /// Watch for a task to exit.
@@ -361,7 +358,7 @@ mod tests {
         let mut set = WaitSet::new();
         let t1 = set.add_port_readable(1).unwrap();
         assert_eq!(set.len(), 1);
-        let _t2 = set.add_root_watch(2).unwrap();
+        let _t2 = set.add_vfs_watch(2).unwrap();
         assert_eq!(set.len(), 2);
         // tokens are unique
         assert_ne!(t1.0, _t2.0);
@@ -407,8 +404,8 @@ mod tests {
         assert_eq!(set.specs[0].flags, interest::READABLE);
         assert_eq!(set.specs[0].object, 10);
 
-        let _ = set.add_root_watch(5).unwrap();
-        assert_eq!(set.specs[1].kind, WaitKind::RootWatch as u32);
+        let _ = set.add_vfs_watch(5).unwrap();
+        assert_eq!(set.specs[1].kind, WaitKind::Fd as u32);
         assert_eq!(set.specs[1].object, 5);
     }
 

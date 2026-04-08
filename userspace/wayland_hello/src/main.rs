@@ -171,25 +171,21 @@ fn main(_arg: usize) -> ! {
 }
 
 fn connect_wayland() -> u32 {
-    let mut attempts = 0u32;
-    loop {
-        if let Ok(fd) = vfs_open("/run/wayland-0", O_RDWR) {
-            if attempts != 0 {
-                info!(
-                    "wayland_hello: connected to /run/wayland-0 after {} retries",
-                    attempts
-                );
+    if let Err(e) = stem::fs::wait_until_exists("/run/wayland-0") {
+        stem::error!("wayland_hello: failed to wait for /run/wayland-0: {:?}", e);
+    }
+
+    match vfs_open("/run/wayland-0", O_RDWR) {
+        Ok(fd) => {
+            info!("wayland_hello: connected to /run/wayland-0");
+            fd
+        }
+        Err(e) => {
+            stem::error!("wayland_hello: failed to open /run/wayland-0: {:?}", e);
+            loop {
+                sleep_ms(1000);
             }
-            return fd;
         }
-        attempts = attempts.saturating_add(1);
-        if attempts == 1 || attempts % 50 == 0 {
-            info!(
-                "wayland_hello: waiting for /run/wayland-0 (attempt {})",
-                attempts
-            );
-        }
-        sleep_ms(100);
     }
 }
 

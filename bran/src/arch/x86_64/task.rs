@@ -111,6 +111,7 @@ user_trampoline:
     pop rdx
 
     // r12 = user_entry, r13 = user_stack, r14 = aspace.0 (cr3), r15 = arg
+    swapgs
     mov cr3, r14
     
     push {user_ss}  // User SS (udata selector)

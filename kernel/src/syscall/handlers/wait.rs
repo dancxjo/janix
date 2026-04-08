@@ -3,12 +3,13 @@ use crate::syscall::validate::validate_user_range;
 use abi::errors::{Errno, SysResult};
 use abi::wait::{self, WaitKind, WaitResult, WaitSpec};
 use core::mem::size_of;
+use alloc::sync::Arc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Registration {
     PortRead(crate::ipc::PortId),
     PortWrite(crate::ipc::PortId),
-    Watch(u64),
+    Fd(Arc<dyn crate::vfs::VfsNode>),
     GraphOp(u64),
     TaskExit(u64),
 }
@@ -152,10 +153,11 @@ fn collect_ready(specs: &[WaitSpec], out: &mut [WaitResult]) -> SysResult<usize>
 fn poll_spec(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     match WaitKind::from_u32(spec.kind).ok_or(Errno::EINVAL)? {
         WaitKind::Port => poll_port(spec),
-        WaitKind::RootWatch => poll_watch(spec),
+        WaitKind::Fd => poll_fd(spec),
         WaitKind::GraphOp => poll_graph_op(spec),
         WaitKind::TaskExit => poll_task_exit(spec),
         WaitKind::Irq => Ok(poll_irq(spec)),
+        WaitKind::RootWatch => Err(Errno::ENOSYS),
         WaitKind::Timeout => Err(Errno::EINVAL),
     }
 }
@@ -227,21 +229,36 @@ fn poll_port(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     }
 }
 
-fn poll_watch(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
-    let value = root_call(crate::root::RootOp::WatchPoll { id: spec.object })?;
-    let mut flags = 0u32;
-    if (value & 1) != 0 {
-        flags |= wait::ready::READABLE;
+fn poll_fd(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let node = {
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(spec.object as u32).map_err(|_| Errno::EBADF)?;
+        file.node.clone()
+    };
+
+    let revents = node.poll();
+    let mut ready_flags = 0u32;
+    if (spec.flags & wait::interest::READABLE) != 0 && (revents & abi::syscall::poll_flags::POLLIN) != 0 {
+        ready_flags |= wait::ready::READABLE;
     }
-    if (value & 2) != 0 {
-        flags |= wait::ready::OVERFLOW;
+    if (spec.flags & wait::interest::WRITABLE) != 0 && (revents & abi::syscall::poll_flags::POLLOUT) != 0 {
+        ready_flags |= wait::ready::WRITABLE;
     }
-    if flags == 0 {
+
+    if (revents & abi::syscall::poll_flags::POLLHUP) != 0 {
+        ready_flags |= wait::ready::HANGUP;
+    }
+    if (revents & abi::syscall::poll_flags::POLLERR) != 0 {
+        ready_flags |= wait::ready::ERROR;
+    }
+
+    if ready_flags == 0 {
         Ok(None)
     } else {
         Ok(Some(WaitResult {
             kind: spec.kind,
-            flags,
+            flags: ready_flags,
             object: spec.object,
             token: spec.token,
             value: 0,
@@ -331,12 +348,17 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
                     }
                 }
             }
-            WaitKind::RootWatch => {
-                root_call(crate::root::RootOp::WatchRegisterWaiter {
-                    id: spec.object,
-                    tid,
-                })?;
-                regs.push(Registration::Watch(spec.object));
+            WaitKind::Fd => {
+                let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+                let node = {
+                    let lock = pinfo_arc.lock();
+                    lock.fd_table.get(spec.object as u32).ok().map(|f| f.node.clone())
+                };
+
+                if let Some(node) = node {
+                    node.add_waiter(tid);
+                    regs.push(Registration::Fd(node));
+                }
             }
             WaitKind::GraphOp => {
                 crate::root::async_ops::register_waiter(spec.object, tid)?;
@@ -349,6 +371,7 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
                 }
             }
             WaitKind::Irq => {}
+            WaitKind::RootWatch => return Err(Errno::ENOSYS),
             WaitKind::Timeout => return Err(Errno::EINVAL),
         }
     }
@@ -357,25 +380,25 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
 
 fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> SysResult<()> {
     for reg in regs {
-        match *reg {
+        match reg {
             Registration::PortRead(port_id) => {
-                if let Some(port) = crate::ipc::get_port(port_id) {
+                if let Some(port) = crate::ipc::get_port(*port_id) {
                     port.remove_waiter_read(tid);
                 }
             }
             Registration::PortWrite(port_id) => {
-                if let Some(port) = crate::ipc::get_port(port_id) {
+                if let Some(port) = crate::ipc::get_port(*port_id) {
                     port.remove_waiter_write(tid);
                 }
             }
-            Registration::Watch(id) => {
-                let _ = root_call(crate::root::RootOp::WatchUnregisterWaiter { id, tid });
+            Registration::Fd(node) => {
+                node.remove_waiter(tid);
             }
             Registration::GraphOp(id) => {
-                let _ = crate::root::async_ops::unregister_waiter(id, tid);
+                let _ = crate::root::async_ops::unregister_waiter(*id, tid);
             }
             Registration::TaskExit(target) => {
-                let _ = unsafe { crate::sched::unregister_task_exit_waiter_current(target, tid) };
+                let _ = unsafe { crate::sched::unregister_task_exit_waiter_current(*target, tid) };
             }
         }
     }

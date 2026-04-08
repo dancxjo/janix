@@ -76,10 +76,6 @@ pub fn sys_root_dump_graph(_limit: usize) -> SysResult<usize> {
     Err(Errno::ENOSYS)
 }
 
-pub fn sys_root_watch_subscribe(_target: usize, _mask: usize) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
 pub fn sys_root_bytespace_map(_id: usize) -> SysResult<usize> {
     Err(Errno::ENOSYS)
 }
@@ -115,36 +111,6 @@ pub fn sys_root_async_status(_handle: usize) -> SysResult<usize> {
 pub fn sys_root_bytespace_phys(_id: usize) -> SysResult<usize> {
     Err(Errno::ENOSYS)
 }
-pub fn sys_root_watch_open(_spec_ptr: usize) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
-pub fn sys_root_watch_next(
-    _id: usize,
-    _out_seq_ptr: usize,
-    _out_ptr: usize,
-    _out_len: usize,
-) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
-pub fn sys_root_watch_try_next(
-    _id: usize,
-    _out_seq_ptr: usize,
-    _out_ptr: usize,
-    _out_len: usize,
-) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
-pub fn sys_root_apply_batch(_ptr: usize, _len: usize) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
-pub fn sys_root_watch_close(_id: usize) -> SysResult<usize> {
-    Err(Errno::ENOSYS)
-}
-
 pub fn sys_root_props_get_many(
     _node_id: usize,
     _keys_ptr: usize,
@@ -171,5 +137,9 @@ pub fn sys_root_dir_list(_dir_id: usize, _out_ptr: usize, _out_len: usize) -> Sy
 }
 
 pub fn sys_root_orphan_thing(_thing_id: usize) -> SysResult<usize> {
+    Err(Errno::ENOSYS)
+}
+
+pub fn sys_root_apply_batch(_ptr: usize, _len: usize) -> SysResult<usize> {
     Err(Errno::ENOSYS)
 }

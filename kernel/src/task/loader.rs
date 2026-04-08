@@ -18,9 +18,9 @@ pub fn load_module<R: BootRuntime>(
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
 ) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>)> {
-    crate::kinfo!("Loading module: {}", module.name);
+    crate::kinfo!("LOADER: Loading module '{}' (len={})", module.name, module.bytes.len());
     if module.bytes.len() >= 16 {
-        crate::kdebug!("  Header: {:02x?}", &module.bytes[0..16]);
+        crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
     let load_addr: u64 = 0x200000;
@@ -154,6 +154,14 @@ pub fn load_module<R: BootRuntime>(
                                 dst,
                                 len,
                             );
+                        }
+
+                        if copy_start <= 0x201420 && 0x201420 < copy_end {
+                            let off_in_page = (0x201420 - copy_start) as usize;
+                            unsafe {
+                                let bytes = core::slice::from_raw_parts(dst.add(off_in_page), 8);
+                                crate::kinfo!("  COPIED at 0x201420: {:02x?}", bytes);
+                            }
                         }
                     } else {
                         return None;

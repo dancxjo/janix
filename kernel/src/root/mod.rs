@@ -23,6 +23,7 @@ use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use spin::Mutex;
+use ::abi::types;
 
 pub mod abi;
 pub mod async_ops;
@@ -84,10 +85,6 @@ pub enum RootOp {
     },
     BytespacePhys {
         id: u64,
-    },
-    WatchSubscribe {
-        target_id: u64,
-        mask: u64,
     },
     StreamPoll {
         stream_id: u64,
@@ -179,32 +176,6 @@ pub enum RootOp {
         fields: alloc::vec::Vec<(SymbolShell, u64)>, // Scalar fields
         about: alloc::vec::Vec<u64>,                 // Linked Thing IDs
     },
-    WatchOpen {
-        mode: u32,
-        start_seq: u64,
-        query: alloc::vec::Vec<crate::root::query::PreparedStep>,
-        filter: crate::root::graph::WatchFilter,
-    },
-    WatchNext {
-        id: u64,
-        out_seq_ptr: u64,
-        out_ptr: u64,
-        out_len: u64,
-    },
-    WatchPoll {
-        id: u64,
-    },
-    WatchRegisterWaiter {
-        id: u64,
-        tid: u64,
-    },
-    WatchUnregisterWaiter {
-        id: u64,
-        tid: u64,
-    },
-    WatchClose {
-        id: u64,
-    },
     PropsGetMany {
         id: u64,
         keys: alloc::vec::Vec<u32>,
@@ -235,6 +206,31 @@ pub enum RootOp {
     },
     CleanupTaskThings {
         owner_thing_id: u64,
+    },
+    WatchOpen {
+        spec: types::WatchSpec,
+    },
+    WatchSubscribe {
+        id: u64,
+        flags: u32,
+    },
+    WatchNext {
+        handle: u32,
+        seq: u64,
+    },
+    WatchPoll {
+        handle: u32,
+    },
+    WatchRegisterWaiter {
+        handle: u32,
+        tid: u64,
+    },
+    WatchUnregisterWaiter {
+        handle: u32,
+        tid: u64,
+    },
+    WatchClose {
+        handle: u32,
     },
 }
 

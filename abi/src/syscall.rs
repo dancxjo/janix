@@ -142,6 +142,12 @@ pub const SYS_FS_POLL: u32 = 0x400B;
 pub const SYS_FS_DUP: u32 = 0x400C;
 /// Duplicate old_fd to new_fd, closing new_fd first if open.
 pub const SYS_FS_DUP2: u32 = 0x400D;
+/// Watch a file descriptor for changes. Args: fd, mask, flags.
+pub const SYS_FS_WATCH_FD: u32 = 0x400E;
+/// Watch a path for changes. Args: dirfd, path_ptr, path_len, mask, flags.
+pub const SYS_FS_WATCH_PATH: u32 = 0x400F;
+/// Rename a file or directory. Args: olddirfd, oldpath_ptr, oldpath_len, newdirfd, newpath_ptr, newpath_len.
+pub const SYS_FS_RENAME: u32 = 0x4010;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

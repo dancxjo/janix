@@ -684,6 +684,18 @@ pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_invalid_opcode_handler(frame: &InterruptStackFrame) -> ! {
     if frame.cs & 3 == 3 {
+        // Diagnostic: Print the bytes at the faulting RIP
+        unsafe {
+            let rip = frame.rip as *const u8;
+            let mut bytes = [0u8; 8];
+            core::ptr::copy_nonoverlapping(rip, bytes.as_mut_ptr(), 8);
+            kernel::kinfo!(
+                "USER-UD: rip=0x{:x} bytes={:02x?}",
+                frame.rip,
+                bytes
+            );
+        }
+
         unsafe {
             unsafe extern "C" {
                 fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);

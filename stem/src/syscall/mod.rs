@@ -77,7 +77,7 @@ pub use port::{
 };
 pub use vfs::{
     dup, dup2, pipe, vfs_close, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,
-    vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_write,
+    vfs_rename, vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path, vfs_write,
 };
 pub use wait::wait_many;
 

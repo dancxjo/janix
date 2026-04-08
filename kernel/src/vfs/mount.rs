@@ -158,6 +158,27 @@ pub fn unlink(path: &str) -> SysResult<()> {
     Err(Errno::ENOENT)
 }
 
+/// Rename a file or directory from `old_path` to `new_path`.
+///
+/// Both paths must be absolute and within the same mount point.
+pub fn rename(old_path: &str, new_path: &str) -> SysResult<()> {
+    if !old_path.starts_with('/') || !new_path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let table = MOUNT_TABLE.lock();
+    for entry in table.iter() {
+        if let Some(old_rel) = strip_prefix(old_path, &entry.prefix) {
+            if let Some(new_rel) = strip_prefix(new_path, &entry.prefix) {
+                return entry.driver.rename(old_rel, new_rel);
+            } else {
+                // Cross-mount renaming is not supported.
+                return Err(Errno::EXDEV);
+            }
+        }
+    }
+    Err(Errno::ENOENT)
+}
+
 /// Return a human-readable text listing of all active mount points.
 ///
 /// Format:

@@ -159,6 +159,14 @@ impl VfsNode for RamfsNode {
             _ => Err(Errno::ENOTDIR),
         }
     }
+
+    fn poll(&self) -> u16 {
+        use abi::syscall::poll_flags::*;
+        match &*self.0 {
+            RamfsEntry::File(_, _) => POLLIN | POLLOUT,
+            RamfsEntry::Dir(_, _) => POLLIN | POLLOUT,
+        }
+    }
 }
 
 // ── RamFs — VfsDriver ────────────────────────────────────────────────────────
@@ -280,6 +288,49 @@ impl VfsDriver for RamFs {
             }
             _ => Err(Errno::ENOTDIR),
         }
+    }
+
+    /// Rename a file or directory from `old_path` to `new_path`.
+    fn rename(&self, old_path: &str, new_path: &str) -> SysResult<()> {
+        let (old_dir_path, old_name) = split_last(old_path).ok_or(Errno::EINVAL)?;
+        let (new_dir_path, new_name) = split_last(new_path).ok_or(Errno::EINVAL)?;
+
+        let old_dir = self.resolve_entry(old_dir_path)?;
+        let new_dir = self.resolve_entry(new_dir_path)?;
+
+        let old_children = match &*old_dir {
+            RamfsEntry::Dir(c, _) => c,
+            _ => return Err(Errno::ENOTDIR),
+        };
+        let new_children = match &*new_dir {
+            RamfsEntry::Dir(c, _) => c,
+            _ => return Err(Errno::ENOTDIR),
+        };
+
+        if Arc::ptr_eq(&old_dir, &new_dir) {
+            let mut lock = old_children.lock();
+            let entry = lock.remove(old_name).ok_or(Errno::ENOENT)?;
+            lock.insert(new_name.to_string(), entry);
+        } else {
+            // Cross-directory rename within the same ramfs instance.
+            // Lock in a stable order by pointer address to avoid deadlocks.
+            let ptr_old = old_children as *const _ as usize;
+            let ptr_new = new_children as *const _ as usize;
+
+            if ptr_old < ptr_new {
+                let mut lock_old = old_children.lock();
+                let mut lock_new = new_children.lock();
+                let entry = lock_old.remove(old_name).ok_or(Errno::ENOENT)?;
+                lock_new.insert(new_name.to_string(), entry);
+            } else {
+                let mut lock_new = new_children.lock();
+                let mut lock_old = old_children.lock();
+                let entry = lock_old.remove(old_name).ok_or(Errno::ENOENT)?;
+                lock_new.insert(new_name.to_string(), entry);
+            }
+        }
+
+        Ok(())
     }
 }
 

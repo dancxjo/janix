@@ -12,6 +12,7 @@ pub enum WaitKind {
     Irq = 4,
     Timeout = 5,
     GraphOp = 6,
+    Fd = 7,
 }
 
 impl WaitKind {
@@ -23,6 +24,7 @@ impl WaitKind {
             4 => Some(Self::Irq),
             5 => Some(Self::Timeout),
             6 => Some(Self::GraphOp),
+            7 => Some(Self::Fd),
             _ => None,
         }
     }

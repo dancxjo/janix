@@ -710,9 +710,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         dtb_ptr: runtime.dtb_ptr(),
     });
 
-    crate::root::init_root_service::<R>();
-
-    // The Root service is now available.
+    // The Root service is no longer used (decommissioned).
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
 

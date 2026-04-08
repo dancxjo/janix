@@ -43,59 +43,9 @@ use abi::symbols::{SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR, SymbolRefWire};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
-/// Blocking call to Root service
-pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
-    let reply = root_svc::enqueue(op);
-    let mut spins = 0;
-
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
-            let value = reply.value.load(Ordering::Relaxed);
-
-            #[cfg(feature = "diagnostic-apps")]
-            crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
-
-            if status == 0 {
-                return Ok(value as usize);
-            } else {
-                return abi::errors::errno(status as isize);
-            }
-        }
-
-        spins += 1;
-        if spins < 100 {
-            core::hint::spin_loop();
-        } else {
-            break;
-        }
-    }
-
-    let my_tid = unsafe { crate::sched::current_tid_current() };
-    reply.waiting_task.store(my_tid, Ordering::SeqCst);
-
-    loop {
-        let done = reply.done.load(Ordering::SeqCst);
-        if done != 0 {
-            reply.waiting_task.store(0, Ordering::Relaxed);
-            let status = reply.status.load(Ordering::Relaxed);
-            let value = reply.value.load(Ordering::Relaxed);
-
-            #[cfg(feature = "diagnostic-apps")]
-            crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
-
-            if status == 0 {
-                return Ok(value as usize);
-            } else {
-                return abi::errors::errno(status as isize);
-            }
-        }
-
-        unsafe {
-            crate::sched::block_current_erased();
-        }
-    }
+/// Blocking call to Root service (DEPRECATED)
+pub(crate) fn root_call(_op: RootOp) -> SysResult<usize> {
+    Err(Errno::ENOSYS)
 }
 
 /// Read a symbol reference from userspace

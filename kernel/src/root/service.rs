@@ -30,16 +30,6 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
             }
         }
 
-        // Periodic memory stats (check once per round if it's time)
-        if iteration % 1000 == 0 {
-            let symbol_count = interner.names.len();
-            crate::kinfo!(
-                "ROOT STATS: iter={} symbols={} drops={}",
-                iteration,
-                symbol_count,
-                super::inbox_drop_count()
-            );
-        }
 
         if processed_this_round == 0 {
             super::ROOT_ASLEEP.store(true, Ordering::Release);

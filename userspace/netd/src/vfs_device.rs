@@ -1,5 +1,6 @@
 //! VFS-backed smoltcp Device implementation
 //!
+<<<<<<< HEAD
 //! Opens `/dev/net/virtio0/{rx,tx,mac,mtu}` and uses them for frame I/O.
 //! Frame format is length-prefixed: `[4 bytes: frame_length_le][frame bytes]`.
 //!
@@ -99,11 +100,57 @@ impl VfsNicDevice {
         );
 
         Some(Self {
+=======
+//! Implements network device I/O over `/dev/net/virtio0/{rx,tx,events}`
+//! using direct file reads/writes with length-prefixed frames.
+//!
+//! Frame wire format (same as virtio_netd VFS provider):
+//! ```text
+//! [4 bytes: frame_length_le] [frame_length bytes: raw Ethernet frame]
+//! ```
+
+use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
+use smoltcp::time::Instant;
+use stem::syscall::vfs::{vfs_read, vfs_write};
+
+/// Maximum raw Ethernet frame size (1500 MTU + 14 byte header)
+const MAX_FRAME_LEN: usize = 1514;
+
+/// Network device that communicates via VFS file descriptors on
+/// `/dev/net/virtio0/{rx,tx,events}`.
+pub struct VfsNicDevice {
+    /// File descriptor for receiving frames (opened O_RDONLY | O_NONBLOCK)
+    rx_fd: u32,
+    /// File descriptor for sending frames (opened O_WRONLY)
+    tx_fd: u32,
+    /// File descriptor for link-state event stream (opened O_RDONLY | O_NONBLOCK)
+    events_fd: u32,
+    /// MAC address of the NIC
+    mac: [u8; 6],
+    /// MTU in bytes
+    mtu: usize,
+    /// Current link state (updated by `poll_events`)
+    link_up: bool,
+}
+
+impl VfsNicDevice {
+    /// Create a new VFS NIC device.
+    pub fn new(
+        rx_fd: u32,
+        tx_fd: u32,
+        events_fd: u32,
+        mac: [u8; 6],
+        mtu: usize,
+        link_up: bool,
+    ) -> Self {
+        Self {
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
             rx_fd,
             tx_fd,
             events_fd,
             mac,
             mtu,
+<<<<<<< HEAD
             link_up: true,
             rx_staging: [0u8; RX_STAGING_BUF],
             rx_staging_len: 0,
@@ -143,25 +190,45 @@ impl VfsNicDevice {
     }
 
     /// Get current timestamp for smoltcp.
+=======
+            link_up,
+        }
+    }
+
+    /// Return a smoltcp-compatible timestamp from the kernel clock.
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     pub fn now() -> Instant {
         Instant::from_millis(stem::time::now().as_millis() as i64)
     }
 
+<<<<<<< HEAD
     /// MAC address.
+=======
+    /// Return the MAC address.
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     pub fn mac(&self) -> [u8; 6] {
         self.mac
     }
 
+<<<<<<< HEAD
     /// MTU.
+=======
+    /// Return the MTU.
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     pub fn mtu(&self) -> usize {
         self.mtu
     }
 
+<<<<<<< HEAD
     /// Current link state.
+=======
+    /// Return the current link state.
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     pub fn link_up(&self) -> bool {
         self.link_up
     }
 
+<<<<<<< HEAD
     /// Poll the events file for link-state notifications (non-blocking).
     fn poll_events(&mut self) {
         if self.events_fd == u32::MAX {
@@ -260,10 +327,82 @@ impl VfsNicDevice {
 
         if let Err(e) = vfs_write(self.tx_fd, &msg) {
             stem::warn!("VfsNicDevice: TX write failed: {:?}", e);
+=======
+    /// Drain the events fd and update the internal link state.
+    ///
+    /// Event bytes: `0x01` = link up, `0x00` = link down.
+    pub fn poll_events(&mut self) {
+        let mut buf = [0u8; 16];
+        // Non-blocking: ignore errors (EAGAIN is expected when no events)
+        if let Ok(n) = vfs_read(self.events_fd, &mut buf) {
+            for &byte in &buf[..n] {
+                match byte {
+                    0x01 => self.link_up = true,
+                    0x00 => self.link_up = false,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Try to read one length-prefixed frame from `rx_fd` (non-blocking).
+    ///
+    /// Returns `(frame_buf, frame_len)` on success, `None` if no frame is
+    /// available or an error occurred.
+    fn try_recv_frame(&mut self) -> Option<([u8; MAX_FRAME_LEN], usize)> {
+        // Read 4-byte little-endian length prefix.
+        let mut len_buf = [0u8; 4];
+        match vfs_read(self.rx_fd, &mut len_buf) {
+            Ok(4) => {}
+            Ok(0) | Err(_) => return None, // No data (EAGAIN) or EOF
+            Ok(n) => {
+                stem::warn!("VfsNicDevice: short length prefix read: {} bytes", n);
+                return None;
+            }
+        }
+
+        let frame_len = u32::from_le_bytes(len_buf) as usize;
+        if frame_len == 0 || frame_len > MAX_FRAME_LEN {
+            stem::warn!("VfsNicDevice: invalid RX frame length: {}", frame_len);
+            return None;
+        }
+
+        // Read the frame payload.
+        let mut frame = [0u8; MAX_FRAME_LEN];
+        match vfs_read(self.rx_fd, &mut frame[..frame_len]) {
+            Ok(n) if n == frame_len => Some((frame, frame_len)),
+            Ok(n) => {
+                stem::warn!(
+                    "VfsNicDevice: short RX frame read: expected {}, got {}",
+                    frame_len,
+                    n
+                );
+                None
+            }
+            Err(e) => {
+                stem::warn!("VfsNicDevice: RX frame read error: {:?}", e);
+                None
+            }
+        }
+    }
+
+    /// Write one length-prefixed frame to `tx_fd`.
+    fn send_frame(&mut self, data: &[u8]) {
+        let frame_len = data.len() as u32;
+        let len_bytes = frame_len.to_le_bytes();
+
+        if let Err(e) = vfs_write(self.tx_fd, &len_bytes) {
+            stem::warn!("VfsNicDevice: failed to write TX length prefix: {:?}", e);
+            return;
+        }
+        if let Err(e) = vfs_write(self.tx_fd, data) {
+            stem::warn!("VfsNicDevice: failed to write TX frame data: {:?}", e);
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
         }
     }
 }
 
+<<<<<<< HEAD
 impl Drop for VfsNicDevice {
     fn drop(&mut self) {
         let _ = vfs_close(self.rx_fd);
@@ -276,6 +415,8 @@ impl Drop for VfsNicDevice {
 
 // ── smoltcp Device impl ──────────────────────────────────────────────────────
 
+=======
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
 impl Device for VfsNicDevice {
     type RxToken<'a>
         = VfsRxToken
@@ -287,12 +428,20 @@ impl Device for VfsNicDevice {
         Self: 'a;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+<<<<<<< HEAD
         self.poll_rx();
         if let Some((frame, len)) = self.rx_queue.pop_front() {
             Some((VfsRxToken { frame, len }, VfsTxToken { device: self }))
         } else {
             None
         }
+=======
+        // Also check for link-state changes on each poll.
+        self.poll_events();
+
+        let (frame, len) = self.try_recv_frame()?;
+        Some((VfsRxToken { frame, len }, VfsTxToken { device: self }))
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
@@ -308,8 +457,14 @@ impl Device for VfsNicDevice {
     }
 }
 
+<<<<<<< HEAD
 pub struct VfsRxToken {
     frame: [u8; MAX_FRAME],
+=======
+/// Owned RX frame token (holds a copy of the received frame bytes).
+pub struct VfsRxToken {
+    frame: [u8; MAX_FRAME_LEN],
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     len: usize,
 }
 
@@ -323,6 +478,10 @@ impl phy::RxToken for VfsRxToken {
     }
 }
 
+<<<<<<< HEAD
+=======
+/// TX token that writes a length-prefixed frame to `tx_fd` on consume.
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
 pub struct VfsTxToken<'a> {
     device: &'a mut VfsNicDevice,
 }
@@ -332,7 +491,11 @@ impl<'a> phy::TxToken for VfsTxToken<'a> {
     where
         F: FnOnce(&mut [u8]) -> R,
     {
+<<<<<<< HEAD
         let mut buffer = [0u8; MAX_FRAME];
+=======
+        let mut buffer = [0u8; MAX_FRAME_LEN];
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
         let result = f(&mut buffer[..len]);
         self.device.send_frame(&buffer[..len]);
         result

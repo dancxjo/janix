@@ -6,6 +6,11 @@ use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::Ipv4Address;
 
+<<<<<<< HEAD
+=======
+use crate::vfs_device::VfsNicDevice;
+
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum DhcpError {
@@ -20,11 +25,15 @@ pub struct DhcpConfig {
     pub dns: Ipv4Address,
 }
 
+<<<<<<< HEAD
 fn now() -> Instant {
     Instant::from_millis(stem::time::now().as_millis() as i64)
 }
 
 pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<DhcpConfig, DhcpError> {
+=======
+pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<DhcpConfig, DhcpError> {
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
 
@@ -33,12 +42,21 @@ pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<Dhcp
 
     stem::info!("DHCP: Starting discovery...");
 
+<<<<<<< HEAD
     let start = now();
     let timeout = start + Duration::from_secs(30);
 
     loop {
         let ts = now();
         if ts > timeout {
+=======
+    let start = VfsNicDevice::now();
+    let timeout = start + Duration::from_secs(30);
+
+    loop {
+        let now = VfsNicDevice::now();
+        if now > timeout {
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
             return Err(DhcpError::Timeout);
         }
 
@@ -83,8 +101,14 @@ pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<Dhcp
             }
         }
 
+<<<<<<< HEAD
         let delay = iface.poll_delay(ts, &socket_set);
         let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(10).min(10);
+=======
+        let delay = iface.poll_delay(now, &socket_set);
+        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
+
+>>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
         stem::time::sleep_ms(wait_ms as u64);
     }
 }

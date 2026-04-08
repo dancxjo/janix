@@ -13,7 +13,6 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::dns;
-use crate::vfs_device::VfsNicDevice;
 use stem::thing::ThingId;
 use stem::{debug, info, trace, warn};
 
@@ -720,7 +719,6 @@ impl SocketApi {
         &mut self,
         iface: &mut Interface,
         device: &mut D,
-        device: &mut VfsNicDevice,
         dns_server: Ipv4Address,
         hostname: &str,
     ) -> Vec<u8> {
@@ -1215,7 +1213,6 @@ impl SocketApi {
         &mut self,
         iface: &mut Interface,
         device: &mut D,
-        device: &mut VfsNicDevice,
         socket_set: &mut SocketSet<'a>,
         msg: &[u8],
         caller_tid: Option<u64>,

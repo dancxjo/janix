@@ -1,12 +1,10 @@
-//! DHCPv4 client using smoltcp
+//! DHCPv4 client using smoltcp.
 
-use smoltcp::iface::Interface;
+use smoltcp::iface::{Interface, SocketSet, SocketStorage};
 use smoltcp::phy::Device;
 use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
 use smoltcp::time::{Duration, Instant};
-use smoltcp::wire::Ipv4Address;
-
-use crate::vfs_device::VfsNicDevice;
+use smoltcp::wire::{IpCidr, Ipv4Address};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -26,13 +24,13 @@ fn now() -> Instant {
     Instant::from_millis(stem::time::now().as_millis() as i64)
 }
 
-pub fn run_dhcp<D: Device>(iface: &mut Interface, device: &mut D) -> Result<DhcpConfig, DhcpError> {
-pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<DhcpConfig, DhcpError> {
-    let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
-    let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
-
-    let dhcp_socket = Dhcpv4Socket::new();
-    let dhcp_handle = socket_set.add(dhcp_socket);
+pub fn run_dhcp<D: Device>(
+    iface: &mut Interface,
+    device: &mut D,
+) -> Result<DhcpConfig, DhcpError> {
+    let mut sockets_storage: [SocketStorage; 1] = Default::default();
+    let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
+    let dhcp_handle = socket_set.add(Dhcpv4Socket::new());
 
     stem::info!("DHCP: Starting discovery...");
 
@@ -42,19 +40,12 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<Dhcp
     loop {
         let ts = now();
         if ts > timeout {
-    let start = VfsNicDevice::now();
-    let timeout = start + Duration::from_secs(30);
-
-    loop {
-        let now = VfsNicDevice::now();
-        if now > timeout {
             return Err(DhcpError::Timeout);
         }
 
-        iface.poll(ts, device, &mut socket_set);
+        let _ = iface.poll(ts, device, &mut socket_set);
 
         let dhcp_socket = socket_set.get_mut::<Dhcpv4Socket>(dhcp_handle);
-
         if let Some(event) = dhcp_socket.poll() {
             match event {
                 Event::Configured(config) => {
@@ -69,14 +60,13 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<Dhcp
                         .unwrap_or(Ipv4Address::UNSPECIFIED);
                     let prefix_len = config.address.prefix_len();
 
-                    // Apply configuration to interface
                     iface.update_ip_addrs(|addrs| {
                         addrs.clear();
-                        addrs.push(smoltcp::wire::IpCidr::Ipv4(config.address)).ok();
+                        let _ = addrs.push(IpCidr::Ipv4(config.address));
                     });
 
                     if let Some(route) = config.router {
-                        iface.routes_mut().add_default_ipv4_route(route).ok();
+                        let _ = iface.routes_mut().add_default_ipv4_route(route);
                     }
 
                     return Ok(DhcpConfig {
@@ -93,10 +83,7 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut VfsNicDevice) -> Result<Dhcp
         }
 
         let delay = iface.poll_delay(ts, &socket_set);
-        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(10).min(10);
-        let delay = iface.poll_delay(now, &socket_set);
         let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
-
         stem::time::sleep_ms(wait_ms as u64);
     }
 }

@@ -244,6 +244,7 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -275,6 +276,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -321,6 +323,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
                 });
             }
             Err(e) => {
@@ -342,6 +345,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
                 });
             }
             Err(e) => {
@@ -361,6 +365,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -369,8 +374,12 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHandles> {
-    info!("SPROUT: Setting up display pipeline...");
+pub fn setup_display_pipeline(
+    tasks: &mut Vec<ManagedTask>,
+    supervisor_port: stem::syscall::ChannelHandle,
+    bind_instance_id: u64,
+) -> Option<DisplayHandles> {
+    info!("SPROUT: setup_display_pipeline start (bind_id={})", bind_instance_id);
 
     let mut display_width = 0u32;
     let mut display_height = 0u32;
@@ -423,8 +432,8 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     }
 
     info!(
-        "SPROUT: Display backend: {} ({}x{} stride={})",
-        backend_name, display_width, display_height, display_stride
+        "SPROUT: Display backend selected: {} (Driver: {:?}, Geometry: {}x{} stride={})",
+        backend_name, driver_name, display_width, display_height, display_stride
     );
 
     let size = (display_height as usize) * (display_stride as usize);
@@ -460,21 +469,54 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         drv_req_write = drv_req.0;
         drv_resp_read = drv_resp.1;
 
-        let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
+        let boot_size = 4096;
+        let boot_fd = stem::syscall::memfd_create("driver.boot", boot_size).unwrap_or(0);
+        if boot_fd != 0 {
+            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+            let req = VmMapReq {
+                addr_hint: 0,
+                len: boot_size,
+                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+                flags: VmMapFlags::empty(),
+                backing: VmBacking::File {
+                    fd: boot_fd,
+                    offset: 0,
+                },
+            };
+            if let Ok(resp) = stem::syscall::vm_map(&req) {
+                let ptr = resp.addr;
+                let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
+                
+                slice[0] = drv_req.1 as u32;  // Read end of req channel
+                slice[1] = drv_resp.0 as u32; // Write end of resp channel
+                slice[2] = drv_resp.0 as u32; // supervisor_port (PRIVATE!)
+                
+                let id_low = (bind_instance_id & 0xFFFF_FFFF) as u32;
+                let id_high = (bind_instance_id >> 32) as u32;
+                slice[3] = id_low;
+                slice[4] = id_high;
 
-        if let Ok(pid) = stem::syscall::spawn_process(driver_name, driver_arg as usize) {
+                info!("SPROUT: Bootstrapping driver {} via memfd {}: req_r={}, resp_w={}, svc={}, id={}", 
+                    driver_name, boot_fd, slice[0], slice[1], slice[2], bind_instance_id);
+            }
+        }
+
+        if let Ok(pid) = stem::syscall::spawn_process(driver_name, boot_fd as usize) {
             info!(
                 "SPROUT: Spawned display driver '{}' (PID={})",
                 driver_name, pid
             );
-            let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 3);
             tasks.push(ManagedTask {
                 name: driver_name.to_string(),
                 kind: TaskKind::Driver("dev.display".to_string()),
                 module_path: driver_name.to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: driver_arg as usize,
+                spawn_arg: boot_fd as usize,
+                bind_instance_id: bind_instance_id,
+                drv_req_write: drv_req.0,
+                drv_resp_read: drv_resp.1,
             });
         }
 
@@ -545,6 +587,7 @@ pub fn setup_terminal(
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: term_arg as usize,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -630,6 +673,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: kbd_raw.0 as usize,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -649,6 +693,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: mouse_raw.0 as usize,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -673,6 +718,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: bristle_arg as usize,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -694,34 +740,53 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
 
     // Prefer VirtIO NICs in QEMU/VM flows.
     if let Some(path) = find_sys_device_with_vendor("0x0200", "0x1af4") {
-        info!("SPROUT: Found VirtIO NIC at {}", path);
+        // 1. Setup virtio_link bootstrapping
+        let drv_req = stem::syscall::channel_create(4096).unwrap();
+        let drv_resp = stem::syscall::channel_create(4096).unwrap();
+        let supervisor_port = 5; // Fixed for now, should be passed from Supervisor struct
+        let bind_id = 0xDE00_0000_2000_0000u64;
 
-        let boot_size = 256;
+        let boot_size = 4096;
         let boot_fd = stem::syscall::memfd_create("virtio-net.boot", boot_size).unwrap_or(0);
         if boot_fd != 0 {
             use stem::syscall::vfs::{vfs_seek, vfs_write};
-            let _ = vfs_write(boot_fd as u32, path.as_bytes());
-            let _ = vfs_write(boot_fd as u32, &[0]);
+            // Map it to write the bootstrap header
+            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+            let req = VmMapReq {
+                addr_hint: 0,
+                len: boot_size,
+                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
+                flags: VmMapFlags::empty(),
+                backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            };
+            if let Ok(resp) = stem::syscall::vm_map(&req) {
+                let slice = unsafe { core::slice::from_raw_parts_mut(resp.addr as *mut u32, 1024) };
+                
+                slice[0] = drv_req.1 as u32;  // Read end of req channel
+                slice[1] = drv_resp.0 as u32; // Write end of resp channel
+                slice[2] = drv_resp.0 as u32; // supervisor_port (PRIVATE!)
+                
+                let id_low = (bind_id & 0xFFFF_FFFF) as u32;
+                let id_high = (bind_id >> 32) as u32;
+                slice[3] = id_low;
+                slice[4] = id_high;
+            }
+            let _ = vfs_seek(boot_fd as u32, 512, 0); // Move path to offset 512
+            let _ = vfs_write(boot_fd as u32, path.as_bytes()); // Keep path for driver claim
             let _ = vfs_seek(boot_fd as u32, 0, 0);
         }
 
-        match stem::syscall::spawn_process("/virtio_netd", boot_fd as usize) {
-            Ok(pid) => {
-                info!("SPROUT: Spawned virtio_netd (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "/virtio_netd".to_string(),
-                    kind: TaskKind::Driver("dev.net.virtio".to_string()),
-                    module_path: "/virtio_netd".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn virtio_netd: {:?}", e);
-            }
-        }
+        tasks.push(ManagedTask {
+            name: "/bin/virtio_netd".to_string(),
+            kind: TaskKind::Driver("dev.net.virtio".to_string()),
+            module_path: "/bin/virtio_netd".to_string(),
+            pid: None,
+            restarts: 0,
+            spawn_arg: boot_fd as usize,
+            bind_instance_id: bind_id,
+            drv_req_write: drv_req.0,
+            drv_resp_read: drv_resp.1,
+        });
     } else if let Some(path) = find_sys_device("0x0200") {
         info!("SPROUT: Found RTL8168 at {}", path);
 
@@ -757,6 +822,7 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
                 });
             }
             Err(e) => {
@@ -781,6 +847,7 @@ fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -803,6 +870,7 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -821,6 +889,7 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -866,6 +935,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -903,6 +973,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
                 });
             }
             Err(e) => {
@@ -936,6 +1007,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
                 });
             }
             Err(e) => {
@@ -960,6 +1032,7 @@ pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -986,6 +1059,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: font_chan.1 as usize,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {
@@ -1005,6 +1079,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
             });
         }
         Err(e) => {

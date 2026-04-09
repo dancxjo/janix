@@ -18,6 +18,7 @@ pub mod module;
 pub mod module_manifest;
 pub mod schema;
 pub mod service_contract;
+pub mod supervisor_protocol;
 pub mod symbols;
 pub mod syscall;
 pub mod trace;

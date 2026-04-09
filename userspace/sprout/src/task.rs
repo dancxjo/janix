@@ -1,12 +1,14 @@
 use alloc::string::String;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub enum TaskKind {
+    #[default]
+    App,
     Driver(String),  // Device Kind
     Service(String), // Service Kind
-    App,
 }
 
+#[derive(Default)]
 pub struct ManagedTask {
     pub name: String,
     pub kind: TaskKind,
@@ -16,4 +18,20 @@ pub struct ManagedTask {
     pub restarts: u32,
     /// Original argument passed to spawn_process, preserved for restarts
     pub spawn_arg: usize,
+    /// Unique token for sovereign registration handshake
+    pub bind_instance_id: u64,
+    /// Write end of the request channel for handshake response (0 if unused)
+    pub drv_req_write: stem::syscall::ChannelHandle,
+    /// Read end of the response channel for driver communication (0 if unused)
+    pub drv_resp_read: stem::syscall::ChannelHandle,
+}
+
+impl ManagedTask {
+    pub fn new(name: String, kind: TaskKind) -> Self {
+        Self {
+            name,
+            kind,
+            ..Default::default()
+        }
+    }
 }

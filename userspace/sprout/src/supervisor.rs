@@ -5,20 +5,30 @@ use abi::schema::keys;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use stem::info;
+use alloc::collections::BTreeMap;
+use stem::{info, warn};
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
     registry: Registry,
     registry_ptr: usize,
+    ledger: BTreeMap<String, u32>,
+    pub supervisor_port: stem::syscall::ChannelHandle,
+    pub supervisor_write: stem::syscall::ChannelHandle,
+    next_bind_id: u64,
 }
 
 impl Supervisor {
     pub fn new(registry_ptr: usize) -> Self {
+        let (supervisor_write, supervisor_read) = stem::syscall::channel_create(4096).expect("Failed to create supervisor port");
         Self {
             tasks: Vec::new(),
             registry: Registry::new(),
             registry_ptr,
+            ledger: BTreeMap::new(),
+            supervisor_port: supervisor_read,
+            supervisor_write,
+            next_bind_id: 1,
         }
     }
 
@@ -32,10 +42,11 @@ impl Supervisor {
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
         crate::pipelines::setup_audio_driver(&mut self.tasks);
-        let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
+        let bind_id = self.next_bind_id;
+        self.next_bind_id += 1;
+        let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks, self.supervisor_write, bind_id);
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
-        crate::pipelines::setup_graphics_stack(&mut self.tasks);
 
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
@@ -44,6 +55,7 @@ impl Supervisor {
 
         crate::pipelines::setup_network_apps(&mut self.tasks);
 
+        self.process_registrations();
 
         // info!("SPROUT: [Stage 3] -> Setting up Terminal...");
         // crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
@@ -54,19 +66,53 @@ impl Supervisor {
         info!("SPROUT: [Stage 4] Proof of life (Beeper)");
         crate::pipelines::spawn_beeper(&mut self.tasks);
 
+        self.process_registrations();
+
         // --- STAGE 5: User Apps ---
         info!("SPROUT: [Stage 5] Starting Discovered User Apps");
-        self.spawn_discovered_apps();
-
+        self.discover();
         self.ensure_app("/sh");
+
+        // Wait for essential drivers (Display) before launching UI apps.
+        self.wait_for_display();
+
+        crate::pipelines::setup_graphics_stack(&mut self.tasks);
+
         self.spawn_apps();
 
         // Enter monitor loop
         info!("SPROUT: Startup complete. Entering monitor loop.");
         loop {
+            self.process_registrations();
             self.monitor();
             stem::yield_now();
             stem::sleep_ms(100);
+        }
+    }
+
+    fn wait_for_display(&mut self) {
+        info!("SPROUT: Waiting for display driver registration...");
+        let start = stem::monotonic_ns();
+        let timeout = 5_000_000_000; // 5 seconds
+
+        loop {
+            self.process_registrations();
+            self.monitor();
+            
+            // Check if we have any display card in /dev/display
+            if let Ok(fd) = stem::syscall::vfs::vfs_open("/dev/display/card0", stem::abi::syscall::vfs_flags::O_RDONLY) {
+                let _ = stem::syscall::vfs::vfs_close(fd);
+                info!("SPROUT: Display card0 detected. Proceeding.");
+                break;
+            }
+
+            if stem::monotonic_ns() - start > timeout {
+                warn!("SPROUT: Timeout waiting for display driver! UI may fail.");
+                break;
+            }
+
+            stem::yield_now();
+            stem::sleep_ms(50);
         }
     }
 
@@ -117,6 +163,9 @@ impl Supervisor {
                     pid: None,
                     restarts: 0,
                     spawn_arg: 0,
+                    bind_instance_id: 0,
+                    drv_req_write: 0,
+                    drv_resp_read: 0,
                 });
             }
         }
@@ -148,12 +197,15 @@ impl Supervisor {
 
         let full = format!("/bin{}", name);
         self.tasks.push(ManagedTask {
-            name: full.clone(),
+            name: "/bin/login".to_string(),
             kind: TaskKind::App,
-            module_path: full,
+            module_path: "/bin/login".to_string(),
             pid: None,
             restarts: 0,
             spawn_arg: 0,
+            bind_instance_id: 0,
+            drv_req_write: 0,
+            drv_resp_read: 0,
         });
     }
 
@@ -170,6 +222,9 @@ impl Supervisor {
             pid: None,
             restarts: 0,
             spawn_arg: 0,
+            bind_instance_id: 0,
+            drv_req_write: 0,
+            drv_resp_read: 0,
         });
     }
 
@@ -213,6 +268,96 @@ impl Supervisor {
                     }
                     Err(_) => {
                         task.pid = None;
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_registrations(&mut self) {
+        use abi::supervisor_protocol::{self, classes, MSG_BIND_READY, MSG_BIND_ASSIGNED};
+        use abi::display_driver_protocol;
+        use stem::syscall::{vfs_mount, channel_send_all};
+
+        let mut buf = [0u8; 1024];
+
+        // We check EACH task's private response channel
+        for task in self.tasks.iter_mut() {
+            if task.drv_resp_read == 0 || task.pid.is_none() {
+                continue;
+            }
+
+            while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
+                if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
+                    if header.msg_type == MSG_BIND_READY {
+                        if let Some(ready) = supervisor_protocol::decode_bind_ready_le(payload) {
+                            let task_name = task.name.clone();
+                            info!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
+
+                            // 2. Extract provider port
+                            // Since we ensure drivers send the handle BEFORE the BIND_READY byte,
+                            // it should be here. We retry a few times just in case.
+                            let mut provider_port = 0;
+                            for _ in 0..10 {
+                                if let Ok(p) = stem::syscall::channel_recv_handle(task.drv_resp_read) {
+                                    provider_port = p;
+                                    break;
+                                }
+                                stem::yield_now();
+                            }
+
+                            if provider_port != 0 {
+                                // 3. Deterministic allocation
+                                let (class_name, root) = if ready.class_mask & classes::DISPLAY_CARD != 0 {
+                                    ("display", "/dev/display/card")
+                                } else if ready.class_mask & classes::INPUT_EVENT != 0 {
+                                    ("input", "/dev/input/event")
+                                } else if ready.class_mask & classes::BLOCK_DEVICE != 0 {
+                                    ("block", "/dev/block/sd")
+                                } else if ready.class_mask & classes::NETWORK_INTERFACE != 0 {
+                                    ("net", "/dev/net/virtio")
+                                } else if ready.class_mask & classes::SOUND_CARD != 0 {
+                                    ("sound", "/dev/sound/card")
+                                } else {
+                                    ("misc", "/dev/misc/device")
+                                };
+
+                                let unit = self.ledger.get(class_name).cloned().unwrap_or(0);
+                                self.ledger.insert(class_name.to_string(), unit + 1);
+                                let path = format!("{}{}", root, unit);
+
+                                // 4. Mount
+                                match vfs_mount(provider_port, &path) {
+                                    Ok(()) => {
+                                        info!("SPROUT: Sovereign mount success: {} -> {}", task_name, path);
+                                        
+                                        // 5. Reply to driver
+                                        let mut assigned = supervisor_protocol::BindAssignedPayload {
+                                            bind_instance_id: ready.bind_instance_id,
+                                            status: 0,
+                                            unit_number: unit,
+                                            primary_path: [0u8; 64],
+                                        };
+                                        let path_bytes = path.as_bytes();
+                                        let len = path_bytes.len().min(64);
+                                        assigned.primary_path[..len].copy_from_slice(&path_bytes[..len]);
+
+                                        let mut reply_buf = [0u8; 256];
+                                        let mut payload_bytes = [0u8; supervisor_protocol::BIND_ASSIGNED_PAYLOAD_SIZE];
+                                        if let Some(p_len) = supervisor_protocol::encode_bind_assigned_le(&assigned, &mut payload_bytes) {
+                                            if let Some(total_len) = display_driver_protocol::encode_message(&mut reply_buf, MSG_BIND_ASSIGNED, &payload_bytes[..p_len]) {
+                                                let _ = channel_send_all(task.drv_req_write, &reply_buf[..total_len]);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("SPROUT: Sovereign mount FAILED for {}: {:?}", task_name, e);
+                                    }
+                                }
+                            }
+                        } else {
+                            warn!("SPROUT: BIND_READY with UNKNOWN ID");
+                        }
                     }
                 }
             }

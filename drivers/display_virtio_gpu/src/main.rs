@@ -12,7 +12,8 @@ use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
-use stem::syscall::{channel_recv, ChannelHandle};
+use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
+use stem::syscall::{channel_create, channel_recv, channel_send, ChannelHandle, vfs_mount};
 use virtio_gpu::{Rect, VirtioGpu};
 
 // ============================================================================
@@ -251,13 +252,57 @@ fn get_display_dimensions() -> (u32, u32, u32, u32) {
 }
 
 #[stem::main]
-fn main(arg: usize) -> ! {
-    let drv_req_read = unpack_handle(arg, 0);
-    let drv_resp_write = unpack_handle(arg, 1);
+fn main(boot_fd: usize) -> ! {
+    // 1. Map bootstrap memfd
+    let mut drv_req_read = 0;
+    let mut drv_resp_write = 0;
+    let mut supervisor_port = 0;
+    let mut bind_instance_id = 0u64;
+
+    if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let slice = unsafe { core::slice::from_raw_parts(resp.addr as *const u32, 1024) };
+            
+            // Layout from sprout/src/pipelines.rs:
+            // slice[0]: drv_req_read
+            // slice[1]: drv_resp_write
+            // slice[2]: supervisor_port
+            // slice[3..5]: bind_instance_id (u64)
+            
+            drv_req_read = slice[0];
+            drv_resp_write = slice[1];
+            supervisor_port = slice[2];
+            
+            let id_low = slice[3] as u64;
+            let id_high = slice[4] as u64;
+            bind_instance_id = id_low | (id_high << 32);
+
+            stem::info!("DISP: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}", 
+                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
+        } else {
+            stem::info!("DISP: ERROR: Failed to vm_map bootstrap memfd {}", boot_fd);
+        }
+    } else {
+        stem::info!("DISP: ERROR: No bootstrap memfd arg provided");
+    }
+
+    if drv_req_read == 0 || drv_resp_write == 0 || supervisor_port == 0 || bind_instance_id == 0 {
+        stem::info!("DISP: ERROR: Invalid/Missing bootstrap components (req={}, resp={}, svc={}, id={})", 
+            drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
+        loop { stem::yield_now(); }
+    }
 
     info!(
-        "display_virtio_gpu: starting (drv_req_r={}, drv_resp_w={})",
-        drv_req_read, drv_resp_write
+        "display_virtio_gpu: starting (drv_req_r={}, drv_resp_w={}, svc={}, id={})",
+        drv_req_read, drv_resp_write, supervisor_port, bind_instance_id
     );
 
     // Find and initialize GPU
@@ -375,18 +420,31 @@ fn main(arg: usize) -> ! {
         if frame_pool_count == 1 { "" } else { "s" }
     );
 
-    // Send MSG_REGISTER
-    let register = drvproto::RegisterPayload {
-        driver_kind: drvproto::DRIVER_KIND_VIRTIO_GPU,
-        caps: drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME,
+    // =========================================================================
+    // SOVEREIGN REGISTRATION: Handshake with sprout supervisor
+    // =========================================================================
+    use abi::supervisor_protocol::{self, classes};
+    use abi::vfs_rpc::VFS_RPC_MAX_REQ;
+
+    // Create VFS provider port
+    let (vfs_write, vfs_read) = channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS port");
+
+    // Send MSG_BIND_READY to supervisor instead of legacy MSG_REGISTER
+    let ready = supervisor_protocol::BindReadyPayload {
+        bind_instance_id,
+        class_mask: classes::DISPLAY_CARD | classes::FRAMEBUFFER,
+        _reserved: 0,
     };
-    let mut register_bytes = [0u8; drvproto::REGISTER_PAYLOAD_WIRE_SIZE];
-    if let Some(len) = drvproto::encode_register_payload_le(&register, &mut register_bytes) {
-        send_msg(
-            drv_resp_write,
-            drvproto::MSG_REGISTER,
-            &register_bytes[..len],
-        );
+    let mut ready_bytes = [0u8; supervisor_protocol::BIND_READY_PAYLOAD_SIZE];
+    if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
+        // Wrap in common driver header
+        let mut buf = [0u8; 256];
+        if let Some(total_len) = drvproto::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
+            // Send handle FIRST, then notify
+            let _ = stem::syscall::channel_send_handle(supervisor_port, vfs_write);
+            let _ = stem::syscall::channel_send_all(supervisor_port, &buf[..total_len]);
+            info!("display_virtio_gpu: Sent MSG_BIND_READY (ID: {})", bind_instance_id);
+        }
     }
 
     let mut buf = [0u8; 512];
@@ -405,21 +463,115 @@ fn main(arg: usize) -> ! {
     let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> =
         alloc::collections::BTreeMap::new();
 
+    // Wait for MSG_BIND_ASSIGNED (optional but good for synchronization)
+    let mut assigned_path = alloc::string::String::new();
+    let mut wait_buf = [0u8; 512];
+    info!("display_virtio_gpu: Waiting for BIND_ASSIGNED...");
+    loop {
+        if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
+            if let Some((header, payload)) = drvproto::parse_message(&wait_buf[..n]) {
+                if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
+                    if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
+                        assigned_path = alloc::string::String::from_utf8_lossy(&assigned.primary_path[..path_len]).to_string();
+                        info!("display_virtio_gpu: Sovereign registration COMPLETE. Assigned: {}", assigned_path);
+                        break;
+                    }
+                }
+            }
+        }
+        stem::time::sleep_ms(10);
+    }
+
     let mut ws = stem::wait_set::WaitSet::new();
     let drv_req_read_tok = ws.add_port_readable(drv_req_read as u64).unwrap();
+    let vfs_read_tok = ws.add_port_readable(vfs_read as u64).unwrap();
 
     loop {
         stem::trace!("display_virtio_gpu: waiting on WaitSet...");
         match ws.wait(None::<stem::time::Duration>) {
             Ok(events) => {
-                let mut read_total = 0;
                 let mut has_req_readable = false;
+                let mut has_vfs_readable = false;
                 for ev in events {
                     if ev.token() == drv_req_read_tok && ev.is_readable() {
                         has_req_readable = true;
                     }
+                    if ev.token() == vfs_read_tok && ev.is_readable() {
+                        has_vfs_readable = true;
+                    }
                 }
 
+                if has_vfs_readable {
+                    let mut vfs_buf = [0u8; VFS_RPC_MAX_REQ];
+                    while let Ok(n) = stem::syscall::channel_try_recv(vfs_read, &mut vfs_buf) {
+                        if n >= 5 {
+                            let resp_port = u32::from_le_bytes([vfs_buf[0], vfs_buf[1], vfs_buf[2], vfs_buf[3]]) as ChannelHandle;
+                            let op = VfsRpcOp::from_u8(vfs_buf[4]);
+                            match op {
+                                Some(VfsRpcOp::Lookup) => {
+                                    // We are a terminal node for card0
+                                    let mut resp = [0u8; 9];
+                                    resp[0] = 0; // E_OK
+                                    let handle: u64 = 1; // card
+                                    resp[1..9].copy_from_slice(&handle.to_le_bytes());
+                                    let _ = channel_send(resp_port, &resp);
+                                }
+                                Some(VfsRpcOp::Stat) => {
+                                    let mut resp = [0u8; 21];
+                                    resp[0] = 0; // E_OK
+                                    let mode: u32 = 0o020000 | 0o666; // S_IFCHR
+                                    let size: u64 = 0;
+                                    let handle: u64 = 1;
+                                    resp[1..5].copy_from_slice(&mode.to_le_bytes());
+                                    resp[5..13].copy_from_slice(&size.to_le_bytes());
+                                    resp[13..21].copy_from_slice(&handle.to_le_bytes());
+                                    let _ = channel_send(resp_port, &resp);
+                                }
+                                Some(VfsRpcOp::DeviceCall) => {
+                                    let payload = &vfs_buf[core::mem::size_of::<VfsRpcReqHeader>()..n];
+                                    if payload.len() >= 8 + core::mem::size_of::<abi::device::DeviceCall>() {
+                                        let call: abi::device::DeviceCall = unsafe {
+                                            core::ptr::read_unaligned(payload[8..8 + core::mem::size_of::<abi::device::DeviceCall>()].as_ptr() as *const _)
+                                        };
+                                        if call.op == abi::display::DISPLAY_OP_GET_INFO {
+                                            let info = abi::display::DisplayInfo {
+                                                card_id: 0,
+                                                preferred_mode: abi::display::DisplayMode {
+                                                    width: disp_width,
+                                                    height: disp_height,
+                                                    refresh_mhz: 60000,
+                                                },
+                                                plane_count: 1,
+                                                max_buffers: 1,
+                                                supported_formats: 0,
+                                                caps: abi::display::DisplayCaps::empty(),
+                                            };
+                                            let out_bytes = unsafe {
+                                                core::slice::from_raw_parts(&info as *const _ as *const u8, core::mem::size_of::<abi::display::DisplayInfo>())
+                                            };
+                                            let mut resp = alloc::vec::Vec::with_capacity(9 + out_bytes.len());
+                                            resp.push(0); // E_OK
+                                            resp.extend_from_slice(&0u32.to_le_bytes()); // ret_val
+                                            resp.extend_from_slice(&(out_bytes.len() as u32).to_le_bytes());
+                                            resp.extend_from_slice(out_bytes);
+                                            let _ = channel_send(resp_port, &resp);
+                                        } else {
+                                            let _ = channel_send(resp_port, &[38]); // E_NOTSUP
+                                        }
+                                    } else {
+                                        let _ = channel_send(resp_port, &[22]); // E_INVAL
+                                    }
+                                }
+                                _ => {
+                                    let _ = channel_send(resp_port, &[38]); // E_NOTSUP
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut read_total = 0;
                 if has_req_readable {
                     match channel_recv(drv_req_read, &mut buf) {
                         Ok(n) => {

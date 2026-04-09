@@ -197,13 +197,12 @@ pub fn sys_fs_readdir(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<us
 
     // 2. Then, supplement with mount points if there is space and we've reached 
     // the "end" of the node's natural entries (heuristic: n < buf_len).
-    // Note: This simple implementation works best for small directories like /dev.
     if n < buf_len {
         let mounts = crate::vfs::mount::get_mounts_under(&path);
         if !mounts.is_empty() {
-            // We need a way to track which mounts we've already returned.
-            // For now, we use a simple hack: if the node returned nothing, 
-            // we use write_readdir_entries for the mounts.
+            // Write more entries if we have space.
+            // For now, we only supplement if n == 0 to avoid complex deduplication
+            // and offset management. This is sufficient for /dev/display and /sys.
             if n == 0 {
                 let m_n = crate::vfs::write_readdir_entries(
                     mounts.iter().map(|s| s.as_str()),

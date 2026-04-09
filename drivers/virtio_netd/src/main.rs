@@ -28,26 +28,55 @@ use vfs_provider::{handle_vfs_rpc, NetVfsState};
 fn main(arg: usize) -> ! {
     stem::debug!("VIRTIO_NETD: Starting VirtIO-NET driver service...");
 
-    // Initialize VirtIO-NET driver.
-    let mut driver = match if arg != 0 {
-        let mut path_buf = [0u8; 128];
-        let path_len = {
-            use stem::syscall::vfs::vfs_read;
-            vfs_read(arg as u32, &mut path_buf).unwrap_or(0)
+    // 1. Map bootstrap memfd
+    let mut drv_req_read = 0;
+    let mut drv_resp_write = 0;
+    let mut supervisor_port = 0;
+    let mut bind_instance_id = 0u64;
+    let mut claimed_path = String::new();
+
+    if arg != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: arg as u32, offset: 0 },
         };
-        let path_str = if path_len > 0 {
-            core::str::from_utf8(&path_buf[..path_len])
-                .unwrap_or("")
-                .trim_matches(char::from(0))
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let slice = unsafe { core::slice::from_raw_parts(resp.addr as *const u32, 1024) };
+            
+            drv_req_read = slice[0];
+            drv_resp_write = slice[1];
+            supervisor_port = slice[2];
+            
+            let id_low = slice[3] as u64;
+            let id_high = slice[4] as u64;
+            bind_instance_id = id_low | (id_high << 32);
+
+            // Path is at offset 512 bytes (index 128 in u32 slice)
+            let path_bytes = unsafe { core::slice::from_raw_parts((resp.addr + 512) as *const u8, 128) };
+            let path_len = path_bytes.iter().position(|&b| b == 0).unwrap_or(128);
+            claimed_path = core::str::from_utf8(&path_bytes[..path_len]).unwrap_or("").to_string();
+
+            info!("VIRTIO_NETD: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}, path={}", 
+                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id, claimed_path);
         } else {
-            "/sys/devices/pci-00:02.0"
-        };
-        VirtioNetDriver::claim_device(path_str)
+            warn!("VIRTIO_NETD: Failed to map bootstrap memfd!");
+        }
+    }
+    
+    info!("VIRTIO_NETD: Initializing hardware driver...");
+
+    // Initialize VirtIO-NET driver.
+    let mut driver = match if !claimed_path.is_empty() {
+        VirtioNetDriver::claim_device(&claimed_path)
     } else {
         VirtioNetDriver::find_and_claim()
     } {
         Ok(d) => {
-            stem::debug!("VIRTIO_NETD: Driver initialized successfully");
+            stem::info!("VIRTIO_NETD: Driver initialized successfully");
             d
         }
         Err(e) => {
@@ -92,18 +121,43 @@ fn main(arg: usize) -> ! {
         }
     };
 
-    // Mount at /dev/net/virtio0 via SYS_FS_MOUNT.
-    // Pass the write end so the kernel can send us RPCs.
-    match vfs_mount(req_write, "/dev/net/virtio0") {
-        Ok(()) => {
-            stem::debug!("VIRTIO_NETD: Mounted at /dev/net/virtio0");
+    // Sovereign Handshake
+    use abi::supervisor_protocol::{self, classes};
+    use abi::display_driver_protocol; // Still used for common header
+
+    let ready = supervisor_protocol::BindReadyPayload {
+        bind_instance_id,
+        class_mask: classes::NETWORK_INTERFACE,
+        _reserved: 0,
+    };
+    let mut ready_bytes = [0u8; supervisor_protocol::BIND_READY_PAYLOAD_SIZE];
+    if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
+        let mut buf = [0u8; 256];
+        if let Some(total_len) = display_driver_protocol::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
+            info!("VIRTIO_NETD: Sending MSG_BIND_READY handshake (ID: {})...", bind_instance_id);
+            // Send handle FIRST, then notify
+            let _ = stem::syscall::channel_send_handle(supervisor_port, req_write);
+            let _ = stem::syscall::channel_send_all(supervisor_port, &buf[..total_len]);
+            info!("VIRTIO_NETD: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
-        Err(e) => {
-            error!("VIRTIO_NETD: Failed to mount VFS provider: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
+    }
+
+    // Wait for MSG_BIND_ASSIGNED
+    let mut wait_buf = [0u8; 512];
+    loop {
+        if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
+            if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n]) {
+                if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
+                    if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
+                        let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
+                        info!("VIRTIO_NETD: Sovereign registration COMPLETE. Assigned: {}", path);
+                        break;
+                    }
+                }
             }
         }
+        stem::time::sleep_ms(10);
     }
 
     // Initialize shared VFS state.

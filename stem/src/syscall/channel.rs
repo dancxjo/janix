@@ -123,6 +123,17 @@ pub fn channel_send_handle(channel: ChannelHandle, handle: u32) -> Result<(), Er
 }
 
 pub fn channel_recv_handle(channel: ChannelHandle) -> Result<u32, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_CHANNEL_RECV_HANDLE, channel as usize, 0, 0, 0, 0, 0) };
-    abi::errors::errno(ret).map(|v| v as u32)
+    let mut out_fd: u32 = 0;
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_CHANNEL_RECV_HANDLE,
+            channel as usize,
+            &mut out_fd as *mut u32 as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| out_fd)
 }

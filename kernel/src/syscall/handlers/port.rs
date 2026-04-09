@@ -332,6 +332,8 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
             .ok_or(Errno::EBADF)?
     };
 
+    crate::kinfo!("kernel: sys_channel_send_handle handle={} port_id={:?}", handle.0, entry.port_id);
+
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
     port.send_cap(vfs_node);
     Ok(0)

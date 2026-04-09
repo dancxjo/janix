@@ -90,6 +90,88 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
     None
 }
 
+fn find_sys_device_with_vendor(
+    class_prefix: &str,
+    vendor_prefix: &str,
+) -> Option<alloc::string::String> {
+    let fd = match vfs_open("/sys/devices", O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return None,
+    };
+
+    let mut buf = [0u8; 4096];
+    let n = match stem::syscall::vfs::vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(e) => {
+            warn!("SPROUT: readdir(/sys/devices) failed: {:?}", e);
+            let _ = vfs_close(fd);
+            return None;
+        }
+    };
+    let _ = vfs_close(fd);
+
+    let mut offset = 0usize;
+    while offset < n {
+        if buf[offset] == 0 {
+            offset += 1;
+            continue;
+        }
+
+        let mut end = offset;
+        while end < n && buf[end] != 0 {
+            end += 1;
+        }
+
+        if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+            if name.starts_with("pci-") {
+                let class_path = alloc::format!("/sys/devices/{}/class", name);
+                let vendor_path = alloc::format!("/sys/devices/{}/vendor", name);
+
+                let class_matches = if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
+                    let mut class_buf = [0u8; 16];
+                    let matched = if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
+                        let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
+                        class_str.trim().starts_with(class_prefix)
+                    } else {
+                        false
+                    };
+                    let _ = vfs_close(class_fd);
+                    matched
+                } else {
+                    false
+                };
+
+                if !class_matches {
+                    offset = end.saturating_add(1);
+                    continue;
+                }
+
+                let vendor_matches = if let Ok(vendor_fd) = vfs_open(&vendor_path, O_RDONLY) {
+                    let mut vendor_buf = [0u8; 16];
+                    let matched = if let Ok(vn) = vfs_read(vendor_fd, &mut vendor_buf) {
+                        let vendor_str = core::str::from_utf8(&vendor_buf[..vn]).unwrap_or("");
+                        vendor_str.trim().starts_with(vendor_prefix)
+                    } else {
+                        false
+                    };
+                    let _ = vfs_close(vendor_fd);
+                    matched
+                } else {
+                    false
+                };
+
+                if vendor_matches {
+                    return Some(alloc::format!("/sys/devices/{}", name));
+                }
+            }
+        }
+
+        offset = end.saturating_add(1);
+    }
+
+    None
+}
+
 fn has_sys_device(class_prefix: &str) -> bool {
     find_sys_device(class_prefix).is_some()
 }
@@ -749,11 +831,40 @@ pub fn setup_compositor(
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network stack...");
- 
-    // Probe for RTL8168 (Ethernet 0x0200)
-    if let Some(path) = find_sys_device("0x0200") {
+
+    // Prefer VirtIO NICs in QEMU/VM flows.
+    if let Some(path) = find_sys_device_with_vendor("0x0200", "0x1af4") {
+        info!("SPROUT: Found VirtIO NIC at {}", path);
+
+        let boot_size = 256;
+        let boot_fd = stem::syscall::memfd_create("virtio-net.boot", boot_size).unwrap_or(0);
+        if boot_fd != 0 {
+            use stem::syscall::vfs::{vfs_seek, vfs_write};
+            let _ = vfs_write(boot_fd as u32, path.as_bytes());
+            let _ = vfs_write(boot_fd as u32, &[0]);
+            let _ = vfs_seek(boot_fd as u32, 0, 0);
+        }
+
+        match stem::syscall::spawn_process("/virtio_netd", boot_fd as usize) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned virtio_netd (PID={})", pid);
+                let _ = stem::thread::set_priority(pid, 2);
+                tasks.push(ManagedTask {
+                    name: "/virtio_netd".to_string(),
+                    kind: TaskKind::Driver("dev.net.virtio".to_string()),
+                    module_path: "/virtio_netd".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                    spawn_arg: boot_fd as usize,
+                });
+            }
+            Err(e) => {
+                warn!("SPROUT: Failed to spawn virtio_netd: {:?}", e);
+            }
+        }
+    } else if let Some(path) = find_sys_device("0x0200") {
         info!("SPROUT: Found RTL8168 at {}", path);
- 
+
         // Pass path via bootstrap memfd
         let boot_size = 256;
         let boot_fd = stem::syscall::memfd_create("net.boot", boot_size).unwrap_or(0);

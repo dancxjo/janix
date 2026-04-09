@@ -399,32 +399,34 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
     let mut virtio_caps = Vec::new();
  
     // Scan capabilities to find VirtIO ones
-    let (status, cap_ptr_initial) = {
+    let cap_ptr_initial = {
         let status = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x04)? >> 16;
         let cap_ptr = (runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x34)? & 0xFF) as u8;
         if (status & 0x10) == 0 {
             return Err(Errno::ENOSYS);
         }
-        (status, cap_ptr)
+        cap_ptr
     };
 
     let mut cap_ptr = cap_ptr_initial;
     while cap_ptr != 0 {
         let cap_header = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr)?;
         let cap_id = (cap_header & 0xFF) as u8;
+        let next_ptr = ((cap_header >> 8) & 0xFF) as u8;
         if cap_id == 0x09 {
             // Vendor specific (VirtIO)
-            let len = ((cap_header >> 8) & 0xFF) as u8;
-            let cap_type = ((cap_header >> 16) & 0xFF) as u8;
-            let bar = ((cap_header >> 24) & 0xFF) as u8;
+            let len = ((cap_header >> 16) & 0xFF) as u8;
+            let cap_type = ((cap_header >> 24) & 0xFF) as u8;
+            let cap_info = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 4)?;
+            let bar = (cap_info & 0xFF) as u8;
  
             let mut notify_off_multiplier = 0u32;
-            let offset = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 4)?;
-            let length = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 8)?;
+            let offset = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 8)?;
+            let length = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 12)?;
  
-            if cap_type == VirtioCapabilityType::NotifyCfg as u8 && len >= 16 {
+            if cap_type == VirtioCapabilityType::NotifyCfg as u8 && len >= 20 {
                 notify_off_multiplier =
-                    runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 12)?;
+                    runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 16)?;
             }
  
             virtio_caps.push(crate::virtio::pci::VirtioCapability {
@@ -435,7 +437,7 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
                 notify_off_multiplier,
             });
         }
-        cap_ptr = ((cap_header >> 8) & 0xFF) as u8;
+        cap_ptr = next_ptr;
     }
  
     let find_cap = |t: VirtioCapabilityType| virtio_caps.iter().find(|c| c.cap_type == t as u8);

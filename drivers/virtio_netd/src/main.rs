@@ -30,16 +30,18 @@ fn main(arg: usize) -> ! {
 
     // Initialize VirtIO-NET driver.
     let mut driver = match if arg != 0 {
-        // In VFS-native model, arg might be a pointer to a string path
-        let path_ptr = arg as *const u8;
-        let mut len = 0;
-        unsafe {
-            while *path_ptr.add(len) != 0 && len < 128 {
-                len += 1;
-            }
-        }
-        let path_str = core::str::from_utf8(unsafe { core::slice::from_raw_parts(path_ptr, len) })
-            .unwrap_or("/sys/devices/pci-00:02.0");
+        let mut path_buf = [0u8; 128];
+        let path_len = {
+            use stem::syscall::vfs::vfs_read;
+            vfs_read(arg as u32, &mut path_buf).unwrap_or(0)
+        };
+        let path_str = if path_len > 0 {
+            core::str::from_utf8(&path_buf[..path_len])
+                .unwrap_or("")
+                .trim_matches(char::from(0))
+        } else {
+            "/sys/devices/pci-00:02.0"
+        };
         VirtioNetDriver::claim_device(path_str)
     } else {
         VirtioNetDriver::find_and_claim()

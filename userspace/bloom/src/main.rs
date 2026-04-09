@@ -56,7 +56,7 @@ use crate::painter_resources::ASSETS;
 use crate::frame::FrameBuilder;
 
 use abi::hid::Key;
-use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
+use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
 use abi::schema::{hid, keys, kinds};
 use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
 use stem::syscall::vfs::{vfs_open, vfs_write};
@@ -812,11 +812,7 @@ fn main(arg: usize) -> ! {
         }
     }
 
-    let mut presenter = if let Ok(fd) = vfs_open("/dev/fb0", O_WRONLY) {
-        bootfb_fd = Some(fd);
-        stem::info!("[bloom] using /dev/fb0 file presenter");
-        PresenterImpl::File(present::FilePresenter::new())
-    } else if target.driver_req != 0 {
+    let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
 
@@ -826,7 +822,8 @@ fn main(arg: usize) -> ! {
             stem::yield_now();
         }
 
-        // Immediate acquire to satisfy driver's need for a bound context before first present
+        // The compositor uses the acquire/present path directly.
+        // MSG_BIND remains available only as a legacy client fallback.
         let mut d_presenter = PresenterImpl::Driver(d);
         stem::info!("[bloom] Requesting initial driver buffer...");
         let (acq_fd, acq_w, acq_h, acq_s, acq_f, acq_age) = d_presenter.acquire_buffer();
@@ -865,6 +862,10 @@ fn main(arg: usize) -> ! {
         }
 
         d_presenter
+    } else if let Ok(fd) = vfs_open("/dev/fb0", O_WRONLY) {
+        bootfb_fd = Some(fd);
+        stem::info!("[bloom] using /dev/fb0 file presenter");
+        PresenterImpl::File(present::FilePresenter::new())
     } else {
         stem::warn!("[bloom] WARNING: No display driver found! Using NullPresenter (headless mode). Screen will be black.");
         PresenterImpl::Null(present::NullPresenter)
@@ -954,8 +955,11 @@ fn main(arg: usize) -> ! {
         crate::wayland::server::WaylandServer::new(screen_w as u32, screen_h as u32)
             .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
+    stem::info!("[bloom] publishing initial pointer state");
     publish_pointer_state(&cursor, prev_pointer_focus);
+    stem::info!("[bloom] publishing initial keyboard state");
     publish_keyboard_state(focused_window, prev_keyboard_mods);
+    stem::info!("[bloom] appending initial keyboard repeat info");
     let _ = crate::session_fs::append_line(
         &crate::session_fs::keyboard_events_path(),
         &crate::session_fs::encode_keyboard_repeat_info_event(
@@ -1014,31 +1018,47 @@ fn main(arg: usize) -> ! {
     stem::syscall::console_disable();
 
     let mut first_frame_rendered = false;
+    let mut first_loop_probe = true;
     let mut last_loop_start_ns = stem::monotonic_ns();
 
     use stem::syscall::vfs::vfs_watch_path;
+    stem::info!("[bloom] creating focus watch");
     let focus_watch = vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
+    stem::info!("[bloom] reading initial active_ui");
     let mut has_focus = get_active_ui() == "bloom";
+    stem::info!("[bloom] initial has_focus={}", has_focus);
 
     let mut current_fd = final_fd;
     let mut current_age = final_age;
 
     loop {
         let loop_start_ns = stem::monotonic_ns();
+        if first_loop_probe {
+            stem::info!("[bloom] loop start before first frame");
+        }
 
         if focus_watch != 0 {
-            let mut buf = [0u8; 64];
-            if let Ok(n) = stem::syscall::vfs::vfs_read(focus_watch, &mut buf) {
+            let mut fds = [abi::syscall::PollFd {
+                fd: focus_watch as i32,
+                events: abi::syscall::poll_flags::POLLIN as u16,
+                revents: 0,
+            }];
+            if let Ok(n) = stem::syscall::vfs::vfs_poll(&mut fds, 0) {
                 if n > 0 {
-                    let next_focus = get_active_ui() == "bloom";
-                    if has_focus && !next_focus {
-                        stem::info!("[bloom] Lost focus. Blanking screen.");
-                        clear_surface(&mut surface, 0xFF000000);
-                        if let Some(fd) = bootfb_fd {
-                            let _ = present_via_fb_file(fd, &surface);
+                    let mut buf = [0u8; 64];
+                    if let Ok(read_n) = stem::syscall::vfs::vfs_read(focus_watch, &mut buf) {
+                        if read_n > 0 {
+                            let next_focus = get_active_ui() == "bloom";
+                            if has_focus && !next_focus {
+                                stem::info!("[bloom] Lost focus. Blanking screen.");
+                                clear_surface(&mut surface, 0xFF000000);
+                                if let Some(fd) = bootfb_fd {
+                                    let _ = present_via_fb_file(fd, &surface);
+                                }
+                            }
+                            has_focus = next_focus;
                         }
                     }
-                    has_focus = next_focus;
                 }
             }
         }
@@ -1047,6 +1067,9 @@ fn main(arg: usize) -> ! {
             presenter.pump();
             loop_ctrl.sleep_until_input(Some(focus_watch));
             continue;
+        }
+        if first_loop_probe {
+            stem::info!("[bloom] loop has focus before first frame");
         }
 
         let loop_gap_ns = loop_start_ns.saturating_sub(last_loop_start_ns);
@@ -1061,6 +1084,9 @@ fn main(arg: usize) -> ! {
 
         wayland_server.pump();
         wayland_server.tick(loop_start_ns);
+        if first_loop_probe {
+            stem::info!("[bloom] wayland pumped before first frame");
+        }
         for event in wayland_server.drain_events() {
             match event {
                 crate::wayland::server::WaylandServerEvent::WindowChanged(_) => {
@@ -1074,6 +1100,9 @@ fn main(arg: usize) -> ! {
         }
         let latest_wayland_snapshots = wayland_server.snapshots();
         sync_wayland_scene(&mut scene, &latest_wayland_snapshots);
+        if first_loop_probe {
+            stem::info!("[bloom] wayland scene synced before first frame");
+        }
 
         invalidation_causes.clear();
         let updates = ASSETS.publish_pending();
@@ -1186,6 +1215,9 @@ fn main(arg: usize) -> ! {
         // Refresh window state after input so hit-testing sees current geometry, but let
         // pure pointer-motion frames bypass background window rebuild work.
         let paint_res = if should_process_updates {
+            if first_loop_probe {
+                stem::info!("[bloom] entering process_updates before first frame");
+            }
             let rescan_windows =
                 !first_frame_rendered || requires_window_rescan(&invalidation_causes);
             let refresh_paint =
@@ -1212,6 +1244,9 @@ fn main(arg: usize) -> ! {
                     );
                 },
             );
+            if first_loop_probe {
+                stem::info!("[bloom] process_updates returned before first frame");
+            }
             res
         } else {
             crate::paint_vm::PaintResult {
@@ -1219,6 +1254,9 @@ fn main(arg: usize) -> ! {
                 pending_rebuilds: paint_pending_rebuilds,
             }
         };
+        if first_loop_probe {
+            stem::info!("[bloom] post updates before first frame");
+        }
 
         // Late-latch input that arrived while process_updates() was running so cursor motion
         // does not wait an extra compositor iteration.
@@ -1796,6 +1834,9 @@ fn main(arg: usize) -> ! {
         // Damage Tracking (cursor fallback handling)
         let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
+        if first_loop_probe {
+            stem::info!("[bloom] entering damage build before first frame");
+        }
 
         // Force full damage on first frame to ensure UI appears immediately
         if !first_frame_rendered {
@@ -2218,19 +2259,33 @@ fn main(arg: usize) -> ! {
         {
             crate::trace_span!("bloom.loop.present");
             let token = builder.finish();
+            if first_loop_probe {
+                stem::info!("[bloom] entering first present");
+            }
             presenter.present_frame(token);
+            if first_loop_probe {
+                stem::info!("[bloom] first present returned");
+            }
             if let Some(fd) = bootfb_fd {
                 if let Err(e) = present_via_fb_file(fd, &surface) {
                     stem::error!("[bloom] /dev/fb0 present failed: {:?}", e);
                 }
             }
             presenter.pump();
+            if first_loop_probe {
+                stem::info!("[bloom] first pump returned");
+            }
 
             // Acquire NEXT buffer for the next frame
             if let PresenterImpl::Driver(_) = presenter {
-                let acquire_start_ns = stem::monotonic_ns();
+                if first_loop_probe {
+                    stem::info!("[bloom] requesting next buffer after first present");
+                }
                 let (next_fd, next_w, next_h, next_s, next_f, next_age) =
                     presenter.acquire_buffer();
+                if first_loop_probe {
+                    stem::info!("[bloom] acquired next buffer after first present fd={}", next_fd);
+                }
                 // Use cached pointer or map if new
                 let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_fd) {
                     ptr
@@ -2273,6 +2328,7 @@ fn main(arg: usize) -> ! {
                 stem::info!("[CONTRACT] [bloom] First frame rendered");
                 first_frame_rendered = true;
             }
+            first_loop_probe = false;
         }
         loop_ctrl.sleep_until_input((bristle_evt_handle != 0).then_some(bristle_evt_handle));
     }

@@ -385,7 +385,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         display_height = h;
         display_stride = stride;
         display_format = format;
-        driver_name = None;
+        driver_name = Some("/display_bootfb");
         backend_name = "BootFB";
         info!(
             "SPROUT: Using /dev/fb0 boot framebuffer ({}x{} stride={})",

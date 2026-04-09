@@ -7,7 +7,7 @@
 //! The table is protected by a spin-lock.  Mounts happen once at boot; reads
 //! happen on every `open(2)` syscall.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -67,41 +67,40 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    
-    let table = MOUNT_TABLE.lock();
-    for entry in table.iter() {
-        if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            crate::kinfo!("mount::lookup: trying prefix='{}' rel='{}' for path='{}'", entry.prefix, rel, path);
-            match entry.driver.lookup(rel) {
-                Ok(node) => return Ok(node),
-                Err(Errno::ENOENT) if entry.prefix == "/dev" && rel == "fb0" => {
-                    crate::kwarn!(
-                        "mount::lookup: mounted /dev driver returned ENOENT for fb0, trying builtin devfs fallback"
-                    );
-                    match crate::vfs::devfs::DevFs::new().lookup(rel) {
-                        Ok(node) => {
-                            crate::kinfo!("mount::lookup: builtin devfs fallback resolved fb0");
-                            return Ok(node);
-                        }
-                        Err(err) => {
-                            crate::kwarn!(
-                                "mount::lookup: builtin devfs fallback failed for fb0: {:?}",
-                                err
-                            );
-                            return Err(err);
-                        }
+
+    // Capture matching drivers into a local list to avoid holding the spinlock 
+    // during potentially blocking driver lookups.
+    let matches: Vec<(String, Arc<dyn VfsDriver>)> = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .filter_map(|entry| {
+                strip_prefix(path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .collect()
+    };
+
+    for (rel, driver) in matches {
+        match driver.lookup(&rel) {
+            Ok(node) => return Ok(node),
+            Err(Errno::ENOENT) => {
+                // Specialized fallback for fb0 if the driver doesn't have it.
+                // This is a legacy hack for early-boot framebuffer access.
+                if rel == "fb0" && path.starts_with("/dev") {
+                    if let Ok(node) = crate::vfs::devfs::DevFs::new().lookup("fb0") {
+                        return Ok(node);
                     }
                 }
-                Err(err) => {
-                    if err != Errno::ENOENT {
-                        crate::kwarn!("mount::lookup: driver logic error for prefix='{}' rel='{}' err={:?}", entry.prefix, rel, err);
-                    }
-                    return Err(err);
-                }
+                // Continue to next matching mount point (shorter prefix).
+                continue;
+            }
+            Err(err) => {
+                return Err(err);
             }
         }
     }
-    crate::kwarn!("mount::lookup: no prefix match for '{}'", path);
+
     Err(Errno::ENOENT)
 }
 
@@ -112,13 +111,16 @@ pub fn create(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    let table = MOUNT_TABLE.lock();
-    for entry in table.iter() {
-        if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            return entry.driver.create(rel);
-        }
-    }
-    Err(Errno::ENOENT)
+    let (rel, driver): (String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?
+    };
+    driver.create(&rel)
 }
 
 /// Create a directory at `path` by finding the best-matching mount.
@@ -128,13 +130,16 @@ pub fn mkdir(path: &str) -> SysResult<()> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    let table = MOUNT_TABLE.lock();
-    for entry in table.iter() {
-        if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            return entry.driver.mkdir(rel);
-        }
-    }
-    Err(Errno::ENOENT)
+    let (rel, driver): (String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?
+    };
+    driver.mkdir(&rel)
 }
 
 /// Remove the file or empty directory at `path`.
@@ -144,13 +149,16 @@ pub fn unlink(path: &str) -> SysResult<()> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    let table = MOUNT_TABLE.lock();
-    for entry in table.iter() {
-        if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            return entry.driver.unlink(rel);
-        }
-    }
-    Err(Errno::ENOENT)
+    let (rel, driver): (String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?
+    };
+    driver.unlink(&rel)
 }
 
 /// Rename a file or directory from `old_path` to `new_path`.
@@ -160,18 +168,18 @@ pub fn rename(old_path: &str, new_path: &str) -> SysResult<()> {
     if !old_path.starts_with('/') || !new_path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    let table = MOUNT_TABLE.lock();
-    for entry in table.iter() {
-        if let Some(old_rel) = strip_prefix(old_path, &entry.prefix) {
-            if let Some(new_rel) = strip_prefix(new_path, &entry.prefix) {
-                return entry.driver.rename(old_rel, new_rel);
-            } else {
-                // Cross-mount renaming is not supported.
-                return Err(Errno::EXDEV);
-            }
-        }
-    }
-    Err(Errno::ENOENT)
+    let (old_rel, new_rel, driver): (String, String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .find_map(|entry| {
+                let old_rel = strip_prefix(old_path, &entry.prefix)?;
+                let new_rel = strip_prefix(new_path, &entry.prefix)?;
+                Some((old_rel.to_string(), new_rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::EXDEV)?
+    };
+    driver.rename(&old_rel, &new_rel)
 }
 
 /// Return a human-readable text listing of all active mount points.

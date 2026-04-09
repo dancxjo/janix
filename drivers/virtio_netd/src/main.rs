@@ -134,10 +134,9 @@ fn main(arg: usize) -> ! {
     if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
         let mut buf = [0u8; 256];
         if let Some(total_len) = display_driver_protocol::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
-            info!("VIRTIO_NETD: Sending MSG_BIND_READY handshake (ID: {})...", bind_instance_id);
-            // Send handle FIRST, then notify
-            let _ = stem::syscall::channel_send_handle(supervisor_port, req_write);
-            let _ = stem::syscall::channel_send_all(supervisor_port, &buf[..total_len]);
+            // Send handle to our private response channel, then notify
+            let _ = stem::syscall::channel_send_handle(drv_resp_write, req_write);
+            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
             info!("VIRTIO_NETD: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
     }
@@ -157,7 +156,7 @@ fn main(arg: usize) -> ! {
                 }
             }
         }
-        stem::time::sleep_ms(10);
+        stem::syscall::yield_now();
     }
 
     // Initialize shared VFS state.

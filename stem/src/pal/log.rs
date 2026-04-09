@@ -11,8 +11,8 @@ use core::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
 pub enum Level {
-    Error = 0,
-    Warn = 1,
+    Error = 1,
+    Warn = 2,
     Info = 3,
     Debug = 4,
     Trace = 5,

@@ -239,6 +239,13 @@ pub struct SpawnProcessExReq {
     pub stdout_mode: u32,
     pub stderr_mode: u32,
     pub _reserved: u32,
+    pub boot_arg: u64,
+    /// Explicit handles to inherit from parent.
+    /// The kernel will clone these into the child's handle table.
+    pub handles_to_inherit: [u64; 8],
+    /// Number of handles in the array to inherit.
+    pub num_inherited_handles: u32,
+    pub _pad3: u32,
 }
 
 /// Response payload for SYS_SPAWN_PROCESS_EX.

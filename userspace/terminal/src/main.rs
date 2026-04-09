@@ -441,6 +441,7 @@ fn read_fb_info() -> Option<FbInfoPayload> {
         stride: 0,
         bpp: 0,
         format: 0,
+        _reserved: 0,
     };
     let buf = unsafe {
         core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, FB_INFO_PAYLOAD_SIZE)

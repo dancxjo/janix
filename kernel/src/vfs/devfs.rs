@@ -398,6 +398,7 @@ impl VfsNode for FbNode {
             stride: self.fb.pitch,
             bpp: self.fb.bpp as u32,
             format: self.fb.format as u32,
+            _reserved: 0,
         };
 
         let slice = unsafe {

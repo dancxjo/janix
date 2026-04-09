@@ -5,6 +5,7 @@ extern crate alloc;
 use stem::{error, info};
 
 mod devtree;
+mod ledger;
 mod pipelines;
 mod registry;
 mod supervisor;

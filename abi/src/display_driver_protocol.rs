@@ -41,7 +41,7 @@ pub const DRIVER_KIND_VIRTIO_GPU: u32 = 2;
 pub const DRIVER_KIND_RAMFB: u32 = 3;
 
 /// Payload serialized and served by the `/dev/fb0` VFS node.
-#[repr(C)]
+#[repr(C, align(8))]
 #[derive(Clone, Copy, Debug)]
 pub struct FbInfoPayload {
     pub graph_id: u64, // Pseudo graph ID to pass to sys_device_claim
@@ -50,9 +50,10 @@ pub struct FbInfoPayload {
     pub stride: u32,
     pub bpp: u32,
     pub format: u32,
+    pub _reserved: u32,
 }
 
-pub const FB_INFO_PAYLOAD_SIZE: usize = size_of::<FbInfoPayload>();
+pub const FB_INFO_PAYLOAD_SIZE: usize = 32;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

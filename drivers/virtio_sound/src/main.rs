@@ -75,6 +75,36 @@ fn find_virtio_sound_device() -> Option<String> {
 fn main(boot_fd: usize) -> ! {
     info!("SND: Starting VirtIO Sound Driver (boot_fd={})...", boot_fd);
 
+    let mut boot_fd = boot_fd;
+
+    if boot_fd == 0 {
+        let mut buf = [0u8; 1024];
+        if let Ok(needed) = stem::syscall::argv_get(&mut buf) {
+            if needed >= 4 {
+                let count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+                if count >= 2 {
+                    let mut offset = 4;
+                    // Skip argv[0]
+                    let arg0_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                    offset += 4 + arg0_len;
+                    // argv[1]
+                    if offset + 4 <= buf.len() {
+                        let arg1_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                        offset += 4;
+                        if offset + arg1_len <= buf.len() {
+                            if let Ok(s) = core::str::from_utf8(&buf[offset..offset + arg1_len]) {
+                                if let Ok(val) = s.parse::<usize>() {
+                                    boot_fd = val;
+                                    info!("SND: Recovered boot_fd {} from argv[1]", boot_fd);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut path_buf = [0u8; 128];
     let path_len = if boot_fd != 0 {
         use stem::syscall::vfs::vfs_read;

@@ -285,21 +285,25 @@ pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
         StdioSpec,
         StdioSpec,
         StdioSpec,
-    ) -> Result<SpawnExResult, Errno>,
+        u64,
+        Vec<u64>,
+    ) -> Result<SpawnExResult, abi::errors::Errno>,
 > = None;
 
 pub unsafe fn spawn_process_ex_current(
     name: &str,
     argv: Vec<Vec<u8>>,
     env: BTreeMap<Vec<u8>, Vec<u8>>,
-    stdin: StdioSpec,
-    stdout: StdioSpec,
-    stderr: StdioSpec,
-) -> Result<SpawnExResult, Errno> {
-    if let Some(hook) = unsafe { SPAWN_PROCESS_EX_HOOK } {
-        unsafe { hook(name, argv, env, stdin, stdout, stderr) }
+    stdin_spec: StdioSpec,
+    stdout_spec: StdioSpec,
+    stderr_spec: StdioSpec,
+    boot_arg: u64,
+    inherited_handles: Vec<u64>,
+) -> Result<SpawnExResult, abi::errors::Errno> {
+    if let Some(hook) = SPAWN_PROCESS_EX_HOOK {
+        hook(name, argv, env, stdin_spec, stdout_spec, stderr_spec, boot_arg, inherited_handles)
     } else {
-        Err(Errno::ENOSYS)
+        Err(abi::errors::Errno::ENOSYS)
     }
 }
 

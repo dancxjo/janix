@@ -189,8 +189,9 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
         width: 0,
         height: 0,
         stride: 0,
-        bpp: 0,
+        bpp: 32,
         format: 0,
+        _reserved: 0,
     };
     let slice = unsafe {
         core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, FB_INFO_PAYLOAD_SIZE)
@@ -233,18 +234,18 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
         return;
     }
 
-    match stem::syscall::spawn_process("/pci_stubd", 0) {
+    match stem::syscall::spawn_process("/bin/pci_stubd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned pci_stubd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/pci_stubd".to_string(),
+                name: "pci_stubd".to_string(),
                 kind: TaskKind::Driver("dev.pci.stub".to_string()),
-                module_path: "/pci_stubd".to_string(),
+                module_path: "/bin/pci_stubd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -265,18 +266,18 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
 
     // Note: rtc_cmos driver will now just open /dev/rtc itself or use sys_time_now.
     // For legacy arg passing, we can still use a fake device ID or just pass 0.
-    match stem::syscall::spawn_process("/rtc_cmos", 0) {
+    match stem::syscall::spawn_process("/bin/rtc_cmos", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned rtc_cmos (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/rtc_cmos".to_string(),
-                kind: TaskKind::Driver(kinds::DEV_RTC_CMOS.to_string()),
-                module_path: "/rtc_cmos".to_string(),
+                name: "rtc_cmos".to_string(),
+                kind: TaskKind::Driver("dev.rtc".to_string()),
+                module_path: "/bin/rtc_cmos".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -312,18 +313,18 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
             }
         }
 
-        match stem::syscall::spawn_process("/ahci_disk", boot_fd as usize) {
+        match stem::syscall::spawn_process("/bin/ahci_disk", boot_fd as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned ahci_disk (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
-                    name: "/ahci_disk".to_string(),
+                    name: "ahci_disk".to_string(),
                     kind: TaskKind::Driver("dev.storage.ahci".to_string()),
-                    module_path: "/ahci_disk".to_string(),
+                    module_path: "/bin/ahci_disk".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
                 });
             }
             Err(e) => {
@@ -334,18 +335,18 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
 
     // 2. Probe for legacy IDE (0x0101)
     if has_sys_device("0x0101") {
-        match stem::syscall::spawn_process("/ata_disk", 0) {
+        match stem::syscall::spawn_process("/bin/ata_disk", 0) {
             Ok(pid) => {
                 info!("SPROUT: Spawned ata_disk (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
-                    name: "/ata_disk".to_string(),
+                    name: "ata_disk".to_string(),
                     kind: TaskKind::Driver("dev.storage.ata".to_string()),
-                    module_path: "/ata_disk".to_string(),
+                    module_path: "/bin/ata_disk".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: 0,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
                 });
             }
             Err(e) => {
@@ -354,18 +355,18 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
-    match stem::syscall::spawn_process("/iso9660d", 0) {
+    match stem::syscall::spawn_process("/bin/iso9660d", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned iso9660d (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/iso9660d".to_string(),
-                kind: TaskKind::Service("svc.iso9660.Mount".to_string()),
-                module_path: "/iso9660d".to_string(),
+                name: "iso9660d".to_string(),
+                kind: TaskKind::Driver("fs.iso9660".to_string()),
+                module_path: "/bin/iso9660d".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -394,7 +395,7 @@ pub fn setup_display_pipeline(
         display_height = h;
         display_stride = stride;
         display_format = format;
-        driver_name = Some("/display_bootfb");
+        driver_name = Some("/bin/display_bootfb");
         backend_name = "BootFB";
         info!(
             "SPROUT: Using /dev/fb0 boot framebuffer ({}x{} stride={})",
@@ -402,10 +403,10 @@ pub fn setup_display_pipeline(
         );
     }
         // virtio-gpu: class 0x030000, vendor 0x1af4
-        if has_sys_device("0x0300") {
+        if driver_name.is_none() && has_sys_device("0x0300") {
             display_stride = display_width * 4;
             display_format = 1;
-            driver_name = Some("/display_virtio_gpu");
+            driver_name = Some("/bin/display_virtio_gpu");
             backend_name = "VirtIO-GPU";
             info!(
                 "SPROUT: Using VirtIO GPU at {}x{}",
@@ -422,7 +423,7 @@ pub fn setup_display_pipeline(
         display_height = 768;
         display_stride = 1024 * 4;
         display_format = 1; // BGRA8888
-        driver_name = Some("/display_fake");
+        driver_name = Some("/bin/display_fake");
         backend_name = "Fake";
     }
 
@@ -501,7 +502,19 @@ pub fn setup_display_pipeline(
             }
         }
 
-        if let Ok(pid) = stem::syscall::spawn_process(driver_name, boot_fd as usize) {
+        let spawn_res = stem::syscall::spawn_process_ex(
+            driver_name,
+            &[driver_name.as_bytes(), alloc::format!("{}", boot_fd).as_bytes()],
+            &alloc::collections::BTreeMap::new(),
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            0u64, // boot_arg
+            &[drv_req.1 as u64, drv_resp.0 as u64],
+        );
+
+        if let Ok(resp) = spawn_res {
+            let pid = resp.child_tid;
             info!(
                 "SPROUT: Spawned display driver '{}' (PID={})",
                 driver_name, pid
@@ -517,6 +530,8 @@ pub fn setup_display_pipeline(
                 bind_instance_id: bind_instance_id,
                 drv_req_write: drv_req.0,
                 drv_resp_read: drv_resp.1,
+                boot_req_read: drv_req.1,
+                boot_resp_write: drv_resp.0,
             });
         }
 
@@ -576,18 +591,18 @@ pub fn setup_terminal(
 
     let term_arg = boot_fd as u32;
 
-    match stem::syscall::spawn_process("/terminal", term_arg as usize) {
+    match stem::syscall::spawn_process("/bin/terminal", term_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned terminal (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/terminal".to_string(),
+                name: "terminal".to_string(),
                 kind: TaskKind::App,
-                module_path: "/terminal".to_string(),
+                module_path: "/bin/terminal".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: term_arg as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -662,18 +677,18 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     };
 
     // Spawn ps2_kbd with raw write handle
-    match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
+    match stem::syscall::spawn_process("/bin/ps2_kbd", kbd_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_kbd".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.kbd".to_string()),
-                module_path: "/ps2_kbd".to_string(),
+                module_path: "/bin/ps2_kbd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: kbd_raw.0 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -682,18 +697,18 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     }
 
     // Spawn ps2_mouse with raw write handle
-    match stem::syscall::spawn_process("/ps2_mouse", mouse_raw.0 as usize) {
+    match stem::syscall::spawn_process("/bin/ps2_mouse", mouse_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_mouse (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/ps2_mouse".to_string(),
+                name: "ps2_mouse".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.mouse".to_string()),
-                module_path: "/ps2_mouse".to_string(),
+                module_path: "/bin/ps2_mouse".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: mouse_raw.0 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -707,18 +722,18 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         | ((bloom_evt.0 as u64) << 16)
         | (evt_input_echo.0 as u64);
 
-    match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
+    match stem::syscall::spawn_process("/bin/bristle", bristle_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bristle (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/bristle".to_string(),
+                name: "bristle".to_string(),
                 kind: TaskKind::App,
-                module_path: "/bristle".to_string(),
+                module_path: "/bin/bristle".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: bristle_arg as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -786,6 +801,8 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
             bind_instance_id: bind_id,
             drv_req_write: drv_req.0,
             drv_resp_read: drv_resp.1,
+            boot_req_read: drv_req.1,
+            boot_resp_write: drv_resp.0,
         });
     } else if let Some(path) = find_sys_device("0x0200") {
         info!("SPROUT: Found RTL8168 at {}", path);
@@ -811,18 +828,18 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
             }
         }
  
-        match stem::syscall::spawn_process("/rtl8168d", boot_fd as usize) {
+        match stem::syscall::spawn_process("/bin/rtl8168d", boot_fd as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned rtl8168d (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
-                    name: "/rtl8168d".to_string(),
+                    name: "rtl8168d".to_string(),
                     kind: TaskKind::Driver("dev.net.rtl8168".to_string()),
-                    module_path: "/rtl8168d".to_string(),
+                    module_path: "/bin/rtl8168d".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
                 });
             }
             Err(e) => {
@@ -836,18 +853,18 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
 
 fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: spawn_netd start");
-    match stem::syscall::spawn_process("/netd", 0) {
+    match stem::syscall::spawn_process("/bin/netd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned netd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/netd".to_string(),
+                name: "netd".to_string(),
                 kind: TaskKind::Service("svc.net".to_string()),
-                module_path: "/netd".to_string(),
+                module_path: "/bin/netd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -859,18 +876,18 @@ fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
 pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network apps...");
 
-    match stem::syscall::spawn_process("/nectar", 0) {
+    match stem::syscall::spawn_process("/bin/nectar", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned nectar (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/nectar".to_string(),
+                name: "nectar".to_string(),
                 kind: TaskKind::Service("svc.nectar".to_string()),
-                module_path: "/nectar".to_string(),
+                module_path: "/bin/nectar".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -878,18 +895,18 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
-    match stem::syscall::spawn_process("/fetchd", 0) {
+    match stem::syscall::spawn_process("/bin/fetchd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned fetchd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/fetchd".to_string(),
+                name: "fetchd".to_string(),
                 kind: TaskKind::App,
-                module_path: "/fetchd".to_string(),
+                module_path: "/bin/fetchd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -903,12 +920,12 @@ pub fn setup_taskman_service(_tasks: &mut Vec<ManagedTask>) {
 }
 
 pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
-    spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
+    spawn_ui_service(tasks, "/bin/flytrap", "svc.flytrap", 2);
+    spawn_ui_service(tasks, "/bin/blossom", "svc.blossom", 2);
 }
 
 pub fn setup_blossom_service(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
+    spawn_ui_service(tasks, "/bin/blossom", "svc.blossom", 2);
 }
 
 pub fn setup_font_service(_tasks: &mut Vec<ManagedTask>) {
@@ -916,7 +933,7 @@ pub fn setup_font_service(_tasks: &mut Vec<ManagedTask>) {
 }
 
 pub fn setup_flytrap_service(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
+    spawn_ui_service(tasks, "/bin/flytrap", "svc.flytrap", 2);
 }
 
 fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, priority: usize) {
@@ -935,7 +952,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -962,18 +979,18 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
             let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
         }
 
-        match stem::syscall::spawn_process("/hdaudio", boot_fd as usize) {
+        match stem::syscall::spawn_process("/bin/hdaudio", boot_fd as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned hdaudio (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
-                    name: "/hdaudio".to_string(),
+                    name: "hdaudio".to_string(),
                     kind: TaskKind::Driver("dev.sound.hda".to_string()),
-                    module_path: "/hdaudio".to_string(),
+                    module_path: "/bin/hdaudio".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
                 });
             }
             Err(e) => {
@@ -996,18 +1013,18 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
             let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
         }
 
-        match stem::syscall::spawn_process("/virtio_sound", boot_fd as usize) {
+        match stem::syscall::spawn_process("/bin/virtio_sound", boot_fd as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned virtio_sound (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
-                    name: "/virtio_sound".to_string(),
+                    name: "virtio_sound".to_string(),
                     kind: TaskKind::Driver("dev.sound.virtio".to_string()),
-                    module_path: "/virtio_sound".to_string(),
+                    module_path: "/bin/virtio_sound".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                     spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
                 });
             }
             Err(e) => {
@@ -1021,18 +1038,18 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
 
 pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Spawning beeper...");
-    match stem::syscall::spawn_process("/beeper", 0) {
+    match stem::syscall::spawn_process("/bin/beeper", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned beeper (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/beeper".to_string(),
+                name: "beeper".to_string(),
                 kind: TaskKind::App,
-                module_path: "/beeper".to_string(),
+                module_path: "/bin/beeper".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -1048,18 +1065,18 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     let font_chan = channel_create(4096).expect("Failed to create fontd channel");
     // font_chan.1 is the read end for fontd, font_chan.0 is the write end for clients
     
-    match stem::syscall::spawn_process("/fontd", font_chan.1 as usize) {
+    match stem::syscall::spawn_process("/bin/fontd", font_chan.1 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned fontd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
-                name: "/fontd".to_string(),
+                name: "fontd".to_string(),
                 kind: TaskKind::Service("svc.font".to_string()),
-                module_path: "/fontd".to_string(),
+                module_path: "/bin/fontd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: font_chan.1 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -1068,18 +1085,18 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     }
 
     // 2. Setup Bloom (Compositor)
-    match stem::syscall::spawn_process("/bloom", 0) {
+    match stem::syscall::spawn_process("/bin/bloom", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned bloom (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 3); // High priority for compositor
             tasks.push(ManagedTask {
-                name: "/bloom".to_string(),
+                name: "bloom".to_string(),
                 kind: TaskKind::App,
-                module_path: "/bloom".to_string(),
+                module_path: "/bin/bloom".to_string(),
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
             });
         }
         Err(e) => {

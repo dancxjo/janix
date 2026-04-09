@@ -57,6 +57,33 @@ fn main(boot_fd: usize) -> ! {
     let path_str = core::str::from_utf8(path).unwrap_or("");
 
     info!("VIRTIO_GPU: Using path={}", path_str);
+ 
+    let mut drv_req_read = 0;
+    let mut drv_resp_write = 0;
+    let mut supervisor_port = 0;
+    let mut bind_instance_id = 0u64;
+
+    if boot_fd != 0 {
+        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        let req = VmMapReq {
+            addr_hint: 0,
+            len: 4096,
+            prot: VmProt::READ | VmProt::USER,
+            flags: VmMapFlags::empty(),
+            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+        };
+        if let Ok(resp) = stem::syscall::vm_map(&req) {
+            let slice = unsafe { core::slice::from_raw_parts(resp.addr as *const u32, 1024) };
+            drv_req_read = slice[0];
+            drv_resp_write = slice[1];
+            supervisor_port = slice[2];
+            let id_low = slice[3] as u64;
+            let id_high = slice[4] as u64;
+            bind_instance_id = id_low | (id_high << 32);
+            info!("VIRTIO_GPU: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}", 
+                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
+        }
+    }
 
     // 2. Initialize Hardware
     let mut gpu = match VirtioGpu::new(path_str) {
@@ -97,6 +124,46 @@ fn main(boot_fd: usize) -> ! {
     if let Err(e) = setup_display(&mut gpu) {
         error!("VIRTIO_GPU: Display setup failed: {}", e);
         stem::syscall::exit(1);
+    }
+
+    // 3. Register as VFS Provider via Sovereign Handshake
+    use abi::vfs_rpc::VFS_RPC_MAX_REQ;
+    let (vfs_write, vfs_read) = stem::syscall::channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS channel");
+    
+    use abi::supervisor_protocol::{self, classes};
+    use abi::display_driver_protocol;
+    let ready = supervisor_protocol::BindReadyPayload {
+        bind_instance_id,
+        class_mask: classes::DISPLAY_CARD | classes::FRAMEBUFFER,
+        _reserved: 0,
+    };
+    let mut ready_bytes = [0u8; supervisor_protocol::BIND_READY_PAYLOAD_SIZE];
+    if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
+        let mut buf = [0u8; 256];
+        if let Some(total_len) = display_driver_protocol::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
+            info!("VIRTIO_GPU: Sending MSG_BIND_READY handshake (ID: {})...", bind_instance_id);
+            // Send to our private response channel
+            let _ = stem::syscall::channel_send_handle(drv_resp_write, vfs_write);
+            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
+        }
+    }
+
+    // Wait for MSG_BIND_ASSIGNED
+    let mut wait_buf = [0u8; 512];
+    loop {
+        if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
+             if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n]) {
+                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
+                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
+                         let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
+                         info!("VIRTIO_GPU: Sovereign registration COMPLETE. Assigned: {}", path);
+                         break;
+                     }
+                 }
+             }
+        }
+        stem::syscall::yield_now();
     }
 
     info!("VIRTIO_GPU: Driver initialized, entering demo loop");

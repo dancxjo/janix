@@ -222,9 +222,17 @@ pub fn spawn_process_ex(
     stdin_mode: u32,
     stdout_mode: u32,
     stderr_mode: u32,
+    boot_arg: u64,
+    handles: &[u64],
 ) -> Result<abi::types::SpawnProcessExResp, Errno> {
     let argv_blob = serialize_argv(argv);
     let env_blob = serialize_env(env);
+
+    let mut h_to_inherit = [0u64; 8];
+    let num_inherited = handles.len().min(8);
+    for i in 0..num_inherited {
+        h_to_inherit[i] = handles[i];
+    }
 
     let req = abi::types::SpawnProcessExReq {
         name_ptr: name.as_ptr() as u64,
@@ -240,6 +248,10 @@ pub fn spawn_process_ex(
         stdout_mode,
         stderr_mode,
         _reserved: 0,
+        boot_arg,
+        handles_to_inherit: h_to_inherit,
+        num_inherited_handles: num_inherited as u32,
+        _pad3: 0,
     };
 
     let mut resp = abi::types::SpawnProcessExResp::default();

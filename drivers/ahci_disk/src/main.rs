@@ -434,7 +434,33 @@ fn register_atapi_disk(port: &mut AhciPort) {
 fn main(boot_fd: usize) -> ! {
     info!("AHCI: Starting AHCI/SATA disk driver (boot_fd={})", boot_fd);
 
-    // 1. Get device path from bootstrap memfd
+    // 1. Get device path from argv or primary arg
+    let mut boot_fd = boot_fd;
+    if boot_fd == 0 {
+        let mut buf = [0u8; 1024];
+        if let Ok(needed) = stem::syscall::argv_get(&mut buf) {
+            if needed >= 4 {
+                let count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+                if count >= 2 {
+                    let mut offset = 4;
+                    let arg0_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                    offset += 4 + arg0_len;
+                    if offset + 4 <= buf.len() {
+                        let arg1_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                        offset += 4;
+                        if offset + arg1_len <= buf.len() {
+                            if let Ok(s) = core::str::from_utf8(&buf[offset..offset + arg1_len]) {
+                                if let Ok(val) = s.parse::<usize>() {
+                                    boot_fd = val;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut path_buf = [0u8; 128];
     let path = if boot_fd != 0 {
         use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
@@ -450,10 +476,10 @@ fn main(boot_fd: usize) -> ! {
             let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
             unsafe { core::slice::from_raw_parts(ptr, len) }
         } else {
-            b"/sys/devices/pci-00:01.0" // Placeholder
+            b"/sys/devices/pci-0000:00:01.0" // Default to QEMU AHCI
         }
     } else {
-        b"/sys/devices/pci-00:01.0"
+        b"/sys/devices/pci-0000:00:01.0"
     };
     let path_str = core::str::from_utf8(path).unwrap_or("");
 
@@ -465,7 +491,7 @@ fn main(boot_fd: usize) -> ! {
             let mut buf = [0u8; 32];
             if let Ok(n) = vfs_read(fd, &mut buf) {
                 let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
-                u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap_or(0)
+                s.trim().parse::<u64>().unwrap_or(0)
             } else { 0 }
         } else { 0 }
     } else { 0 };

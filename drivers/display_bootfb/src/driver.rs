@@ -154,6 +154,7 @@ fn find_framebuffer() -> Option<Framebuffer> {
         stride: 0,
         bpp: 0,
         format: 0,
+        _reserved: 0,
     };
 
     let slice = unsafe {

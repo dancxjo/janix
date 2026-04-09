@@ -496,7 +496,8 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 ) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    let module = modules.iter().find(|m| m.name.contains(name))?;
+    let basename = name.rsplit('/').next().unwrap_or(name);
+    let module = modules.iter().find(|m| m.name.contains(basename))?;
 
     let aspace = rt.tasking().make_user_address_space();
 
@@ -543,7 +544,6 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }
 
     // Queue setting the process name (processed after scheduler lock released)
-
     rt.irq_restore(_irq);
     Some(id)
 }
@@ -685,19 +685,22 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     stdin_spec: StdioSpec,
     stdout_spec: StdioSpec,
     stderr_spec: StdioSpec,
+    boot_arg: u64,
+    inherited_handles: Vec<u64>,
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
+    let basename = name.rsplit('/').next().unwrap_or(name);
     let module = modules
         .iter()
-        .find(|m| m.name.contains(name))
+        .find(|m| m.name.contains(basename))
         .ok_or(abi::errors::Errno::ENOENT)?;
 
     let aspace = rt.tasking().make_user_address_space();
 
     let (mut entry, stack_info, regions) =
         crate::task::loader::load_module(rt, aspace, module).ok_or(abi::errors::Errno::ENOEXEC)?;
-    entry.arg0 = 0; // No raw arg for ex spawn
+    entry.arg0 = boot_arg as usize;
 
     let _irq = rt.irq_disable();
 
@@ -772,6 +775,12 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         task.name[..len].copy_from_slice(&bytes[..len]);
         task.name_len = len as u8;
         task.process_info = Some(pinfo);
+
+        // NOTE: In v0 HandleTable is global, so all handles are technically inherited.
+        // We preserve this parameter for ABI symmetry and future per-task handle tables.
+        for h in inherited_handles {
+            crate::ktrace!("spawn_process_ex: inheriting handle {} for task {}", h, id);
+        }
     }
 
     // Queue setting the process name
@@ -780,9 +789,9 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
     Ok(SpawnExResult {
         child_tid: id,
-        stdin_pipe,
-        stdout_pipe,
-        stderr_pipe,
+        stdin_pipe: 0,
+        stdout_pipe: 0,
+        stderr_pipe: 0,
     })
 }
 

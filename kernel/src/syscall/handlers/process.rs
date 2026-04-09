@@ -319,6 +319,8 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
 
+    crate::kprintln!("SYSCALL: spawn_process_ex(req={:#x}, resp={:#x})", req_ptr, resp_ptr);
+
     // Copy in the request struct
     validate_user_range(req_ptr, core::mem::size_of::<SpawnProcessExReq>(), false)?;
     let mut req = SpawnProcessExReq::default();
@@ -329,6 +331,9 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
             core::mem::size_of::<SpawnProcessExReq>(),
         );
     }
+
+    crate::kprintln!("  req: name_ptr={:#x} len={} argv_ptr={:#x} len={} boot_arg={:#x}",
+        req.name_ptr, req.name_len, req.argv_ptr, req.argv_len, req.boot_arg);
 
     // Copy in the program name
     let name_len = req.name_len as usize;
@@ -371,27 +376,41 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
     // Translate stdio modes
     let stdin_spec = mode_to_spec(req.stdin_mode)?;
     let stdout_spec = mode_to_spec(req.stdout_mode)?;
-    let stderr_spec = mode_to_spec(req.stderr_mode)?;
+    let stderr_spec = match req.stderr_mode {
+        1 => scheduler::StdioSpec::Inherit,
+        _ => scheduler::StdioSpec::Null,
+    };
 
-    // Spawn the process
+    let boot_arg = req.boot_arg;
+
+    let mut inherited_handles = Vec::with_capacity(req.num_inherited_handles as usize);
+    for i in 0..req.num_inherited_handles as usize {
+        if i < 8 {
+            inherited_handles.push(req.handles_to_inherit[i]);
+        }
+    }
+
     let result = unsafe {
-        scheduler::spawn_process_ex_current(name, argv, env, stdin_spec, stdout_spec, stderr_spec)
+        scheduler::spawn_process_ex_current(
+            name,
+            argv,
+            env,
+            stdin_spec,
+            stdout_spec,
+            stderr_spec,
+            boot_arg,
+            inherited_handles,
+        )
     }?;
 
     // Write the response
-    let resp = SpawnProcessExResp {
-        child_tid: result.child_tid as u64,
-        stdin_pipe: result.stdin_pipe,
-        stdout_pipe: result.stdout_pipe,
-        stderr_pipe: result.stderr_pipe,
-    };
-    validate_user_range(resp_ptr, core::mem::size_of::<SpawnProcessExResp>(), true)?;
     unsafe {
-        core::ptr::copy_nonoverlapping(
-            &resp as *const SpawnProcessExResp as *const u8,
-            resp_ptr as *mut u8,
-            core::mem::size_of::<SpawnProcessExResp>(),
-        );
+        *(resp_ptr as *mut SpawnProcessExResp) = SpawnProcessExResp {
+            child_tid: result.child_tid as u64,
+            stdin_pipe: result.stdin_pipe,
+            stdout_pipe: result.stdout_pipe,
+            stderr_pipe: result.stderr_pipe,
+        };
     }
 
     Ok(result.child_tid as usize)

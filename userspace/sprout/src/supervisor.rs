@@ -1,91 +1,96 @@
-use crate::registry::Registry;
+//! Supervisor service for Thing-OS (sprout)
+//!
+//! Orchestrates the system boot sequence:
+//! 1. VFS Namespace management (via memfds and mounts).
+//! 2. Sovereign registration handshake (receiving handles from drivers).
+//! 3. Graphics stack bring-up (coordinating display + fonts + bloom).
+//! 4. Monitoring device arrivals and spawning dependent services.
+
+#![feature(restricted_std)]
+#![no_main]
+
+extern crate alloc;
+
+// Modules are now declared in main.rs
+use crate::ledger::DeviceLedger;
+use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack, spawn_beeper};
 use crate::task::{ManagedTask, TaskKind};
-use abi::ids::HandleId;
-use abi::schema::keys;
+use abi::supervisor_protocol::{self, classes, MSG_BIND_READY, MSG_BIND_ASSIGNED};
+use abi::display_driver_protocol;
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
-use stem::{info, warn};
+use stem::syscall::{channel_create, channel_send_all, vfs_mount, ChannelHandle};
+use stem::{error, info, warn};
 
 pub struct Supervisor {
-    tasks: Vec<ManagedTask>,
-    registry: Registry,
-    registry_ptr: usize,
-    ledger: BTreeMap<String, u32>,
-    pub supervisor_port: stem::syscall::ChannelHandle,
-    pub supervisor_write: stem::syscall::ChannelHandle,
-    next_bind_id: u64,
+    pub tasks: Vec<ManagedTask>,
+    pub ledger: DeviceLedger,
+    pub registry_ptr: usize,
 }
 
 impl Supervisor {
     pub fn new(registry_ptr: usize) -> Self {
-        let (supervisor_write, supervisor_read) = stem::syscall::channel_create(4096).expect("Failed to create supervisor port");
         Self {
             tasks: Vec::new(),
-            registry: Registry::new(),
+            ledger: DeviceLedger::new(),
             registry_ptr,
-            ledger: BTreeMap::new(),
-            supervisor_port: supervisor_read,
-            supervisor_write,
-            next_bind_id: 1,
         }
     }
 
     pub fn run_forever(&mut self) -> ! {
-        info!("SPROUT: Supervisor starting (phased mode)...");
+        info!("SPROUT: Supervisor session started (Sovereign mode)");
 
-        // --- STAGE 1: Discovery & Core Drivers ---
-        info!("SPROUT: [Stage 1] Hardware Discovery and Core Drivers");
+        // Stage 1: Discover boot modules
         self.discover();
 
-        crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
-        crate::pipelines::setup_storage_pipeline(&mut self.tasks);
-        crate::pipelines::setup_audio_driver(&mut self.tasks);
-        let bind_id = self.next_bind_id;
-        self.next_bind_id += 1;
-        let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks, self.supervisor_write, bind_id);
-        let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
-        crate::pipelines::setup_network_stack(&mut self.tasks);
+        // Stage 2: Create Sovereign Registrar channel
+        let (supervisor_write, supervisor_read) =
+            channel_create(4096).expect("Failed to create supervisor registrar channel");
 
-        // --- STAGE 2: Network & Core Services ---
-        info!("SPROUT: [Stage 2] Starting Network Apps and Services");
-        self.ensure_service("/devd", "svc.devd");
-        self.ensure_service("/netd", "svc.net");
+        // Stage 3: Setup Graphics Pipeline
+        // This picks a display driver and starts the handshake.
+        let display = match setup_display_pipeline(&mut self.tasks, supervisor_write, 1) {
+            Some(d) => d,
+            None => {
+                error!("SPROUT: CRITICAL: Failed to setup display pipeline. System may be headless.");
+                // We proceed anyway, maybe serial log is enough
+                DisplayHandles {
+                    drv_req_write: 0,
+                    drv_resp_read: 0,
+                    bs_id: 0,
+                    backend_name: "none",
+                    width: 0,
+                    height: 0,
+                    stride: 0,
+                    format: 0,
+                }
+            }
+        };
 
-        crate::pipelines::setup_network_apps(&mut self.tasks);
-
-        self.process_registrations();
-
-        // info!("SPROUT: [Stage 3] -> Setting up Terminal...");
-        // crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
-        
-        info!("SPROUT: [Stage 3] UI initialization triggered");
-
-        // --- STAGE 4: Final Polish (Beeper) ---
-        info!("SPROUT: [Stage 4] Proof of life (Beeper)");
-        crate::pipelines::spawn_beeper(&mut self.tasks);
-
-        self.process_registrations();
-
-        // --- STAGE 5: User Apps ---
-        info!("SPROUT: [Stage 5] Starting Discovered User Apps");
-        self.discover();
-        self.ensure_app("/sh");
-
-        // Wait for essential drivers (Display) before launching UI apps.
+        // Stage 4: Busy Stage - Wait for Display Driver to register its VFS provider
         self.wait_for_display();
 
-        crate::pipelines::setup_graphics_stack(&mut self.tasks);
+        // Stage 5: Finish Graphics Stack (fontd + bloom)
+        setup_graphics_stack(&mut self.tasks);
 
-        self.spawn_apps();
+        // Stage 6: Spawning supplemental services (stage 3+ in justfile)
+        spawn_beeper(&mut self.tasks);
 
-        // Enter monitor loop
-        info!("SPROUT: Startup complete. Entering monitor loop.");
+        // Stage 7: Spawn Discovered User Apps
+        self.spawn_discovered_apps();
+
+        info!("SPROUT: System bring-up COMPLETE. Entering supervisor loop.");
+
         loop {
+            // Process any new registrations (networking, sound, input, etc)
             self.process_registrations();
+
+            // Monitor already running tasks
             self.monitor();
-            stem::yield_now();
+
+            // Relinquish some time
+            stem::syscall::yield_now();
             stem::sleep_ms(100);
         }
     }
@@ -111,7 +116,7 @@ impl Supervisor {
                 break;
             }
 
-            stem::yield_now();
+            stem::syscall::yield_now();
             stem::sleep_ms(50);
         }
     }
@@ -138,94 +143,40 @@ impl Supervisor {
 
             let name_bytes =
                 unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
-            let name = core::str::from_utf8(name_bytes).unwrap_or("").to_string();
-
+            let name = core::str::from_utf8(name_bytes).unwrap_or("");
             info!("SPROUT: Module[{}] = '{}'", i, name);
 
-            if name.is_empty() {
+            if name == "/bin/sprout" {
                 continue;
             }
 
-            if name.contains("/drivers/") {
-                // Handled natively by registry if needed
-            } else if name.contains("/apps/")
-                || name.ends_with("/idle")
-                || name.ends_with("/hello_std")
-                || name.ends_with("/wayland_hello")
-                || (cfg!(feature = "diagnostic-apps")
-                    && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
-            {
-                info!("SPROUT: Discovered app: {}", name);
-                self.tasks.push(ManagedTask {
-                    name: name.clone(),
-                    kind: TaskKind::App,
-                    module_path: name,
-                    pid: None,
-                    restarts: 0,
-                    spawn_arg: 0,
-                    bind_instance_id: 0,
-                    drv_req_write: 0,
-                    drv_resp_read: 0,
-                });
-            }
-        }
-    }
-
-    fn spawn_apps(&mut self) {
-        for task in self.tasks.iter_mut() {
-            if let TaskKind::App = task.kind {
-                if task.pid.is_some() {
-                    continue;
+            // Determine kind from path
+            let kind = if name.contains("/bin/") {
+                if name.contains("display_") {
+                    TaskKind::Driver("dev.display.Framebuffer".to_string())
+                } else if name.contains("virtio_netd") {
+                    TaskKind::Driver("dev.net.virtio".to_string())
+                } else {
+                    TaskKind::App
                 }
-                info!("SPROUT: Launching app '{}'", task.name);
-                match stem::syscall::spawn_process(&task.name, 0) {
-                    Ok(pid) => {
-                        info!("SPROUT: App launched (PID={})", pid);
-                        task.pid = Some(pid);
-                        let _ = stem::thread::set_priority(pid, 2);
-                    }
-                    Err(e) => info!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
-                }
-            }
+            } else {
+                continue;
+            };
+
+            self.tasks.push(ManagedTask {
+                name: name.to_string(),
+                kind,
+                module_path: name.to_string(),
+                pid: None,
+                restarts: 0,
+                spawn_arg: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
+            });
         }
-    }
-
-    fn ensure_app(&mut self, name: &str) {
-        if self.tasks.iter().any(|t| t.name.contains(name)) {
-            return;
-        }
-
-        let full = format!("/bin{}", name);
-        self.tasks.push(ManagedTask {
-            name: "/bin/login".to_string(),
-            kind: TaskKind::App,
-            module_path: "/bin/login".to_string(),
-            pid: None,
-            restarts: 0,
-            spawn_arg: 0,
-            bind_instance_id: 0,
-            drv_req_write: 0,
-            drv_resp_read: 0,
-        });
-    }
-
-    fn ensure_service(&mut self, name: &str, service_kind: &str) {
-        if self.tasks.iter().any(|t| t.name.contains(name)) {
-            return;
-        }
-
-        let full = format!("/bin{}", name);
-        self.tasks.push(ManagedTask {
-            name: full.clone(),
-            kind: TaskKind::Service(service_kind.to_string()),
-            module_path: full,
-            pid: None,
-            restarts: 0,
-            spawn_arg: 0,
-            bind_instance_id: 0,
-            drv_req_write: 0,
-            drv_resp_read: 0,
-        });
     }
 
     fn spawn_discovered_apps(&mut self) {
@@ -234,11 +185,19 @@ impl Supervisor {
                 if task.pid.is_some() {
                     continue;
                 }
-                match stem::syscall::spawn_process(&task.name, 0) {
-                    Ok(pid) => {
-                        task.pid = Some(pid);
-                    }
-                    Err(_) => {}
+                let arg_str = alloc::format!("{}", task.spawn_arg);
+                let spawn_res = stem::syscall::spawn_process_ex(
+                    &task.name,
+                    &[task.name.as_bytes(), arg_str.as_bytes()],
+                    &alloc::collections::BTreeMap::new(),
+                    stem::abi::types::stdio_mode::INHERIT,
+                    stem::abi::types::stdio_mode::INHERIT,
+                    stem::abi::types::stdio_mode::INHERIT,
+                    task.spawn_arg as u64,
+                    &[],
+                );
+                if let Ok(resp) = spawn_res {
+                    task.pid = Some(resp.child_tid);
                 }
             }
         }
@@ -256,18 +215,39 @@ impl Supervisor {
                             );
                             task.pid = None;
                             task.restarts += 1;
-                            let arg = task.spawn_arg;
                             stem::sleep_ms(100);
-                            match stem::syscall::spawn_process(&task.name, arg) {
-                                Ok(new_pid) => {
-                                    task.pid = Some(new_pid);
-                                }
-                                Err(_) => {}
-                            }
                         }
                     }
                     Err(_) => {
                         task.pid = None;
+                    }
+                }
+            }
+
+            // Spawn or Restart
+            if task.pid.is_none() {
+                let handles = if task.boot_req_read != 0 && task.boot_resp_write != 0 {
+                    &[task.boot_req_read as u64, task.boot_resp_write as u64] as &[u64]
+                } else {
+                    &[] as &[u64]
+                };
+
+                let arg_str = alloc::format!("{}", task.spawn_arg);
+                let spawn_res = stem::syscall::spawn_process_ex(
+                    &task.name,
+                    &[task.name.as_bytes(), arg_str.as_bytes()],
+                    &alloc::collections::BTreeMap::new(),
+                    stem::abi::types::stdio_mode::INHERIT,
+                    stem::abi::types::stdio_mode::INHERIT,
+                    stem::abi::types::stdio_mode::INHERIT,
+                    task.spawn_arg as u64,
+                    handles,
+                );
+
+                if let Ok(resp) = spawn_res {
+                    task.pid = Some(resp.child_tid);
+                    if let TaskKind::Driver(_) = task.kind {
+                        let _ = stem::thread::set_priority(resp.child_tid, 3);
                     }
                 }
             }
@@ -294,20 +274,21 @@ impl Supervisor {
                             let task_name = task.name.clone();
                             info!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
 
-                            // 2. Extract provider port
-                            // Since we ensure drivers send the handle BEFORE the BIND_READY byte,
-                            // it should be here. We retry a few times just in case.
+                            // 1. Extract provider port
+                            // Drivers send the vfs handle BEFORE the BIND_READY message
                             let mut provider_port = 0;
-                            for _ in 0..10 {
-                                if let Ok(p) = stem::syscall::channel_recv_handle(task.drv_resp_read) {
+                            match stem::syscall::channel_recv_handle(task.drv_resp_read) {
+                                Ok(p) => {
                                     provider_port = p;
-                                    break;
+                                    info!("SPROUT: Received VFS provider handle {} from {}", p, task_name);
                                 }
-                                stem::yield_now();
+                                Err(e) => {
+                                    warn!("SPROUT: Failed to receive VFS provider handle from {}: {:?}", task_name, e);
+                                }
                             }
 
                             if provider_port != 0 {
-                                // 3. Deterministic allocation
+                                // 2. Deterministic allocation
                                 let (class_name, root) = if ready.class_mask & classes::DISPLAY_CARD != 0 {
                                     ("display", "/dev/display/card")
                                 } else if ready.class_mask & classes::INPUT_EVENT != 0 {
@@ -326,12 +307,12 @@ impl Supervisor {
                                 self.ledger.insert(class_name.to_string(), unit + 1);
                                 let path = format!("{}{}", root, unit);
 
-                                // 4. Mount
+                                // 3. Mount
                                 match vfs_mount(provider_port, &path) {
                                     Ok(()) => {
                                         info!("SPROUT: Sovereign mount success: {} -> {}", task_name, path);
                                         
-                                        // 5. Reply to driver
+                                        // 4. Reply to driver
                                         let mut assigned = supervisor_protocol::BindAssignedPayload {
                                             bind_instance_id: ready.bind_instance_id,
                                             status: 0,
@@ -355,8 +336,6 @@ impl Supervisor {
                                     }
                                 }
                             }
-                        } else {
-                            warn!("SPROUT: BIND_READY with UNKNOWN ID");
                         }
                     }
                 }

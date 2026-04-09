@@ -855,17 +855,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         unsafe {
             let old_task = &mut **tasks_ptr.add(old_idx);
             let new_task = &mut **tasks_ptr.add(new_idx);
-            let old_name = core::str::from_utf8_unchecked(&old_task.name[..old_task.name_len as usize]);
-            let new_name = core::str::from_utf8_unchecked(&new_task.name[..new_task.name_len as usize]);
-            
-            crate::kinfo!(
-                "SCHED: CPU {} switching task {}:{} -> {}:{}",
-                cpu_idx,
-                current_id,
-                old_name,
-                next_id,
-                new_name
-            );
+
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;

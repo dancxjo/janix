@@ -16,12 +16,43 @@ use vfs_provider::handle_vfs_rpc;
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
     info!("display_bootfb: Starting VFS-native bootfb driver...");
+    info!("display_bootfb: Liveness check: driver is alive.");
 
     // 1. Map bootstrap memfd to get handles
     let mut drv_req_read = 0;
     let mut drv_resp_write = 0;
     let mut supervisor_port = 0;
     let mut bind_instance_id = 0u64;
+
+    let mut boot_fd = boot_fd;
+
+    if boot_fd == 0 {
+        let mut buf = [0u8; 1024];
+        if let Ok(needed) = stem::syscall::argv_get(&mut buf) {
+            if needed >= 4 {
+                let count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+                if count >= 2 {
+                    let mut offset = 4;
+                    // Skip argv[0]
+                    let arg0_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                    offset += 4 + arg0_len;
+                    // argv[1]
+                    if offset + 4 <= buf.len() {
+                        let arg1_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                        offset += 4;
+                        if offset + arg1_len <= buf.len() {
+                            if let Ok(s) = core::str::from_utf8(&buf[offset..offset + arg1_len]) {
+                                if let Ok(val) = s.parse::<usize>() {
+                                    boot_fd = val;
+                                    info!("display_bootfb: Recovered boot_fd {} from argv[1]", boot_fd);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if boot_fd != 0 {
         use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
@@ -101,9 +132,9 @@ fn main(boot_fd: usize) -> ! {
         let mut buf = [0u8; 256];
         if let Some(total_len) = display_driver_protocol::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
             info!("display_bootfb: Sending MSG_BIND_READY handshake...");
-            // Send handle FIRST, then notify
-            let _ = stem::syscall::channel_send_handle(supervisor_port, vfs_write);
-            let _ = stem::syscall::channel_send_all(supervisor_port, &buf[..total_len]);
+            // Send both handle and notification to our dedicated response channel
+            let _ = stem::syscall::channel_send_handle(drv_resp_write, vfs_write);
+            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
             info!("display_bootfb: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
     }
@@ -124,7 +155,7 @@ fn main(boot_fd: usize) -> ! {
                 }
             }
         }
-        stem::time::sleep_ms(10);
+        stem::syscall::yield_now();
     }
 
     let mut req_buf = vec![0u8; VFS_RPC_MAX_REQ];

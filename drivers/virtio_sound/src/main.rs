@@ -25,39 +25,85 @@ use virtio::device::VirtioDevice;
 
 const QUEUE_SIZE: u16 = 64;
 
+fn find_virtio_sound_device() -> Option<String> {
+    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
+    use abi::syscall::vfs_flags;
+
+    let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return None,
+    };
+
+    let mut buf = [0u8; 4096];
+    let n = match vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = vfs_close(fd);
+            return None;
+        }
+    };
+    let _ = vfs_close(fd);
+
+    let mut pos = 0;
+    while pos < n {
+        let entry_buf = &buf[pos..n];
+        let name = core::str::from_utf8(entry_buf).unwrap_or("").split('\0').next().unwrap_or("");
+        if name.is_empty() { break; }
+        
+        if name.starts_with("pci-") {
+            let path = alloc::format!("/sys/devices/{}/class", name);
+            if let Ok(id_fd) = vfs_open(&path, vfs_flags::O_RDONLY) {
+                let mut id_buf = [0u8; 64];
+                if let Ok(id_len) = vfs_read(id_fd, &mut id_buf) {
+                    let id_str = core::str::from_utf8(&id_buf[..id_len]).unwrap_or("");
+                    // Check for PCI Class 0401 (Audio Controller)
+                    if id_str.trim().starts_with("0x0401") {
+                        let _ = vfs_close(id_fd);
+                        return Some(alloc::format!("/sys/devices/{}", name));
+                    }
+                }
+                let _ = vfs_close(id_fd);
+            }
+        }
+        pos += name.len() + 1;
+    }
+
+    None
+}
+
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
     info!("SND: Starting VirtIO Sound Driver (boot_fd={})...", boot_fd);
 
-    // 1. Get device path from bootstrap memfd
     let mut path_buf = [0u8; 128];
-    let path = if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-        let req = VmMapReq {
-            addr_hint: 0,
-            len: 4096,
-            prot: VmProt::READ | VmProt::USER,
-            flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
-        };
-        if let Ok(resp) = stem::syscall::vm_map(&req) {
-            let ptr = resp.addr as *const u8;
-            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
-            unsafe { core::slice::from_raw_parts(ptr, len) }
-        } else {
-            b"/sys/devices/pci-00:01.0" // Hardcoded fallback for v0 if map fails
-        }
+    let path_len = if boot_fd != 0 {
+        use stem::syscall::vfs::vfs_read;
+        vfs_read(boot_fd as u32, &mut path_buf).unwrap_or(0)
     } else {
-        b"/sys/devices/pci-00:01.0"
+        0
     };
-    let path_str = core::str::from_utf8(path).unwrap_or("/sys/devices/pci-00:01.0");
+    
+    let mut path_str = if path_len > 0 {
+        core::str::from_utf8(&path_buf[..path_len]).unwrap_or("").trim_matches(char::from(0)).to_string()
+    } else {
+        String::new()
+    };
+
+    if path_str.is_empty() {
+        if let Some(found) = find_virtio_sound_device() {
+            info!("SND: Discovered device at {}", found);
+            path_str = found;
+        } else {
+            path_str = "/sys/devices/pci-00:01.0".to_string(); // Ultimate fallback
+        }
+    }
 
     // 2. Initialize Hardware
-    let mut driver = match VirtioDevice::new(path_str) {
+    let mut driver = match VirtioDevice::new(&path_str) {
         Ok(d) => d,
         Err(e) => {
             error!("SND: Failed to claim device at {}: {:?}", path_str, e);
-            loop { stem::time::sleep_ms(1); }
+            loop { stem::time::sleep_ms(1000); }
         }
     };
 

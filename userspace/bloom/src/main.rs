@@ -1002,11 +1002,39 @@ fn main(arg: usize) -> ! {
     let mut first_frame_rendered = false;
     let mut last_loop_start_ns = stem::monotonic_ns();
 
+    use stem::syscall::vfs::vfs_watch_path;
+    let focus_watch = vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
+    let mut has_focus = get_active_ui() == "bloom";
+
     let mut current_fd = final_fd;
     let mut current_age = final_age;
 
     loop {
         let loop_start_ns = stem::monotonic_ns();
+
+        if focus_watch != 0 {
+            let mut buf = [0u8; 64];
+            if let Ok(n) = stem::syscall::vfs::vfs_read(focus_watch, &mut buf) {
+                if n > 0 {
+                    let next_focus = get_active_ui() == "bloom";
+                    if has_focus && !next_focus {
+                        stem::info!("[bloom] Lost focus. Blanking screen.");
+                        clear_surface(&mut surface, 0xFF000000);
+                        if let Some(fd) = bootfb_fd {
+                            let _ = present_via_fb_file(fd, &surface);
+                        }
+                    }
+                    has_focus = next_focus;
+                }
+            }
+        }
+
+        if !has_focus {
+            presenter.pump();
+            loop_ctrl.sleep_until_input(Some(focus_watch));
+            continue;
+        }
+
         let loop_gap_ns = loop_start_ns.saturating_sub(last_loop_start_ns);
         if loop_gap_ns > 100_000_000 {
             stem::warn!(
@@ -2009,6 +2037,9 @@ fn main(arg: usize) -> ! {
             screen_h,
         );
 
+        // Ownership Branding: Identifies that Bloom is owning/painting the screen.
+        append_bloom_branding(&mut list, screen_w, screen_h);
+
         // Cursor-only fast path: restore old cursor underlay and skip scene composition.
         // Only valid when the current buffer is stable (age=1) and we captured underlay for
         // this exact bytespace on the previous frame.
@@ -2309,6 +2340,29 @@ fn append_damage_overlay(
     }
 }
 
+fn append_bloom_branding(list: &mut drawlist::DrawList, screen_w: i32, screen_h: i32) {
+    let text = "BLOOM";
+    let x = screen_w - 64;
+    let y = screen_h - 24;
+    // Semi-transparent dark background for the label
+    list.rect(
+        x - 4,
+        y - 4,
+        64,
+        24,
+        crate::geometry::Color::from_u32(0x66000000),
+    );
+    list.text(
+        text,
+        None,
+        x,
+        y,
+        14.0,
+        crate::geometry::Color::from_u32(0xFFFFFFFF),
+    );
+}
+
+
 fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::geometry::Rect, color: u32) {
     if rect.width() <= 0 || rect.height() <= 0 {
         return;
@@ -2318,4 +2372,8 @@ fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::geometry::Rect,
     list.rect(rect.x(), rect.y() + rect.height() - 1, rect.width(), 1, c);
     list.rect(rect.x(), rect.y(), 1, rect.height(), c);
     list.rect(rect.x() + rect.width() - 1, rect.y(), 1, rect.height(), c);
+}
+
+fn get_active_ui() -> alloc::string::String {
+    crate::session_fs::read_text("/session/active_ui").unwrap_or_else(|| "bloom".to_string())
 }

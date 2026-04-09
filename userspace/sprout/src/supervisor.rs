@@ -51,7 +51,8 @@ impl Supervisor {
 
         // --- STAGE 3: UI (Terminal & Compositor) ---
         info!("SPROUT: [Stage 3] Starting Terminal Interface");
-        crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
+        crate::pipelines::setup_terminal(&mut self.tasks, display_handles.clone(), input_handles.clone());
+        crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
         
         stem::sleep_ms(200);
 

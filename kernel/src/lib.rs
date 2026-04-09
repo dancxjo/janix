@@ -603,6 +603,30 @@ fn paint_bootfb_probe(fb: FramebufferInfo) {
                 };
             }
         }
+
+        // Draw 'K' marker at (280, 10) to signal Kernel ownership
+        let k_x = 280;
+        let k_y = 10;
+        if width > k_x + 60 && rows > k_y + 80 {
+            for dy in 0..80 {
+                let row = core::slice::from_raw_parts_mut(ptr.add((k_y + dy) * stride_px), width.min(stride_px));
+                // Vertical stem
+                for dx in 0..12 {
+                    if k_x + dx < row.len() {
+                        row[k_x + dx] = 0x00_FF_FF_00;
+                    }
+                }
+                // Diagonals
+                let mid = 40;
+                let arm_w = (dy as i32 - mid).abs();
+                let dx = 12 + arm_w;
+                for i in 0..12 {
+                    if k_x + dx as usize + i < row.len() {
+                        row[k_x + dx as usize + i] = 0x00_FF_FF_00;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -672,7 +696,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     crate::task::init::<R>();
 
     contract!("Initializing VFS...");
-    crate::vfs::init();
+    crate::vfs::init(runtime.modules());
+
+    contract!("Scanning PCI bus...");
+    scan_pci();
 
     // CRITICAL: Calibrate the BSP preemption timer BEFORE starting secondary CPUs.
     // Secondary CPUs read timer_vector/timer_init_cnt in init_secondary_cpu().
@@ -929,5 +956,91 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     unsafe {
         crate::sched::cpu_online::<R>(cpu_index);
         crate::sched::enter_secondary(cpu_index);
+    }
+}
+
+pub fn scan_pci() {
+    let rt = runtime_base();
+    let mut reg = crate::device_registry::REGISTRY.lock();
+
+    for bus in 0..16 { // Bus range restricted for speed in QEMU
+        for dev in 0..32 {
+            for func in 0..8 {
+                let vendor_device = match rt.pci_cfg_read32(bus, dev, func, 0x00) {
+                    Ok(val) => val,
+                    Err(_) => 0xFFFFFFFF,
+                };
+                let vendor_id = (vendor_device & 0xFFFF) as u16;
+                let device_id = (vendor_device >> 16) as u16;
+
+                if vendor_id == 0xFFFF {
+                    if func == 0 { break; } // Next device
+                    continue; // Next function
+                }
+
+                // Enable Memory Space (bit 1) and Bus Mastering (bit 2)
+                let cmd = rt.pci_cfg_read32(bus, dev, func, 0x04).unwrap_or(0);
+                let _ = rt.pci_cfg_write32(bus, dev, func, 0x04, cmd | 0x06);
+
+                let class_rev = rt.pci_cfg_read32(bus, dev, func, 0x08).unwrap_or(0);
+                let class_code = (class_rev >> 24) as u8;
+                let subclass = (class_rev >> 16) as u8;
+                let prog_if = (class_rev >> 8) as u8;
+
+                let header_type = (rt.pci_cfg_read32(bus, dev, func, 0x0C).unwrap_or(0) >> 16) as u8;
+
+                let mut bars = [0u64; 6];
+                let mut sizes = [0u64; 6];
+
+                // For simplicity, only scan BARs for header type 0 (normal devices)
+                if (header_type & 0x7F) == 0 {
+                    for i in 0..6 {
+                        let offset = 0x10 + (i * 4) as u8;
+                        let bar = rt.pci_cfg_read32(bus, dev, func, offset).unwrap_or(0);
+                        if bar != 0 {
+                            // Check size by writing 0xFFFFFFFF
+                            let _ = rt.pci_cfg_write32(bus, dev, func, offset, 0xFFFFFFFF);
+                            let size_mask = rt.pci_cfg_read32(bus, dev, func, offset).unwrap_or(0);
+                            let _ = rt.pci_cfg_write32(bus, dev, func, offset, bar);
+
+                            if bar & 1 == 0 { // Memory space
+                                let size = (!(size_mask & 0xFFFFFFF0)).wrapping_add(1) as u64;
+                                bars[i as usize] = (bar & 0xFFFFFFF0) as u64;
+                                sizes[i as usize] = size;
+                            }
+                        }
+                    }
+                }
+
+                let graph_id = 0x2000_0000 | ((bus as u64) << 16) | ((dev as u64) << 8) | (func as u64);
+                
+                let entry = crate::device_registry::DeviceEntry {
+                    kind: "pci_device",
+                    ioport_ranges: &[],
+                    graph_id,
+                    mmio_bars: bars,
+                    mmio_sizes: sizes,
+                    vendor_id,
+                    device_id,
+                    class_code,
+                    subclass,
+                    prog_if,
+                    pci_location: Some(crate::device_registry::PciLocation { bus, dev, func }),
+                    msi_cap: None,
+                    msix_cap: None,
+                    irq_mode: crate::device_registry::IrqMode::Legacy,
+                    irq_vector: 0,
+                };
+
+                if let Some(idx) = reg.register(entry) {
+                    crate::kinfo!("PCI: Discovered 0x{:04x}:0x{:04x} at {:02x}:{:02x}.{} class={:02x}{:02x}{:02x} id={}", 
+                        vendor_id, device_id, bus, dev, func, class_code, subclass, prog_if, idx);
+                }
+
+                if func == 0 && (header_type & 0x80) == 0 {
+                    break;
+                }
+            }
+        }
     }
 }

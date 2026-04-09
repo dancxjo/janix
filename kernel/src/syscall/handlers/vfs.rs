@@ -146,6 +146,58 @@ pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
     Ok(n)
 }
 
+pub fn sys_fs_stat(
+    fd: usize,
+    mode_ptr: usize,
+    size_ptr: usize,
+    ino_ptr: usize,
+) -> SysResult<usize> {
+    validate_user_range(mode_ptr, 4, true)?;
+    validate_user_range(size_ptr, 8, true)?;
+    validate_user_range(ino_ptr, 8, true)?;
+
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        file.node.clone()
+    };
+
+    let stat = node.stat()?;
+    unsafe {
+        copyout(mode_ptr, &stat.mode.to_ne_bytes())?;
+        copyout(size_ptr, &stat.size.to_ne_bytes())?;
+        copyout(ino_ptr, &stat.ino.to_ne_bytes())?;
+    }
+
+    Ok(0)
+}
+
+pub fn sys_fs_readdir(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+    validate_user_range(buf_ptr, buf_len, true)?;
+    if buf_len == 0 {
+        return Ok(0);
+    }
+
+    let (node, offset_cell) = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        (file.node.clone(), file.offset.clone())
+    };
+
+    let mut kbuf = vec![0u8; buf_len];
+    let offset = *offset_cell.lock();
+    let n = node.readdir(offset, &mut kbuf)?;
+
+    if n > 0 {
+        *offset_cell.lock() = offset.saturating_add(n as u64);
+        unsafe { copyout(buf_ptr, &kbuf[..n])? };
+    }
+
+    Ok(n)
+}
+
 // ── write ───────────────────────────────────────────────────────────────────
 
 pub fn sys_fs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {

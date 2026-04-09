@@ -246,7 +246,8 @@ fn generate_limine_config(
             || clean_path.ends_with("wallpapers/clouds.bmp")
             || clean_path.ends_with("wallpapers/leather.bmp")
             || clean_path.ends_with("wallpapers/linen.bmp")
-            || clean_path.ends_with("themes/genie_circles.wasm");
+            || clean_path.ends_with("themes/genie_circles.wasm")
+            || clean_path.ends_with("unifont.hex");
 
         if allowed {
             conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));

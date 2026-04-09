@@ -234,11 +234,11 @@ impl NamespaceRef {
 /// - `/tmp`      ← temporary filesystem (writable, volatile)
 /// - `/run`      ← transient runtime state (tmpfs)
 /// - `/services` ← populated by userland daemons (tmpfs stub for now)
-pub fn init() {
+pub fn init(modules: &'static [crate::BootModuleDesc]) {
     mount::init();
 
     // Boot filesystem — minimal static tree available before anything else.
-    mount::mount("/boot", Arc::new(bootfs::BootFs::new()));
+    mount::mount("/boot", Arc::new(bootfs::BootFs::new(modules)));
     crate::kinfo!("vfs: mounted bootfs at /boot");
 
     // Root filesystem (tmpfs) — writable, volatile.

@@ -142,11 +142,12 @@ fn read_sys_u32(path: &str) -> Result<u32, Errno> {
 
     let fd = vfs_open(path, O_RDONLY)?;
     let mut buf = [0u8; 32];
-    let n = vfs_read(fd, &mut buf)?;
+    let n = vfs_read(fd, &mut buf).map_err(|e| { stem::info!("READ_SYS: {} read failed: {:?}", path, e); e })?;
     let _ = vfs_close(fd);
 
     let s = core::str::from_utf8(&buf[..n]).map_err(|_| Errno::EIO)?;
     let trimmed = s.trim();
+    stem::info!("READ_SYS: {} -> '{}' (n={})", path, trimmed, n);
     if trimmed.starts_with("0x") {
         u32::from_str_radix(&trimmed[2..], 16).map_err(|_| Errno::EIO)
     } else {

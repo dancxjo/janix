@@ -107,28 +107,19 @@ struct HdaController {
 fn main(boot_fd: usize) -> ! {
     info!("HDAUDIO: starting (boot_fd={})", boot_fd);
 
-    // 1. Get device path from bootstrap memfd
     let mut path_buf = [0u8; 128];
-    let path = if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-        let req = VmMapReq {
-            addr_hint: 0,
-            len: 4096,
-            prot: VmProt::READ | VmProt::USER,
-            flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
-        };
-        if let Ok(resp) = stem::syscall::vm_map(&req) {
-            let ptr = resp.addr as *const u8;
-            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
-            unsafe { core::slice::from_raw_parts(ptr, len) }
-        } else {
-            b""
-        }
+    let path_len = if boot_fd != 0 {
+        use stem::syscall::vfs::vfs_read;
+        vfs_read(boot_fd as u32, &mut path_buf).unwrap_or(0)
     } else {
-        b""
+        0
     };
-    let path_str = core::str::from_utf8(path).unwrap_or("");
+    
+    let path_str = if path_len > 0 {
+        core::str::from_utf8(&path_buf[..path_len]).unwrap_or("").trim_matches(char::from(0))
+    } else {
+        ""
+    };
 
     info!("HDAUDIO: using device path: {}", path_str);
 
@@ -260,9 +251,6 @@ fn main(boot_fd: usize) -> ! {
         warn!("HDAUDIO: failed to publish info to /services/sound/main");
     }
 
-    // Purged legacy graph reporting.
-    // Future: report status via /services/sound or /run/sound.
-
     info!(
         "HDAUDIO: stream started (write_port={}, read_port={})",
         write_handle, read_handle
@@ -277,8 +265,6 @@ fn main(boot_fd: usize) -> ! {
                 hda.feed_pcm(&in_buf[..n]);
                 total_bytes = total_bytes.saturating_add(n as u64);
 
-                // Purged legacy property updates
-
                 let now = stem::time::monotonic_ns();
                 if now.saturating_sub(last_log_ns) > 1_000_000_000 {
                     info!("HDAUDIO: streamed {} bytes", total_bytes);
@@ -288,9 +274,9 @@ fn main(boot_fd: usize) -> ! {
             Ok(_) => stem::yield_now(),
             Err(_) => {
                 let timeout_ms = if hda.buffered_bytes() == 0 {
-                    None // Indefinite sleep when nothing is playing! 0 CPU usage!
+                    None 
                 } else {
-                    Some(stem::time::Duration::from_millis(10)) // Max 10ms delay between DMA updates when playing
+                    Some(stem::time::Duration::from_millis(10)) 
                 };
 
                 let mut ws = stem::wait_set::WaitSet::new();
@@ -336,8 +322,6 @@ impl HdaController {
 
     fn init_controller(&mut self) -> Result<(), abi::errors::Errno> {
         self.reset_controller();
-        // HDA spec: codecs need time to complete their internal reset after
-        // the controller CRST bit assertion. 521μs minimum; use 10ms for margin.
         stem::sleep_ms(10);
         self.init_corb_rirb();
         let gcap = self.read_u16(REG_GCAP);
@@ -461,18 +445,15 @@ impl HdaController {
         let _ = self.verb(cad, out_nid, VERB_SET_POWER_STATE, 0x00)?;
         let _ = self.verb(cad, pin_nid, VERB_SET_POWER_STATE, 0x00)?;
 
-        // Select first connection when pin has a connection list.
         if let Some(conn_len) = self.get_param(cad, pin_nid, PARAM_CONN_LEN) {
             if (conn_len & 0x7f) != 0 {
                 let _ = self.verb(cad, pin_nid, VERB_SET_CONNECT_SEL, 0x00)?;
             }
         }
 
-        // Enable output path on the pin and EAPD.
         let _ = self.verb(cad, pin_nid, VERB_SET_PIN_WIDGET_CTRL, 0x40)?;
         let _ = self.verb(cad, pin_nid, VERB_SET_EAPD_BTL, 0x02)?;
 
-        // Bind converter to stream tag 1, channel 0.
         let sc = ((STREAM_TAG & 0x0f) << 4) | (STREAM_CHAN & 0x0f);
         let _ = self.verb(cad, out_nid, VERB_SET_CONV_STREAM_CHAN, sc)?;
         Ok(())
@@ -489,7 +470,6 @@ impl HdaController {
             ent.ioc = 1;
         }
 
-        // Stream reset sequence.
         self.write_u8(self.sd_base + SD_CTL0, 0);
         self.write_u8(self.sd_base + SD_CTL0, SD_CTL_SRST);
         let start = stem::time::monotonic_ns();
@@ -575,28 +555,31 @@ impl HdaController {
             write_volatile((self.corb_virt as *mut u32).add(next_wp as usize), cmd);
         }
         self.corb_wp = next_wp;
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         self.write_u16(REG_CORBWP, self.corb_wp);
 
         let start = stem::time::monotonic_ns();
-        let timeout_ns = 500_000_000; // 500ms timeout
+        let timeout_ns = 500_000_000; 
 
         loop {
             let wp = self.read_u16(REG_RIRBWP) & 0x00ff;
             if wp != self.rirb_rp {
+                let prev_rp = self.rirb_rp;
                 self.rirb_rp = wp;
-                let idx = (self.rirb_rp as usize) % RIRB_ENTRIES;
-                let resp = unsafe { read_volatile((self.rirb_virt as *const u32).add(idx * 2)) };
-                return Ok(resp);
+                
+                let mut last_resp = 0;
+                for i in (prev_rp + 1)..=wp {
+                    let idx = (i as usize) % RIRB_ENTRIES;
+                    last_resp = unsafe { core::ptr::read_volatile((self.rirb_virt as *const u32).add(idx * 2)) };
+                }
+                return Ok(last_resp);
             }
+
             if stem::time::monotonic_ns().saturating_sub(start) > timeout_ns {
                 break;
             }
             stem::sleep_ms(1);
         }
-        warn!(
-            "HDAUDIO: verb timeout cmd=0x{:08x} (cad={} nid={} verb=0x{:04x} payload=0x{:02x})",
-            cmd, cad, nid, verb, payload
-        );
         Err(abi::errors::Errno::ETIMEDOUT)
     }
 
@@ -608,9 +591,9 @@ impl HdaController {
         self.write_u8(REG_RIRBSTS, 0xff);
 
         let csz = self.read_u8(REG_CORBSIZE) & 0xf0;
-        self.write_u8(REG_CORBSIZE, csz | 0x02); // 256 entries
+        self.write_u8(REG_CORBSIZE, csz | 0x02); 
         let rsz = self.read_u8(REG_RIRBSIZE) & 0xf0;
-        self.write_u8(REG_RIRBSIZE, rsz | 0x02); // 256 entries
+        self.write_u8(REG_RIRBSIZE, rsz | 0x02); 
 
         self.write_u32(REG_CORBLBASE, self.corb_phys as u32);
         self.write_u32(REG_CORBUBASE, (self.corb_phys >> 32) as u32);
@@ -625,8 +608,8 @@ impl HdaController {
         self.write_u16(REG_RINTCNT, 1);
         self.rirb_rp = self.read_u16(REG_RIRBWP) & 0x00ff;
 
-        self.write_u8(REG_CORBCTL, 0x02); // run
-        self.write_u8(REG_RIRBCTL, 0x03); // dma + irq enable
+        self.write_u8(REG_CORBCTL, 0x02); 
+        self.write_u8(REG_RIRBCTL, 0x03); 
     }
 
     fn reset_controller(&self) {
@@ -634,11 +617,9 @@ impl HdaController {
         gctl &= !GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
 
-        let mut ok = false;
         let start = stem::time::monotonic_ns();
         loop {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) == 0 {
-                ok = true;
                 break;
             }
             if stem::time::monotonic_ns().saturating_sub(start) > 500_000_000 {
@@ -688,84 +669,70 @@ impl HdaController {
 }
 
 fn find_hda_device() -> Option<u64> {
-    use abi::syscall::vfs_flags::O_RDONLY;
-    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
+    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
+    use abi::syscall::vfs_flags;
 
-    let fd = vfs_open("/sys/devices", O_RDONLY).ok()?;
+    let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return None,
+    };
+
     let mut buf = [0u8; 4096];
-    let n = vfs_readdir(fd, &mut buf).ok()?;
+    let n = match vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = vfs_close(fd);
+            return None;
+        }
+    };
     let _ = vfs_close(fd);
 
-    let mut offset = 0;
-    let mut candidates = alloc::vec::Vec::new();
-
-    while offset < n {
-        let mut end = offset;
-        while end < n && buf[end] != 0 {
-            end += 1;
-        }
-        if end > offset {
-            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
-                let path = alloc::format!("/sys/devices/{}", name);
-                let vendor = read_sys_u32(&alloc::format!("{}/vendor", path)).unwrap_or(0);
-                let device = read_sys_u32(&alloc::format!("{}/device", path)).unwrap_or(0);
-                let class = read_sys_u32(&alloc::format!("{}/class", path)).unwrap_or(0);
-
-                // HDA Class = 0x0403xx
-                if (class >> 8) == 0x0403 {
-                    if let Some(handle) = read_sys_u32(&alloc::format!("{}/handle", path)) {
-                        candidates.push((vendor, device, handle as u64));
+    let mut pos = 0;
+    while pos < n {
+        let entry_buf = &buf[pos..n];
+        let name = core::str::from_utf8(entry_buf).unwrap_or("").split('\0').next().unwrap_or("");
+        if name.is_empty() { break; }
+        
+        if name.starts_with("pci-") {
+            let path = alloc::format!("/sys/devices/{}/class", name);
+            if let Ok(id_fd) = vfs_open(&path, vfs_flags::O_RDONLY) {
+                let mut id_buf = [0u8; 64];
+                if let Ok(id_len) = vfs_read(id_fd, &mut id_buf) {
+                    let id_str = core::str::from_utf8(&id_buf[..id_len]).unwrap_or("");
+                    if id_str.trim().starts_with("0x0403") {
+                        let handle_path = alloc::format!("/sys/devices/{}/handle", name);
+                        if let Some(graph_id) = read_sys_u64(&handle_path) {
+                            let _ = vfs_close(id_fd);
+                            info!("HDAUDIO: Found device via scan: /sys/devices/{} (graph_id={})", name, graph_id);
+                            return stem::syscall::device_claim(graph_id).ok().map(|h| h as u64);
+                        }
                     }
                 }
+                let _ = vfs_close(id_fd);
             }
         }
-        offset = end + 1;
+        pos += name.len() + 1;
     }
-
-    if candidates.is_empty() {
-        return None;
-    }
-
-    // Preferred controllers
-    let preferred: &[(u16, u16)] = &[
-        (0x8086, 0x2668), // ICH6 HDA
-        (0x8086, 0x27d8), // ICH7
-        (0x8086, 0x284b), // ICH8
-    ];
-
-    for (v, d, h) in &candidates {
-        for &(pv, pd) in preferred {
-            if *v == pv as u32 && *d == pd as u32 {
-                return Some(*h);
-            }
-        }
-    }
-
-    // Intel fallback
-    for (v, _, h) in &candidates {
-        if *v == 0x8086 {
-            return Some(*h);
-        }
-    }
-
-    // Generic fallback
-    Some(candidates[0].2)
+    None
 }
 
-fn read_sys_u32(path: &str) -> Option<u32> {
+fn read_sys_u64(path: &str) -> Option<u64> {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 
     let fd = vfs_open(path, O_RDONLY).ok()?;
-    let mut buf = [0u8; 32];
+    let mut buf = [0u8; 64];
     let n = vfs_read(fd, &mut buf).ok()?;
     let _ = vfs_close(fd);
 
-    let s = core::str::from_utf8(&buf[..n]).ok()?;
-    let trimmed = s.trim();
-    if trimmed.starts_with("0x") {
-        u32::from_str_radix(&trimmed[2..], 16).ok()
+    let s = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if s.starts_with("0x") {
+        u64::from_str_radix(&s[2..], 16).ok()
     } else {
-        trimmed.parse::<u32>().ok()
+        s.parse().ok()
     }
+}
+
+fn read_sys_u32(path: &str) -> Option<u32> {
+    read_sys_u64(path).map(|v| v as u32)
 }

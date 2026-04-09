@@ -19,6 +19,7 @@ fn ensure_session_roots() {
     let _ = vfs_mkdir("/session/display");
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct DisplayHandles {
     pub drv_req_write: ChannelHandle,
     pub drv_resp_read: ChannelHandle,
@@ -61,6 +62,7 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
                         let mut class_buf = [0u8; 16];
                         if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
                             let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
+                            info!("SPROUT: Checked device {} class={}", name, class_str.trim());
                             if class_str.trim().starts_with(class_prefix) {
                                 let _ = vfs_close(class_fd);
                                 return Some(alloc::format!("/sys/devices/{}", name));
@@ -483,9 +485,9 @@ pub fn setup_terminal(
         }
     }
 
-    let term_arg = boot_fd as usize;
+    let term_arg = boot_fd as u32;
 
-    match stem::syscall::spawn_process("/terminal", term_arg) {
+    match stem::syscall::spawn_process("/terminal", term_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned terminal (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
@@ -495,7 +497,7 @@ pub fn setup_terminal(
                 module_path: "/terminal".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: term_arg,
+                spawn_arg: term_arg as usize,
             });
         }
         Err(e) => {
@@ -504,6 +506,7 @@ pub fn setup_terminal(
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct InputHandles {
     pub bloom_evt_read: ChannelHandle,
     pub evt_input_echo_read: ChannelHandle,
@@ -679,7 +682,7 @@ pub fn setup_compositor(
         }
     }
 
-    let bloom_arg = boot_fd as usize;
+    let bloom_arg = boot_fd as u32;
 
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
@@ -688,7 +691,7 @@ pub fn setup_compositor(
     );
 
     // Spawn bloom
-    match stem::syscall::spawn_process("/bloom", bloom_arg) {
+    match stem::syscall::spawn_process("/bloom", bloom_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bloom (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
@@ -698,7 +701,7 @@ pub fn setup_compositor(
                 module_path: "/bloom".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: bloom_arg,
+                spawn_arg: bloom_arg as usize as usize,
             });
         }
         Err(e) => {
@@ -897,21 +900,10 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
         let boot_size = 256;
         let boot_fd = stem::syscall::memfd_create("hda.boot", boot_size).unwrap_or(0);
         if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let ptr = resp.addr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(path.as_ptr(), ptr, path.len());
-                    *ptr.add(path.len()) = 0; // Null terminate
-                }
-            }
+            use stem::syscall::vfs::{vfs_write, vfs_seek};
+            let _ = vfs_write(boot_fd as u32, path.as_bytes());
+            let _ = vfs_write(boot_fd as u32, &[0]); // Null terminator
+            let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
         }
 
         match stem::syscall::spawn_process("/hdaudio", boot_fd as usize) {
@@ -941,21 +933,10 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
         let boot_size = 256;
         let boot_fd = stem::syscall::memfd_create("snd.boot", boot_size).unwrap_or(0);
         if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let ptr = resp.addr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(path.as_ptr(), ptr, path.len());
-                    *ptr.add(path.len()) = 0; // Null terminate
-                }
-            }
+            use stem::syscall::vfs::{vfs_write, vfs_seek};
+            let _ = vfs_write(boot_fd as u32, path.as_bytes());
+            let _ = vfs_write(boot_fd as u32, &[0]); // Null terminator
+            let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
         }
 
         match stem::syscall::spawn_process("/virtio_sound", boot_fd as usize) {

@@ -134,10 +134,11 @@ fn main(packed_handles: usize) -> ! {
                                                 info!("bristle: Ctrl+Alt+Del - rebooting...");
                                                 stem::syscall::reboot();
                                             }
+                                            Key::F1 => {
+                                                update_active_ui("bloom");
+                                            }
                                             Key::F12 => {
-                                                let current = get_active_ui();
-                                                let next = if current == "terminal" { "bloom" } else { "terminal" };
-                                                update_active_ui(next);
+                                                update_active_ui("terminal");
                                             }
                                             _ => {}
                                         }

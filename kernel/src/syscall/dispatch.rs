@@ -98,6 +98,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_MKDIR => handlers::vfs::sys_fs_mkdir(args[0], args[1]),
         SYS_FS_MOUNT => handlers::vfs::sys_fs_mount(args[0], args[1], args[2]),
         SYS_FS_UMOUNT => handlers::vfs::sys_fs_umount(args[0], args[1]),
+        SYS_FS_STAT => handlers::vfs::sys_fs_stat(args[0], args[1], args[2], args[3]),
+        SYS_FS_READDIR => handlers::vfs::sys_fs_readdir(args[0], args[1], args[2]),
         SYS_FS_POLL => handlers::vfs::sys_fs_poll(args[0], args[1], args[2]),
         SYS_FS_SEEK => handlers::vfs::sys_fs_seek(args[0], args[1], args[2]),
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),

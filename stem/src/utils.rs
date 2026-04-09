@@ -118,3 +118,28 @@ mod tests {
         assert!(!is_aligned(4097, 4096));
     }
 }
+
+/// Parse raw argv bytes into a vector of byte slices.
+///
+/// The format is: `[count: u32 LE] [len0: u32 LE] [arg0...] [len1: u32 LE] [arg1...]`
+pub fn parse_argv(buf: &[u8]) -> alloc::vec::Vec<&[u8]> {
+    let mut args = alloc::vec::Vec::new();
+    if buf.len() < 4 {
+        return args;
+    }
+    let count = u32::from_le_bytes(buf[0..4].try_into().unwrap_or([0; 4])) as usize;
+    let mut offset = 4;
+    for _ in 0..count {
+        if offset + 4 > buf.len() {
+            break;
+        }
+        let len = u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap_or([0; 4])) as usize;
+        offset += 4;
+        if offset + len > buf.len() {
+            break;
+        }
+        args.push(&buf[offset..offset + len]);
+        offset += len;
+    }
+    args
+}

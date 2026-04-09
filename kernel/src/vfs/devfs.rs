@@ -159,32 +159,21 @@ impl VfsNode for DevDirNode {
             ino: 100,
         })
     }
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        // Enumerate built-in names plus dynamically registered ones.
-        let mut entries = alloc::vec::Vec::<u8>::new();
-        for name in &["console", "null", "zero"] {
-            entries.extend_from_slice(name.as_bytes());
-            entries.push(0);
-        }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let mut names = alloc::vec!["console".to_string(), "null".to_string(), "zero".to_string()];
         if BOOT_FB_INFO.lock().is_some() {
-            entries.extend_from_slice(b"fb0");
-            entries.push(0);
+            names.push("fb0".to_string());
         }
-        entries.extend_from_slice(b"rtc");
-        entries.push(0);
+        names.push("rtc".to_string());
         {
             let reg = DEVICE_REGISTRY.lock();
             for name in reg.keys() {
-                // Avoid duplicating names already listed above.
-                if !matches!(name.as_str(), "console" | "null" | "zero" | "fb0") {
-                    entries.extend_from_slice(name.as_bytes());
-                    entries.push(0);
+                if !matches!(name.as_str(), "console" | "null" | "zero" | "fb0" | "rtc") {
+                    names.push(name.clone());
                 }
             }
         }
-        let n = entries.len().min(buf.len());
-        buf[..n].copy_from_slice(&entries[..n]);
-        Ok(n)
+        super::write_readdir_entries(names.iter().map(|s: &String| s.as_str()), offset, buf)
     }
 }
 

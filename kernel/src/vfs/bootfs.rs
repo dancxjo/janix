@@ -7,6 +7,7 @@
 
 use abi::errors::{Errno, SysResult};
 use alloc::sync::Arc;
+use alloc::string::String;
 use crate::BootModuleDesc;
 
 use super::{VfsDriver, VfsNode, VfsStat};
@@ -88,11 +89,10 @@ impl VfsNode for BootDirNode {
             ino: 9,
         })
     }
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        use alloc::vec::Vec;
-        let mut entries: Vec<u8> = Vec::new();
-        entries.extend_from_slice(b"version\0motd\0");
-        
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        use alloc::string::ToString;
+        let mut names = alloc::vec!["version".to_string(), "motd".to_string()];
+
         for m in self.modules {
             let name = m.name.strip_prefix("/boot/").unwrap_or(m.name);
             let final_name = if let Some(slash_idx) = name.rfind('/') {
@@ -101,17 +101,13 @@ impl VfsNode for BootDirNode {
                 name
             };
 
-            // Skip entries that are already hardcoded
             if final_name == "version" || final_name == "motd" {
                 continue;
             }
-            entries.extend_from_slice(final_name.as_bytes());
-            entries.push(0);
+            names.push(final_name.to_string());
         }
 
-        let n = entries.len().min(buf.len());
-        buf[..n].copy_from_slice(&entries[..n]);
-        Ok(n)
+        super::write_readdir_entries(names.iter().map(|s: &String| s.as_str()), offset, buf)
     }
 }
 

@@ -138,23 +138,11 @@ impl VfsNode for RamfsNode {
         }
     }
 
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         match &*self.0 {
             RamfsEntry::Dir(children, _) => {
-                // Encode directory entries as NUL-terminated names.
                 let lock = children.lock();
-                let mut written = 0usize;
-                for name in lock.keys() {
-                    let bytes = name.as_bytes();
-                    if written + bytes.len() + 1 > buf.len() {
-                        break;
-                    }
-                    buf[written..written + bytes.len()].copy_from_slice(bytes);
-                    written += bytes.len();
-                    buf[written] = 0;
-                    written += 1;
-                }
-                Ok(written)
+                super::write_readdir_entries(lock.keys().map(|s| s.as_str()), offset, buf)
             }
             _ => Err(Errno::ENOTDIR),
         }

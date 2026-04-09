@@ -10,7 +10,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
-    crate::kprintln!("SYSCALL EXIT: code={}", code);
+    if code != 0 {
+        crate::kprintln!("SYSCALL EXIT: code={}", code);
+    }
     unsafe {
         crate::sched::exit_current(code);
     }

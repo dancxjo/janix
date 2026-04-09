@@ -279,6 +279,61 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     crate::kinfo!("vfs: mounted tmpfs at /session");
 }
 
+/// Helper for filesystem drivers to implement `readdir`.
+///
+/// Encodes directory entries as NUL-terminated names into `buf`.  Only entries
+/// (or parts of entries) that fall within the virtual byte stream range
+/// starting at `offset` are included.
+pub fn write_readdir_entries<'a>(
+    entries: impl IntoIterator<Item = &'a str>,
+    offset: u64,
+    buf: &mut [u8],
+) -> SysResult<usize> {
+    let mut written = 0usize;
+    let mut virtual_pos = 0u64;
+
+    for entry in entries {
+        let name = entry.as_bytes();
+        let entry_full_len = (name.len() + 1) as u64;
+
+        let entry_start = virtual_pos;
+        let entry_end = virtual_pos + entry_full_len;
+
+        if entry_end > offset {
+            // This entry (or part of it) is within the requested range.
+            let start_in_entry = if offset > entry_start {
+                (offset - entry_start) as usize
+            } else {
+                0
+            };
+
+            if start_in_entry < name.len() {
+                let copy_from_entry = &name[start_in_entry..];
+                let n = copy_from_entry.len().min(buf.len() - written);
+                buf[written..written + n].copy_from_slice(&copy_from_entry[..n]);
+                written += n;
+
+                if n == copy_from_entry.len() && written < buf.len() {
+                    buf[written] = 0;
+                    written += 1;
+                }
+            } else if start_in_entry == name.len() && written < buf.len() {
+                // Offset requested exactly the NUL byte of this entry.
+                buf[written] = 0;
+                written += 1;
+            }
+
+            if written == buf.len() {
+                break;
+            }
+        }
+
+        virtual_pos = entry_end;
+    }
+
+    Ok(written)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

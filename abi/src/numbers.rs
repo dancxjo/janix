@@ -125,6 +125,7 @@ pub const SYS_DEVICE_IRQ_WAIT: u32 = 0x5008;
 pub const SYS_REBOOT: u32 = 0x7000;
 pub const SYS_GETRANDOM: u32 = 0x7001;
 pub const SYS_CONSOLE_ENABLE: u32 = 0x7002;
+pub const SYS_LOG_SET_LEVEL: u32 = 0x7003;
 
 // ============================================================================
 // ABI Flags & Constants

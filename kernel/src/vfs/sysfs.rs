@@ -163,8 +163,8 @@ impl VfsNode for StaticDirNode {
         })
     }
 
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        write_dir_entries(self.entries.iter().copied(), buf)
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        super::write_readdir_entries(self.entries.iter().copied(), offset, buf)
     }
 }
 
@@ -187,10 +187,10 @@ impl VfsNode for DevicesDirNode {
         })
     }
 
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let slots = pci_slot_names();
         crate::kdebug!("sysfs: readdir found {} slots", slots.len());
-        let n = write_dir_entries(slots.iter().map(|s| s.as_str()), buf)?;
+        let n = super::write_readdir_entries(slots.iter().map(|s| s.as_str()), offset, buf)?;
         crate::kdebug!("sysfs: readdir wrote {} bytes", n);
         Ok(n)
     }
@@ -225,7 +225,7 @@ impl VfsNode for DeviceDirNode {
         })
     }
 
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let mut entries = vec![
             "vendor", "device", "class", "status", "handle", "bar0", "bar1", "bar2", "bar3", "bar4",
             "bar5",
@@ -249,7 +249,7 @@ impl VfsNode for DeviceDirNode {
             entries.push("virtio");
         }
 
-        write_dir_entries(entries.into_iter(), buf)
+        super::write_readdir_entries(entries.into_iter(), offset, buf)
     }
 }
 
@@ -372,8 +372,8 @@ impl VfsNode for VirtioDirNode {
         })
     }
  
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        write_dir_entries(
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        super::write_readdir_entries(
             [
                 "common_bar",
                 "common_offset",
@@ -386,6 +386,7 @@ impl VfsNode for VirtioDirNode {
                 "device_offset",
             ]
             .into_iter(),
+            offset,
             buf,
         )
     }
@@ -504,20 +505,4 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))
 }
 
-fn write_dir_entries<'a>(
-    entries: impl IntoIterator<Item = &'a str>,
-    buf: &mut [u8],
-) -> SysResult<usize> {
-    let mut written = 0usize;
-    for entry in entries {
-        let bytes = entry.as_bytes();
-        if written + bytes.len() + 1 > buf.len() {
-            break;
-        }
-        buf[written..written + bytes.len()].copy_from_slice(bytes);
-        written += bytes.len();
-        buf[written] = 0;
-        written += 1;
-    }
-    Ok(written)
-}
+

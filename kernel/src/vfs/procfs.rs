@@ -16,7 +16,7 @@
 //! | `/proc/<pid>/fd/`          | Directory of open fd targets |
 
 use abi::errors::{Errno, SysResult};
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -136,25 +136,18 @@ impl VfsNode for ProcDirNode {
             ino: 200,
         })
     }
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        // Build the directory listing: static entries + one entry per live PID.
-        let mut entries: Vec<u8> = Vec::new();
-        for name in &[
-            b"version\0" as &[u8],
-            b"mounts\0",
-            b"meminfo\0",
-            b"cpuinfo\0",
-            b"uptime\0",
-        ] {
-            entries.extend_from_slice(name);
-        }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let mut names = alloc::vec![
+            String::from("version"),
+            String::from("mounts"),
+            String::from("meminfo"),
+            String::from("cpuinfo"),
+            String::from("uptime"),
+        ];
         for snap in crate::sched::list_processes_current() {
-            let pid_str = alloc::format!("{}\0", snap.pid);
-            entries.extend_from_slice(pid_str.as_bytes());
+            names.push(alloc::format!("{}", snap.pid));
         }
-        let n = entries.len().min(buf.len());
-        buf[..n].copy_from_slice(&entries[..n]);
-        Ok(n)
+        super::write_readdir_entries(names.iter().map(|s: &String| s.as_str()), offset, buf)
     }
 }
 
@@ -178,11 +171,9 @@ impl VfsNode for ProcPidDirNode {
             ino: 300 + self.pid as u64 * 10,
         })
     }
-    fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        let entries = b"status\0cmdline\0fd\0";
-        let n = entries.len().min(buf.len());
-        buf[..n].copy_from_slice(&entries[..n]);
-        Ok(n)
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let entries = ["status", "cmdline", "fd"];
+        super::write_readdir_entries(entries.into_iter(), offset, buf)
     }
 }
 

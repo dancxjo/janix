@@ -59,6 +59,7 @@ members = [
     "userspace/petals",
     "userspace/fontd",
     "userspace/bloom",
+    "userspace/loglevel",
 ]
 
 # Exclude wasm32 theme crates (different target)

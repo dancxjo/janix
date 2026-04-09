@@ -59,6 +59,11 @@ pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
 
 pub use log_write as debug_write;
 
+pub fn log_set_level(level: u8) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_LOG_SET_LEVEL, level as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
 pub fn read(fd: usize, buf: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe { raw_syscall6(SYS_READ, fd, buf.as_mut_ptr() as usize, buf.len(), 0, 0, 0) };
     abi::errors::errno(ret)

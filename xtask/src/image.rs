@@ -235,7 +235,7 @@ fn generate_limine_config(
         if !prog.boot_module {
             continue;
         }
-        conf.push_str(&format!("    module_path: boot():/boot/{}\n", prog.name));
+        conf.push_str(&format!("    module_path: boot():/bin/{}\n", prog.name));
         if prog.is_init {
             conf.push_str("    module_cmdline: init\n");
         }
@@ -256,13 +256,14 @@ fn generate_limine_config(
             || clean_path.ends_with("unifont.hex");
 
         if allowed && !clean_path.ends_with("unifont.hex") && !clean_path.ends_with("locale.conf") {
-            conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));
+            let iso_path = clean_path.replace("assets/", "share/");
+            conf.push_str(&format!("    module_path: boot():/{}\n", iso_path));
         }
     }
 
-    // Explicitly add unifont and locale at /boot/ where terminal and userspace expect them
-    conf.push_str("    module_path: boot():/boot/unifont.hex\n");
-    conf.push_str("    module_path: boot():/boot/locale.conf\n");
+    // Explicitly add unifont and locale at standard locations
+    conf.push_str("    module_path: boot():/share/fonts/unifont.hex\n");
+    conf.push_str("    module_path: boot():/etc/locale.conf\n");
 
     conf
 }
@@ -306,9 +307,11 @@ pub fn build_iso_with_config(
     }
     sh.create_dir(iso_root.join("boot"))?;
     sh.create_dir(iso_root.join("boot/limine"))?;
+    sh.create_dir(iso_root.join("bin"))?;
+    sh.create_dir(iso_root.join("etc"))?;
     sh.create_dir(iso_root.join("EFI/BOOT"))?;
 
-    cmd!(sh, "cp -r assets {iso_root_name}/").run()?;
+    cmd!(sh, "cp -r assets {iso_root_name}/share").run()?;
 
     let mut asset_files = Vec::new();
     for entry in WalkDir::new("assets") {
@@ -360,10 +363,10 @@ pub fn build_iso_with_config(
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
-    sh.copy_file("assets/fonts/unifont.hex", iso_root.join("boot/unifont.hex"))?;
+    sh.copy_file("assets/fonts/unifont.hex", iso_root.join("share/fonts/unifont.hex"))?;
 
     sh.write_file(
-        iso_root.join("boot/locale.conf"),
+        iso_root.join("etc/locale.conf"),
         "LOCALE=en_US\nTZ_OFFSET=-8\nOLLAMA_SERVER=http://10.0.2.2:11434\nOLLAMA_MODEL=tinyllama\n",
     )?;
 
@@ -387,7 +390,7 @@ pub fn build_iso_with_config(
             target,
             "release",
             iso_root
-                .join(format!("boot/{}", prog.name))
+                .join(format!("bin/{}", prog.name))
                 .to_str()
                 .unwrap(),
         )?;

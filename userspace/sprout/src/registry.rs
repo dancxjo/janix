@@ -20,11 +20,11 @@ impl Registry {
     }
 
     pub fn scan(&mut self) {
-        info!("SPROUT: Scanning boot modules via /boot...");
-        let fd = match vfs_open("/boot", abi::syscall::vfs_flags::O_RDONLY) {
+        info!("SPROUT: Scanning boot modules via /bin...");
+        let fd = match vfs_open("/bin", abi::syscall::vfs_flags::O_RDONLY) {
             Ok(fd) => fd,
             Err(_) => {
-                info!("SPROUT: Failed to open /boot");
+                info!("SPROUT: Failed to open /bin");
                 return;
             }
         };
@@ -62,7 +62,7 @@ impl Registry {
     }
 
     fn scan_module_name(&mut self, mod_name: &str) {
-        let path = format!("/boot/{}", mod_name);
+        let path = format!("/bin/{}", mod_name);
         if let Ok(fd) = vfs_open(&path, abi::syscall::vfs_flags::O_RDONLY) {
             if let Some(header) = self.read_manifest(fd) {
                 if let ModuleKind::Driver = header.kind {

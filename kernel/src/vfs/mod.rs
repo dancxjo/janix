@@ -247,6 +247,10 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     
     // Pre-populate mount point directories in the root filesystem so they appear in readdir("/")
     let _ = root_fs.mkdir("boot");
+    let _ = root_fs.mkdir("bin");
+    let _ = root_fs.mkdir("etc");
+    let _ = root_fs.mkdir("share");
+    let _ = root_fs.mkdir("mnt");
     let _ = root_fs.mkdir("dev");
     let _ = root_fs.mkdir("proc");
     let _ = root_fs.mkdir("sys");
@@ -255,12 +259,13 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     let _ = root_fs.mkdir("services");
     let _ = root_fs.mkdir("session");
 
-    mount::mount("/", root_fs);
-    crate::kinfo!("vfs: mounted tmpfs at / (root)");
-
-    // Boot filesystem — minimal static tree available before anything else.
-    mount::mount("/boot", Arc::new(bootfs::BootFs::new(modules)));
-    crate::kinfo!("vfs: mounted bootfs at /boot");
+    // Create the root union filesystem.
+    let mut root_union = union::UnionFs::new_fallthrough();
+    root_union.push(Arc::new(bootfs::BootFs::new(modules))); // Layer 0: Read-only boot modules
+    root_union.push(root_fs); // Layer 1: Writable RAM overlay
+    
+    mount::mount("/", Arc::new(root_union));
+    crate::kinfo!("vfs: mounted union filesystem at / (root)");
 
     // Device filesystem
     mount::mount("/dev", Arc::new(devfs::DevFs::new()));

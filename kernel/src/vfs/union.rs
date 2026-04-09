@@ -23,6 +23,8 @@
 use abi::errors::{Errno, SysResult};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::collections::BTreeSet;
 
 use super::{VfsDriver, VfsNode};
 
@@ -84,16 +86,93 @@ impl Default for UnionFs {
 impl VfsDriver for UnionFs {
     /// Resolve `path` by trying layers from most-recently added to oldest.
     ///
-    /// Returns the first successful node, or `ENOENT` if all layers miss.
+    /// If multiple directories are found (and `fallthrough` is active), they are merged.
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        let mut found_nodes = Vec::new();
+
         for driver in self.layers.iter().rev() {
             match driver.lookup(path) {
-                Ok(node) => return Ok(node),
-                Err(Errno::ENOENT) => continue, // try lower layer
-                Err(e) => return Err(e),        // hard error — stop
+                Ok(node) => {
+                    let stat = node.stat()?;
+                    let is_dir = (stat.mode & crate::vfs::VfsStat::S_IFDIR) != 0;
+                    
+                    found_nodes.push(node);
+
+                    // If it's a file, it always shadows everything below.
+                    if !is_dir || !self.fallthrough {
+                        break;
+                    }
+                }
+                Err(Errno::ENOENT) => continue,
+                Err(e) => return Err(e),
             }
         }
-        Err(Errno::ENOENT)
+
+        if found_nodes.is_empty() {
+            return Err(Errno::ENOENT);
+        }
+
+        if found_nodes.len() == 1 {
+            return Ok(found_nodes.pop().unwrap());
+        }
+
+        // Multiple nodes found (must all be directories because of the !is_dir break above).
+        Ok(Arc::new(UnionDirNode { layers: found_nodes }))
+    }
+}
+
+// ── UnionDirNode ──────────────────────────────────────────────────────────────
+
+/// A directory node that merges entries from multiple underlying directory nodes.
+pub struct UnionDirNode {
+    layers: Vec<Arc<dyn VfsNode>>,
+}
+
+impl super::VfsNode for UnionDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+
+    fn stat(&self) -> SysResult<super::VfsStat> {
+        // Use the stat of the topmost layer.
+        self.layers[0].stat()
+    }
+
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        // Gather all unique names from all layers.
+        let mut names = BTreeSet::new();
+        let mut scratch = alloc::vec![0u8; 4096];
+
+        for layer in &self.layers {
+            let mut off = 0;
+            loop {
+                match layer.readdir(off, &mut scratch) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let mut start = 0;
+                        for i in 0..n {
+                            if scratch[i] == 0 {
+                                let name_bytes = &scratch[start..i];
+                                if let Ok(name) = core::str::from_utf8(name_bytes) {
+                                    if !name.is_empty() {
+                                        names.insert(String::from(name));
+                                    }
+                                }
+                                start = i + 1;
+                            }
+                        }
+                        off += n as u64; // Move byte offset forward
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
+        super::write_readdir_entries(names.iter().map(|s| s.as_str()), offset, buf)
     }
 }
 

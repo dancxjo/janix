@@ -131,5 +131,5 @@ fn find_display_card() -> Option<String> {
 }
 
 fn get_wallpaper_path() -> String {
-    String::from("/assets/wallpapers/flower.bmp")
+    String::from("/share/wallpapers/flower.bmp")
 }

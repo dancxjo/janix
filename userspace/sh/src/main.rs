@@ -121,7 +121,7 @@ fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult
     let path = if cmd.program.starts_with('/') {
         String::from(cmd.program)
     } else {
-        alloc::format!("/{}", cmd.program)
+        alloc::format!("/bin/{}", cmd.program)
     };
 
     let mut argv: Vec<Vec<u8>> = Vec::new();

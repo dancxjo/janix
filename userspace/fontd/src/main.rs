@@ -38,7 +38,7 @@ fn main(arg0: usize) -> ! {
     }
 
     let mut service = FontService {
-        renderer: TextRenderer::load_from_boot("/assets/fonts/NotoSans-Regular.ttf")
+        renderer: TextRenderer::load_from_boot("/share/fonts/NotoSans-Regular.ttf")
             .expect("Failed to load default font"),
         atlases: BTreeMap::new(),
         cache: BTreeMap::new(),

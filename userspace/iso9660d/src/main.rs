@@ -2,13 +2,13 @@
 //!
 //! Discovers block devices in the system graph, probes them for ISO9660
 //! filesystems, and mounts the first one found as a userland VFS provider at
-//! `/boot/iso` using the janix Act V VFS provider mechanism.
+//! `/mnt/iso` using the janix Act V VFS provider mechanism.
 //!
 //! ## How it works
 //!
 //! 1. **Discovery** — scans the graph for DEV_STORAGE_BLOCK_DEVICE nodes.
 //! 2. **Probing** — reads each block device and looks for a valid ISO9660 PVD.
-//! 3. **Mounting** — calls `SYS_FS_MOUNT(provider_port, "/boot/iso")` so the
+//! 3. **Mounting** — calls `SYS_FS_MOUNT(provider_port, "/mnt/iso")` so the
 //!    kernel routes VFS operations here.
 //! 4. **Service loop** — waits for VFS RPC messages on its request port,
 //!    dispatches them to the [`IsoFs`] library, and sends responses back
@@ -457,9 +457,9 @@ fn main(_arg: usize) -> ! {
                                         };
 
                                         // 4. Mount via SYS_FS_MOUNT.
-                                        match vfs_mount(req_write, "/boot/iso") {
+                                        match vfs_mount(req_write, "/mnt/iso") {
                                             Ok(()) => {
-                                                info!("iso9660d: mounted at /boot/iso (provider port w={} r={})", req_write, req_read);
+                                                info!("iso9660d: mounted at /mnt/iso (provider port w={} r={})", req_write, req_read);
                                                 mounted = Some((fs, block_dev, req_write, req_read));
                                                 let _ = vfs_close(h_fd);
                                                 break;

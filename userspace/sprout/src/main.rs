@@ -32,11 +32,11 @@ fn main(arg0: usize) -> ! {
     }
 
     stem::info!("SPROUT: About to create Supervisor...");
-    info!("SPROUT: Listing /boot directory...");
-    if let Ok(fd) = stem::syscall::vfs::vfs_open("/boot", stem::abi::syscall::vfs_flags::O_RDONLY) {
+    info!("SPROUT: Listing /bin directory...");
+    if let Ok(fd) = stem::syscall::vfs::vfs_open("/bin", stem::abi::syscall::vfs_flags::O_RDONLY) {
         let mut buf = [0u8; 4096];
         if let Ok(n) = stem::syscall::vfs::vfs_read(fd, &mut buf) {
-            info!("SPROUT: /boot dir content (raw): {:?}", &buf[..n]);
+            info!("SPROUT: /bin dir content (raw): {:?}", &buf[..n]);
         }
         let _ = stem::syscall::vfs::vfs_close(fd);
     }

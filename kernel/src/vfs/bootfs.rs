@@ -7,7 +7,8 @@
 
 use abi::errors::{Errno, SysResult};
 use alloc::sync::Arc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::collections::BTreeSet;
 use crate::BootModuleDesc;
 
 use super::{VfsDriver, VfsNode, VfsStat};
@@ -32,9 +33,12 @@ impl BootFs {
 
 impl VfsDriver for BootFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
-        crate::kinfo!("BootFs: lookup path='{}'", path);
+        let path = path.strip_prefix('/').unwrap_or(path);
         if path.is_empty() {
-            return Ok(Arc::new(BootDirNode { modules: self.modules }));
+            return Ok(Arc::new(BootDirNode {
+                prefix: String::new(),
+                modules: self.modules,
+            }));
         }
 
         if path == "version" {
@@ -44,27 +48,40 @@ impl VfsDriver for BootFs {
             return Ok(Arc::new(StaticFileNode::new(MOTD_DATA, 11)));
         }
 
-        // Search in modules
+        // Search for exact match in modules
         for (i, m) in self.modules.iter().enumerate() {
-            let m_name = m.name.trim_matches('\0').trim();
-            let name = m_name.strip_prefix("/boot/").unwrap_or(m_name);
-            
-            if name == path {
+            let name = m.name.trim_matches('\0').trim();
+            let clean_name = name.strip_prefix('/').unwrap_or(name);
+
+            if clean_name == path {
                 crate::kinfo!("BootFs: EXACT match for '{}' at index {}", path, i);
                 return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
             }
+        }
 
-            // Also try matching basename (e.g. "/assets/fonts/unifont.hex" matches "unifont.hex")
-            if let Some(slash_idx) = m_name.rfind('/') {
-                let basename = &m_name[slash_idx + 1..];
-                if basename == path {
-                    crate::kinfo!("BootFs: BASENAME match for '{}' at index {}", path, i);
-                    return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
-                }
+        // Check if `path` is a directory prefix
+        let dir_prefix = if path.ends_with('/') {
+            path.to_string()
+        } else {
+            alloc::format!("{}/", path)
+        };
+        let mut found_subdir = false;
+        for m in self.modules {
+            let name = m.name.trim_matches('\0').trim();
+            let clean_name = name.strip_prefix('/').unwrap_or(name);
+            if clean_name.starts_with(&dir_prefix) {
+                found_subdir = true;
+                break;
             }
         }
 
-        crate::kerror!("BootFs: ENOENT for '{}'", path);
+        if found_subdir {
+            return Ok(Arc::new(BootDirNode {
+                prefix: path.to_string(),
+                modules: self.modules,
+            }));
+        }
+
         Err(Errno::ENOENT)
     }
 }
@@ -72,6 +89,7 @@ impl VfsDriver for BootFs {
 // ── /boot directory node ──────────────────────────────────────────────────────
 
 struct BootDirNode {
+    prefix: String,
     modules: &'static [BootModuleDesc],
 }
 
@@ -90,24 +108,41 @@ impl VfsNode for BootDirNode {
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        use alloc::string::ToString;
-        let mut names = alloc::vec!["version".to_string(), "motd".to_string()];
+        let mut components = BTreeSet::new();
 
-        for m in self.modules {
-            let name = m.name.strip_prefix("/boot/").unwrap_or(m.name);
-            let final_name = if let Some(slash_idx) = name.rfind('/') {
-                &name[slash_idx + 1..]
-            } else {
-                name
-            };
-
-            if final_name == "version" || final_name == "motd" {
-                continue;
-            }
-            names.push(final_name.to_string());
+        // Standard files at root
+        if self.prefix.is_empty() {
+            components.insert("version".to_string());
+            components.insert("motd".to_string());
         }
 
-        super::write_readdir_entries(names.iter().map(|s: &String| s.as_str()), offset, buf)
+        let prefix_with_slash = if self.prefix.is_empty() {
+            String::new()
+        } else if self.prefix.ends_with('/') {
+            self.prefix.clone()
+        } else {
+            alloc::format!("{}/", self.prefix)
+        };
+
+        for m in self.modules {
+            let name = m.name.trim_matches('\0').trim();
+            let clean_name = name.strip_prefix('/').unwrap_or(name);
+
+            if clean_name.starts_with(&prefix_with_slash) {
+                let rest = &clean_name[prefix_with_slash.len()..];
+                if let Some(slash_idx) = rest.find('/') {
+                    // It's a directory component
+                    components.insert(rest[..slash_idx].to_string());
+                } else {
+                    // It's a file component
+                    if !rest.is_empty() {
+                        components.insert(rest.to_string());
+                    }
+                }
+            }
+        }
+
+        super::write_readdir_entries(components.iter().map(|s| s.as_str()), offset, buf)
     }
 }
 

@@ -146,7 +146,7 @@ impl Supervisor {
             return;
         }
 
-        let full = format!("/boot{}", name);
+        let full = format!("/bin{}", name);
         self.tasks.push(ManagedTask {
             name: full.clone(),
             kind: TaskKind::App,
@@ -162,7 +162,7 @@ impl Supervisor {
             return;
         }
 
-        let full = format!("/boot{}", name);
+        let full = format!("/bin{}", name);
         self.tasks.push(ManagedTask {
             name: full.clone(),
             kind: TaskKind::Service(service_kind.to_string()),

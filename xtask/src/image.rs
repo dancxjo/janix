@@ -213,7 +213,7 @@ fn generate_limine_config(
 ) -> String {
     let res = resolution.unwrap_or("1920x1080");
     let mut conf = String::new();
-    conf.push_str("timeout: 0\nquiet: no\nverbose: yes\nserial: yes\n\n");
+    conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
     conf.push_str("/ThingOS\n");
     conf.push_str("    protocol: limine\n");
     conf.push_str(&format!("    resolution: {}\n", res));

@@ -955,18 +955,7 @@ fn main(arg: usize) -> ! {
         crate::wayland::server::WaylandServer::new(screen_w as u32, screen_h as u32)
             .expect("Failed to start WaylandServer");
     stem::info!("bloom: WaylandServer started at /run/wayland-0");
-    stem::info!("[bloom] publishing initial pointer state");
-    publish_pointer_state(&cursor, prev_pointer_focus);
-    stem::info!("[bloom] publishing initial keyboard state");
-    publish_keyboard_state(focused_window, prev_keyboard_mods);
-    stem::info!("[bloom] appending initial keyboard repeat info");
-    let _ = crate::session_fs::append_line(
-        &crate::session_fs::keyboard_events_path(),
-        &crate::session_fs::encode_keyboard_repeat_info_event(
-            KEYBOARD_REPEAT_RATE,
-            KEYBOARD_REPEAT_DELAY_MS,
-        ),
-    );
+    stem::info!("[bloom] deferring initial session state publication until after first frame");
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
@@ -1105,12 +1094,24 @@ fn main(arg: usize) -> ! {
         }
 
         invalidation_causes.clear();
+        if first_loop_probe {
+            stem::info!("[bloom] before asset publish pending");
+        }
         let updates = ASSETS.publish_pending();
+        if first_loop_probe {
+            stem::info!("[bloom] after asset publish pending");
+        }
         if updates.wallpaper_changed {
             invalidation_causes.push(SnapshotInvalidation::WallpaperChanged);
         }
+        if first_loop_probe {
+            stem::info!("[bloom] before desktop watch poll");
+        }
         if desktop_state.poll_watch_activity() {
             invalidation_causes.push(SnapshotInvalidation::WallpaperChanged);
+        }
+        if first_loop_probe {
+            stem::info!("[bloom] after desktop watch poll");
         }
 
         // 0. Update surface if buffer changed
@@ -1718,7 +1719,9 @@ fn main(arg: usize) -> ! {
             );
             wayland_server.deliver_keyboard_modifiers(current_keyboard_mods, 0, 0);
         }
-        publish_keyboard_state(current_keyboard_focus, current_keyboard_mods);
+        if first_frame_rendered {
+            publish_keyboard_state(current_keyboard_focus, current_keyboard_mods);
+        }
         prev_keyboard_focus = current_keyboard_focus;
         prev_keyboard_mods = current_keyboard_mods;
 
@@ -1825,7 +1828,9 @@ fn main(arg: usize) -> ! {
                 &crate::session_fs::encode_pointer_frame_event(),
             );
         }
-        publish_pointer_state(&cursor, pointer_focus);
+        if first_frame_rendered {
+            publish_pointer_state(&cursor, pointer_focus);
+        }
         prev_pointer_focus = pointer_focus;
         prev_cursor_buttons = cursor.buttons();
 
@@ -2326,6 +2331,15 @@ fn main(arg: usize) -> ! {
 
             if !first_frame_rendered {
                 stem::info!("[CONTRACT] [bloom] First frame rendered");
+                publish_pointer_state(&cursor, prev_pointer_focus);
+                publish_keyboard_state(focused_window, prev_keyboard_mods);
+                let _ = crate::session_fs::append_line(
+                    &crate::session_fs::keyboard_events_path(),
+                    &crate::session_fs::encode_keyboard_repeat_info_event(
+                        KEYBOARD_REPEAT_RATE,
+                        KEYBOARD_REPEAT_DELAY_MS,
+                    ),
+                );
                 first_frame_rendered = true;
             }
             first_loop_probe = false;

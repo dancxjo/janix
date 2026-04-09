@@ -3,7 +3,7 @@ use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use alloc::vec::Vec;
-use stem::syscall::{channel_recv, ChannelHandle};
+use stem::syscall::{channel_try_recv, ChannelHandle};
 
 use crate::cursor::CursorState;
 
@@ -105,7 +105,7 @@ pub fn poll_bristle(
     let mut stats = PollStats::default();
 
     loop {
-        let n = match channel_recv(handle, &mut buf) {
+        let n = match channel_try_recv(handle, &mut buf) {
             Ok(n) => n,
             Err(_) => return stats,
         };
@@ -243,7 +243,7 @@ pub fn poll_pointer_events(
     let mut buf = [0u8; 256];
 
     loop {
-        let n = match channel_recv(handle, &mut buf) {
+        let n = match channel_try_recv(handle, &mut buf) {
             Ok(n) => n,
             Err(_) => return events,
         };

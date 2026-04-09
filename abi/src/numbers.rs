@@ -105,6 +105,8 @@ pub const SYS_FS_WATCH_FD: u32 = 0x400E;
 pub const SYS_FS_WATCH_PATH: u32 = 0x400F;
 pub const SYS_FS_RENAME: u32 = 0x4010;
 pub const SYS_FS_DEVICE_CALL: u32 = 0x4011;
+pub const SYS_FS_CHDIR: u32 = 0x4012;
+pub const SYS_FS_GETCWD: u32 = 0x4013;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

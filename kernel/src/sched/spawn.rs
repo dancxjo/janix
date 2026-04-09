@@ -38,6 +38,7 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         env: alloc::collections::BTreeMap::new(),
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
+        cwd: alloc::string::String::from("/"),
     }))
 }
 
@@ -58,6 +59,7 @@ fn inherit_process_info<R: BootRuntime>(
             env: parent.env.clone(),
             fd_table: parent.fd_table.clone(),
             namespace: parent.namespace.clone(),
+            cwd: parent.cwd.clone(),
         }))
     } else {
         default_process_info(pid, ppid)
@@ -738,7 +740,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     let parent_pinfo = crate::task::registry::get_task::<R>(tid)
         .and_then(|t| t.process_info.clone());
 
-    let mut fd_table = if let Some(parent_pi) = parent_pinfo {
+    let mut fd_table = if let Some(parent_pi) = &parent_pinfo {
         parent_pi.lock().fd_table.clone()
     } else {
         crate::vfs::fd_table::FdTable::new()
@@ -756,6 +758,11 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
+        cwd: if let Some(parent_pi) = &parent_pinfo {
+            parent_pi.lock().cwd.clone()
+        } else {
+            alloc::string::String::from("/")
+        },
     }));
 
     // Store name and process_info on the task struct

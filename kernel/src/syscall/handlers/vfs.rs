@@ -48,10 +48,12 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
     let want_trunc = (flags as u32) & vfs_flags::O_TRUNC != 0;
 
+    let abs_path = resolve_path(path)?;
+
     // Resolve path through the mount table, creating the file if O_CREAT is set.
     let node = if want_creat {
         // Try lookup first; fall back to create if the file doesn't exist.
-        match vfs::mount::lookup(path) {
+        match vfs::mount::lookup(&abs_path) {
             Ok(existing) => {
                 if want_trunc {
                     // Truncate the file to zero length.
@@ -59,11 +61,11 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
                 }
                 existing
             }
-            Err(Errno::ENOENT) => vfs::mount::create(path)?,
+            Err(Errno::ENOENT) => vfs::mount::create(&abs_path)?,
             Err(e) => return Err(e),
         }
     } else {
-        vfs::mount::lookup(path)?
+        vfs::mount::lookup(&abs_path)?
     };
 
     if path == "/dev/fb0" {
@@ -240,11 +242,13 @@ pub fn sys_fs_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
+    let abs_path = resolve_path(path)?;
+
     // Resolve parent to emit event
-    let (parent_path, name) = split_parent(path);
+    let (parent_path, name) = split_parent(&abs_path);
     let parent_node = vfs::mount::lookup(parent_path).ok();
 
-    vfs::mount::unlink(path)?;
+    vfs::mount::unlink(&abs_path)?;
 
     if let Some(parent) = parent_node {
         crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::REMOVE, Some(name), 0);
@@ -265,11 +269,13 @@ pub fn sys_fs_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
+    let abs_path = resolve_path(path)?;
+
     // Resolve parent to emit event
-    let (parent_path, name) = split_parent(path);
+    let (parent_path, name) = split_parent(&abs_path);
     let parent_node = vfs::mount::lookup(parent_path).ok();
 
-    vfs::mount::mkdir(path)?;
+    vfs::mount::mkdir(&abs_path)?;
 
     if let Some(parent) = parent_node {
         crate::vfs::watch::emit_event(&*parent, abi::vfs_watch::mask::CREATE, Some(name), 0);
@@ -370,6 +376,7 @@ pub fn sys_fs_mount(
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    let abs_path = resolve_path(path)?;
 
     // Resolve the provider's write handle to a port Arc.
     let prov_handle = crate::ipc::Handle(provider_write_handle as u32);
@@ -403,9 +410,9 @@ pub fn sys_fs_mount(
         resp_port,
         resp_write_handle.0,
     ));
-    vfs::mount::mount(path, provider_fs);
+    vfs::mount::mount(&abs_path, provider_fs);
 
-    crate::kinfo!("vfs: mounted userland provider at {}", path);
+    crate::kinfo!("vfs: mounted userland provider at {}", abs_path);
     Ok(0)
 }
 
@@ -420,8 +427,9 @@ pub fn sys_fs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
-    vfs::mount::umount(path)?;
-    crate::kinfo!("vfs: unmounted userland provider at {}", path);
+    let abs_path = resolve_path(path)?;
+    vfs::mount::umount(&abs_path)?;
+    crate::kinfo!("vfs: unmounted userland provider at {}", abs_path);
     Ok(0)
 }
 
@@ -605,7 +613,8 @@ pub fn sys_watch_path(
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
-    let node = vfs::mount::lookup(path)?;
+    let abs_path = resolve_path(path)?;
+    let node = vfs::mount::lookup(&abs_path)?;
 
     let watch = Arc::new(crate::vfs::watch::Watch::new(mask as u32, flags as u32));
     crate::vfs::watch::register_watch(&node, watch.clone())?;
@@ -661,14 +670,17 @@ pub fn sys_fs_rename(
     let old_path = core::str::from_utf8(&old_path_buf).map_err(|_| Errno::EINVAL)?;
     let new_path = core::str::from_utf8(&new_path_buf).map_err(|_| Errno::EINVAL)?;
 
+    let old_abs = resolve_path(old_path)?;
+    let new_abs = resolve_path(new_path)?;
+
     // Resolve parents for events
-    let (old_parent_path, old_name) = split_parent(old_path);
-    let (new_parent_path, new_name) = split_parent(new_path);
+    let (old_parent_path, old_name) = split_parent(&old_abs);
+    let (new_parent_path, new_name) = split_parent(&new_abs);
     let old_parent_node = vfs::mount::lookup(old_parent_path).ok();
     let new_parent_node = vfs::mount::lookup(new_parent_path).ok();
 
     // Perform rename (VFS mount layer needs a rename method too, which redirects to driver)
-    vfs::mount::rename(old_path, new_path)?;
+    vfs::mount::rename(&old_abs, &new_abs)?;
 
     // Emit MOVE events
     let cookie = NEXT_COOKIE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -701,4 +713,56 @@ fn split_parent(path: &str) -> (&str, &str) {
         Some(idx) => (&trimmed[..idx], &trimmed[idx + 1..]),
         None => ("/", trimmed),
     }
+}
+
+pub fn resolve_path(path: &str) -> SysResult<alloc::string::String> {
+    if path.starts_with('/') {
+        return Ok(alloc::string::String::from(path));
+    }
+
+    let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let cwd = pinfo.lock().cwd.clone();
+
+    if cwd.ends_with('/') {
+        Ok(alloc::format!("{}{}", cwd, path))
+    } else {
+        Ok(alloc::format!("{}/{}", cwd, path))
+    }
+}
+
+pub fn sys_fs_chdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let abs_path = resolve_path(path)?;
+
+    // Verify it exists and is a directory
+    let node = vfs::mount::lookup(&abs_path)?;
+    let stat = node.stat()?;
+    if !stat.is_dir() {
+        return Err(Errno::ENOTDIR);
+    }
+
+    // Normalise to get the canonical path
+    let canonical = vfs::path::normalise(&abs_path)?;
+
+    let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    pinfo.lock().cwd = canonical;
+
+    Ok(0)
+}
+
+pub fn sys_fs_getcwd(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+    let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let cwd = pinfo.lock().cwd.clone();
+
+    let needed = cwd.len();
+    if buf_ptr != 0 && buf_len > 0 {
+        let copy_len = buf_len.min(needed);
+        validate_user_range(buf_ptr, copy_len, true)?;
+        unsafe { copyout(buf_ptr, &cwd.as_bytes()[..copy_len])? };
+    }
+    Ok(needed)
 }

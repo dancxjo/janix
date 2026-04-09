@@ -19,7 +19,7 @@ static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
 
 /// Minimum log level to output (1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace, 0=Contract-only)
 /// Default is 0 (contract-only) for performance. Set to 3 for Info+ during debugging.
-static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(4);
+static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(1);
 
 /// Set the minimum log level for output (0=Contract-only, 1=Error+, 2=Warn+, etc.)
 pub fn set_log_level(level: u8) {

@@ -52,6 +52,8 @@ pub struct ProcessInfo {
     /// **ACT III stub**: all processes share the global namespace.  Per-process
     /// divergence (sandboxing / containers) will be wired up in a later act.
     pub namespace: crate::vfs::NamespaceRef,
+    /// Current working directory.
+    pub cwd: alloc::string::String,
 }
 
 pub struct Task<R: BootRuntime> {

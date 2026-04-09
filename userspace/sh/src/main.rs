@@ -8,7 +8,17 @@ use alloc::vec::Vec;
 use stem::syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write};
 
 fn prompt() {
-    let _ = vfs_write(1, b"petals> ");
+    let mut buf = [0u8; 256];
+    match stem::syscall::vfs_getcwd(&mut buf) {
+        Ok(n) => {
+            let cwd = core::str::from_utf8(&buf[..n]).unwrap_or("/");
+            let out = alloc::format!("thing {} # ", cwd);
+            let _ = vfs_write(1, out.as_bytes());
+        }
+        Err(_) => {
+            let _ = vfs_write(1, b"thing-os # ");
+        }
+    }
 }
 
 fn read_line() -> String {
@@ -279,6 +289,19 @@ fn main(_arg: usize) -> ! {
 
         // Parse each segment into a Cmd.
         let cmds: Vec<Cmd> = segments.iter().filter_map(|seg| Cmd::parse(seg)).collect();
+
+        if cmds.len() == 1 && cmds[0].program == "cd" {
+            let target = if !cmds[0].args.is_empty() {
+                cmds[0].args[0]
+            } else {
+                "/"
+            };
+            if let Err(e) = stem::syscall::vfs_chdir(target) {
+                let out = alloc::format!("cd: {}: {:?}\n", target, e);
+                let _ = vfs_write(1, out.as_bytes());
+            }
+            continue;
+        }
 
         run_pipeline(&cmds);
     }

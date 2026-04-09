@@ -139,6 +139,7 @@ fn main(boot_fd: usize) -> ! {
         loop { stem::time::sleep_ms(1000); }
     }
 
+    info!("HDAUDIO: claiming PCI device handle {}...", dev);
     let claim = match device_claim(dev) {
         Ok(h) => h,
         Err(e) => {
@@ -148,6 +149,7 @@ fn main(boot_fd: usize) -> ! {
             }
         }
     };
+    info!("HDAUDIO: mapping BAR0 MMIO for claim {}...", claim);
     let mmio = match device_map_mmio(claim, 0) {
         Ok(v) => v,
         Err(e) => {

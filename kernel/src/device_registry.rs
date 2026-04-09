@@ -252,12 +252,14 @@ impl DeviceRegistry {
     pub fn claim(&mut self, device_index: usize, task_id: u64) -> Option<usize> {
         // Check device exists
         if device_index >= self.device_count || self.devices[device_index].is_none() {
+            crate::kinfo!("DEVICE: claim failed for index {}: device not found", device_index);
             return None;
         }
 
         // Check not already claimed
         for claim in &self.claims {
             if claim.valid && claim.device_index == device_index {
+                crate::kinfo!("DEVICE: claim failed for index {}: already claimed by task {}", device_index, claim.task_id);
                 // Already claimed
                 return None;
             }

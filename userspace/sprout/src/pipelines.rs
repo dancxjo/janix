@@ -313,8 +313,19 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
             }
         }
 
-        match stem::syscall::spawn_process("/bin/ahci_disk", boot_fd as usize) {
-            Ok(pid) => {
+        stem::sleep_ms(100);
+        match stem::syscall::spawn_process_ex(
+            "/bin/ahci_disk",
+            &["/bin/ahci_disk".as_bytes(), alloc::format!("{}", boot_fd).as_bytes()],
+            &alloc::collections::BTreeMap::new(),
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            boot_fd as u64,
+            &[],
+        ) {
+            Ok(resp) => {
+                let pid = resp.child_tid;
                 info!("SPROUT: Spawned ahci_disk (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
@@ -502,9 +513,15 @@ pub fn setup_display_pipeline(
             }
         }
 
+        let argv_str = if boot_fd > 0 {
+            alloc::format!("{}", boot_fd)
+        } else {
+            "none".to_string()
+        };
+
         let spawn_res = stem::syscall::spawn_process_ex(
             driver_name,
-            &[driver_name.as_bytes(), alloc::format!("{}", boot_fd).as_bytes()],
+            &[driver_name.as_bytes(), argv_str.as_bytes()],
             &alloc::collections::BTreeMap::new(),
             stem::abi::types::stdio_mode::INHERIT,
             stem::abi::types::stdio_mode::INHERIT,
@@ -742,6 +759,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     }
 
     info!("SPROUT: Input broker ready (keyboard + mouse)");
+    stem::sleep_ms(100);
     InputHandles {
         bloom_evt_read: bloom_evt.1,
         evt_input_echo_read: evt_input_echo.1,
@@ -791,6 +809,7 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
             let _ = vfs_seek(boot_fd as u32, 0, 0);
         }
 
+        stem::sleep_ms(100);
         tasks.push(ManagedTask {
             name: "/bin/virtio_netd".to_string(),
             kind: TaskKind::Driver("dev.net.virtio".to_string()),

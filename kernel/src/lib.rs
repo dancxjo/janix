@@ -1019,9 +1019,7 @@ pub fn scan_pci() {
                             if bar & 1 == 0 { // Memory space
                                 let is_64 = (bar & 0x4) != 0;
                                 let mut final_bar = (bar & 0xFFFFFFF0) as u64;
-                                let mut final_size_mask = (size_mask & 0xFFFFFFF0) as u64;
-
-                                if is_64 && i < 5 {
+                                let mut final_size_mask = if is_64 && i < 5 {
                                     let next_offset = offset + 4;
                                     let bar_hi = rt.pci_cfg_read32(bus, dev, func, next_offset).unwrap_or(0);
                                     let _ = rt.pci_cfg_write32(bus, dev, func, next_offset, 0xFFFFFFFF);
@@ -1029,14 +1027,16 @@ pub fn scan_pci() {
                                     let _ = rt.pci_cfg_write32(bus, dev, func, next_offset, bar_hi);
 
                                     final_bar |= (bar_hi as u64) << 32;
-                                    final_size_mask |= (size_mask_hi as u64) << 32;
-                                }
+                                    (size_mask & 0xFFFFFFF0) as u64 | ((size_mask_hi as u64) << 32)
+                                } else {
+                                    (size_mask & 0xFFFFFFF0) as u64 | 0xFFFFFFFF_00000000
+                                };
 
                                 let size = (!final_size_mask).wrapping_add(1);
                                 bars[i as usize] = final_bar;
                                 sizes[i as usize] = size;
 
-                                crate::kinfo!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i - if is_64 {1} else {0}, if is_64 {"64"} else {"32"}, final_bar, size);
+                                crate::kinfo!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
 
                                 if is_64 {
                                     i += 1; // Skip next slot

@@ -242,13 +242,25 @@ impl NamespaceRef {
 pub fn init(modules: &'static [crate::BootModuleDesc]) {
     mount::init();
 
+    // Create the root filesystem (tmpfs) — writable, volatile.
+    let root_fs = Arc::new(ramfs::RamFs::new());
+    
+    // Pre-populate mount point directories in the root filesystem so they appear in readdir("/")
+    let _ = root_fs.mkdir("boot");
+    let _ = root_fs.mkdir("dev");
+    let _ = root_fs.mkdir("proc");
+    let _ = root_fs.mkdir("sys");
+    let _ = root_fs.mkdir("tmp");
+    let _ = root_fs.mkdir("run");
+    let _ = root_fs.mkdir("services");
+    let _ = root_fs.mkdir("session");
+
+    mount::mount("/", root_fs);
+    crate::kinfo!("vfs: mounted tmpfs at / (root)");
+
     // Boot filesystem — minimal static tree available before anything else.
     mount::mount("/boot", Arc::new(bootfs::BootFs::new(modules)));
     crate::kinfo!("vfs: mounted bootfs at /boot");
-
-    // Root filesystem (tmpfs) — writable, volatile.
-    mount::mount("/", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted tmpfs at /");
 
     // Device filesystem
     mount::mount("/dev", Arc::new(devfs::DevFs::new()));
@@ -270,7 +282,7 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     mount::mount("/run", Arc::new(ramfs::RamFs::new()));
     crate::kinfo!("vfs: mounted tmpfs at /run");
 
-    // Service namespace — populated by userland daemons (ACT V)
+    // Service namespace
     mount::mount("/services", Arc::new(ramfs::RamFs::new()));
     crate::kinfo!("vfs: mounted tmpfs at /services");
 

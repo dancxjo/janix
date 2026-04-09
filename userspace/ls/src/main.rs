@@ -50,7 +50,7 @@ fn get_args() -> (Vec<String>, Flags) {
     }
 
     if paths.is_empty() {
-        paths.push(String::from("."));
+        paths.push(String::from("/"));
     }
 
     (paths, flags)
@@ -79,13 +79,15 @@ fn format_mode(mode: u32) -> String {
 }
 
 fn list_path(path: &str, flags: &Flags, is_nested: bool) {
+    stem::info!("ls: listing path '{}'", path);
     if flags.recursive || is_nested {
         print(&format!("{}:\n", path));
     }
 
     let fd = match vfs_open(path, 0) { // O_RDONLY = 0
         Ok(fd) => fd,
-        Err(_) => {
+        Err(e) => {
+            stem::error!("ls: failed to open '{}': {:?}", path, e);
             print(&format!("ls: cannot access '{}': No such file or directory\n", path));
             return;
         }

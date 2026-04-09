@@ -44,13 +44,15 @@ pub fn resolve(path: &str) -> SysResult<alloc::sync::Arc<dyn crate::vfs::VfsNode
 /// - `/a/b/../../c` → `/c`
 /// - `/../..` → `/` (cannot go above root)
 pub fn normalise(path: &str) -> SysResult<String> {
-    if !path.starts_with('/') {
-        return Err(Errno::EINVAL);
+    let mut normalized_input = String::from(path);
+    if !normalized_input.starts_with('/') {
+        // Fallback: treat relative paths as root-relative for now.
+        normalized_input.insert(0, '/');
     }
 
     let mut components: alloc::vec::Vec<&str> = alloc::vec::Vec::new();
 
-    for component in path.split('/') {
+    for component in normalized_input.split('/') {
         match component {
             "" | "." => {
                 // Skip empty segments (consecutive slashes) and current-dir.

@@ -551,6 +551,7 @@ dependencies = [
 name = "cat"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "stem",
 ]
 

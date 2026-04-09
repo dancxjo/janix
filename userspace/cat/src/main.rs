@@ -2,6 +2,7 @@
 #![no_main]
 
 extern crate alloc;
+use stem::abi::syscall::vfs_flags;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::syscall::{argv_get, vfs_close, vfs_open, vfs_read, vfs_write};
@@ -46,35 +47,64 @@ fn print_error(msg: &str) {
     let _ = vfs_write(1, out.as_bytes());
 }
 
+/// Stream bytes from in_fd to out_fd until EOF.
+fn stream(in_fd: u32, out_fd: u32, buf: &mut [u8]) -> Result<(), ()> {
+    loop {
+        match vfs_read(in_fd, buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                let mut written = 0;
+                while written < n {
+                    match vfs_write(out_fd, &buf[written..n]) {
+                        Ok(0) => {
+                            // If we can't write any bytes and it's not an error,
+                            // might be a full pipe or similar. Try again?
+                            // For simplicity, treat as error if it persists.
+                            return Err(());
+                        }
+                        Ok(nw) => {
+                            written += nw;
+                        }
+                        Err(_) => return Err(()),
+                    }
+                }
+            }
+            Err(_) => return Err(()),
+        }
+    }
+    Ok(())
+}
+
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let args = get_args();
-    if args.len() < 2 {
-        print_error("no file specified");
-        stem::syscall::exit(1);
-    }
+    let mut buf = alloc::vec![0u8; 32768]; // 32KB buffer
 
-    for path in args.iter().skip(1) {
-        match vfs_open(path, 0) {
-            // O_RDONLY = 0
-            Ok(fd) => {
-                let mut buf = [0u8; 1024];
-                loop {
-                    match vfs_read(fd, &mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            let _ = vfs_write(1, &buf[..n]);
-                        }
-                        Err(_) => {
-                            print_error("read error");
-                            break;
-                        }
-                    }
+    if args.len() < 2 {
+        // No files specified, read from stdin (fd 0)
+        if stream(0, 1, &mut buf).is_err() {
+            print_error("error reading from stdin");
+        }
+    } else {
+        for path in args.iter().skip(1) {
+            if path == "-" {
+                // Special case: read from stdin
+                if stream(0, 1, &mut buf).is_err() {
+                    print_error("error reading from stdin");
                 }
-                let _ = vfs_close(fd);
+                continue;
             }
-            Err(_) => {
-                print_error(&alloc::format!("failed to open {}", path));
+
+            match vfs_open(path, vfs_flags::O_RDONLY) {
+                Ok(fd) => {
+                    if stream(fd, 1, &mut buf).is_err() {
+                        print_error(&alloc::format!("error reading {}", path));
+                    }
+                    let _ = vfs_close(fd);
+                }
+                Err(_) => {
+                    print_error(&alloc::format!("failed to open {}", path));
+                }
             }
         }
     }

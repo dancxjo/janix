@@ -50,7 +50,7 @@ fn get_args() -> (Vec<String>, Flags) {
     }
 
     if paths.is_empty() {
-        paths.push(String::from("/"));
+        paths.push(String::from("."));
     }
 
     (paths, flags)

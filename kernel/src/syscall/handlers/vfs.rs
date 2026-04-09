@@ -716,18 +716,21 @@ fn split_parent(path: &str) -> (&str, &str) {
 }
 
 pub fn resolve_path(path: &str) -> SysResult<alloc::string::String> {
-    if path.starts_with('/') {
-        return Ok(alloc::string::String::from(path));
-    }
-
-    let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    let cwd = pinfo.lock().cwd.clone();
-
-    if cwd.ends_with('/') {
-        Ok(alloc::format!("{}{}", cwd, path))
+    let abs = if path.starts_with('/') {
+        alloc::string::String::from(path)
     } else {
-        Ok(alloc::format!("{}/{}", cwd, path))
-    }
+        let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let cwd = pinfo.lock().cwd.clone();
+
+        if cwd.ends_with('/') {
+            alloc::format!("{}{}", cwd, path)
+        } else {
+            alloc::format!("{}/{}", cwd, path)
+        }
+    };
+
+    // Ensure all paths are canonical (handle . and ..)
+    vfs::path::normalise(&abs)
 }
 
 pub fn sys_fs_chdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
@@ -745,11 +748,9 @@ pub fn sys_fs_chdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
         return Err(Errno::ENOTDIR);
     }
 
-    // Normalise to get the canonical path
-    let canonical = vfs::path::normalise(&abs_path)?;
-
+    // Normalise is now handled by resolve_path
     let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    pinfo.lock().cwd = canonical;
+    pinfo.lock().cwd = abs_path;
 
     Ok(0)
 }

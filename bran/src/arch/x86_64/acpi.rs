@@ -273,7 +273,7 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
         let entry_len = unsafe { ptr::read_unaligned((ptr + 1) as *const u8) };
 
         // Debug: log EVERY entry
-        kernel::kdebug!(
+        kernel::ktrace!(
             "MADT: Entry type {}, len {} at 0x{:x}",
             entry_type,
             entry_len,

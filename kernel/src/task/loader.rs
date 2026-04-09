@@ -24,7 +24,7 @@ pub fn load_module<R: BootRuntime>(
         module.bytes.len()
     );
     if module.bytes.len() >= 16 {
-        crate::kdebug!("  Header: {:02x?}", &module.bytes[0..16]);
+        crate::ktrace!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
     let load_addr: u64 = 0x200000;
@@ -81,7 +81,7 @@ pub fn load_module<R: BootRuntime>(
                 exec: ph.exec,
                 kind: MapKind::Normal,
             };
-            crate::kdebug!("Segment: vaddr={:x} exec={}", seg_vaddr, perms.exec);
+            crate::ktrace!("Segment: vaddr={:x} exec={}", seg_vaddr, perms.exec);
 
             // Record mapping
             let mut prot = VmProt::USER;
@@ -121,7 +121,7 @@ pub fn load_module<R: BootRuntime>(
                             return None;
                         }
                     };
-                    crate::kdebug!(
+                    crate::ktrace!(
                         "  Overlap at {:x}: merging perms to r={} w={} x={}",
                         virt,
                         page_perms.read,
@@ -164,7 +164,7 @@ pub fn load_module<R: BootRuntime>(
                             let off_in_page = (0x201420 - copy_start) as usize;
                             unsafe {
                                 let bytes = core::slice::from_raw_parts(dst.add(off_in_page), 8);
-                                crate::kdebug!("  COPIED at 0x201420: {:02x?}", bytes);
+                                crate::ktrace!("  COPIED at 0x201420: {:02x?}", bytes);
                             }
                         }
                     } else {

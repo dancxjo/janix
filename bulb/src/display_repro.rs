@@ -58,7 +58,7 @@ fn test_centered_rendering() {
     let mut display = BootUpDisplay::new(fb);
 
     // Render a line with timestamp, level, source, message
-    let line = "[12345] [INFO] [kernel] Hello World";
+    let line = "[12345] [INFO-] [kernel] Hello World";
     display.render_log_line(line);
 
     let fb = display.into_inner();

@@ -221,170 +221,7 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
     ))
 }
 
-pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
-    let needs_stubd = match vfs_open("/sys/devices", O_RDONLY) {
-        Ok(fd) => {
-            let _ = vfs_close(fd);
-            true
-        }
-        Err(_) => false,
-    };
-
-    if !needs_stubd {
-        return;
-    }
-
-    match stem::syscall::spawn_process("/bin/pci_stubd", 0) {
-        Ok(pid) => {
-            debug!("SPROUT: Spawned pci_stubd (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "pci_stubd".to_string(),
-                kind: TaskKind::Driver("dev.pci.stub".to_string()),
-                module_path: "/bin/pci_stubd".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-            });
-        }
-        Err(e) => {
-            debug!("SPROUT: Failed to spawn pci_stubd: {:?}", e);
-        }
-    }
-}
-
-pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
-    let fd = match vfs_open("/dev/rtc", O_RDONLY) {
-        Ok(fd) => fd,
-        Err(_) => {
-            debug!("SPROUT: No /dev/rtc found, skipping rtc_cmos");
-            return;
-        }
-    };
-    let _ = vfs_close(fd);
-
-    // Note: rtc_cmos driver will now just open /dev/rtc itself or use sys_time_now.
-    // For legacy arg passing, we can still use a fake device ID or just pass 0.
-    match stem::syscall::spawn_process("/bin/rtc_cmos", 0) {
-        Ok(pid) => {
-            debug!("SPROUT: Spawned rtc_cmos (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "rtc_cmos".to_string(),
-                kind: TaskKind::Driver("dev.rtc".to_string()),
-                module_path: "/bin/rtc_cmos".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-            });
-        }
-        Err(e) => {
-            debug!("SPROUT: Failed to spawn rtc_cmos: {:?}", e);
-        }
-    }
-}
-pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
-    debug!("SPROUT: Setting up storage pipeline...");
-
-    // 1. Probe for AHCI (0x0106)
-    if let Some(path) = find_sys_device("0x0106") {
-        debug!("SPROUT: Found AHCI controller at {}", path);
-
-        // Pass path via bootstrap memfd
-        let boot_size = 256;
-        let boot_fd = stem::syscall::memfd_create("ahci.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let ptr = resp.addr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(path.as_ptr(), ptr, path.len());
-                    *ptr.add(path.len()) = 0;
-                }
-            }
-        }
-
-        stem::sleep_ms(100);
-        match stem::syscall::spawn_process_ex(
-            "/bin/ahci_disk",
-            &["/bin/ahci_disk".as_bytes(), alloc::format!("{}", boot_fd).as_bytes()],
-            &alloc::collections::BTreeMap::new(),
-            stem::abi::types::stdio_mode::INHERIT,
-            stem::abi::types::stdio_mode::INHERIT,
-            stem::abi::types::stdio_mode::INHERIT,
-            boot_fd as u64,
-            &[],
-        ) {
-            Ok(resp) => {
-                let pid = resp.child_tid;
-                debug!("SPROUT: Spawned ahci_disk (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "ahci_disk".to_string(),
-                    kind: TaskKind::Driver("dev.storage.ahci".to_string()),
-                    module_path: "/bin/ahci_disk".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-                });
-            }
-            Err(e) => {
-                debug!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
-            }
-        }
-    }
-
-    // 2. Probe for legacy IDE (0x0101)
-    if has_sys_device("0x0101") {
-        match stem::syscall::spawn_process("/bin/ata_disk", 0) {
-            Ok(pid) => {
-                debug!("SPROUT: Spawned ata_disk (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "ata_disk".to_string(),
-                    kind: TaskKind::Driver("dev.storage.ata".to_string()),
-                    module_path: "/bin/ata_disk".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: 0,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-                });
-            }
-            Err(e) => {
-                debug!("SPROUT: Failed to spawn ata_disk: {:?}", e);
-            }
-        }
-    }
-
-    match stem::syscall::spawn_process("/bin/iso9660d", 0) {
-        Ok(pid) => {
-            debug!("SPROUT: Spawned iso9660d (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "iso9660d".to_string(),
-                kind: TaskKind::Driver("fs.iso9660".to_string()),
-                module_path: "/bin/iso9660d".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-            });
-        }
-        Err(e) => {
-            debug!("SPROUT: Failed to spawn iso9660d: {:?}", e);
-        }
-    }
-}
+// Storage, Network, and Audio are now handled by devd
 
 pub fn setup_display_pipeline(
     tasks: &mut Vec<ManagedTask>,
@@ -768,107 +605,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 
 
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
-pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
-    debug!("SPROUT: Setting up network stack...");
-
-    // Prefer VirtIO NICs in QEMU/VM flows.
-    if let Some(path) = find_sys_device_with_vendor("0x0200", "0x1af4") {
-        // 1. Setup virtio_link bootstrapping
-        let drv_req = stem::syscall::channel_create(4096).unwrap();
-        let drv_resp = stem::syscall::channel_create(4096).unwrap();
-        let supervisor_port = 5; // Fixed for now, should be passed from Supervisor struct
-        let bind_id = 0xDE00_0000_2000_0000u64;
-
-        let boot_size = 4096;
-        let boot_fd = stem::syscall::memfd_create("virtio-net.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use stem::syscall::vfs::{vfs_seek, vfs_write};
-            // Map it to write the bootstrap header
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let slice = unsafe { core::slice::from_raw_parts_mut(resp.addr as *mut u32, 1024) };
-                
-                slice[0] = drv_req.1 as u32;  // Read end of req channel
-                slice[1] = drv_resp.0 as u32; // Write end of resp channel
-                slice[2] = drv_resp.0 as u32; // supervisor_port (PRIVATE!)
-                
-                let id_low = (bind_id & 0xFFFF_FFFF) as u32;
-                let id_high = (bind_id >> 32) as u32;
-                slice[3] = id_low;
-                slice[4] = id_high;
-            }
-            let _ = vfs_seek(boot_fd as u32, 512, 0); // Move path to offset 512
-            let _ = vfs_write(boot_fd as u32, path.as_bytes()); // Keep path for driver claim
-            let _ = vfs_seek(boot_fd as u32, 0, 0);
-        }
-
-        stem::sleep_ms(100);
-        tasks.push(ManagedTask {
-            name: "/bin/virtio_netd".to_string(),
-            kind: TaskKind::Driver("dev.net.virtio".to_string()),
-            module_path: "/bin/virtio_netd".to_string(),
-            pid: None,
-            restarts: 0,
-            spawn_arg: boot_fd as usize,
-            bind_instance_id: bind_id,
-            drv_req_write: drv_req.0,
-            drv_resp_read: drv_resp.1,
-            boot_req_read: drv_req.1,
-            boot_resp_write: drv_resp.0,
-        });
-    } else if let Some(path) = find_sys_device("0x0200") {
-        debug!("SPROUT: Found RTL8168 at {}", path);
-
-        // Pass path via bootstrap memfd
-        let boot_size = 256;
-        let boot_fd = stem::syscall::memfd_create("net.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let ptr = resp.addr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(path.as_ptr(), ptr, path.len());
-                    *ptr.add(path.len()) = 0;
-                }
-            }
-        }
- 
-        match stem::syscall::spawn_process("/bin/rtl8168d", boot_fd as usize) {
-            Ok(pid) => {
-                debug!("SPROUT: Spawned rtl8168d (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "rtl8168d".to_string(),
-                    kind: TaskKind::Driver("dev.net.rtl8168".to_string()),
-                    module_path: "/bin/rtl8168d".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn rtl8168d: {:?}", e);
-            }
-        }
-    }
- 
-    spawn_netd(tasks);
-}
+// Network and Audio are now handled by devd
 
 fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
     debug!("SPROUT: spawn_netd start");
@@ -980,102 +717,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
     }
 }
 
-/// Set up audio driver - spawn virtio_sound or hdaudio
-pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
-    debug!("SPROUT: Setting up audio driver...");
-
-    // Check for HDA (PCI Class 0403)
-    if let Some(path) = find_sys_device("0x0403") {
-        debug!("SPROUT: Found HDA sound device at {}", path);
-
-        // Pass the VFS path via bootstrap bytespace
-        let boot_size = 256;
-        let boot_fd = stem::syscall::memfd_create("hda.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use stem::syscall::vfs::{vfs_write, vfs_seek};
-            let _ = vfs_write(boot_fd as u32, path.as_bytes());
-            let _ = vfs_write(boot_fd as u32, &[0]); // Null terminator
-            let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
-        }
-
-        match stem::syscall::spawn_process("/bin/hdaudio", boot_fd as usize) {
-            Ok(pid) => {
-                debug!("SPROUT: Spawned hdaudio (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "hdaudio".to_string(),
-                    kind: TaskKind::Driver("dev.sound.hda".to_string()),
-                    module_path: "/bin/hdaudio".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn hdaudio: {:?}", e);
-            }
-        }
-    }
-
-    // Check for VirtIO Sound (PCI Class 0401)
-    if let Some(path) = find_sys_device("0x0401") {
-        debug!("SPROUT: Found VirtIO sound device at {}", path);
-        
-        // Pass the VFS path via bootstrap bytespace (using memfd for string storage)
-        let boot_size = 256;
-        let boot_fd = stem::syscall::memfd_create("snd.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use stem::syscall::vfs::{vfs_write, vfs_seek};
-            let _ = vfs_write(boot_fd as u32, path.as_bytes());
-            let _ = vfs_write(boot_fd as u32, &[0]); // Null terminator
-            let _ = vfs_seek(boot_fd as u32, 0, 0); // Reset cursor for the driver
-        }
-
-        match stem::syscall::spawn_process("/bin/virtio_sound", boot_fd as usize) {
-            Ok(pid) => {
-                debug!("SPROUT: Spawned virtio_sound (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "virtio_sound".to_string(),
-                    kind: TaskKind::Driver("dev.sound.virtio".to_string()),
-                    module_path: "/bin/virtio_sound".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                    bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn virtio_sound: {:?}", e);
-            }
-        }
-    } else {
-        debug!("SPROUT: No VirtIO Sound device found");
-    }
-}
-
-pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
-    debug!("SPROUT: Spawning beeper...");
-    match stem::syscall::spawn_process("/bin/beeper", 0) {
-        Ok(pid) => {
-            debug!("SPROUT: Spawned beeper (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "beeper".to_string(),
-                kind: TaskKind::App,
-                module_path: "/bin/beeper".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
-            });
-        }
-        Err(e) => {
-            warn!("SPROUT: Failed to spawn beeper: {:?}", e);
-        }
-    }
-}
+// Audio and beeper are now handled by devd or disabled
 
 pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     debug!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");
@@ -1120,6 +762,46 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
         }
         Err(e) => {
             warn!("SPROUT: Failed to spawn bloom: {:?}", e);
+        }
+    }
+}
+
+pub fn setup_serial_shell(tasks: &mut Vec<ManagedTask>) {
+    debug!("SPROUT: Setting up serial shell on /dev/console...");
+
+    let console_fd = match stem::syscall::vfs::vfs_open("/dev/console", abi::syscall::vfs_flags::O_RDWR) {
+        Ok(fd) => fd,
+        Err(e) => {
+            warn!("SPROUT: Failed to open /dev/console for shell: {:?}", e);
+            return;
+        }
+    };
+
+    match stem::syscall::spawn_process_ex(
+        "/bin/sh",
+        &[b"/bin/sh"],
+        &alloc::collections::BTreeMap::new(),
+        abi::types::stdio_mode::INHERIT, // stdin
+        abi::types::stdio_mode::INHERIT, // stdout
+        abi::types::stdio_mode::INHERIT, // stderr
+        0,
+        &[],
+    ) {
+        Ok(resp) => {
+            debug!("SPROUT: Spawned serial shell (PID={})", resp.child_tid);
+            tasks.push(ManagedTask {
+                name: "sh".to_string(),
+                kind: TaskKind::App,
+                module_path: "/bin/sh".to_string(),
+                pid: Some(resp.child_tid),
+                restarts: 0,
+                spawn_arg: 0,
+                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn serial shell: {:?}", e);
+            let _ = vfs_close(console_fd);
         }
     }
 }

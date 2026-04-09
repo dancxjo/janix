@@ -252,14 +252,12 @@ impl DeviceRegistry {
     pub fn claim(&mut self, device_index: usize, task_id: u64) -> Option<usize> {
         // Check device exists
         if device_index >= self.device_count || self.devices[device_index].is_none() {
-            crate::kinfo!("DEVICE: claim failed for index {}: device not found", device_index);
             return None;
         }
 
         // Check not already claimed
         for claim in &self.claims {
             if claim.valid && claim.device_index == device_index {
-                crate::kinfo!("DEVICE: claim failed for index {}: already claimed by task {}", device_index, claim.task_id);
                 // Already claimed
                 return None;
             }
@@ -450,8 +448,8 @@ impl DeviceRegistry {
         }
     }
 
-    /// Release all claims owned by a task
-    pub fn release_all_for_task(&mut self, task_id: u64) {
+    /// Release all claims owned by a task. Returns the number of claims released.
+    pub fn release_all_for_task(&mut self, task_id: u64) -> usize {
         let mut count = 0;
         for claim in self.claims.iter_mut() {
             if claim.valid && claim.task_id == task_id {
@@ -459,9 +457,7 @@ impl DeviceRegistry {
                 count += 1;
             }
         }
-        if count > 0 {
-            crate::kinfo!("DEVICE: released {} claims for task {}", count, task_id);
-        }
+        count
     }
 }
 

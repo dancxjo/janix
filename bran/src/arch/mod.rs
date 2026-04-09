@@ -164,7 +164,7 @@ fn init_x86_64_ioapic() {
     entry1.level_triggered = level1;
     x86_64::ioapic::write_redir(gsi1 as u8, entry1);
     x86_64::ioapic::unmask_pin(gsi1 as u8);
-    kernel::kdebug!("IOAPIC: IRQ1 -> GSI {} -> 0x21", gsi1);
+    kernel::ktrace!("IOAPIC: IRQ1 -> GSI {} -> 0x21", gsi1);
 
     // IRQ12 (mouse) -> vector 0x2C
     let (gsi12, active_low12, level12) = madt_info.irq_to_gsi(12);
@@ -173,7 +173,7 @@ fn init_x86_64_ioapic() {
     entry12.level_triggered = level12;
     x86_64::ioapic::write_redir(gsi12 as u8, entry12);
     x86_64::ioapic::unmask_pin(gsi12 as u8);
-    kernel::kdebug!("IOAPIC: IRQ12 -> GSI {} -> 0x2C", gsi12);
+    kernel::ktrace!("IOAPIC: IRQ12 -> GSI {} -> 0x2C", gsi12);
 
     // IRQ4 (serial COM1) -> vector 0x24
     let (gsi4, active_low4, level4) = madt_info.irq_to_gsi(4);
@@ -182,7 +182,7 @@ fn init_x86_64_ioapic() {
     entry4.level_triggered = level4;
     x86_64::ioapic::write_redir(gsi4 as u8, entry4);
     x86_64::ioapic::unmask_pin(gsi4 as u8);
-    kernel::kdebug!("IOAPIC: IRQ4 -> GSI {} -> 0x24", gsi4);
+    kernel::ktrace!("IOAPIC: IRQ4 -> GSI {} -> 0x24", gsi4);
 
     kernel::kdebug!("IOAPIC: Init complete");
 }

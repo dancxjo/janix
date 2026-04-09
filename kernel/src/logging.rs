@@ -79,7 +79,7 @@ impl LogTransaction {
         if let Some(writer) = lock.as_mut() {
             if !MUTE_SERIAL.load(Ordering::Relaxed) {
                 let ts = writer.runtime.mono_ticks();
-                let _ = writeln!(writer, "[{}] [INFO] [logging] BEGIN {}", ts, name);
+                let _ = writeln!(writer, "[{}] [INFO-] [logging] BEGIN {}", ts, name);
             }
         }
         drop(lock);
@@ -96,7 +96,7 @@ impl Drop for LogTransaction {
         if let Some(writer) = lock.as_mut() {
             if !MUTE_SERIAL.load(Ordering::Relaxed) {
                 let ts = writer.runtime.mono_ticks();
-                let _ = writeln!(writer, "[{}] [INFO] [logging] END {}", ts, self.name);
+                let _ = writeln!(writer, "[{}] [INFO-] [logging] END {}", ts, self.name);
             }
         }
         drop(lock);
@@ -229,7 +229,7 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
             let ts = writer.runtime.mono_ticks();
             let _ = write!(
                 writer,
-                "[{}] [----] [{}] [CPU{}] ",
+                "[{}] [-----] [{}] [CPU{}] ",
                 ts,
                 source,
                 writer.runtime.current_cpu_id().0

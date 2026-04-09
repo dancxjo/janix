@@ -45,7 +45,7 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
                     // Name
                     let name = file.path().to_str().unwrap_or("unknown");
                     let cmdline = core::str::from_utf8(file.cmdline()).unwrap_or("");
-                    kernel::kdebug!(
+                    kernel::ktrace!(
                         "  [{}] {} (cmdline='{}') size={}",
                         i,
                         name,

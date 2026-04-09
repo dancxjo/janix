@@ -13,7 +13,7 @@ extern crate alloc;
 
 // Modules are now declared in main.rs
 use crate::ledger::DeviceLedger;
-use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack, spawn_beeper};
+use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack};
 use crate::task::{ManagedTask, TaskKind};
 use abi::supervisor_protocol::{self, classes, MSG_BIND_READY, MSG_BIND_ASSIGNED};
 use abi::display_driver_protocol;
@@ -74,11 +74,12 @@ impl Supervisor {
         // Stage 5: Finish Graphics Stack (fontd + bloom)
         setup_graphics_stack(&mut self.tasks);
 
-        // Stage 6: Spawning supplemental services (stage 3+ in justfile)
-        spawn_beeper(&mut self.tasks);
+        // Stage 6: Spawning supplemental services (Stage 3 in legacy)
+        // Storage, Network, and Audio are now delegated to devd.
+        self.spawn_devd();
 
-        // Stage 7: Spawn Discovered User Apps
-        self.spawn_discovered_apps();
+        // Stage 7: Spawn Serial Shell (interactive console)
+        crate::pipelines::setup_serial_shell(&mut self.tasks);
 
         info!("SPROUT: System bring-up COMPLETE. Entering supervisor loop.");
 
@@ -99,15 +100,19 @@ impl Supervisor {
         stem::debug!("SPROUT: Waiting for display driver registration...");
         let start = stem::monotonic_ns();
         let timeout = 5_000_000_000; // 5 seconds
+        let mut step = 0;
 
         loop {
             self.process_registrations();
             self.monitor();
             
-            // Check if we have any display card in /dev/display
+            if step % 20 == 0 {
+                stem::debug!("SPROUT: Still waiting for display (step {})...", step);
+            }
+            step += 1;
             if let Ok(fd) = stem::syscall::vfs::vfs_open("/dev/display/card0", stem::abi::syscall::vfs_flags::O_RDONLY) {
                 let _ = stem::syscall::vfs::vfs_close(fd);
-                stem::debug!("SPROUT: Display card0 detected. Proceeding.");
+                stem::info!("SPROUT: Display card0 detected. Proceeding.");
                 break;
             }
 
@@ -122,86 +127,39 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        stem::debug!(
-            "SPROUT: Discovering modules from registry at 0x{:x}...",
-            self.registry_ptr
-        );
+        // We no longer auto-spawn everything in /bin. 
+        // We only scan to keep the registry metadata if needed.
+        stem::debug!("SPROUT: Discovery loop disabled in favor of devd.");
+    }
 
-        if self.registry_ptr == 0 {
-            stem::debug!("SPROUT: No boot registry provided!");
-            return;
-        }
-
-        let count = unsafe { *(self.registry_ptr as *const usize) };
-        stem::debug!("SPROUT: Found {} modules natively from BootRegistry", count);
-
-        let entries_ptr = (self.registry_ptr + core::mem::size_of::<usize>()) as *const usize;
-
-        for i in 0..count {
-            let name_ptr = unsafe { *entries_ptr.add(i * 2) };
-            let name_len = unsafe { *entries_ptr.add(i * 2 + 1) };
-
-            let name_bytes =
-                unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
-            let name = core::str::from_utf8(name_bytes).unwrap_or("");
-            stem::debug!("SPROUT: Module[{}] = '{}'", i, name);
-
-            if name == "/bin/sprout" {
-                continue;
+    fn spawn_devd(&mut self) {
+        let (write, read) = match stem::syscall::channel_create(4096) {
+            Ok(h) => h,
+            Err(_) => return,
+        };
+        // We could pass the registrar port to devd if it needs to register things,
+        // but for now devd just spawns drivers.
+        match stem::syscall::spawn_process("/bin/devd", 0) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned devd (PID={})", pid);
+                self.tasks.push(ManagedTask {
+                    name: "devd".to_string(),
+                    kind: TaskKind::Service("svc.devd".to_string()),
+                    module_path: "/bin/devd".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                    spawn_arg: 0,
+                    bind_instance_id: 0,
+                    drv_req_write: write,
+                    drv_resp_read: read,
+                    boot_req_read: 0,
+                    boot_resp_write: 0,
+                });
             }
-
-            // Determine kind from path
-            let kind = if name.contains("/bin/") {
-                if name.contains("display_") {
-                    TaskKind::Driver("dev.display.Framebuffer".to_string())
-                } else if name.contains("virtio_netd") {
-                    TaskKind::Driver("dev.net.virtio".to_string())
-                } else {
-                    TaskKind::App
-                }
-            } else {
-                continue;
-            };
-
-            self.tasks.push(ManagedTask {
-                name: name.to_string(),
-                kind,
-                module_path: name.to_string(),
-                pid: None,
-                restarts: 0,
-                spawn_arg: 0,
-                bind_instance_id: 0,
-                drv_req_write: 0,
-                drv_resp_read: 0,
-                boot_req_read: 0,
-                boot_resp_write: 0,
-            });
+            Err(e) => warn!("SPROUT: Failed to spawn devd: {:?}", e),
         }
     }
 
-    fn spawn_discovered_apps(&mut self) {
-        for task in self.tasks.iter_mut() {
-            if let TaskKind::App = task.kind {
-                if task.pid.is_some() {
-                    continue;
-                }
-                let arg_str = alloc::format!("{}", task.spawn_arg);
-                let spawn_res = stem::syscall::spawn_process_ex(
-                    &task.name,
-                    &[task.name.as_bytes(), arg_str.as_bytes()],
-                    &alloc::collections::BTreeMap::new(),
-                    stem::abi::types::stdio_mode::INHERIT,
-                    stem::abi::types::stdio_mode::INHERIT,
-                    stem::abi::types::stdio_mode::INHERIT,
-                    task.spawn_arg as u64,
-                    &[],
-                );
-                if let Ok(resp) = spawn_res {
-                    task.pid = Some(resp.child_tid);
-                }
-            }
-        }
-    }
 
     fn monitor(&mut self) {
         for task in self.tasks.iter_mut() {
@@ -261,14 +219,22 @@ impl Supervisor {
 
         let mut buf = [0u8; 1024];
 
+        if self.tasks.is_empty() {
+             // stem::debug!("SPROUT: No tasks to process registrations for.");
+        }
+
         // We check EACH task's private response channel
         for task in self.tasks.iter_mut() {
             if task.drv_resp_read == 0 || task.pid.is_none() {
                 continue;
             }
 
+            // stem::debug!("SPROUT: Polling task {} on port {}...", task.name, task.drv_resp_read);
+
             while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
+                stem::debug!("SPROUT: Received {} bytes from task {}", n, task.name);
                 if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
+                    stem::debug!("SPROUT: Received message type {} from {}", header.msg_type, task.name);
                     if header.msg_type == MSG_BIND_READY {
                         if let Some(ready) = supervisor_protocol::decode_bind_ready_le(payload) {
                             let task_name = task.name.clone();

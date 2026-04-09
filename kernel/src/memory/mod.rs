@@ -34,7 +34,7 @@ pub fn init<R: crate::BootRuntime>(rt: &R) {
 
     crate::kdebug!("Memory map has {} entries", map.len());
     for (i, range) in map.iter().enumerate() {
-        crate::kdebug!(
+        crate::ktrace!(
             "  [{}] 0x{:x} - 0x{:x} ({:?})",
             i,
             range.start,

@@ -29,25 +29,41 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
 
     let task_id = unsafe { crate::sched::current_tid_current() };
 
-    let mut reg = REGISTRY.lock();
+    let res = {
+        let mut reg = REGISTRY.lock();
+        if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
+            if let Some(claim_handle) = reg.claim(device_idx, task_id) {
+                Ok(claim_handle)
+            } else {
+                Err(Errno::EBUSY)
+            }
+        } else {
+            Err(Errno::ENODEV)
+        }
+    };
 
-    if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
-        if let Some(claim_handle) = reg.claim(device_idx, task_id) {
+    match res {
+        Ok(claim_handle) => {
             crate::kdebug!(
                 "DEVICE: task {} claimed device {} (handle {})",
                 task_id,
                 graph_id,
                 claim_handle
             );
-            return Ok(claim_handle);
-        } else {
-            crate::kdebug!("DEVICE: claim failed - device {} is already claimed", graph_id);
-            return Err(Errno::EBUSY);
+            Ok(claim_handle)
+        }
+        Err(Errno::EBUSY) => {
+            crate::kdebug!(
+                "DEVICE: claim failed - device {} is already claimed",
+                graph_id
+            );
+            Err(Errno::EBUSY)
+        }
+        Err(e) => {
+            crate::kdebug!("DEVICE: device {} not found in registry", graph_id);
+            Err(e)
         }
     }
-
-    crate::kdebug!("DEVICE: device {} not found in registry", graph_id);
-    Err(Errno::ENODEV)
 }
 
 /// Map a device MMIO BAR into the task's address space
@@ -59,9 +75,19 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
     }
 
     let task_id = unsafe { crate::sched::current_tid_current() };
-    let (phys_addr, size) = {
+    let bar_res = {
         let reg = REGISTRY.lock();
         if !reg.verify_claim(claim_handle, task_id) {
+            Err(Errno::EPERM)
+        } else {
+            reg.get_bar_info(claim_handle, bar_index)
+                .ok_or(Errno::ENODEV)
+        }
+    };
+
+    let (phys_addr, size) = match bar_res {
+        Ok(info) => info,
+        Err(Errno::EPERM) => {
             crate::kdebug!(
                 "DEVICE: map_mmio failed - claim {} not owned by task {}",
                 claim_handle,
@@ -69,14 +95,14 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
             );
             return Err(Errno::EPERM);
         }
-
-        let (phys_addr, size) = reg
-            .get_bar_info(claim_handle, bar_index)
-            .ok_or_else(|| {
-                crate::kdebug!("DEVICE: map_mmio failed - BAR{} info not found for claim {}", bar_index, claim_handle);
-                Errno::ENODEV
-            })?;
-        (phys_addr, size)
+        Err(e) => {
+            crate::kdebug!(
+                "DEVICE: map_mmio failed - BAR{} info not found for claim {}",
+                bar_index,
+                claim_handle
+            );
+            return Err(e);
+        }
     };
 
     if phys_addr == 0 || size == 0 {
@@ -316,17 +342,23 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
     }
 
     // Track the DMA allocation for later phys lookups
-    {
+    let slot_res = {
         let mut reg = REGISTRY.lock();
-        reg.alloc_dma_slot(claim_handle, phys_base, user_va, page_count);
+        reg.alloc_dma_slot(claim_handle, phys_base, user_va, page_count)
+            .ok_or(Errno::ENOMEM)
+    };
+
+    if let Err(e) = slot_res {
+        crate::kerror!("DEVICE: DMA alloc failed (no slots) for task {}", task_id);
+        return Err(e);
     }
 
-    // crate::kdebug!(
-    //     "DEVICE: DMA alloc {} pages phys=0x{:x} -> user_va=0x{:x}",
-    //     page_count,
-    //     phys_base,
-    //     user_va
-    // );
+    crate::kdebug!(
+        "DEVICE: DMA alloc {} pages phys=0x{:x} -> user_va=0x{:x}",
+        page_count,
+        phys_base,
+        user_va
+    );
 
     Ok(user_va as usize)
 }

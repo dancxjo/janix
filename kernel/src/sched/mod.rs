@@ -913,9 +913,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let waiters = mark_task_exited::<R>(self, current_id, code);
 
         // Release any claimed devices
-        crate::device_registry::REGISTRY
+        let released = crate::device_registry::REGISTRY
             .lock()
             .release_all_for_task(current_id);
+        if released > 0 {
+            crate::kinfo!("DEVICE: released {} claims for task {}", released, current_id);
+        }
 
         loop {
             if let Some(switch) = self.prepare_schedule() {
@@ -1245,9 +1248,12 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
                         });
 
                         // Release any claimed devices
-                        crate::device_registry::REGISTRY
+                        let released = crate::device_registry::REGISTRY
                             .lock()
                             .release_all_for_task(tid);
+                        if released > 0 {
+                            crate::kinfo!("DEVICE: released {} claims for task {}", released, tid);
+                        }
 
                         crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
                         (true, waiters)

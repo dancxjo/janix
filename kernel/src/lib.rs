@@ -748,7 +748,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     let modules = runtime.modules();
     kdebug!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {
-        crate::kdebug!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
+        crate::ktrace!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
     }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
@@ -1036,7 +1036,7 @@ pub fn scan_pci() {
                                 bars[i as usize] = final_bar;
                                 sizes[i as usize] = size;
 
-                                crate::kdebug!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
+                                crate::ktrace!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
 
                                 if is_64 {
                                     i += 1; // Skip next slot
@@ -1046,7 +1046,7 @@ pub fn scan_pci() {
                                 let size = (!(size_mask & 0xFFFFFFFC)).wrapping_add(1) as u64;
                                 bars[i as usize] = (bar & 0xFFFFFFFC) as u64;
                                 sizes[i as usize] = size;
-                                crate::kdebug!("  BAR{} (I/O):  0x{:04x} (size 0x{:x})", i, bars[i as usize], size);
+                                crate::ktrace!("  BAR{} (I/O):  0x{:04x} (size 0x{:x})", i, bars[i as usize], size);
                             }
                         }
                         i += 1;

@@ -44,11 +44,47 @@ impl ManagedDriver {
             return;
         }
 
-        match spawn_process(self.driver, self.device_handle as usize) {
-            Ok(pid) => {
+        // Create bootstrap memfd
+        let full_path = format!("/sys/devices/{}", self.slot);
+        let boot_size = 4096;
+        let boot_fd = stem::syscall::memfd_create("driver.boot", boot_size).unwrap_or(0);
+        
+        if boot_fd != 0 {
+            use stem::syscall::vfs::{vfs_write, vfs_seek};
+            let _ = vfs_write(boot_fd, full_path.as_bytes());
+            let _ = vfs_write(boot_fd, &[0]); // Null terminator
+            let _ = vfs_seek(boot_fd, 0, 0);
+        }
+
+        let driver_path = if self.driver.starts_with('/') {
+            self.driver.to_string()
+        } else {
+            format!("/bin/{}", self.driver)
+        };
+
+        let boot_fd_str = format!("{}", boot_fd);
+        let argv: &[&[u8]] = &[
+            driver_path.as_bytes(),
+            boot_fd_str.as_bytes(),
+        ];
+
+        let spawn_res = stem::syscall::spawn_process_ex(
+            &driver_path,
+            argv,
+            &alloc::collections::BTreeMap::new(),
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            stem::abi::types::stdio_mode::INHERIT,
+            boot_fd as u64,
+            &[],
+        );
+
+        match spawn_res {
+            Ok(resp) => {
+                let pid = resp.child_tid;
                 debug!(
-                    "DEVD: launched driver {} for {} (device_handle={}, pid={})",
-                    self.driver, self.slot, self.device_handle, pid
+                    "DEVD: launched driver {} for {} (boot_fd={}, pid={})",
+                    self.driver, self.slot, boot_fd, pid
                 );
                 self.pid = Some(pid);
             }
@@ -58,6 +94,9 @@ impl ManagedDriver {
                     self.driver, self.slot, err
                 );
                 self.schedule_restart();
+                if boot_fd != 0 {
+                    let _ = stem::syscall::vfs::vfs_close(boot_fd);
+                }
             }
         }
     }

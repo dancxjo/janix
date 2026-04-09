@@ -62,7 +62,7 @@ fn main(packed_handles: usize) -> ! {
     );
 
     ensure_session_roots();
-    update_active_ui("terminal");
+    update_active_ui("bloom");
 
     let mut recv_buf = [0u8; 128];
     let mut event_accum = [0u8; 64];

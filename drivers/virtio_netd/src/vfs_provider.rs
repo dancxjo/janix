@@ -24,6 +24,7 @@ use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
 use stem::syscall::{channel_send, ChannelHandle};
+use stem::info;
 
 use crate::driver::VirtioNetDriver;
 
@@ -154,6 +155,13 @@ pub fn handle_vfs_rpc(state: &mut NetVfsState, driver: &mut VirtioNetDriver, buf
         }
     };
 
+    info!(
+        "VIRTIO_NETD: rpc op={:?} payload_len={} resp_port={}",
+        op,
+        payload.len(),
+        resp_port
+    );
+
     match op {
         VfsRpcOp::Lookup => handle_lookup(resp_port, payload),
         VfsRpcOp::Read => handle_read(state, resp_port, payload),
@@ -185,6 +193,7 @@ fn handle_lookup(resp_port: ChannelHandle, payload: &[u8]) {
         }
     };
     let path = path.trim_matches('/');
+    info!("VIRTIO_NETD: lookup '{}'", path);
 
     let handle: u64 = match path {
         "" => HANDLE_ROOT,
@@ -354,6 +363,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
 
     match handle {
         HANDLE_STATUS => {
+            info!("VIRTIO_NETD: read status");
             let text =
                 format!(
                 "state: {}\nlink: {}\nmac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\nmtu: {}\n",
@@ -366,6 +376,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_MAC => {
+            info!("VIRTIO_NETD: read mac");
             let text = format!(
                 "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
                 state.mac[0], state.mac[1], state.mac[2], state.mac[3], state.mac[4], state.mac[5],
@@ -373,14 +384,17 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_MTU => {
+            info!("VIRTIO_NETD: read mtu");
             let text = format!("{}\n", state.mtu);
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_FEATURES => {
+            info!("VIRTIO_NETD: read features");
             let text = format!("0x{:08x}\n", state.features);
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_RX => {
+            info!("VIRTIO_NETD: read rx queued={}", state.rx_queue.len());
             // Return one length-prefixed frame, or empty if none available.
             if let Some(frame) = state.rx_queue.pop_front() {
                 let frame_len = frame.len() as u32;
@@ -393,6 +407,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
             }
         }
         HANDLE_EVENTS => {
+            info!("VIRTIO_NETD: read events queued={}", state.events_queue.len());
             // Return one newline-terminated event, or empty if none queued.
             if let Some(event) = state.events_queue.pop_front() {
                 send_ok_data(resp_port, &event);
@@ -444,6 +459,7 @@ fn handle_write(
 
     match handle {
         HANDLE_CTL => {
+            info!("VIRTIO_NETD: write ctl len={}", data_len);
             let cmd = core::str::from_utf8(data).unwrap_or("").trim();
             if cmd == "up" {
                 state.link_up = true;
@@ -462,6 +478,7 @@ fn handle_write(
             send_ok_written(resp_port, data_len as u32);
         }
         HANDLE_MTU => {
+            info!("VIRTIO_NETD: write mtu len={}", data_len);
             let text = core::str::from_utf8(data).unwrap_or("").trim();
             if let Ok(mtu) = text.parse::<u32>() {
                 state.mtu = mtu;
@@ -471,6 +488,7 @@ fn handle_write(
             }
         }
         HANDLE_TX => {
+            info!("VIRTIO_NETD: write tx len={}", data_len);
             // Expect length-prefixed frame: [4 bytes: len][len bytes: frame data]
             if data.len() < 4 {
                 send_err(resp_port, E_INVAL);

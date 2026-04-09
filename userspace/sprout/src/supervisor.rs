@@ -36,9 +36,6 @@ impl Supervisor {
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
 
-        // Settle hardware phase
-        stem::sleep_ms(100);
-
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
         self.ensure_service("/devd", "svc.devd");
@@ -47,18 +44,15 @@ impl Supervisor {
 
         crate::pipelines::setup_network_apps(&mut self.tasks);
 
-        stem::sleep_ms(100);
-
         // --- STAGE 3: UI (Terminal & Compositor) ---
         info!("SPROUT: [Stage 3] Starting UI Pipeline");
-        info!("SPROUT: [Stage 3] -> Setting up Terminal...");
-        crate::pipelines::setup_terminal(&mut self.tasks, display_handles.clone(), input_handles.clone());
-        
         info!("SPROUT: [Stage 3] -> Setting up Compositor (Bloom)...");
-        crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
+        crate::pipelines::setup_compositor(&mut self.tasks, display_handles.clone(), input_handles.clone());
+
+        info!("SPROUT: [Stage 3] -> Setting up Terminal...");
+        crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
         
-        info!("SPROUT: [Stage 3] UI initialization triggered, settling...");
-        stem::sleep_ms(200);
+        info!("SPROUT: [Stage 3] UI initialization triggered");
 
         // --- STAGE 4: Final Polish (Beeper) ---
         info!("SPROUT: [Stage 4] Proof of life (Beeper)");

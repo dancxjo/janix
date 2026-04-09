@@ -379,50 +379,6 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut driver_name: Option<&'static str> = None;
     let mut backend_name: &'static str = "unknown";
 
-    // Try to find a hardware GPU (VirtIO 0x0300)
-    if let Some(path) = find_sys_device("0x0300") {
-        info!("SPROUT: Found GPU hardware at {}", path);
-
-        // Pass path via bootstrap memfd
-        let boot_size = 256;
-        let boot_fd = stem::syscall::memfd_create("gpu.boot", boot_size).unwrap_or(0);
-        if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
-            let req = VmMapReq {
-                addr_hint: 0,
-                len: boot_size,
-                prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                flags: VmMapFlags::empty(),
-                backing: VmBacking::File { fd: boot_fd, offset: 0 },
-            };
-            if let Ok(resp) = stem::syscall::vm_map(&req) {
-                let ptr = resp.addr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(path.as_ptr(), ptr, path.len());
-                    *ptr.add(path.len()) = 0;
-                }
-            }
-        }
-
-        match stem::syscall::spawn_process("/virtio_gpu", boot_fd as usize) {
-            Ok(pid) => {
-                info!("SPROUT: Spawned virtio_gpu (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
-                tasks.push(ManagedTask {
-                    name: "/virtio_gpu".to_string(),
-                    kind: TaskKind::Driver("dev.display.virtio".to_string()),
-                    module_path: "/virtio_gpu".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                    spawn_arg: boot_fd as usize,
-                });
-            }
-            Err(e) => {
-                warn!("SPROUT: Failed to spawn virtio_gpu: {:?}", e);
-            }
-        }
-    }
-
     // Janix-style BootFB probe: if /dev/fb0 exists, trust that as the canonical display.
     if let Some((w, h, stride, format)) = probe_bootfb_vfs() {
         display_width = w;

@@ -67,6 +67,12 @@ impl ProviderChannel {
     /// response arrives on the response port.  Returns the raw response bytes
     /// (starting with the 1-byte status).
     fn rpc(&self, op: VfsRpcOp, payload: &[u8]) -> SysResult<alloc::vec::Vec<u8>> {
+        crate::kinfo!(
+            "providerfs: rpc send op={:?} payload_len={} resp_handle={}",
+            op,
+            payload.len(),
+            self.resp_write_handle
+        );
         // Build header + payload in a single contiguous buffer.
         let hdr = VfsRpcReqHeader {
             resp_port: self.resp_write_handle,
@@ -95,6 +101,7 @@ impl ProviderChannel {
         let mut resp_buf = vec![0u8; VFS_RPC_MAX_RESP];
         let n = self.recv_response(&mut resp_buf)?;
         resp_buf.truncate(n);
+        crate::kinfo!("providerfs: rpc recv op={:?} resp_len={}", op, resp_buf.len());
         Ok(resp_buf)
     }
 
@@ -216,6 +223,12 @@ struct ProviderChannelRef {
 
 impl ProviderChannelRef {
     fn rpc(&self, op: VfsRpcOp, payload: &[u8]) -> SysResult<alloc::vec::Vec<u8>> {
+        crate::kinfo!(
+            "providernode: rpc send op={:?} payload_len={} resp_handle={}",
+            op,
+            payload.len(),
+            self.resp_write_handle
+        );
         let hdr = VfsRpcReqHeader {
             resp_port: self.resp_write_handle,
             op: op as u8,
@@ -240,6 +253,7 @@ impl ProviderChannelRef {
         let mut resp_buf = vec![0u8; VFS_RPC_MAX_RESP];
         let n = self.recv_response(&mut resp_buf)?;
         resp_buf.truncate(n);
+        crate::kinfo!("providernode: rpc recv op={:?} resp_len={}", op, resp_buf.len());
         Ok(resp_buf)
     }
 

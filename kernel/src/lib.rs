@@ -652,8 +652,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             fb.bpp,
             fb.format
         );
-        paint_bootfb_probe(fb);
-        crate::kinfo!("BOOTFB: probe pattern painted");
     }
 
     contract!("thing-os kernel starting...");

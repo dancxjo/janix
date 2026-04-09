@@ -10,10 +10,13 @@
 use abi::display_driver_protocol::{self as drvproto, BindPayload, OfferFramebufferPayload};
 use abi::driver_frame::FrameReader;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;
-use stem::syscall::{channel_send_all, channel_try_recv, ChannelHandle};
+use stem::syscall::{
+    channel_recv_handle, channel_send_all, channel_send_handle, channel_try_recv, ChannelHandle,
+};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
@@ -233,6 +236,7 @@ pub struct DriverPresenter {
     /// Damage history for buffer age expansion (last 4 frames)
     damage_history: Vec<Vec<crate::geometry::Rect>>,
     pending_acquired: Option<(u32, u32, u32, u32, u32, u32)>,
+    fd_cache: BTreeMap<u32, u32>,
 }
 
 impl DriverPresenter {
@@ -249,6 +253,7 @@ impl DriverPresenter {
             frame_count: 0,
             damage_history: Vec::new(),
             pending_acquired: None,
+            fd_cache: BTreeMap::new(),
         }
     }
 
@@ -317,6 +322,7 @@ impl DriverPresenter {
         let mut buf = [0u8; 128];
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_BIND, &bytes) {
             let _ = self.send_reliable(&buf[..len]);
+            let _ = stem::syscall::channel_send_handle(self.req_write, payload.fb_fd);
             self.awaiting_bind_ack = true;
         }
     }
@@ -482,8 +488,16 @@ impl DriverPresenter {
             }
             drvproto::MSG_ACQUIRED => {
                 if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
+                    let actual_fd = match stem::syscall::channel_recv_handle(self.resp_read) {
+                        Ok(new_fd) => {
+                            self.fd_cache.insert(acq.fd, new_fd);
+                            new_fd
+                        }
+                        Err(_) => *self.fd_cache.get(&acq.fd).unwrap_or(&acq.fd),
+                    };
+
                     self.pending_acquired = Some((
-                        acq.fd,
+                        actual_fd,
                         acq.width,
                         acq.height,
                         acq.stride,
@@ -756,8 +770,15 @@ impl Presenter for DriverPresenter {
                         drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE
                     );
                     if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
+                        let actual_fd = match stem::syscall::channel_recv_handle(self.resp_read) {
+                            Ok(new_fd) => {
+                                self.fd_cache.insert(acq.fd, new_fd);
+                                new_fd
+                            }
+                            Err(_) => *self.fd_cache.get(&acq.fd).unwrap_or(&acq.fd),
+                        };
                         return (
-                            acq.fd,
+                            actual_fd,
                             acq.width,
                             acq.height,
                             acq.stride,

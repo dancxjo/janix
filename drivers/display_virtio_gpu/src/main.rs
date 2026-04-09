@@ -528,12 +528,13 @@ fn main(arg: usize) -> ! {
                         drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes)
                     {
                         send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
+                        let _ = stem::syscall::channel_send_handle(drv_resp_write, frame_pool_buffers[idx].fd);
                     }
                 }
                 drvproto::MSG_BIND => {
-                    // MSG_BIND legacy fallback
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
-                        current_fd = Some(bind.fb_fd);
+                        let fd = stem::syscall::channel_recv_handle(drv_req_read).unwrap_or(bind.fb_fd);
+                        current_fd = Some(fd);
                         // In legacy mode, we just stay on the first buffer's resource
                         current_res_id = frame_pool_buffers[0].res_id;
                         send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);

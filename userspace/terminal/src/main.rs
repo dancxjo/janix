@@ -309,6 +309,7 @@ fn main(arg: usize) -> ! {
         abi::display_driver_protocol::encode_bind_payload_le(&bind_payload, &mut payload_buf);
         if let Some(total) = abi::display_driver_protocol::encode_message(&mut header_buf, abi::display_driver_protocol::MSG_BIND, &payload_buf) {
             let _ = stem::syscall::channel_send_all(display_req_write, &header_buf[..total]);
+            let _ = stem::syscall::channel_send_handle(display_req_write, bind_payload.fb_fd);
         }
     }
 
@@ -320,6 +321,7 @@ fn main(arg: usize) -> ! {
         get_active_ui() == "terminal"
     };
 
+    let mut frame_count = 0u64;
     loop {
         if has_focus && display_req_write != 0 {
             // Present!
@@ -328,6 +330,16 @@ fn main(arg: usize) -> ! {
             abi::display_driver_protocol::encode_present_header_le(0, &mut payload);
             if let Some(total) = abi::display_driver_protocol::encode_message(&mut present_header, abi::display_driver_protocol::MSG_PRESENT, &payload) {
                 let _ = stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
+            }
+        }
+
+        if frame_count % 60 == 0 {
+            info!("Terminal: Liveness check - frame {}", frame_count);
+            term.write_str(".");
+            if frame_count % (60 * 40) == 0 {
+                let mut status = String::new();
+                let _ = write!(status, "\n[Terminal Liveness] Frame {} - Focus: {}\n", frame_count, has_focus);
+                term.write_str(&status);
             }
         }
 
@@ -363,6 +375,7 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        frame_count += 1;
         stem::sleep(core::time::Duration::from_millis(16)); // ~60fps
     }
 }

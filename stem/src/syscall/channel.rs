@@ -106,3 +106,23 @@ pub fn channel_capacity(handle: ChannelHandle) -> Result<usize, Errno> {
     let ret = unsafe { raw_syscall6(SYS_CHANNEL_INFO, handle as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| (v >> 32) as usize)
 }
+
+pub fn channel_send_handle(channel: ChannelHandle, handle: u32) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_CHANNEL_SEND_HANDLE,
+            channel as usize,
+            handle as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+pub fn channel_recv_handle(channel: ChannelHandle) -> Result<u32, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_CHANNEL_RECV_HANDLE, channel as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}

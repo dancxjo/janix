@@ -9,6 +9,7 @@ const MSR_GS_BASE: u32 = 0xC0000101;
 const MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
 
 const EFER_SCE: u64 = 1; // Syscall Enable
+const EFER_NXE: u64 = 1 << 11; // No-Execute Enable
 
 // GDT Selectors (Must match what we assume in userspace/trampolines)
 // Kernel Code: 0x08 (1)
@@ -81,9 +82,9 @@ pub unsafe fn init(cpu_index: usize) {
         wrmsr(MSR_GS_BASE, gs_base);
         wrmsr(MSR_KERNEL_GS_BASE, gs_base);
 
-        // 2. Enable SCE (SysCall Extension) in EFER
+        // 2. Enable SCE (Syscall) and NXE (No-Execute) in EFER
         let efer = rdmsr(MSR_EFER);
-        wrmsr(MSR_EFER, efer | EFER_SCE);
+        wrmsr(MSR_EFER, efer | EFER_SCE | EFER_NXE);
 
         // 3. Setup STAR
         let star = ((crate::arch::x86_64::gdt::KERNEL_CODE_SEL as u64) << 32)

@@ -203,7 +203,7 @@ pub fn get_info() -> Option<FramebufferInfo> {
             return Some(FramebufferInfo {
                 addr: fb.addr() as u64,
                 // Keep the raw byte_len for full mapping safety.
-                byte_len: (fb.pitch() * fb.height()) as usize,
+                byte_len: fb.pitch() * fb.height(),
                 width,
                 height,
                 pitch,

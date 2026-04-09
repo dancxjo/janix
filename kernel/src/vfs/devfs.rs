@@ -333,6 +333,7 @@ impl VfsNode for ZeroNode {
 
 // ── /dev/fb0 ─────────────────────────────────────────────────────────────────
 
+#[repr(C)]
 pub struct FbNode {
     fb: crate::FramebufferInfo,
     graph_id: u64,
@@ -374,11 +375,11 @@ impl VfsNode for FbNode {
 
     fn write(&self, offset: u64, buf: &[u8]) -> SysResult<usize> {
         let off = offset as usize;
-        if off >= self.fb.byte_len {
+        if off as u64 >= self.fb.byte_len {
             return Ok(0);
         }
 
-        let n = buf.len().min(self.fb.byte_len.saturating_sub(off));
+        let n = buf.len().min((self.fb.byte_len.saturating_sub(off as u64)) as usize);
         if n == 0 {
             return Ok(0);
         }
@@ -403,7 +404,7 @@ impl VfsNode for FbNode {
     }
 
     fn phys_region(&self) -> SysResult<(u64, usize)> {
-        Ok((self.fb.addr, self.fb.byte_len))
+        Ok((self.fb.addr, self.fb.byte_len as usize))
     }
 }
 

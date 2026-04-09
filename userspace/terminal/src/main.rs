@@ -396,6 +396,8 @@ fn read_fb_info() -> Option<FbInfoPayload> {
     let n = stem::syscall::vfs::vfs_read(fd, buf).ok()?;
     let _ = stem::syscall::vfs::vfs_close(fd);
     if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0 {
+        stem::error!("Terminal: FB info mismatch: n={}, expected={}, w={}, h={}, s={}", 
+            n, FB_INFO_PAYLOAD_SIZE, payload.width, payload.height, payload.stride);
         return None;
     }
     Some(payload)

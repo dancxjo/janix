@@ -48,8 +48,6 @@ impl VfsDriver for BootFs {
             let m_name = m.name.trim_matches('\0').trim();
             let name = m_name.strip_prefix("/boot/").unwrap_or(m_name);
             
-            crate::kinfo!("BootFs: module[{}] name='{}' (raw='{}') path_to_match='{}'", i, name, m.name, path);
-
             if name == path {
                 crate::kinfo!("BootFs: EXACT match for '{}' at index {}", path, i);
                 return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));

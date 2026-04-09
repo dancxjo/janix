@@ -130,10 +130,11 @@ pub enum BootModuleKind {
     Data,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct FramebufferInfo {
     pub addr: u64,
-    pub byte_len: usize,
+    pub byte_len: u64,
     pub width: u32,
     pub height: u32,
     pub pitch: u32,
@@ -562,14 +563,14 @@ fn _irq_restore_wrapper<R: BootRuntime>(state: IrqState) {
 }
 
 fn paint_bootfb_probe(fb: FramebufferInfo) {
-    if fb.width == 0 || fb.height == 0 || fb.pitch < 4 || fb.byte_len < fb.pitch as usize {
+    if fb.width == 0 || fb.height == 0 || fb.pitch < 4 || fb.byte_len < (fb.pitch as u64) {
         return;
     }
 
     let width = fb.width as usize;
     let height = fb.height as usize;
     let stride_px = (fb.pitch as usize) / 4;
-    let rows = core::cmp::min(height, fb.byte_len / fb.pitch as usize);
+    let rows = core::cmp::min(height, (fb.byte_len / fb.pitch as u64) as usize);
 
     let ptr = fb.addr as *mut u32;
     if ptr.is_null() || stride_px == 0 || rows == 0 {

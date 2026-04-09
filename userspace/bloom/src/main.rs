@@ -753,7 +753,7 @@ fn main(arg: usize) -> ! {
     };
     let _ = target.backend;
 
-    // Buffer mapping cache for swapchain - maps file descriptors to their virtual addresses
+    // Cache mapped framebuffer pointers for any rebound surfaces.
     let mut buffer_cache: BTreeMap<u32, *mut u8> = BTreeMap::new();
 
     let (
@@ -822,46 +822,19 @@ fn main(arg: usize) -> ! {
             stem::yield_now();
         }
 
-        // The compositor uses the acquire/present path directly.
-        // MSG_BIND remains available only as a legacy client fallback.
-        let mut d_presenter = PresenterImpl::Driver(d);
-        stem::info!("[bloom] Requesting initial driver buffer...");
-        let (acq_fd, acq_w, acq_h, acq_s, acq_f, acq_age) = d_presenter.acquire_buffer();
-        stem::info!("[bloom] ACQUIRED FD={} RETURNED!", acq_fd);
+        // ACQUIRE cannot currently work across processes because file
+        // descriptors are resolved through the caller's fd table. Bind the
+        // shared bootstrap buffer from Sprout instead.
+        d.send_bind(&abi::display_driver_protocol::BindPayload {
+            fb_fd: final_fd,
+            _pad: 0,
+            width: final_width,
+            height: final_height,
+            stride: final_stride,
+            format: screen_format,
+        });
 
-        // Map the initial buffer
-        use abi::vm::{VmBacking, VmMapReq, VmProt};
-        let req = VmMapReq {
-            addr_hint: 0,
-            len: (acq_s as usize) * (acq_h as usize),
-            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-            flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd: acq_fd,
-                offset: 0,
-            },
-        };
-
-        if let Ok(resp) = stem::syscall::vm_map(&req) {
-            let ptr = resp.addr as *mut u8;
-            final_ptr = ptr;
-            final_size = (acq_h * acq_s) as usize;
-            final_width = acq_w;
-            final_height = acq_h;
-            final_stride = acq_s;
-            final_fd = acq_fd;
-            screen_format = acq_f;
-            final_age = acq_age;
-            stem::info!(
-                "[bloom] ACQUIRED initial driver buffer: {:p} (fd={})",
-                ptr,
-                acq_fd
-            );
-        } else {
-            stem::error!("[bloom] FAILED to map initial driver buffer");
-        }
-
-        d_presenter
+        PresenterImpl::Driver(d)
     } else if let Ok(fd) = vfs_open("/dev/fb0", O_WRONLY) {
         bootfb_fd = Some(fd);
         stem::info!("[bloom] using /dev/fb0 file presenter");
@@ -1010,11 +983,10 @@ fn main(arg: usize) -> ! {
     let mut first_loop_probe = true;
     let mut last_loop_start_ns = stem::monotonic_ns();
 
-    use stem::syscall::vfs::vfs_watch_path;
-    stem::info!("[bloom] creating focus watch");
-    let focus_watch = vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
-    stem::info!("[bloom] reading initial active_ui");
-    let mut has_focus = get_active_ui() == "bloom";
+    // Default to focused at startup. Reading /session/active_ui has been observed
+    // to stall before first paint, so keep it off the first-frame path.
+    let focus_watch = 0u32;
+    let mut has_focus = true;
     stem::info!("[bloom] initial has_focus={}", has_focus);
 
     let mut current_fd = final_fd;
@@ -1180,11 +1152,21 @@ fn main(arg: usize) -> ! {
             // Legacy bristle node discovery removed. Input is now VFS/file-native.
             // (Previously we used this to sync input bits from graph, deprecated)
         }
+        if first_loop_probe {
+            stem::info!("[bloom] after bristle poll before first frame");
+        }
 
         // Poll font client for IPC responses. Font warmup should not trigger
         // immediate compositor redraws; those redraws can monopolize the main
         // loop under emulation and make cursor motion feel stuck.
-        let _font_cache_updated = crate::font_client::poll();
+        let _font_cache_updated = if first_frame_rendered {
+            crate::font_client::poll()
+        } else {
+            false
+        };
+        if first_loop_probe {
+            stem::info!("[bloom] after font poll before first frame");
+        }
 
         // 0. Check for new glyphs in graph
         if let Some(gw) = glyph_watch {
@@ -1201,6 +1183,9 @@ fn main(arg: usize) -> ! {
             paint_pending_rebuilds = true;
             invalidation_causes.push(SnapshotInvalidation::ContentChanged);
         }
+        if first_loop_probe {
+            stem::info!("[bloom] after paint watch poll before first frame");
+        }
 
         let cursor_moved_since_last_frame = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
         let pointer_motion_only = first_frame_rendered
@@ -1215,7 +1200,15 @@ fn main(arg: usize) -> ! {
 
         // Refresh window state after input so hit-testing sees current geometry, but let
         // pure pointer-motion frames bypass background window rebuild work.
-        let paint_res = if should_process_updates {
+        let paint_res = if !first_frame_rendered {
+            if first_loop_probe {
+                stem::info!("[bloom] deferring process_updates until after first frame");
+            }
+            crate::paint_vm::PaintResult {
+                damage: alloc::vec::Vec::new(),
+                pending_rebuilds: true,
+            }
+        } else if should_process_updates {
             if first_loop_probe {
                 stem::info!("[bloom] entering process_updates before first frame");
             }
@@ -2279,54 +2272,6 @@ fn main(arg: usize) -> ! {
             presenter.pump();
             if first_loop_probe {
                 stem::info!("[bloom] first pump returned");
-            }
-
-            // Acquire NEXT buffer for the next frame
-            if let PresenterImpl::Driver(_) = presenter {
-                if first_loop_probe {
-                    stem::info!("[bloom] requesting next buffer after first present");
-                }
-                let (next_fd, next_w, next_h, next_s, next_f, next_age) =
-                    presenter.acquire_buffer();
-                if first_loop_probe {
-                    stem::info!("[bloom] acquired next buffer after first present fd={}", next_fd);
-                }
-                // Use cached pointer or map if new
-                let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_fd) {
-                    ptr
-                } else {
-                    use abi::vm::{VmBacking, VmMapReq, VmProt};
-                    let req = VmMapReq {
-                        addr_hint: 0,
-                        len: (next_s as usize) * (next_h as usize),
-                        prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-                        flags: abi::vm::VmMapFlags::empty(),
-                        backing: VmBacking::File {
-                            fd: next_fd,
-                            offset: 0,
-                        },
-                    };
-                    let ptr = stem::syscall::vm_map(&req)
-                        .expect("map acquired frame")
-                        .addr as *mut u8;
-                    buffer_cache.insert(next_fd, ptr);
-                    ptr
-                };
-                let next_size = (next_h * next_s) as usize;
-
-                // Update surface to point to the new buffer
-                unsafe {
-                    surface.update_buffer(next_ptr, next_size, next_w, next_h, next_s);
-                }
-
-                final_fd = next_fd;
-                final_width = next_w;
-                final_height = next_h;
-                final_stride = next_s;
-                screen_w = next_w as i32;
-                screen_h = next_h as i32;
-                screen_format = next_f;
-                current_age = next_age;
             }
 
             if !first_frame_rendered {

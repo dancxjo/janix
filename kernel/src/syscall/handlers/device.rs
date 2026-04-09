@@ -33,7 +33,7 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
 
     if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
         if let Some(claim_handle) = reg.claim(device_idx, task_id) {
-            crate::kinfo!(
+            crate::kdebug!(
                 "DEVICE: task {} claimed device {} (handle {})",
                 task_id,
                 graph_id,
@@ -104,7 +104,7 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
 
     reg.set_bar_mapping(claim_handle, bar_index, user_va);
 
-    crate::kinfo!(
+    crate::kdebug!(
         "DEVICE: Mapped BAR{} phys=0x{:x} size=0x{:x} -> virt=0x{:x}",
         bar_index,
         phys_addr,
@@ -140,7 +140,7 @@ pub fn sys_device_irq_subscribe(arg0: usize, arg1: usize, mode: usize) -> SysRes
                     .ok_or(Errno::ENODEV)?
             };
             crate::irq::subscribe(vector).map_err(|_| Errno::EBUSY)?;
-            crate::kinfo!(
+            crate::kdebug!(
                 "DEVICE: task subscribed to device irq {} (mode={:?}, vector=0x{:x})",
                 irq_index,
                 irq_mode,
@@ -154,7 +154,7 @@ pub fn sys_device_irq_subscribe(arg0: usize, arg1: usize, mode: usize) -> SysRes
                 return Err(Errno::EINVAL);
             }
             crate::irq::subscribe(vector as u8).map_err(|_| Errno::EBUSY)?;
-            crate::kinfo!("DEVICE: task subscribed to vector 0x{:x}", vector);
+            crate::kdebug!("DEVICE: task subscribed to vector 0x{:x}", vector);
             Ok(0)
         }
     }

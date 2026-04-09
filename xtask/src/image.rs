@@ -83,18 +83,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "bloom",
-            is_init: true,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "fontd",
-            is_init: true,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "ps2_mouse",
             is_init: true,
             boot_module: true,
@@ -155,12 +143,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "disk_probe",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "virtio_sound",
             is_init: true,
             boot_module: true,
@@ -208,6 +190,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "fontd",
+            is_init: true, // Started by sprout init sequence
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "bloom",
+            is_init: true, // Started by sprout init sequence
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 
@@ -219,7 +213,7 @@ fn generate_limine_config(
 ) -> String {
     let res = resolution.unwrap_or("1920x1080");
     let mut conf = String::new();
-    conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
+    conf.push_str("timeout: 0\nquiet: no\nverbose: yes\nserial: yes\n\n");
     conf.push_str("/ThingOS\n");
     conf.push_str("    protocol: limine\n");
     conf.push_str(&format!("    resolution: {}\n", res));

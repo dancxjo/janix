@@ -26,7 +26,7 @@ use vfs_provider::{handle_vfs_rpc, NetVfsState};
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    info!("VIRTIO_NETD: Starting VirtIO-NET driver service...");
+    stem::debug!("VIRTIO_NETD: Starting VirtIO-NET driver service...");
 
     // Initialize VirtIO-NET driver.
     let mut driver = match if arg != 0 {
@@ -47,7 +47,7 @@ fn main(arg: usize) -> ! {
         VirtioNetDriver::find_and_claim()
     } {
         Ok(d) => {
-            info!("VIRTIO_NETD: Driver initialized successfully");
+            stem::debug!("VIRTIO_NETD: Driver initialized successfully");
             d
         }
         Err(e) => {
@@ -59,16 +59,16 @@ fn main(arg: usize) -> ! {
     };
 
     let mac = driver.mac();
-    info!(
+    stem::debug!(
         "VIRTIO_NETD: MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
     // Wait for link up before proceeding.
-    info!("VIRTIO_NETD: Waiting for link...");
+    stem::debug!("VIRTIO_NETD: Waiting for link...");
     loop {
         if driver.link_up() {
-            info!("VIRTIO_NETD: Link is UP");
+            stem::debug!("VIRTIO_NETD: Link is UP");
             break;
         }
         stem::time::sleep_ms(100);
@@ -81,7 +81,7 @@ fn main(arg: usize) -> ! {
     //   req_read  → this daemon reads RPCs here
     let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
         Ok(handles) => {
-            info!("VIRTIO_NETD: Created VFS provider port");
+            stem::debug!("VIRTIO_NETD: Created VFS provider port");
             handles
         }
         Err(e) => {
@@ -96,7 +96,7 @@ fn main(arg: usize) -> ! {
     // Pass the write end so the kernel can send us RPCs.
     match vfs_mount(req_write, "/dev/net/virtio0") {
         Ok(()) => {
-            info!("VIRTIO_NETD: Mounted at /dev/net/virtio0");
+            stem::debug!("VIRTIO_NETD: Mounted at /dev/net/virtio0");
         }
         Err(e) => {
             error!("VIRTIO_NETD: Failed to mount VFS provider: {:?}", e);
@@ -117,7 +117,7 @@ fn main(arg: usize) -> ! {
             state.link_up = link_up;
             let event = if link_up { "link-up" } else { "link-down" };
             state.push_event(event);
-            info!("VIRTIO_NETD: Link state changed: {}", event);
+            stem::debug!("VIRTIO_NETD: Link state changed: {}", event);
         }
 
         // 2. Poll hardware for received frames and buffer them.

@@ -586,16 +586,20 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 
     if resolved == 0x21 {
         let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        /*
         if count <= 3 || (count % 128 == 0) {
             kinfo!("IRQ1 fired (count={})", count);
         }
+        */
     }
 
     if resolved == 0x2C {
         let count = IRQ12_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        /*
         if count <= 3 || (count % 128 == 0) {
             kinfo!("IRQ12 fired (count={})", count);
         }
+        */
     }
 
     // Send EOI to Local APIC early to avoid wedging during context switch
@@ -607,9 +611,11 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 
     if resolved == 0x24 {
         let count = IRQ4_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        /*
         if count <= 3 || (count % 128 == 0) {
             kinfo!("IRQ4 (serial) fired (count={})", count);
         }
+        */
     }
 
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
@@ -626,7 +632,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
         // crate::theme::try_tick(now_ticks);
     } else if resolved == 0x24 {
         // Serial interrupt - poll into buffer
-        kernel::contract!("[IRQ] Serial interrupt 0x24 fired");
+        // kernel::contract!("[IRQ] Serial interrupt 0x24 fired");
         crate::RUNTIME.arch.poll_serial();
     } else if resolved == IRQ_RESCHED_VECTOR {
         kernel::sched::on_resched_ipi::<crate::arch::CurrentRuntime>();

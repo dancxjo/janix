@@ -134,6 +134,9 @@ unsafe impl Send for Logger {}
 impl fmt::Write for Logger {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for b in s.bytes() {
+            if b == b'\n' {
+                self.runtime.putchar(b'\r');
+            }
             self.runtime.putchar(b);
         }
         Ok(())

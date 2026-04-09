@@ -47,14 +47,14 @@ pub struct VirtioDevice {
 impl VirtioDevice {
     /// Create a new VirtioDevice by claiming and mapping a device node
     pub fn new(sys_path: &str) -> Result<Self, Errno> {
-        stem::info!("VirtIO: device::new({})", sys_path);
+        stem::debug!("VirtIO: device::new({})", sys_path);
 
         // Read kernel handle from /sys/devices/.../handle
         let device_id = read_sys_u32(&alloc::format!("{}/handle", sys_path))? as u64;
 
-        stem::info!("VirtIO: internal handle=0x{:x} - claiming...", device_id);
+        stem::debug!("VirtIO: internal handle=0x{:x} - claiming...", device_id);
         let claim_handle = device_claim(device_id)?;
-        stem::info!("VirtIO: claimed, handle={}", claim_handle);
+        stem::debug!("VirtIO: claimed, handle={}", claim_handle);
 
         // Read VirtIO capability offsets from sysfs
         let common_bar = read_sys_u32(&format!("{}/virtio/common_bar", sys_path))? as usize;
@@ -63,7 +63,7 @@ impl VirtioDevice {
         let notify_offset = read_sys_u32(&format!("{}/virtio/notify_offset", sys_path))? as u64;
         let notify_multiplier = read_sys_u32(&format!("{}/virtio/notify_multiplier", sys_path))?;
 
-        stem::info!(
+        stem::debug!(
             "VirtIO: common_bar={} common_off=0x{:x} notify_bar={} notify_off=0x{:x} mult={}",
             common_bar,
             common_offset,
@@ -77,10 +77,10 @@ impl VirtioDevice {
         let device_offset = read_sys_u32(&format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
 
         // Map the BAR containing common config
-        stem::info!("VirtIO: mapping common BAR{}...", common_bar);
+        stem::debug!("VirtIO: mapping common BAR{}...", common_bar);
         let common_bar_base = device_map_mmio(claim_handle, common_bar)?;
         let common_cfg = common_bar_base + common_offset;
-        stem::info!("VirtIO: common_cfg at 0x{:x}", common_cfg);
+        stem::debug!("VirtIO: common_cfg at 0x{:x}", common_cfg);
 
         // Map notify BAR (may be same as common BAR)
         let notify_cfg = if notify_bar == common_bar {
@@ -90,7 +90,7 @@ impl VirtioDevice {
             let notify_bar_base = device_map_mmio(claim_handle, notify_bar)?;
             notify_bar_base + notify_offset
         };
-        stem::info!("VirtIO: notify_cfg at 0x{:x}", notify_cfg);
+        stem::debug!("VirtIO: notify_cfg at 0x{:x}", notify_cfg);
 
         // Map device config BAR if available
         let device_cfg = if device_bar != 0xFF {
@@ -106,10 +106,10 @@ impl VirtioDevice {
         } else {
             None
         };
-        stem::info!("VirtIO: device_cfg = {:?}", device_cfg);
+        stem::debug!("VirtIO: device_cfg = {:?}", device_cfg);
 
         // Allocate command buffer (1 page for commands + responses)
-        stem::info!("VirtIO: allocating DMA command buffer...");
+        stem::debug!("VirtIO: allocating DMA command buffer...");
         let cmd_buf = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
         let cmd_buf_phys = device_dma_phys(cmd_buf).map_err(|_| Errno::EFAULT)?;
         stem::info!(
@@ -118,7 +118,7 @@ impl VirtioDevice {
             cmd_buf_phys
         );
 
-        stem::info!("VirtIO: device::new complete");
+        stem::debug!("VirtIO: device::new complete");
         Ok(Self {
             claim_handle,
             common_cfg,
@@ -147,7 +147,7 @@ fn read_sys_u32(path: &str) -> Result<u32, Errno> {
 
     let s = core::str::from_utf8(&buf[..n]).map_err(|_| Errno::EIO)?;
     let trimmed = s.trim();
-    stem::info!("READ_SYS: {} -> '{}' (n={})", path, trimmed, n);
+    stem::debug!("READ_SYS: {} -> '{}' (n={})", path, trimmed, n);
     if trimmed.starts_with("0x") {
         u32::from_str_radix(&trimmed[2..], 16).map_err(|_| Errno::EIO)
     } else {

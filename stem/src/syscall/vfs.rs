@@ -9,6 +9,7 @@ use abi::syscall::{
     PollFd, SYS_FS_CLOSE, SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DEVICE_CALL,
 };
 
 use super::arch::raw_syscall6;
@@ -311,4 +312,34 @@ pub fn vfs_rename(old_path: &str, new_path: &str) -> SysResult<()> {
         )
     };
     abi::errors::errno(ret).map(|_| ())
+}
+
+/// Issue a device-specific call (ioctl) to a VFS file descriptor.
+/// Issue a device-specific call (ioctl) to a VFS file descriptor.
+pub fn vfs_device_call(fd: u32, kind: abi::device::DeviceKind, op: u32, arg: u64) -> SysResult<u64> {
+    let call = abi::device::DeviceCall {
+        kind,
+        op,
+        in_ptr: arg,
+        in_len: 0,
+        out_ptr: 0,
+        out_len: 0,
+    };
+    vfs_device_call_raw(fd, &call)
+}
+
+/// Issue a raw device-specific call using a pre-filled DeviceCall struct.
+pub fn vfs_device_call_raw(fd: u32, call: &abi::device::DeviceCall) -> SysResult<u64> {
+    let ret = unsafe {
+        super::arch::raw_syscall6(
+            SYS_FS_DEVICE_CALL,
+            fd as usize,
+            call as *const _ as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
 }

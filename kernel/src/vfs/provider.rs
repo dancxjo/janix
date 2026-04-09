@@ -42,8 +42,9 @@ use spin::Mutex;
 
 use abi::{
     errors::{Errno, SysResult},
-    vfs_rpc::{VFS_RPC_MAX_RESP, VfsRpcOp, VfsRpcReqHeader},
+    vfs_rpc::{VFS_RPC_MAX_DATA, VFS_RPC_MAX_RESP, VfsRpcOp, VfsRpcReqHeader},
 };
+use crate::syscall::validate::{copyin, copyout};
 
 use super::{VfsDriver, VfsNode, VfsStat};
 
@@ -345,6 +346,59 @@ impl VfsNode for ProviderNode {
     fn close(&self) {
         let payload = self.handle.to_le_bytes();
         let _ = self.channel.lock().rpc(VfsRpcOp::Close, &payload);
+    }
+
+    fn device_call(&self, call: &abi::device::DeviceCall) -> SysResult<usize> {
+        let in_len = call.in_len as usize;
+        let out_len = call.out_len as usize;
+
+        if in_len > VFS_RPC_MAX_DATA || out_len > VFS_RPC_MAX_DATA {
+            return Err(Errno::EINVAL);
+        }
+
+        let mut payload = vec![0u8; 8 + core::mem::size_of::<abi::device::DeviceCall>() + in_len];
+        payload[..8].copy_from_slice(&self.handle.to_le_bytes());
+
+        // Copy DeviceCall struct
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                call as *const _ as *const u8,
+                payload[8..].as_mut_ptr(),
+                core::mem::size_of::<abi::device::DeviceCall>(),
+            );
+        }
+
+        // Copy in_data if present
+        if in_len > 0 {
+            unsafe {
+                copyin(&mut payload[8 + core::mem::size_of::<abi::device::DeviceCall>()..], call.in_ptr as usize)?;
+            }
+        }
+
+        let resp = self.channel.lock().rpc(VfsRpcOp::DeviceCall, &payload)?;
+
+        // Parse response: [status][ret_val: u32][actual_out_len: u32][out_data...]
+        if resp.is_empty() {
+            return Err(Errno::EIO);
+        }
+        if resp[0] != 0 {
+            return Err(errno_from_u8(resp[0]));
+        }
+        if resp.len() < 9 {
+            return Err(Errno::EIO);
+        }
+
+        let ret_val = u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]);
+        let actual_out_len = u32::from_le_bytes([resp[5], resp[6], resp[7], resp[8]]) as usize;
+
+        if actual_out_len > 0 && out_len > 0 {
+            let copy_n = actual_out_len.min(out_len).min(resp.len() - 9);
+            unsafe {
+                copyout(call.out_ptr as usize, &resp[9..9 + copy_n])?;
+            }
+        }
+
+        Ok(ret_val as usize)
     }
 }
 

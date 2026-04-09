@@ -6,6 +6,7 @@ pub enum DeviceKind {
     Mouse = 3,
     Framebuffer = 4,
     Pci = 5,
+    Display = 6,
 }
 
 #[repr(C)]

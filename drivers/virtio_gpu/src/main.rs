@@ -1,5 +1,5 @@
 #![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "thingos", feature(restricted_std))]
+#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
 #![no_main]
 
 extern crate alloc;

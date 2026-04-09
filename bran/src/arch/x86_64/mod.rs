@@ -111,7 +111,7 @@ impl X86_64Runtime {
                 unsafe {
                     core::arch::asm!("in al, dx", out("al") ch, in("dx") 0x3f8u16, options(nostack, preserves_flags));
                 }
-                kernel::contract!("[SERIAL] Received: 0x{:02x} ('{}')", ch, ch as char);
+                // kernel::contract!("[SERIAL] Received: 0x{:02x} ('{}')", ch, ch as char);
                 buf.push(ch);
             } else {
                 break;
@@ -500,6 +500,7 @@ impl ArchRuntime for X86_64Runtime {
         let user_code_sel: u64 = gdt::USER_CODE_SEL as u64;
         let rflags: u64 = 0x202; // IF + reserved
         #[cfg(debug_assertions)]
+        /*
         {
             let tid = unsafe { kernel::sched::current_tid_current() };
             let (cs, ss, rsp, rip, rflags_before, cr3, fs_base, gs_base) = capture_entry_state();
@@ -527,6 +528,7 @@ impl ArchRuntime for X86_64Runtime {
                 about=[]
             );
         }
+        */
         unsafe {
             asm!(
                 "cli",

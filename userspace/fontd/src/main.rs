@@ -1,308 +1,172 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 extern crate alloc;
-extern crate std;
-extern crate stem;
 
-mod atlas;
-
+use stem::{info, error};
+use stem::syscall::{channel_recv_handle, channel_send_handle};
 use abi::font_protocol::{
-    AtlasFormat, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics, FontError, FontRequestTag,
-    GetFaceMetrics, GlyphPlacement, decode_request_tag, encode_error, encode_pong,
+    AtlasFormat, FaceMetrics, FontRequestTag, FontResponseTag,
+    GlyphPlacement, EnsureGlyphs, EnsureGlyphsResp, GetFaceMetrics,
+    decode_request_tag, encode_error, FontError,
 };
+use petals::font::TextRenderer;
 use abi::ids::HandleId;
-use abi::wait::{WaitKind, WaitResult, WaitSpec, interest, ready};
+use abi::wire::ThingId;
 use alloc::vec::Vec;
-use fontdue::{Font, FontSettings};
-use stem::syscall;
-use stem::thing::ThingId;
-use stem::{error, info, warn};
-
+use alloc::vec;
 use alloc::collections::BTreeMap;
-use atlas::{AtlasCache, AtlasKey};
-use hashbrown::HashMap;
 
-struct FontD {
-    fonts: HashMap<u64, Font>,
-    atlas_cache: AtlasCache,
-    metrics_cache: BTreeMap<(u64, u16), FaceMetrics>,
-}
+use petals::Atlas;
 
-impl FontD {
-    fn new() -> Self {
-        Self {
-            fonts: HashMap::new(),
-            atlas_cache: AtlasCache::new(),
-            metrics_cache: BTreeMap::new(),
-        }
-    }
-
-    fn ensure_font(&mut self, face_id: u64) -> Option<&Font> {
-        if self.fonts.contains_key(&face_id) {
-            return self.fonts.get(&face_id);
-        }
-
-        // For now, load default font from /boot for face_id == 1
-        // Other IDs can be mapped later if we add a "load from path" IPC
-        if face_id != 1 {
-            return None;
-        }
-
-        let path = "/boot/NotoSans-Regular.ttf";
-        info!("FONTD: Loading default font from {}", path);
-
-        let data = std::fs::read(path)
-            .map_err(|e| {
-                error!("FONTD: Failed to read font file {}: {}", path, e);
-            })
-            .ok()?;
-
-        let static_slice: &'static [u8] = Vec::leak(data);
-
-        let font = match Font::from_bytes(static_slice, FontSettings::default()) {
-            Ok(font) => font,
-            Err(e) => {
-                error!("FONTD: Failed to parse font: {}", e);
-                return None;
-            }
-        };
-
-        self.fonts.insert(face_id, font);
-        self.fonts.get(&face_id)
-    }
+struct FontService {
+    renderer: TextRenderer,
+    // (face_id, px_size) -> Atlas
+    atlases: BTreeMap<(u64, u16), Atlas>,
+    // (face_id, px_size, glyph_id) -> GlyphPlacement
+    cache: BTreeMap<(u64, u16, u32), GlyphPlacement>,
 }
 
 #[stem::main]
-fn main() -> ! {
-    info!("FONTD: Starting Font Service");
-
-    let mut state = FontD::new();
-
-    // Open IPC ports for font service
-    // Clients send to fontd_req (write), fontd reads from fontd_req (read)
-    // Fontd sends to fontd_resp (write), clients read from fontd_resp (read)
-    let (fontd_req, fontd_resp) =
-        match (syscall::channel_create(8192), syscall::channel_create(8192)) {
-            (Ok(req), Ok(resp)) => {
-                // VFS-native service publication
-                let _ = syscall::vfs_mkdir("/services");
-                let _ = syscall::vfs_mkdir("/services/font");
- 
-                if let Err(e) = syscall::vfs_mount(req.0, "/services/font/req") {
-                    warn!("FONTD: Failed to mount /services/font/req: {:?}", e);
-                }
-                if let Err(e) = syscall::vfs_mount(resp.1, "/services/font/resp") {
-                    warn!("FONTD: Failed to mount /services/font/resp: {:?}", e);
-                }
- 
-                info!(
-                    "FONTD: Service ports mounted to /services/font/{{req,resp}}"
-                );
-                (req.1, resp.0)
-            }
-            _ => {
-                warn!("FONTD: Failed to create IPC ports");
-                (0, 0)
-            }
-        };
-
-    info!("FONTD: Service ready");
-
-    let mut ipc_buf = [0u8; 8192];
-    let mut resp_buf = [0u8; 16384];
-    let mut ready_buf = [WaitResult::default(); 1];
-    let mut wait_specs = [WaitSpec::default(); 1];
-
-    loop {
-        let mut wait_count = 0usize;
-
-        if fontd_req != 0 {
-            wait_specs[wait_count] = WaitSpec {
-                kind: WaitKind::Port as u32,
-                flags: interest::READABLE,
-                object: fontd_req as u64,
-                token: 1,
-            };
-            wait_count += 1;
-        }
-
-        if wait_count == 0 {
-            syscall::sleep_ms(100);
-            continue;
-        }
-
-        let ready_count = match syscall::wait_many(&wait_specs[..wait_count], &mut ready_buf, None)
-        {
-            Ok(n) => n,
-            Err(err) => {
-                warn!("FONTD: wait_many failed: {:?}", err);
-                syscall::sleep_ms(10);
-                continue;
-            }
-        };
-
-        for ready_result in &ready_buf[..ready_count] {
-            match ready_result.token {
-                1 if (ready_result.flags & ready::READABLE) != 0 => loop {
-                    match syscall::channel_try_recv(fontd_req, &mut ipc_buf) {
-                        Ok(len) if len > 0 => {
-                            if let Some(resp_len) =
-                                handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state)
-                            {
-                                let _ = syscall::channel_send(fontd_resp, &resp_buf[..resp_len]);
-                            }
-                        }
-                        Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
-                        Err(err) => {
-                            warn!("FONTD: fontd_req recv failed: {:?}", err);
-                            break;
-                        }
-                    }
-                },
-                _ => {}
-            }
-        }
-    }
-}
-
-// ============================================================================
-// IPC Request Handlers (Atlas-based path)
-// ============================================================================
-
-fn handle_ipc_request(req: &[u8], resp: &mut [u8], state: &mut FontD) -> Option<usize> {
-    let tag = decode_request_tag(req)?;
-    match tag {
-        FontRequestTag::Ping => encode_pong(resp),
-        FontRequestTag::GetFaceMetrics => {
-            let metrics_req = GetFaceMetrics::decode(&req[1..])?;
-            handle_get_metrics(metrics_req, resp, state)
-        }
-        FontRequestTag::EnsureGlyphs => {
-            let ensure_req = EnsureGlyphs::decode(&req[1..])?;
-            handle_ensure_glyphs(ensure_req, resp, state)
-        }
-    }
-}
-
-fn handle_get_metrics(req: GetFaceMetrics, resp: &mut [u8], state: &mut FontD) -> Option<usize> {
-    let face_id_u64 = req.face_id.to_u64_lossy();
-    let cache_key = (face_id_u64, req.px_size);
-
-    // Check cache first
-    if let Some(metrics) = state.metrics_cache.get(&cache_key) {
-        return metrics.encode(resp);
+fn main(arg0: usize) -> ! {
+    info!("fontd: starting up...");
+    
+    let listen_port = arg0 as u32;
+    if listen_port == 0 {
+        error!("fontd: No listen port provided!");
+        loop { stem::yield_now(); }
     }
 
-    // Load font and compute metrics
-    let font = state.ensure_font(face_id_u64)?;
-    let line_metrics = font.horizontal_line_metrics(req.px_size as f32)?;
-
-    let metrics = FaceMetrics {
-        ascent: line_metrics.ascent as i16,
-        descent: line_metrics.descent as i16,
-        line_gap: line_metrics.line_gap as i16,
-        units_per_em: font.units_per_em() as u16,
+    let mut service = FontService {
+        renderer: TextRenderer::load_from_boot("/assets/fonts/NotoSans-Regular.ttf")
+            .expect("Failed to load default font"),
+        atlases: BTreeMap::new(),
+        cache: BTreeMap::new(),
     };
 
-    state.metrics_cache.insert(cache_key, metrics);
-    metrics.encode(resp)
+    info!("fontd: Entering IPC loop on handle {}", listen_port);
+
+    let mut buf = [0u8; 4096 * 4];
+    loop {
+        match stem::syscall::channel_recv(listen_port, &mut buf) {
+            Ok(n) => {
+                let tag = match decode_request_tag(&buf[..n]) {
+                    Some(tag) => tag,
+                    None => {
+                        error!("fontd: Received invalid request tag");
+                        continue;
+                    }
+                };
+                
+                match tag {
+                    FontRequestTag::Ping => {
+                        let mut resp = [0u8; 1];
+                        resp[0] = FontResponseTag::Pong as u8;
+                        let _ = stem::syscall::channel_send(listen_port, &resp);
+                    }
+                    FontRequestTag::GetFaceMetrics => {
+                        if let Some(req) = GetFaceMetrics::decode(&buf[1..n]) {
+                            let font = &service.renderer.font;
+                            let metrics = font.horizontal_line_metrics(req.px_size as f32)
+                                .unwrap_or_else(|| font.horizontal_line_metrics(16.0).unwrap());
+                            
+                            let resp = FaceMetrics {
+                                ascent: metrics.ascent as i16,
+                                descent: metrics.descent as i16,
+                                line_gap: metrics.line_gap as i16,
+                                units_per_em: font.units_per_em() as u16,
+                            };
+                            let mut out_buf = [0u8; 10];
+                            if let Some(len) = resp.encode(&mut out_buf) {
+                                let _ = stem::syscall::channel_send(listen_port, &out_buf[..len]);
+                            }
+                        }
+                    }
+                    FontRequestTag::EnsureGlyphs => {
+                        if let Some(req) = EnsureGlyphs::decode(&buf[1..n]) {
+                            handle_ensure_glyphs(&mut service, listen_port, req);
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                stem::yield_now();
+            }
+        }
+    }
 }
 
-fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -> Option<usize> {
-    let atlas_key = AtlasKey::new(req.face_id, req.px_size);
+fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs) {
     let face_id_u64 = req.face_id.to_u64_lossy();
-
-    // Ensure font is loaded first, this mutably borrows state briefly
-    if state.ensure_font(face_id_u64).is_none() {
-        return encode_error(FontError::UnknownFace, resp);
+    let px_size = req.px_size;
+    
+    // Get or create atlas
+    if !service.atlases.contains_key(&(face_id_u64, px_size)) {
+        let atlas = Atlas::new("font_atlas", 1024, 1024, 1).expect("Failed to create atlas");
+        service.atlases.insert((face_id_u64, px_size), atlas);
     }
-
-    // Now process glyphs - separate borrows for font and atlas
+    let atlas = service.atlases.get_mut(&(face_id_u64, px_size)).unwrap();
+    
     let mut placements = Vec::new();
     let mut missing = Vec::new();
-
-    // Pre-rasterize all needed glyphs (borrowing font only)
-    let mut rasterized: Vec<(u32, fontdue::Metrics, Vec<u8>)> = Vec::new();
-    for &glyph_id in &req.glyph_ids {
-        // Check atlas first (immutable borrow of atlas_cache)
-        if state
-            .atlas_cache
-            .get(&atlas_key)
-            .map(|a| a.get_placement(glyph_id).is_some())
-            .unwrap_or(false)
-        {
-            continue; // Already in atlas
-        }
-
-        // Need to rasterize
-        if let Some(font) = state.fonts.get(&face_id_u64) {
-            let ch = core::char::from_u32(glyph_id).unwrap_or(' ');
-            let (metrics, bitmap) = font.rasterize(ch, req.px_size as f32);
-            rasterized.push((glyph_id, metrics, bitmap));
-        }
-    }
-
-    // Now pack everything into atlas (mutable borrow of atlas_cache only)
-    let atlas = state.atlas_cache.get_or_create(atlas_key);
-
-    // First collect existing placements
-    for &glyph_id in &req.glyph_ids {
-        if let Some(p) = atlas.get_placement(glyph_id) {
+    
+    for &gid in &req.glyph_ids {
+        if let Some(p) = service.cache.get(&(face_id_u64, px_size, gid)) {
             placements.push(*p);
+            continue;
         }
-    }
-
-    // Now pack rasterized glyphs
-    for (glyph_id, metrics, bitmap) in rasterized {
+        
+        // Rasterize
+        let (metrics, bitmap) = service.renderer.font.rasterize(char::from_u32(gid).unwrap_or(' '), px_size as f32);
+        
         if metrics.width == 0 || metrics.height == 0 {
-            // Empty glyph (space, etc) - still valid
-            let placement = GlyphPlacement {
-                glyph_id,
-                x: 0,
-                y: 0,
-                w: 0,
-                h: 0,
-                bearing_x: 0,
-                bearing_y: 0,
+            let p = GlyphPlacement {
+                glyph_id: gid,
+                x: 0, y: 0, w: 0, h: 0,
+                bearing_x: metrics.xmin as i16,
+                bearing_y: metrics.ymin as i16,
                 advance: metrics.advance_width as i16,
             };
-            placements.push(placement);
+            service.cache.insert((face_id_u64, px_size, gid), p);
+            placements.push(p);
             continue;
         }
 
-        // Pack into atlas
-        match atlas.pack_glyph(
-            glyph_id,
-            &bitmap,
-            metrics.width as u32,
-            metrics.height as u32,
-            metrics.xmin as i16,
-            metrics.ymin as i16,
-            metrics.advance_width as i16,
-        ) {
-            Some(p) => placements.push(p),
-            None => missing.push(glyph_id),
+        // Pack
+        if let Some((x, y)) = atlas.pack(metrics.width as u32, metrics.height as u32, &bitmap) {
+            let p = GlyphPlacement {
+                glyph_id: gid,
+                x: x as u16,
+                y: y as u16,
+                w: metrics.width as u16,
+                h: metrics.height as u16,
+                bearing_x: metrics.xmin as i16,
+                bearing_y: metrics.ymin as i16,
+                advance: metrics.advance_width as i16,
+            };
+            service.cache.insert((face_id_u64, px_size, gid), p);
+            placements.push(p);
+        } else {
+            missing.push(gid);
         }
     }
-
-    // Commit atlas to bytespace
-    if !atlas.commit() {
-        return encode_error(FontError::AtlasAllocationFailed, resp);
-    }
-
-    // Build response
-    let response = EnsureGlyphsResp {
+    
+    let resp = EnsureGlyphsResp {
         req_face_id: req.face_id,
-        req_px_size: req.px_size,
-        atlas_fd: atlas.atlas_fd,
-        atlas_width: atlas.width,
-        atlas_height: atlas.height,
-        atlas_format: AtlasFormat::A8,
-        atlas_version: atlas.version,
+        req_px_size: px_size,
+        atlas_fd: atlas.texture.fd,
+        atlas_width: atlas.texture.width,
+        atlas_height: atlas.texture.height,
+        atlas_format: abi::font_protocol::AtlasFormat::A8,
+        atlas_version: 1, // Need to increment this if we invalidate
         placements,
         missing,
     };
-
-    response.encode(resp)
+    
+    let mut resp_buf = vec![0u8; 4096 * 4];
+    if let Some(len) = resp.encode(&mut resp_buf) {
+        let _ = stem::syscall::channel_send(port, &resp_buf[..len]);
+        // Also send the FD if the protocol expects it via channel_send_handle
+        let _ = stem::syscall::channel_send_handle(port, atlas.texture.fd);
+    }
 }

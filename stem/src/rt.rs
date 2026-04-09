@@ -12,7 +12,7 @@ pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
 #[cfg(all(
     target_arch = "x86_64",
     feature = "rt",
-    any(target_os = "none", target_os = "thingos")
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
 ))]
 core::arch::global_asm!(
     r#"
@@ -30,7 +30,7 @@ core::arch::global_asm!(
 #[cfg(all(
     target_arch = "aarch64",
     feature = "rt",
-    any(target_os = "none", target_os = "thingos")
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
 ))]
 core::arch::global_asm!(
     r#"
@@ -46,7 +46,7 @@ core::arch::global_asm!(
 #[cfg(all(
     target_arch = "riscv64",
     feature = "rt",
-    any(target_os = "none", target_os = "thingos")
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
 ))]
 core::arch::global_asm!(
     r#"
@@ -62,7 +62,7 @@ core::arch::global_asm!(
 #[cfg(all(
     target_arch = "loongarch64",
     feature = "rt",
-    any(target_os = "none", target_os = "thingos")
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
 ))]
 core::arch::global_asm!(
     r#"

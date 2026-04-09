@@ -3,17 +3,13 @@ name = "bloom"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["gpu"]
-svg-cursors = []
-svg-demo = ["svg-cursors"]
-surface-poison = []
-gpu = []  # Enable GPU-accelerated composition via virgl
-
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc"] }
+stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
-fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }
-spin = "0.9"
-libm = "0.2"
+petals = { path = "../petals" }
+
+[[bin]]
+name = "bloom"
+path = "src/main.rs"
+test = false
+doctest = false

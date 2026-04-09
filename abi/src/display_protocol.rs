@@ -45,7 +45,7 @@ pub struct BufferResp {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Rect {
     pub x: u32,
     pub y: u32,

@@ -1,8 +1,10 @@
 #![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "thingos", feature(restricted_std))]
+#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
 #![no_main]
 
 extern crate alloc;
+use alloc::format;
+use alloc::string::ToString;
 
 use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;

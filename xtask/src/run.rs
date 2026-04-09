@@ -75,29 +75,29 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<
             // - `usb=off` removes USB tablet/mouse defaults
             // - `vmport=off` removes VMware vmmouse path
             if x86_qemu_trace_enabled() {
-                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial vc -serial mon:stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
                     .args(&qemu_args)
                     .run()?;
             } else {
-                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial vc -serial mon:stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
                     .args(&qemu_args)
                     .run()?;
             }
         }
         "aarch64" => {
-            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial stdio -semihosting -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
+            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial vc -serial mon:stdio -semihosting -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
                 .args(&qemu_args)
                 .run()?;
         }
         "riscv64" => {
             // riscv64 virt requires blockdev syntax with machine-level pflash assignment
             // Also uses virtio-blk instead of -cdrom since riscv64 virt doesn't expose cdrom to UEFI properly
-            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={iso},format=raw,if=none,id=drive0,readonly=on -device virtio-blk-device,drive=drive0")
+            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial vc -serial mon:stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={iso},format=raw,if=none,id=drive0,readonly=on -device virtio-blk-device,drive=drive0")
                 .args(&qemu_args)
                 .run()?;
         }
         "loongarch64" => {
-            cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
+            cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -serial vc -serial mon:stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
                 .args(&qemu_args)
                 .run()?;
         }
@@ -116,7 +116,7 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     println!("Running in QEMU BIOS mode...");
     cmd!(
         sh,
-        "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -cdrom {iso} -boot d -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}"
+        "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial vc -serial mon:stdio -cdrom {iso} -boot d -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}"
     )
     .args(&qemu_args)
     .run()?;
@@ -137,24 +137,24 @@ pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str, hdd_path: &Path) -> Res
     let netdev = user_netdev_arg();
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd} -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+            cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial vc -serial mon:stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd} -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
                 .args(&qemu_args)
                 .run()?;
         }
         "aarch64" => {
-            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
+            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial vc -serial mon:stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
                 .args(&qemu_args)
                 .run()?;
         }
         "riscv64" => {
             // riscv64 virt requires blockdev syntax with machine-level pflash assignment
             // Also uses virtio-blk instead of -hda since riscv64 virt doesn't expose IDE to UEFI properly
-            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={hdd},format=raw,if=none,id=drive0 -device virtio-blk-device,drive=drive0")
+            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial vc -serial mon:stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={hdd},format=raw,if=none,id=drive0 -device virtio-blk-device,drive=drive0")
                 .args(&qemu_args)
                 .run()?;
         }
         "loongarch64" => {
-            cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
+            cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -serial vc -serial mon:stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
                 .args(&qemu_args)
                 .run()?;
         }

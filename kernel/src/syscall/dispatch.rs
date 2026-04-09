@@ -5,14 +5,6 @@ use abi::syscall::*;
 pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let syscall_id = n as u32;
 
-    if syscall_id == 0x400F {
-        let res = handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]);
-        return match res {
-            Ok(v) => v as isize,
-            Err(e) => -(e as isize),
-        };
-    }
-
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
         SYS_REBOOT => handlers::sys_reboot(),
@@ -103,7 +95,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_POLL => handlers::vfs::sys_fs_poll(args[0], args[1], args[2]),
         SYS_FS_SEEK => handlers::vfs::sys_fs_seek(args[0], args[1], args[2]),
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
-        0x400F => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
+        SYS_FS_DEVICE_CALL => handlers::vfs::sys_fs_device_call(args[0], args[1]),
+        SYS_FS_WATCH_PATH => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
 
         _ => Err(abi::errors::Errno::ENOSYS),
     };

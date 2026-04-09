@@ -62,6 +62,11 @@ pub enum VfsRpcOp {
     /// Payload: `[handle: u64][events: u32]`
     /// Response payload (on OK): `[revents: u32]`
     Poll = 7,
+    /// Device-specific control call (ioctl).
+    ///
+    /// Payload: `[handle: u64][DeviceCall struct]`
+    /// Response payload (on OK): `[u32 return value]`
+    DeviceCall = 8,
 }
 
 impl VfsRpcOp {
@@ -75,6 +80,7 @@ impl VfsRpcOp {
             5 => Some(Self::Stat),
             6 => Some(Self::Close),
             7 => Some(Self::Poll),
+            8 => Some(Self::DeviceCall),
             _ => None,
         }
     }

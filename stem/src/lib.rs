@@ -1,7 +1,7 @@
-// When targeting the kernel (target_os = "none"), stem is no_std.
-// When targeting userspace (target_os = "thingos"), stem uses std.
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "thingos", feature(restricted_std))]
+// When targeting the kernel (bare x86_64-unknown-none), stem is no_std.
+// When targeting userspace (any(target_os = "thingos", target_env = "thingos")), stem uses std.
+#![cfg_attr(not(any(target_os = "thingos", target_env = "thingos")), no_std)]
+#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
 #![allow(unexpected_cfgs)]
 extern crate alloc;
 

@@ -35,22 +35,18 @@ impl Supervisor {
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
+        crate::pipelines::setup_graphics_stack(&mut self.tasks);
 
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
         self.ensure_service("/devd", "svc.devd");
         self.ensure_service("/netd", "svc.net");
-        self.ensure_service("/fontd", "svc.FontD");
 
         crate::pipelines::setup_network_apps(&mut self.tasks);
 
-        // --- STAGE 3: UI (Terminal & Compositor) ---
-        info!("SPROUT: [Stage 3] Starting UI Pipeline");
-        info!("SPROUT: [Stage 3] -> Setting up Compositor (Bloom)...");
-        crate::pipelines::setup_compositor(&mut self.tasks, display_handles.clone(), input_handles.clone());
 
-        info!("SPROUT: [Stage 3] -> Setting up Terminal...");
-        crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
+        // info!("SPROUT: [Stage 3] -> Setting up Terminal...");
+        // crate::pipelines::setup_terminal(&mut self.tasks, display_handles, input_handles);
         
         info!("SPROUT: [Stage 3] UI initialization triggered");
 

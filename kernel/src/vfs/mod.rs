@@ -150,6 +150,11 @@ pub trait VfsNode: Send + Sync {
         abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
     }
 
+    /// Device-specific control call (ioctl).
+    fn device_call(&self, _call: &abi::device::DeviceCall) -> SysResult<usize> {
+        Err(abi::errors::Errno::ENOSYS)
+    }
+
     /// Add a task to the wait queue for this node.
     fn add_waiter(&self, _tid: u64) {}
 

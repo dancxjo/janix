@@ -245,6 +245,7 @@ impl NetVfsProvider {
             VfsRpcOp::Stat => self.op_stat(resp_port, payload, socket_api),
             VfsRpcOp::Close => self.op_close(resp_port, payload, socket_set, socket_api),
             VfsRpcOp::Poll => self.op_poll(resp_port, payload, socket_set, socket_api),
+            VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
         }
     }
 

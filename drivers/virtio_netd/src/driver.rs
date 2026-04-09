@@ -69,7 +69,7 @@ pub struct VirtioNetDriver {
 impl VirtioNetDriver {
     /// Find and claim a VirtIO-NET device, then initialize it
     pub fn find_and_claim() -> Result<Self, Errno> {
-        info!("VirtIO-NET: Searching for NIC device...");
+        stem::debug!("VirtIO-NET: Searching for NIC device...");
 
         // Find a dev.net.nic node
         let nic_path = find_nic_device()?;
@@ -77,7 +77,7 @@ impl VirtioNetDriver {
     }
 
     pub fn claim_device(nic_path: &str) -> Result<Self, Errno> {
-        info!("VirtIO-NET: Claiming NIC device at {}", nic_path);
+        stem::debug!("VirtIO-NET: Claiming NIC device at {}", nic_path);
 
         // Create VirtIO device wrapper
         let mut device = VirtioDevice::new(nic_path)?;
@@ -88,7 +88,7 @@ impl VirtioNetDriver {
             .init(desired_features)
             .map_err(|_| Errno::NotSupported)?;
 
-        info!(
+        stem::debug!(
             "VirtIO-NET: Device features 0x{:08x}",
             device.device_features()
         );
@@ -108,7 +108,7 @@ impl VirtioNetDriver {
             [0x52, 0x54, 0x00, 0x12, 0x34, 0x56] // Default
         };
 
-        info!(
+        stem::debug!(
             "VirtIO-NET: MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
         );
@@ -122,19 +122,19 @@ impl VirtioNetDriver {
             true
         };
 
-        info!("VirtIO-NET: Link {}", if link_up { "UP" } else { "DOWN" });
+        stem::debug!("VirtIO-NET: Link {}", if link_up { "UP" } else { "DOWN" });
 
         // Setup RX queue (queue 0)
         device
             .setup_queue(0, QUEUE_SIZE)
             .map_err(|_| Errno::ENOMEM)?;
-        info!("VirtIO-NET: RX queue 0 setup (size={})", QUEUE_SIZE);
+        stem::debug!("VirtIO-NET: RX queue 0 setup (size={})", QUEUE_SIZE);
 
         // Setup TX queue (queue 1)
         device
             .setup_queue(1, QUEUE_SIZE)
             .map_err(|_| Errno::ENOMEM)?;
-        info!("VirtIO-NET: TX queue 1 setup (size={})", QUEUE_SIZE);
+        stem::debug!("VirtIO-NET: TX queue 1 setup (size={})", QUEUE_SIZE);
 
         // Allocate RX buffers in bulk (32 pages = 128KB for 64 x 2KB buffers)
         // This dramatically reduces syscall overhead compared to 64 separate allocations
@@ -151,7 +151,7 @@ impl VirtioNetDriver {
         let rx_pool_virt =
             device_alloc_dma(claim_handle, RX_PAGES_NEEDED).map_err(|_| Errno::ENOMEM)?;
         let rx_pool_phys = device_dma_phys(rx_pool_virt).map_err(|_| Errno::EFAULT)?;
-        info!(
+        stem::debug!(
             "VirtIO-NET: Allocated RX pool ({} pages, {} buffers)",
             RX_PAGES_NEEDED, QUEUE_SIZE
         );
@@ -166,7 +166,7 @@ impl VirtioNetDriver {
         // Allocate TX buffer (single page is fine for 1 buffer)
         let tx_buffer_virt = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
         let tx_buffer_phys = device_dma_phys(tx_buffer_virt).map_err(|_| Errno::EFAULT)?;
-        info!("VirtIO-NET: Allocated TX buffer (1 page)");
+        stem::debug!("VirtIO-NET: Allocated TX buffer (1 page)");
 
         let mut driver = Self {
             device,
@@ -183,19 +183,19 @@ impl VirtioNetDriver {
         // Fill RX queue with buffers BEFORE setting DRIVER_OK
         // This is critical: device won't receive until buffers are posted
         driver.refill_rx_queue();
-        info!(
+        stem::debug!(
             "VirtIO-NET: RX queue filled with {} buffers",
             driver.rx_active
         );
 
         // NOW mark device ready - it will start receiving
         driver.device.driver_ok();
-        info!("VirtIO-NET: DRIVER_OK set, device is live");
+        stem::debug!("VirtIO-NET: DRIVER_OK set, device is live");
 
         // Kick RX queue again to be sure device notices our buffers
         driver.device.notify_queue(0);
 
-        info!("VirtIO-NET: Driver initialized successfully");
+        stem::debug!("VirtIO-NET: Driver initialized successfully");
         Ok(driver)
     }
 
@@ -256,7 +256,7 @@ impl VirtioNetDriver {
     /// Log debug stats for diagnosis
     #[allow(dead_code)]
     pub fn log_stats(&self, label: &str) {
-        info!("VirtIO-NET [{}]: rx_active={}", label, self.rx_active);
+        stem::debug!("VirtIO-NET [{}]: rx_active={}", label, self.rx_active);
     }
 
     /// Poll for received frames
@@ -264,7 +264,7 @@ impl VirtioNetDriver {
         let rxq = self.device.queue_mut(0)?;
 
         if let Some((desc_id, len)) = rxq.poll_used() {
-            info!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);
+            stem::debug!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);
 
             let buf_virt = self.rx_buffers_virt[desc_id as usize];
 
@@ -296,7 +296,7 @@ impl VirtioNetDriver {
             return Err("Frame too large");
         }
 
-        info!("VirtIO-NET: TX {} bytes", data.len());
+        stem::debug!("VirtIO-NET: TX {} bytes", data.len());
 
         // Write header
         let header = VirtioNetHeader::zeroed();
@@ -329,7 +329,7 @@ impl VirtioNetDriver {
             if let Some(txq) = self.device.queue_mut(1) {
                 if txq.poll_used().is_some() {
                     if i >= 1000 {
-                        info!("VirtIO-NET: TX complete after {} iterations (yielded)", i);
+                        stem::debug!("VirtIO-NET: TX complete after {} iterations (yielded)", i);
                     }
                     return Ok(());
                 }

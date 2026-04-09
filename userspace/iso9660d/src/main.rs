@@ -213,6 +213,7 @@ fn handle_vfs_rpc(fs: &IsoFs, dev: &PortBlockDevice, buf: &[u8]) {
             r[1..5].copy_from_slice(&1u32.to_le_bytes()); // POLLIN
             send_resp(resp_port, &r);
         }
+        VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
     }
 }
 

@@ -170,6 +170,7 @@ pub fn handle_vfs_rpc(state: &mut NetVfsState, driver: &mut VirtioNetDriver, buf
         VfsRpcOp::Stat => handle_stat(resp_port, payload),
         VfsRpcOp::Close => send_resp(resp_port, &[E_OK]),
         VfsRpcOp::Poll => handle_poll(state, resp_port, payload),
+        VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
     }
 }
 

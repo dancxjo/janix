@@ -5,6 +5,7 @@ extern crate self as abi;
 pub mod block_device_protocol;
 pub mod debug;
 pub mod device;
+pub mod display;
 pub mod display_driver_protocol;
 pub mod display_protocol;
 pub mod drawlist;

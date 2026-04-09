@@ -44,9 +44,6 @@ members = [
     "userspace/smallsh",
     "userspace/ls",
     "userspace/cat",
-    "userspace/bloom",
-    "userspace/disk_probe",
-    "userspace/fontd",
 
     "userspace/iso9660",
     "userspace/iso9660d",
@@ -58,6 +55,9 @@ members = [
     "userspace/stdio_demo",
     "userspace/wayland_hello",
     "userspace/terminal",
+    "userspace/petals",
+    "userspace/fontd",
+    "userspace/bloom",
 ]
 
 # Exclude wasm32 theme crates (different target)

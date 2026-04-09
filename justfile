@@ -184,7 +184,7 @@ test *args:
 # Check everything (compilation + UI split)
 check: check-ui-split fetch-rust
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
-    cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
+    cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p sprout
 
 # Run smoke tests (quick boot validation)
 smoke:

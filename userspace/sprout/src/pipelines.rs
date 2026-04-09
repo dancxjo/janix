@@ -392,9 +392,6 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
             display_width, display_height, display_stride
         );
     }
-
-    // Check for VirtIO GPU first via PCI class 03 00 00 and vendor 0x1af4 device 0x1010/0x1050
-    if driver_name.is_none() && backend_name != "BootFB" {
         // virtio-gpu: class 0x030000, vendor 0x1af4
         if has_sys_device("0x0300") {
             display_stride = display_width * 4;
@@ -406,7 +403,6 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
                 display_width, display_height
             );
         }
-    }
 
     // Fallback to BootFB already handled by probe_bootfb_vfs() at start of function
 
@@ -600,6 +596,27 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     };
 
     // Dedicated Bristle -> Bloom input channel plus optional input echo tap.
+    let bloom_evt = match stem::syscall::channel_create(4096) {
+        Ok(h) => h,
+        Err(e) => {
+            stem::error!("SPROUT: Failed to create bloom_evt: {:?}", e);
+            return InputHandles {
+                bloom_evt_read: 0,
+                evt_input_echo_read: 0,
+            };
+        }
+    };
+
+    let evt_input_echo = match stem::syscall::channel_create(4096) {
+        Ok(h) => h,
+        Err(e) => {
+            stem::error!("SPROUT: Failed to create evt_input_echo: {:?}", e);
+            return InputHandles {
+                bloom_evt_read: 0,
+                evt_input_echo_read: 0,
+            };
+        }
+    };
 
     // Spawn ps2_kbd with raw write handle
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
@@ -639,11 +656,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
     }
 
-    let bloom_evt = stem::syscall::channel_create(8192).unwrap_or((0, 0));
-    let evt_input_echo = stem::syscall::channel_create(8192).unwrap_or((0, 0));
-
-    // Spawn bristle with packed handles:
-    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | bloom_evt_write[31:16] | evt_input_echo_write[15:0]
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_input_echo_write[15:0]
     let bristle_arg = ((kbd_raw.1 as u64) << 48)
         | ((mouse_raw.1 as u64) << 32)
         | ((bloom_evt.0 as u64) << 16)
@@ -667,8 +680,6 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
     }
 
-    // Font handling is now integrated into Bloom. No standalone fontd service.
-
     info!("SPROUT: Input broker ready (keyboard + mouse)");
     InputHandles {
         bloom_evt_read: bloom_evt.1,
@@ -676,113 +687,6 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     }
 }
 
-pub fn setup_compositor(
-    tasks: &mut Vec<ManagedTask>,
-    display: Option<DisplayHandles>,
-    input: InputHandles,
-) {
-    info!("SPROUT: setup_compositor (display={:?})", display.is_some());
-
-    // Extract display handles early for bloom compositor
-    let (drv_req_write, drv_resp_read, display_bs_id) = display
-        .as_ref()
-        .map(|d| (d.drv_req_write, d.drv_resp_read, d.bs_id))
-        .unwrap_or((0, 0, 0));
-
-    // Bloom Bootstrap
-    // Create bytespace to hold args
-    // Layout:
-    // 0: magic (0xBl00mArg)e
-    // 8: drv_req
-    // 12: drv_resp
-    // 16: evt
-    // 20: font_req (write) -> font_req.0
-    // 24: font_resp (read) -> font_resp.1
-
-    let boot_size = 4096;
-    let boot_fd = stem::syscall::memfd_create("bloom.boot", boot_size).unwrap_or(0);
-
-    if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt};
-        let req = VmMapReq {
-            addr_hint: 0,
-            len: boot_size,
-            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-            flags: abi::vm::VmMapFlags::empty(),
-            backing: VmBacking::File {
-                fd: boot_fd,
-                offset: 0,
-            },
-        };
-        if let Ok(resp) = stem::syscall::vm_map(&req) {
-            let ptr = resp.addr;
-            let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
-            slice[0] = 0xB100AA01; // Magic
-            slice[1] = drv_req_write as u32;
-            slice[2] = drv_resp_read as u32;
-            slice[3] = input.bloom_evt_read as u32;
-            slice[4] = display_bs_id;
-            if let Some(d) = &display {
-                slice[5] = d.width;
-                slice[6] = d.height;
-                slice[7] = d.stride;
-                slice[8] = d.format;
-            }
-            info!(
-                "SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}",
-                drv_req_write, drv_resp_read, input.bloom_evt_read
-            );
-        }
-    }
-
-    let bloom_arg = boot_fd as u32;
-
-    let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
-    info!(
-        "SPROUT: Bloom handles via FD={} backend={}",
-        boot_fd, backend_info
-    );
-
-    // Spawn bloom
-    match stem::syscall::spawn_process("/bloom", bloom_arg as usize) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned bloom (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "/bloom".to_string(),
-                kind: TaskKind::App,
-                module_path: "/bloom".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: bloom_arg as usize as usize,
-            });
-        }
-        Err(e) => {
-            stem::error!("SPROUT: Failed to spawn bloom: {:?}", e);
-        }
-    }
-
-    // Spawn input_echo with wired Bristle event handle.
-    match stem::syscall::spawn_process("/input_echo", input.evt_input_echo_read as usize) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned input_echo (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "/input_echo".to_string(),
-                kind: TaskKind::App,
-                module_path: "/input_echo".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: input.evt_input_echo_read as usize,
-            });
-        }
-        Err(e) => {
-            stem::error!("SPROUT: Failed to spawn input_echo: {:?}", e);
-        }
-    }
-
-    info!("SPROUT: Compositor ready");
-}
 
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
@@ -1060,6 +964,51 @@ pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
         }
         Err(e) => {
             warn!("SPROUT: Failed to spawn beeper: {:?}", e);
+        }
+    }
+}
+
+pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");
+
+    // 1. Setup fontd
+    let font_chan = channel_create(4096).expect("Failed to create fontd channel");
+    // font_chan.1 is the read end for fontd, font_chan.0 is the write end for clients
+    
+    match stem::syscall::spawn_process("/fontd", font_chan.1 as usize) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned fontd (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/fontd".to_string(),
+                kind: TaskKind::Service("svc.font".to_string()),
+                module_path: "/fontd".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: font_chan.1 as usize,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn fontd: {:?}", e);
+        }
+    }
+
+    // 2. Setup Bloom (Compositor)
+    match stem::syscall::spawn_process("/bloom", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned bloom (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 3); // High priority for compositor
+            tasks.push(ManagedTask {
+                name: "/bloom".to_string(),
+                kind: TaskKind::App,
+                module_path: "/bloom".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn bloom: {:?}", e);
         }
     }
 }

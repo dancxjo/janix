@@ -605,21 +605,36 @@ pub fn sys_watch_path(
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
-    crate::kinfo!("WATCH_PATH: looking up '{}' mask=0x{:x}", path, mask);
     let node = vfs::mount::lookup(path)?;
-    crate::kinfo!("WATCH_PATH: resolved node, registering watch");
 
     let watch = Arc::new(crate::vfs::watch::Watch::new(mask as u32, flags as u32));
     crate::vfs::watch::register_watch(&node, watch.clone())?;
-    crate::kinfo!("WATCH_PATH: registered watch, opening fd");
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let watch_fd = pinfo_arc
         .lock()
         .fd_table
         .open(watch, crate::vfs::OpenFlags::read_only())?;
-    crate::kinfo!("WATCH_PATH: success fd={}", watch_fd);
     Ok(watch_fd as usize)
+}
+
+pub fn sys_fs_device_call(fd: usize, call_ptr: usize) -> SysResult<usize> {
+    let size = core::mem::size_of::<abi::device::DeviceCall>();
+    validate_user_range(call_ptr, size, true)?;
+    let mut call: abi::device::DeviceCall = unsafe { core::mem::zeroed() };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut call as *mut _ as *mut u8, size) };
+    unsafe {
+        copyin(slice, call_ptr)?;
+    }
+
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        file.node.clone()
+    };
+
+    node.device_call(&call)
 }
 
 // ── rename ──────────────────────────────────────────────────────────────────

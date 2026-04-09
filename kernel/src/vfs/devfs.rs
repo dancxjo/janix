@@ -364,11 +364,13 @@ impl VfsNode for FbNode {
 
         let off = offset as usize;
         if off >= slice.len() {
+            crate::kwarn!("FbNode::read: EOF (offset={} >= slice.len={})", off, slice.len());
             return Ok(0);
         }
 
         let avail = &slice[off..];
         let n = avail.len().min(buf.len());
+        crate::kinfo!("FbNode::read: off={} n={} buf_len={} total={}", off, n, buf.len(), slice.len());
         buf[..n].copy_from_slice(&avail[..n]);
         Ok(n)
     }

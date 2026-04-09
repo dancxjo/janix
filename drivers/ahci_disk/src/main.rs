@@ -476,25 +476,24 @@ fn main(boot_fd: usize) -> ! {
             let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
             unsafe { core::slice::from_raw_parts(ptr, len) }
         } else {
-            b"/sys/devices/pci-0000:00:01.0" // Default to QEMU AHCI
+            b"/sys/devices/pci-0000:00:1f.2" // Default to QEMU AHCI (q35)
         }
     } else {
-        b"/sys/devices/pci-0000:00:01.0"
+        b"/sys/devices/pci-0000:00:1f.2"
     };
     let path_str = core::str::from_utf8(path).unwrap_or("");
 
     // Read kernel handle from sysfs
-    let pci_handle = if !path_str.is_empty() {
-        use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
-        let h_path = alloc::format!("{}/handle", path_str);
-        if let Ok(fd) = vfs_open(&h_path, abi::syscall::vfs_flags::O_RDONLY) {
-            let mut buf = [0u8; 32];
-            if let Ok(n) = vfs_read(fd, &mut buf) {
-                let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
-                s.trim().parse::<u64>().unwrap_or(0)
-            } else { 0 }
-        } else { 0 }
-    } else { 0 };
+    let mut pci_handle = if !path_str.is_empty() {
+        read_sys_u64(&alloc::format!("{}/handle", path_str)).unwrap_or(0)
+    } else {
+        0
+    };
+
+    if pci_handle == 0 {
+        info!("AHCI: Searching for controller via class scan...");
+        pci_handle = find_ahci_device().unwrap_or(0);
+    }
 
     if pci_handle == 0 {
         error!("AHCI: Failed to find controller info at '{}'", path_str);
@@ -875,5 +874,75 @@ fn send_error_response(port_handle: ChannelHandle, error_code: BlockDeviceError)
 
     if let Err(e) = channel_send(port_handle, &response_buf) {
         error!("AHCI: Failed to send Error response: {:?}", e);
+    }
+}
+
+fn find_ahci_device() -> Option<u64> {
+    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close};
+    use abi::syscall::vfs_flags;
+
+    let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
+        Ok(fd) => fd,
+        Err(_) => return None,
+    };
+
+    let mut buf = [0u8; 4096];
+    let n = match vfs_readdir(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = vfs_close(fd);
+            return None;
+        }
+    };
+    let _ = vfs_close(fd);
+
+    let mut pos = 0;
+    while pos < n {
+        let entry_buf = &buf[pos..n];
+        let name = core::str::from_utf8(entry_buf)
+            .unwrap_or("")
+            .split('\0')
+            .next()
+            .unwrap_or("");
+        if name.is_empty() {
+            break;
+        }
+
+        if name.starts_with("pci-") {
+            let class_path = alloc::format!("/sys/devices/{}/class", name);
+            if let Some(class_str) = read_sys_string(&class_path) {
+                // PCI Class 01, Subclass 06, ProgIf 01 is AHCI
+                if class_str.trim().starts_with("0x010601") {
+                    let handle_path = alloc::format!("/sys/devices/{}/handle", name);
+                    if let Some(h) = read_sys_u64(&handle_path) {
+                        info!("AHCI: Found {} via scan (handle=0x{:x})", name, h);
+                        return Some(h);
+                    }
+                }
+            }
+        }
+        pos += name.len() + 1;
+    }
+    None
+}
+
+fn read_sys_string(path: &str) -> Option<alloc::string::String> {
+    use abi::syscall::vfs_flags::O_RDONLY;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
+
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 128];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+
+    Some(alloc::string::String::from_utf8_lossy(&buf[..n]).trim().to_string())
+}
+
+fn read_sys_u64(path: &str) -> Option<u64> {
+    let s = read_sys_string(path)?;
+    if s.starts_with("0x") {
+        u64::from_str_radix(&s[2..], 16).ok()
+    } else {
+        s.parse().ok()
     }
 }

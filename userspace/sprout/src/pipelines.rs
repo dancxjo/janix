@@ -509,7 +509,7 @@ pub fn setup_display_pipeline(
             stem::abi::types::stdio_mode::INHERIT,
             stem::abi::types::stdio_mode::INHERIT,
             stem::abi::types::stdio_mode::INHERIT,
-            0u64, // boot_arg
+            boot_fd as u64, // boot_arg
             &[drv_req.1 as u64, drv_resp.0 as u64],
         );
 

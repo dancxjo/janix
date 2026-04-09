@@ -708,7 +708,7 @@ fn find_hda_device() -> Option<u64> {
                 let handle_path = alloc::format!("/sys/devices/{}/handle", name);
                 if let Some(graph_id) = read_sys_u64(&handle_path) {
                     stem::info!("HDAUDIO: Found device via scan: {} (graph_id={})", name, graph_id);
-                    return stem::syscall::device_claim(graph_id).ok().map(|h| h as u64);
+                    return Some(graph_id);
                 }
             }
         }

@@ -319,8 +319,6 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
 
-    crate::kprintln!("SYSCALL: spawn_process_ex(req={:#x}, resp={:#x})", req_ptr, resp_ptr);
-
     // Copy in the request struct
     validate_user_range(req_ptr, core::mem::size_of::<SpawnProcessExReq>(), false)?;
     let mut req = SpawnProcessExReq::default();
@@ -331,9 +329,6 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
             core::mem::size_of::<SpawnProcessExReq>(),
         );
     }
-
-    crate::kprintln!("  req: name_ptr={:#x} len={} argv_ptr={:#x} len={} boot_arg={:#x}",
-        req.name_ptr, req.name_len, req.argv_ptr, req.argv_len, req.boot_arg);
 
     // Copy in the program name
     let name_len = req.name_len as usize;

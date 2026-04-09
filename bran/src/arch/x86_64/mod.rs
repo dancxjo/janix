@@ -593,7 +593,7 @@ impl ArchRuntime for X86_64Runtime {
 
         ioapic::set_lapic_timer_periodic(idt::IRQ_TIMER_VECTOR, init_cnt);
 
-        kernel::kinfo!(
+        kernel::kdebug!(
             "LAPIC: calibrated timer ({} ticks/sec), init_cnt={} for {}Hz",
             ticks_per_sec,
             init_cnt,
@@ -798,7 +798,7 @@ impl ArchRuntime for X86_64Runtime {
         cpu_index: usize,
     ) -> Result<(), abi::errors::Errno> {
         use core::sync::atomic::Ordering;
-        use kernel::{MapKind, MapPerms, kerror, kinfo, kwarn};
+        use kernel::{MapKind, MapPerms, kdebug, kerror, kwarn};
 
         let hhdm = self.hhdm_offset.load(Ordering::SeqCst);
         let aspace = self.active_address_space();
@@ -811,7 +811,7 @@ impl ArchRuntime for X86_64Runtime {
             .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
-            kinfo!("SMP: Initializing trampoline at 0x{:x}", trampoline_base);
+            kernel::kdebug!("SMP: Initializing trampoline at 0x{:x}", trampoline_base);
 
             self.map_page(
                 aspace,
@@ -828,7 +828,7 @@ impl ArchRuntime for X86_64Runtime {
                 &ProxyAllocator,
             )
             .map_err(|_| {
-                kerror!("SMP: Failed to identity-map trampoline");
+                kernel::kerror!("SMP: Failed to identity-map trampoline");
                 abi::errors::Errno::ENOMEM
             })?;
             self.tlb_flush_page(trampoline_base);
@@ -854,7 +854,7 @@ impl ArchRuntime for X86_64Runtime {
 
         // 2. Start the specific AP
         let apic_id = cpu.0 as u32;
-        kinfo!("SMP: Starting CPU {} (APIC {})", cpu_index, apic_id);
+        kernel::kdebug!("SMP: Starting CPU {} (APIC {})", cpu_index, apic_id);
 
         let write_trampoline_data = |offset: usize, val: u64| unsafe {
             core::ptr::write_volatile((trampoline_addr + offset as u64) as *mut u64, val);
@@ -865,7 +865,7 @@ impl ArchRuntime for X86_64Runtime {
 
         let write_icr = |high: u32, low: u32| unsafe {
             if !self.wait_lapic_icr_idle(lapic_virt, Self::LAPIC_ICR_DELIVERY_TIMEOUT_US) {
-                kwarn!(
+                kernel::kwarn!(
                     "SMP: LAPIC ICR busy before IPI to CPU {} (APIC {})",
                     cpu_index,
                     apic_id
@@ -874,7 +874,7 @@ impl ArchRuntime for X86_64Runtime {
             core::ptr::write_volatile((lapic_virt + 0x310) as *mut u32, high);
             core::ptr::write_volatile((lapic_virt + 0x300) as *mut u32, low);
             if !self.wait_lapic_icr_idle(lapic_virt, Self::LAPIC_ICR_DELIVERY_TIMEOUT_US) {
-                kwarn!(
+                kernel::kwarn!(
                     "SMP: LAPIC ICR still busy after IPI to CPU {} (APIC {})",
                     cpu_index,
                     apic_id
@@ -939,11 +939,11 @@ impl ArchRuntime for X86_64Runtime {
         let came_up = self.wait_for_ap_flag(hhdm, Self::AP_STARTUP_TIMEOUT_US);
 
         if came_up {
-            kinfo!("SMP: CPU {} (APIC {}) is online", cpu_index, apic_id);
+            kernel::kdebug!("SMP: CPU {} (APIC {}) is online", cpu_index, apic_id);
             self.started_cpu_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
         } else {
-            kerror!("SMP: CPU {} (APIC {}) timed out", cpu_index, apic_id);
+            kernel::kerror!("SMP: CPU {} (APIC {}) timed out", cpu_index, apic_id);
             Err(abi::errors::Errno::ETIMEDOUT)
         }
     }
@@ -952,22 +952,22 @@ impl ArchRuntime for X86_64Runtime {
         &self,
         entry: extern "C" fn(usize) -> !,
     ) -> Result<(), abi::errors::Errno> {
-        use kernel::{kerror, kinfo};
+        use kernel::{kdebug, kerror};
 
         let total = CPU_COUNT.load(Ordering::SeqCst) as usize;
         if total <= 1 {
-            kinfo!("SMP: No secondary CPUs to start");
+            kernel::kdebug!("SMP: No secondary CPUs to start");
             return Ok(());
         }
 
-        kinfo!("SMP: Starting {} secondary CPUs...", total - 1);
+        kernel::kdebug!("SMP: Starting {} secondary CPUs...", total - 1);
         let mut first_err: Option<abi::errors::Errno> = None;
 
         for cpu_index in 1..total {
             let cpu_id = unsafe { CPU_IDS[cpu_index] };
             let result = unsafe { self.start_cpu(cpu_id, entry, cpu_index) };
             if let Err(err) = result {
-                kerror!(
+                kernel::kerror!(
                     "SMP: Failed to start CPU {} (APIC {}): {:?}",
                     cpu_index,
                     cpu_id.0,
@@ -982,7 +982,7 @@ impl ArchRuntime for X86_64Runtime {
         if let Some(err) = first_err {
             Err(err)
         } else {
-            kinfo!("SMP: Secondary CPU startup complete");
+            kernel::kdebug!("SMP: Secondary CPU startup complete");
             Ok(())
         }
     }

@@ -27,12 +27,12 @@ const KIND_DRV_PS2_KBD: &str = "drv.Ps2Keyboard";
 fn main(raw_write_handle: usize) -> ! {
     let handle = raw_write_handle as ChannelHandle;
 
-    info!("ps2_kbd: online (handle={})", handle);
+    stem::debug!("ps2_kbd: online (handle={})", handle);
 
     // Subscribe to keyboard interrupt
     match irq_subscribe(KBD_VECTOR) {
         Ok(()) => {
-            info!("ps2_kbd: subscribed to IRQ1 (vector 0x{:02x})", KBD_VECTOR);
+            stem::debug!("ps2_kbd: subscribed to IRQ1 (vector 0x{:02x})", KBD_VECTOR);
             polling_loop(handle);
         }
         Err(e) => {
@@ -71,7 +71,7 @@ fn drain_keyboard_data(handle: ChannelHandle, state: &mut KeyboardState, drop_co
             }
         } else {
             // If aux data (mouse), stop draining - let ps2_mouse handle it
-            stem::info!("ps2_kbd: yield on AUX data (mouse packet)");
+            stem::debug!("ps2_kbd: yield on AUX data (mouse packet)");
             break;
         }
     }
@@ -116,7 +116,7 @@ fn send_key_event(handle: ChannelHandle, edge: KeyEdge, drop_counter: &mut u32) 
 
 /// Fallback polling loop (if IRQ subscribe fails)
 fn polling_loop(handle: ChannelHandle) -> ! {
-    info!(
+    stem::debug!(
         "ps2_kbd: using cooperative polling loop ({}ms interval)",
         POLLING_INTERVAL_MS
     );

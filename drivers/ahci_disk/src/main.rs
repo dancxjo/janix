@@ -21,7 +21,7 @@ use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 use stem::syscall::{channel_create, channel_recv, channel_send, channel_wait, ChannelHandle};
-use stem::{error, info};
+use stem::{debug, error, info};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -422,7 +422,7 @@ fn register_atapi_disk(port: &mut AhciPort) {
         .unwrap_or("ATAPI Device")
         .trim();
 
-    info!(
+    debug!(
         "AHCI: Registered ATAPI block device port={} model='{}' rpc_port={}",
         port.port_num,
         model_str,
@@ -432,7 +432,7 @@ fn register_atapi_disk(port: &mut AhciPort) {
 
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
-    info!("AHCI: Starting AHCI/SATA disk driver (boot_fd={})", boot_fd);
+    debug!("AHCI: Starting AHCI/SATA disk driver (boot_fd={})", boot_fd);
 
     // 1. Get device path from argv or primary arg
     let mut boot_fd = boot_fd;
@@ -491,7 +491,7 @@ fn main(boot_fd: usize) -> ! {
     };
 
     if pci_handle == 0 {
-        info!("AHCI: Searching for controller via class scan...");
+        debug!("AHCI: Searching for controller via class scan...");
         pci_handle = find_ahci_device().unwrap_or(0);
     }
 
@@ -502,7 +502,7 @@ fn main(boot_fd: usize) -> ! {
 
     let claim_handle = match stem::syscall::device_claim(pci_handle) {
         Ok(h) => {
-            info!("AHCI: Claimed PCI device 0x{:x} handle={}", pci_handle, h);
+            debug!("AHCI: Claimed PCI device 0x{:x} handle={}", pci_handle, h);
             h
         }
         Err(e) => {
@@ -513,7 +513,7 @@ fn main(boot_fd: usize) -> ! {
 
     let mapped_base = match stem::syscall::device_map_mmio(claim_handle, 5) {
         Ok(addr) => {
-            info!("AHCI: Mapped ABAR at 0x{:x}", addr);
+            debug!("AHCI: Mapped ABAR at 0x{:x}", addr);
             addr
         }
         Err(e) => {
@@ -527,7 +527,7 @@ fn main(boot_fd: usize) -> ! {
     let cap = mmio_read32(mapped_base, HBA_CAP);
     let version = mmio_read32(mapped_base, HBA_VS);
     let pi = mmio_read32(mapped_base, HBA_PI);
-    info!(
+    debug!(
         "AHCI: Version {}.{}, {} ports, {} slots, 64-bit: {}",
         (version >> 16) & 0xFFFF,
         version & 0xFFFF,
@@ -535,7 +535,7 @@ fn main(boot_fd: usize) -> ! {
         ((cap >> 8) & 0x1F) + 1,
         (cap & (1 << 31)) != 0
     );
-    info!("AHCI: Ports implemented: 0x{:x}", pi);
+    debug!("AHCI: Ports implemented: 0x{:x}", pi);
 
     // Enable AHCI mode
     let mut ghc = mmio_read32(mapped_base, HBA_GHC);
@@ -544,11 +544,11 @@ fn main(boot_fd: usize) -> ! {
 
     // Use static buffer for DMA to avoid kernel address issues
     let dma_virt = unsafe { DMA_BUFFER.data.as_mut_ptr() as u64 };
-    info!("AHCI: DMA virt=0x{:x}", dma_virt);
+    debug!("AHCI: DMA virt=0x{:x}", dma_virt);
 
     let dma_phys = match stem::syscall::device_dma_phys(dma_virt) {
         Ok(addr) => {
-            info!("AHCI: DMA phys=0x{:x}", addr);
+            debug!("AHCI: DMA phys=0x{:x}", addr);
             addr
         }
         Err(e) => {
@@ -570,20 +570,20 @@ fn main(boot_fd: usize) -> ! {
         if pi & (1 << port_num) == 0 {
             continue;
         }
-        info!("AHCI: Probing port {}...", port_num);
+        debug!("AHCI: Probing port {}...", port_num);
 
         let sig = match check_port_type(mapped_base, port_num) {
             Some(s) => s,
             None => {
-                info!("AHCI: Port {} - no device", port_num);
+                debug!("AHCI: Port {} - no device", port_num);
                 continue;
             }
         };
 
         match sig {
-            SATA_SIG_ATA => info!("AHCI: Port {} - SATA drive (sig=0x{:x})", port_num, sig),
+            SATA_SIG_ATA => debug!("AHCI: Port {} - SATA drive (sig=0x{:x})", port_num, sig),
             SATA_SIG_ATAPI => {
-                info!("AHCI: Port {} - SATAPI drive (sig=0x{:x})", port_num, sig);
+                debug!("AHCI: Port {} - SATAPI drive (sig=0x{:x})", port_num, sig);
 
                 // Setup Port
                 stop_port(mapped_base, port_num);
@@ -616,15 +616,15 @@ fn main(boot_fd: usize) -> ! {
                 continue;
             }
             SATA_SIG_SEMB => {
-                info!("AHCI: Port {} - Enclosure (skip)", port_num);
+                debug!("AHCI: Port {} - Enclosure (skip)", port_num);
                 continue;
             }
             SATA_SIG_PM => {
-                info!("AHCI: Port {} - PM (skip)", port_num);
+                debug!("AHCI: Port {} - PM (skip)", port_num);
                 continue;
             }
             _ => {
-                info!("AHCI: Port {} - Unknown sig=0x{:x}", port_num, sig);
+                debug!("AHCI: Port {} - Unknown sig=0x{:x}", port_num, sig);
                 continue;
             }
         }
@@ -642,7 +642,7 @@ fn main(boot_fd: usize) -> ! {
 
         start_port(mapped_base, port_num);
 
-        info!(
+        debug!(
             "AHCI: Port {} - SATA drive detected (IDENTIFY deferred - DMA access limitation)",
             port_num
         );
@@ -667,12 +667,12 @@ fn main(boot_fd: usize) -> ! {
     }
 
     if ports.is_empty() {
-        info!("AHCI: No SATA disks found");
+        debug!("AHCI: No SATA disks found");
     } else {
-        info!("AHCI: Found {} SATA disk(s)", ports.len());
+        debug!("AHCI: Found {} SATA disk(s)", ports.len());
     }
 
-    info!("AHCI: Entering RPC service loop");
+    debug!("AHCI: Entering RPC service loop");
 
     // Collect all port handles for waiting on requests
     let handles: Vec<ChannelHandle> = ports.iter().filter_map(|p| p.read_port_handle).collect();

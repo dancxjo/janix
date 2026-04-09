@@ -11,12 +11,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use binding::{match_binding, mount_hint};
 use spawn::ManagedDriver;
-use stem::{info, warn};
+use stem::{debug, info, warn};
 use sysfs::scan_devices;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("DEVD: starting device discovery manager");
+    debug!("DEVD: starting device discovery manager");
 
     let mut drivers: BTreeMap<alloc::string::String, ManagedDriver> = BTreeMap::new();
 

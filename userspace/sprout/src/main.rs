@@ -14,7 +14,7 @@ mod task;
 #[stem::main]
 fn main(arg0: usize) -> ! {
     let cpu = stem::arch::whoami();
-    info!(
+    stem::debug!(
         "[sprout] whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
         cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
     );
@@ -32,16 +32,16 @@ fn main(arg0: usize) -> ! {
         }
     }
 
-    stem::info!("SPROUT: About to create Supervisor...");
-    info!("SPROUT: Listing /bin directory...");
+    stem::debug!("SPROUT: About to create Supervisor...");
+    stem::debug!("SPROUT: Listing /bin directory...");
     if let Ok(fd) = stem::syscall::vfs::vfs_open("/bin", stem::abi::syscall::vfs_flags::O_RDONLY) {
         let mut buf = [0u8; 4096];
         if let Ok(n) = stem::syscall::vfs::vfs_read(fd, &mut buf) {
-            info!("SPROUT: /bin dir content (raw): {:?}", &buf[..n]);
+            stem::debug!("SPROUT: /bin dir content (raw): {:?}", &buf[..n]);
         }
         let _ = stem::syscall::vfs::vfs_close(fd);
     }
     let mut sup = supervisor::Supervisor::new(arg0);
-    stem::info!("SPROUT: Supervisor created, calling run_forever...");
+    stem::debug!("SPROUT: Supervisor created, calling run_forever...");
     sup.run_forever()
 }

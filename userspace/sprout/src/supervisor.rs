@@ -39,7 +39,7 @@ impl Supervisor {
     }
 
     pub fn run_forever(&mut self) -> ! {
-        info!("SPROUT: Supervisor session started (Sovereign mode)");
+        stem::debug!("SPROUT: Supervisor session started (Sovereign mode)");
 
         // Stage 1: Discover boot modules
         self.discover();
@@ -96,7 +96,7 @@ impl Supervisor {
     }
 
     fn wait_for_display(&mut self) {
-        info!("SPROUT: Waiting for display driver registration...");
+        stem::debug!("SPROUT: Waiting for display driver registration...");
         let start = stem::monotonic_ns();
         let timeout = 5_000_000_000; // 5 seconds
 
@@ -107,7 +107,7 @@ impl Supervisor {
             // Check if we have any display card in /dev/display
             if let Ok(fd) = stem::syscall::vfs::vfs_open("/dev/display/card0", stem::abi::syscall::vfs_flags::O_RDONLY) {
                 let _ = stem::syscall::vfs::vfs_close(fd);
-                info!("SPROUT: Display card0 detected. Proceeding.");
+                stem::debug!("SPROUT: Display card0 detected. Proceeding.");
                 break;
             }
 
@@ -122,18 +122,18 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        info!(
+        stem::debug!(
             "SPROUT: Discovering modules from registry at 0x{:x}...",
             self.registry_ptr
         );
 
         if self.registry_ptr == 0 {
-            info!("SPROUT: No boot registry provided!");
+            stem::debug!("SPROUT: No boot registry provided!");
             return;
         }
 
         let count = unsafe { *(self.registry_ptr as *const usize) };
-        info!("SPROUT: Found {} modules natively from BootRegistry", count);
+        stem::debug!("SPROUT: Found {} modules natively from BootRegistry", count);
 
         let entries_ptr = (self.registry_ptr + core::mem::size_of::<usize>()) as *const usize;
 
@@ -144,7 +144,7 @@ impl Supervisor {
             let name_bytes =
                 unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
             let name = core::str::from_utf8(name_bytes).unwrap_or("");
-            info!("SPROUT: Module[{}] = '{}'", i, name);
+            stem::debug!("SPROUT: Module[{}] = '{}'", i, name);
 
             if name == "/bin/sprout" {
                 continue;
@@ -272,7 +272,7 @@ impl Supervisor {
                     if header.msg_type == MSG_BIND_READY {
                         if let Some(ready) = supervisor_protocol::decode_bind_ready_le(payload) {
                             let task_name = task.name.clone();
-                            info!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
+                            stem::debug!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
 
                             // 1. Extract provider port
                             // Drivers send the vfs handle BEFORE the BIND_READY message
@@ -280,7 +280,7 @@ impl Supervisor {
                             match stem::syscall::channel_recv_handle(task.drv_resp_read) {
                                 Ok(p) => {
                                     provider_port = p;
-                                    info!("SPROUT: Received VFS provider handle {} from {}", p, task_name);
+                                    stem::debug!("SPROUT: Received VFS provider handle {} from {}", p, task_name);
                                 }
                                 Err(e) => {
                                     warn!("SPROUT: Failed to receive VFS provider handle from {}: {:?}", task_name, e);
@@ -310,7 +310,7 @@ impl Supervisor {
                                 // 3. Mount
                                 match vfs_mount(provider_port, &path) {
                                     Ok(()) => {
-                                        info!("SPROUT: Sovereign mount success: {} -> {}", task_name, path);
+                                        stem::debug!("SPROUT: Sovereign mount success: {} -> {}", task_name, path);
                                         
                                         // 4. Reply to driver
                                         let mut assigned = supervisor_protocol::BindAssignedPayload {

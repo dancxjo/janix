@@ -5,7 +5,7 @@ extern crate alloc;
 use abi::schema::{keys, kinds};
 use core::ptr::{read_volatile, write_volatile};
 use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
-use stem::{error, info, warn};
+use stem::{debug, error, info, warn};
 
 const REG_GCAP: u32 = 0x00;
 const REG_GCTL: u32 = 0x08;
@@ -105,7 +105,7 @@ struct HdaController {
 
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
-    info!("HDAUDIO: starting (boot_fd={})", boot_fd);
+    debug!("HDAUDIO: starting (boot_fd={})", boot_fd);
 
     let mut path_buf = [0u8; 128];
     let path_len = if boot_fd != 0 {
@@ -121,7 +121,7 @@ fn main(boot_fd: usize) -> ! {
         ""
     };
 
-    info!("HDAUDIO: using device path: {}", path_str);
+    debug!("HDAUDIO: using device path: {}", path_str);
 
     let dev = if !path_str.is_empty() {
         // Find handle in the sysfs path
@@ -139,7 +139,7 @@ fn main(boot_fd: usize) -> ! {
         loop { stem::time::sleep_ms(1000); }
     }
 
-    info!("HDAUDIO: claiming PCI device handle {}...", dev);
+    debug!("HDAUDIO: claiming PCI device handle {}...", dev);
     let claim = match device_claim(dev) {
         Ok(h) => h,
         Err(e) => {
@@ -149,7 +149,7 @@ fn main(boot_fd: usize) -> ! {
             }
         }
     };
-    info!("HDAUDIO: mapping BAR0 MMIO for claim {}...", claim);
+    debug!("HDAUDIO: mapping BAR0 MMIO for claim {}...", claim);
     let mmio = match device_map_mmio(claim, 0) {
         Ok(v) => v,
         Err(e) => {
@@ -160,7 +160,7 @@ fn main(boot_fd: usize) -> ! {
         }
     };
 
-    info!(
+    debug!(
         "HDAUDIO: claimed device handle {} mmio=0x{:x}",
         dev, mmio
     );
@@ -191,7 +191,7 @@ fn main(boot_fd: usize) -> ! {
             }
         }
     };
-    info!("HDAUDIO: using codec address {}", codec_addr);
+    debug!("HDAUDIO: using codec address {}", codec_addr);
 
     let (afg, out_nid, pin_nid) = match hda.discover_audio_path(codec_addr) {
         Some(path) => path,
@@ -202,7 +202,7 @@ fn main(boot_fd: usize) -> ! {
             }
         }
     };
-    info!(
+    debug!(
         "HDAUDIO: path AFG=0x{:02x} OUT=0x{:02x} PIN=0x{:02x}",
         afg, out_nid, pin_nid
     );
@@ -248,12 +248,12 @@ fn main(boot_fd: usize) -> ! {
         };
         let _ = vfs_write(fd, slice);
         let _ = vfs_close(fd);
-        info!("HDAUDIO: published binary PCM1 info to /services/sound/main");
+        debug!("HDAUDIO: published binary PCM1 info to /services/sound/main");
     } else {
         warn!("HDAUDIO: failed to publish info to /services/sound/main");
     }
 
-    info!(
+    debug!(
         "HDAUDIO: stream started (write_port={}, read_port={})",
         write_handle, read_handle
     );
@@ -269,7 +269,7 @@ fn main(boot_fd: usize) -> ! {
 
                 let now = stem::time::monotonic_ns();
                 if now.saturating_sub(last_log_ns) > 1_000_000_000 {
-                    info!("HDAUDIO: streamed {} bytes", total_bytes);
+                    debug!("HDAUDIO: streamed {} bytes", total_bytes);
                     last_log_ns = now;
                 }
             }
@@ -366,7 +366,7 @@ impl HdaController {
         let root_nc = self.get_param(cad, 0x00, PARAM_NODE_COUNT)?;
         let root_start = ((root_nc >> 16) & 0x7f) as u8;
         let root_count = (root_nc & 0x7f) as u8;
-        info!(
+        stem::debug!(
             "HDAUDIO: root nodes: start={} count={}",
             root_start, root_count
         );
@@ -374,7 +374,7 @@ impl HdaController {
         let mut afg = None;
         for nid in root_start..root_start.saturating_add(root_count) {
             let fg = self.get_param(cad, nid, PARAM_FG_TYPE)?;
-            info!("HDAUDIO: node {} fg_type=0x{:08x}", nid, fg);
+            stem::debug!("HDAUDIO: node {} fg_type=0x{:08x}", nid, fg);
             if (fg & 0xff) as u8 == FG_TYPE_AUDIO {
                 afg = Some(nid);
                 break;
@@ -387,12 +387,12 @@ impl HdaController {
                 return None;
             }
         };
-        info!("HDAUDIO: AFG at node {}", afg);
+        stem::debug!("HDAUDIO: AFG at node {}", afg);
 
         let sub = self.get_param(cad, afg, PARAM_NODE_COUNT)?;
         let start = ((sub >> 16) & 0x7f) as u8;
         let count = (sub & 0x7f) as u8;
-        info!("HDAUDIO: AFG sub-nodes: start={} count={}", start, count);
+        stem::debug!("HDAUDIO: AFG sub-nodes: start={} count={}", start, count);
 
         let mut out_nid = None;
         let mut pin_nid = None;
@@ -411,7 +411,7 @@ impl HdaController {
                 0xf => "VendorDefined",
                 _ => "Unknown",
             };
-            info!(
+            stem::debug!(
                 "HDAUDIO:   widget nid={} type={}({}) awcap=0x{:08x}",
                 nid, wtype, wtype_name, awcap
             );
@@ -674,7 +674,7 @@ fn find_hda_device() -> Option<u64> {
     use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
     use abi::syscall::vfs_flags;
 
-    stem::info!("HDAUDIO: Searching for HDA controller in /sys/devices...");
+    stem::debug!("HDAUDIO: Searching for HDA controller in /sys/devices...");
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
         Ok(fd) => fd,
         Err(e) => {
@@ -704,12 +704,12 @@ fn find_hda_device() -> Option<u64> {
             let class_path = alloc::format!("/sys/devices/{}/class", name);
             let class_str = read_sys_string(&class_path).unwrap_or("".to_string());
             
-            stem::info!("HDAUDIO: Checking device {} class={}", name, class_str.trim());
+            stem::debug!("HDAUDIO: Checking device {} class={}", name, class_str.trim());
             
             if class_str.trim().starts_with("0x0403") {
                 let handle_path = alloc::format!("/sys/devices/{}/handle", name);
                 if let Some(graph_id) = read_sys_u64(&handle_path) {
-                    stem::info!("HDAUDIO: Found device via scan: {} (graph_id={})", name, graph_id);
+                    stem::debug!("HDAUDIO: Found device via scan: {} (graph_id={})", name, graph_id);
                     return Some(graph_id);
                 }
             }

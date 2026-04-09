@@ -645,7 +645,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     unsafe { crate::logging::init(runtime) };
 
     if let Some(fb) = runtime.framebuffer() {
-        crate::kinfo!(
+        crate::kdebug!(
             "BOOTFB: width={} height={} pitch={} bpp={} format={:?}",
             fb.width,
             fb.height,
@@ -708,7 +708,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing VFS...");
     crate::vfs::init(runtime.modules());
 
-    contract!("Scanning PCI bus...");
+    kdebug!("Scanning PCI bus...");
     scan_pci();
 
     // CRITICAL: Calibrate the BSP preemption timer BEFORE starting secondary CPUs.
@@ -716,7 +716,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     // If these aren't set yet, secondary CPUs get no LAPIC timer, meaning
     // wake_sleepers() (called only from on_tick → PreemptTick) never fires
     // on those CPUs, and any task that calls sleep_ms() is stuck forever.
-    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
+    kdebug!("System initialized. Setting up preemption timer (100Hz)...");
     runtime.setup_preemption_timer(100);
 
     // Bring up all secondary CPUs during early boot.
@@ -728,11 +728,11 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             cpu_total - 1
         );
         match runtime.start_secondary_cpus(kernel_secondary_entry::<R>) {
-            Ok(()) => crate::kinfo!("Kernel: Secondary CPU bring-up complete."),
+            Ok(()) => crate::kdebug!("Kernel: Secondary CPU bring-up complete."),
             Err(err) => crate::kerror!("Kernel: Secondary CPU bring-up failed: {:?}", err),
         }
     } else {
-        crate::kinfo!("Kernel: Detected {} CPU.", cpu_total);
+        crate::kdebug!("Kernel: Detected {} CPU.", cpu_total);
     }
 
     // Store global boot info for syscalls
@@ -746,9 +746,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     });
 
     let modules = runtime.modules();
-    contract!("Kernel: Enumerating {} boot modules...", modules.len());
+    contract!("thing-os kernel starting...");
+    kdebug!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {
-        crate::kinfo!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
+        crate::kdebug!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
     }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
@@ -758,7 +759,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         .or_else(|| modules.iter().find(|m| m.name.contains("sprout")));
 
     if let Some(mod_desc) = init_module {
-        kinfo!(
+        kdebug!(
             "Found init module: {} (cmdline: '{}'), loading...",
             mod_desc.name,
             mod_desc.cmdline
@@ -957,7 +958,7 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     base.init_secondary_cpu(cpu_index);
     // Verification done via base properties later if needed
 
-    crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
+    crate::kdebug!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
 
     // Per-CPU init
     base.mono_ticks(); // ok for logging
@@ -1036,7 +1037,7 @@ pub fn scan_pci() {
                                 bars[i as usize] = final_bar;
                                 sizes[i as usize] = size;
 
-                                crate::kinfo!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
+                                crate::kdebug!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
 
                                 if is_64 {
                                     i += 1; // Skip next slot
@@ -1046,7 +1047,7 @@ pub fn scan_pci() {
                                 let size = (!(size_mask & 0xFFFFFFFC)).wrapping_add(1) as u64;
                                 bars[i as usize] = (bar & 0xFFFFFFFC) as u64;
                                 sizes[i as usize] = size;
-                                crate::kinfo!("  BAR{} (I/O):  0x{:04x} (size 0x{:x})", i, bars[i as usize], size);
+                                crate::kdebug!("  BAR{} (I/O):  0x{:04x} (size 0x{:x})", i, bars[i as usize], size);
                             }
                         }
                         i += 1;
@@ -1074,7 +1075,7 @@ pub fn scan_pci() {
                 };
 
                 if let Some(idx) = reg.register(entry) {
-                    crate::kinfo!("PCI: Discovered 0x{:04x}:0x{:04x} at {:02x}:{:02x}.{} class={:02x}{:02x}{:02x} id={}", 
+                    crate::kdebug!("PCI: Discovered 0x{:04x}:0x{:04x} at {:02x}:{:02x}.{} class={:02x}{:02x}{:02x} id={}", 
                         vendor_id, device_id, bus, dev, func, class_code, subclass, prog_if, idx);
                 }
 

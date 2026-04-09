@@ -6,7 +6,7 @@ pub mod x86_64;
 use abi::ids::HandleId;
 use abi::schema::{confidence, keys, source};
 use alloc::vec;
-use stem::info;
+use stem::{debug, info};
 
 pub fn set_str_prop(_id: abi::types::ThingId, _key: &str, _val: &str) -> Result<(), ()> {
     Ok(())
@@ -24,10 +24,10 @@ pub struct DevTreeCtx {
 }
 
 pub fn init() -> Result<DevTreeCtx, ()> {
-    info!("SPROUT: devtree::init entry (VFS-native)");
+    debug!("SPROUT: devtree::init entry (VFS-native)");
  
     // 1. Get HHDM Offset
-    info!("SPROUT: Reading HHDM offset from /sys/firmware/hhdm");
+    debug!("SPROUT: Reading HHDM offset from /sys/firmware/hhdm");
     let hhdm = read_sys_u64("/sys/firmware/hhdm").unwrap_or(0) as usize;
     if hhdm == 0 {
         stem::warn!("SPROUT: Failed to read HHDM offset!");
@@ -39,15 +39,15 @@ pub fn init() -> Result<DevTreeCtx, ()> {
  
     if let Ok(val) = read_sys_u64("/sys/firmware/acpi") {
         acpi_rsdp = Some(val as usize);
-        info!("SPROUT: ACPI RSDP = 0x{:x}", val);
+        debug!("SPROUT: ACPI RSDP = 0x{:x}", val);
     }
  
     if let Ok(val) = read_sys_u64("/sys/firmware/dtb") {
         dtb_ptr = Some(val as usize);
-        info!("SPROUT: DTB PHYS = 0x{:x}", val);
+        debug!("SPROUT: DTB PHYS = 0x{:x}", val);
     }
  
-    info!("SPROUT: Init OK, returning context (graph discovery eradicated)");
+    debug!("SPROUT: Init OK, returning context (graph discovery eradicated)");
     Ok(DevTreeCtx {
         host: abi::types::ThingId::default(),
         platform_bus: abi::types::ThingId::default(),
@@ -78,6 +78,6 @@ fn read_sys_u64(path: &str) -> Result<u64, ()> {
 }
 
 pub fn build(_ctx: &DevTreeCtx) -> Result<(), ()> {
-    info!("SPROUT: build() called (VFS-native, graph building skipped)");
+    debug!("SPROUT: build() called (VFS-native, graph building skipped)");
     Ok(())
 }

@@ -253,7 +253,7 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     let _ = root_fs.mkdir("mnt");
     let _ = root_fs.mkdir("dev");
     let _ = root_fs.mkdir("dev/display");
-    crate::kinfo!("VFS: Created /dev/display directory");
+    crate::kdebug!("VFS: Created /dev/display directory");
     let _ = root_fs.mkdir("dev/input");
     let _ = root_fs.mkdir("proc");
     let _ = root_fs.mkdir("sys");
@@ -268,35 +268,35 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     root_union.push(root_fs); // Layer 1: Writable RAM overlay
     
     mount::mount("/", Arc::new(root_union));
-    crate::kinfo!("vfs: mounted union filesystem at / (root)");
+    crate::kdebug!("vfs: mounted union filesystem at / (root)");
 
     // Device filesystem
     mount::mount("/dev", Arc::new(devfs::DevFs::new()));
-    crate::kinfo!("vfs: mounted devfs at /dev");
+    crate::kdebug!("vfs: mounted devfs at /dev");
 
     // Process info filesystem
     mount::mount("/proc", Arc::new(procfs::ProcFs::new()));
-    crate::kinfo!("vfs: mounted procfs at /proc");
+    crate::kdebug!("vfs: mounted procfs at /proc");
 
     // Kernel device metadata
     mount::mount("/sys", Arc::new(sysfs::SysFs::new()));
-    crate::kinfo!("vfs: mounted sysfs at /sys");
+    crate::kdebug!("vfs: mounted sysfs at /sys");
 
     // Temporary filesystem — scratch space for userland.
     mount::mount("/tmp", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted tmpfs at /tmp");
+    crate::kdebug!("vfs: mounted tmpfs at /tmp");
 
     // Transient runtime state
     mount::mount("/run", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted tmpfs at /run");
+    crate::kdebug!("vfs: mounted tmpfs at /run");
 
     // Service namespace
     mount::mount("/services", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted tmpfs at /services");
+    crate::kdebug!("vfs: mounted tmpfs at /services");
 
     // Session namespace — filesystem-native GUI objects live here.
     mount::mount("/session", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted tmpfs at /session");
+    crate::kdebug!("vfs: mounted tmpfs at /session");
 }
 
 /// Helper for filesystem drivers to implement `readdir`.

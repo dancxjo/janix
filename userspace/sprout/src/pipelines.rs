@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use stem::abi::driver_ctx::DriverCtx;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::syscall::{channel_create, ChannelHandle};
-use stem::{info, warn};
+use stem::{debug, info, warn};
 
 fn ensure_session_roots() {
     use stem::syscall::vfs::vfs_mkdir;
@@ -49,7 +49,7 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
     };
     let _ = vfs_close(fd);
 
-    warn!("SPROUT: readdir found {} bytes", n);
+    debug!("SPROUT: readdir found {} bytes", n);
 
     let mut offset = 0usize;
     while offset < n {
@@ -64,24 +64,24 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
         }
 
         if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
-            warn!("SPROUT:   Checking entry at {}: '{}'", offset, name);
+            debug!("SPROUT:   Checking entry at {}: '{}'", offset, name);
             if name.starts_with("pci-") {
                 let class_path = alloc::format!("/sys/devices/{}/class", name);
                 if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
                     let mut class_buf = [0u8; 16];
                     if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
                         let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
-                        info!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
+                        debug!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
                         if class_str.trim().starts_with(class_prefix) {
                             let _ = vfs_close(class_fd);
                             return Some(alloc::format!("/sys/devices/{}", name));
                         }
                     } else {
-                        warn!("SPROUT: Failed to read {}", class_path);
+                        debug!("SPROUT: Failed to read {}", class_path);
                     }
                     let _ = vfs_close(class_fd);
                 } else {
-                    warn!("SPROUT: Failed to open {}", class_path);
+                    debug!("SPROUT: Failed to open {}", class_path);
                 }
             }
         }
@@ -103,7 +103,7 @@ fn find_sys_device_with_vendor(
     let n = match stem::syscall::vfs::vfs_readdir(fd, &mut buf) {
         Ok(n) => n,
         Err(e) => {
-            warn!("SPROUT: readdir(/sys/devices) failed: {:?}", e);
+            debug!("SPROUT: readdir(/sys/devices) failed: {:?}", e);
             let _ = vfs_close(fd);
             return None;
         }
@@ -180,7 +180,7 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
     let fd = match vfs_open("/dev/fb0", O_RDONLY) {
         Ok(fd) => fd,
         Err(e) => {
-            warn!("SPROUT: open(/dev/fb0) failed: {:?}", e);
+            debug!("SPROUT: open(/dev/fb0) failed: {:?}", e);
             return None;
         }
     };
@@ -200,14 +200,14 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
         Ok(n) => n,
         Err(e) => {
             let _ = vfs_close(fd);
-            warn!("SPROUT: read(/dev/fb0) failed: {:?}", e);
+            debug!("SPROUT: read(/dev/fb0) failed: {:?}", e);
             return None;
         }
     };
     let _ = vfs_close(fd);
     if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0
     {
-        warn!(
+        debug!(
             "SPROUT: /dev/fb0 payload invalid: n={} width={} height={} stride={} format={}",
             n, payload.width, payload.height, payload.stride, payload.format
         );
@@ -236,7 +236,7 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
 
     match stem::syscall::spawn_process("/bin/pci_stubd", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned pci_stubd (PID={})", pid);
+            debug!("SPROUT: Spawned pci_stubd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "pci_stubd".to_string(),
@@ -249,7 +249,7 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
             });
         }
         Err(e) => {
-            warn!("SPROUT: Failed to spawn pci_stubd: {:?}", e);
+            debug!("SPROUT: Failed to spawn pci_stubd: {:?}", e);
         }
     }
 }
@@ -258,7 +258,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
     let fd = match vfs_open("/dev/rtc", O_RDONLY) {
         Ok(fd) => fd,
         Err(_) => {
-            info!("SPROUT: No /dev/rtc found, skipping rtc_cmos");
+            debug!("SPROUT: No /dev/rtc found, skipping rtc_cmos");
             return;
         }
     };
@@ -268,7 +268,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
     // For legacy arg passing, we can still use a fake device ID or just pass 0.
     match stem::syscall::spawn_process("/bin/rtc_cmos", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned rtc_cmos (PID={})", pid);
+            debug!("SPROUT: Spawned rtc_cmos (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "rtc_cmos".to_string(),
@@ -281,16 +281,16 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
             });
         }
         Err(e) => {
-            warn!("SPROUT: Failed to spawn rtc_cmos: {:?}", e);
+            debug!("SPROUT: Failed to spawn rtc_cmos: {:?}", e);
         }
     }
 }
 pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up storage pipeline...");
+    debug!("SPROUT: Setting up storage pipeline...");
 
     // 1. Probe for AHCI (0x0106)
     if let Some(path) = find_sys_device("0x0106") {
-        info!("SPROUT: Found AHCI controller at {}", path);
+        debug!("SPROUT: Found AHCI controller at {}", path);
 
         // Pass path via bootstrap memfd
         let boot_size = 256;
@@ -326,7 +326,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
         ) {
             Ok(resp) => {
                 let pid = resp.child_tid;
-                info!("SPROUT: Spawned ahci_disk (PID={})", pid);
+                debug!("SPROUT: Spawned ahci_disk (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
                     name: "ahci_disk".to_string(),
@@ -339,7 +339,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                 });
             }
             Err(e) => {
-                warn!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
+                debug!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
             }
         }
     }
@@ -348,7 +348,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
     if has_sys_device("0x0101") {
         match stem::syscall::spawn_process("/bin/ata_disk", 0) {
             Ok(pid) => {
-                info!("SPROUT: Spawned ata_disk (PID={})", pid);
+                debug!("SPROUT: Spawned ata_disk (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
                     name: "ata_disk".to_string(),
@@ -361,14 +361,14 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                 });
             }
             Err(e) => {
-                warn!("SPROUT: Failed to spawn ata_disk: {:?}", e);
+                debug!("SPROUT: Failed to spawn ata_disk: {:?}", e);
             }
         }
     }
 
     match stem::syscall::spawn_process("/bin/iso9660d", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned iso9660d (PID={})", pid);
+            debug!("SPROUT: Spawned iso9660d (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "iso9660d".to_string(),
@@ -381,7 +381,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
             });
         }
         Err(e) => {
-            warn!("SPROUT: Failed to spawn iso9660d: {:?}", e);
+            debug!("SPROUT: Failed to spawn iso9660d: {:?}", e);
         }
     }
 }
@@ -391,7 +391,7 @@ pub fn setup_display_pipeline(
     supervisor_port: stem::syscall::ChannelHandle,
     bind_instance_id: u64,
 ) -> Option<DisplayHandles> {
-    info!("SPROUT: setup_display_pipeline start (bind_id={})", bind_instance_id);
+    debug!("SPROUT: setup_display_pipeline start (bind_id={})", bind_instance_id);
 
     let mut display_width = 0u32;
     let mut display_height = 0u32;
@@ -408,7 +408,7 @@ pub fn setup_display_pipeline(
         display_format = format;
         driver_name = Some("/bin/display_bootfb");
         backend_name = "BootFB";
-        info!(
+        debug!(
             "SPROUT: Using /dev/fb0 boot framebuffer ({}x{} stride={})",
             display_width, display_height, display_stride
         );
@@ -419,7 +419,7 @@ pub fn setup_display_pipeline(
             display_format = 1;
             driver_name = Some("/bin/display_virtio_gpu");
             backend_name = "VirtIO-GPU";
-            info!(
+            debug!(
                 "SPROUT: Using VirtIO GPU at {}x{}",
                 display_width, display_height
             );
@@ -429,7 +429,7 @@ pub fn setup_display_pipeline(
 
     // Fallback to display_fake if no other display found (ensures Bloom launches)
     if driver_name.is_none() && backend_name != "BootFB" {
-        warn!("SPROUT: No display device found! Using display_fake (headless mode)");
+        debug!("SPROUT: No display device found! Using display_fake (headless mode)");
         display_width = 1024;
         display_height = 768;
         display_stride = 1024 * 4;
@@ -439,11 +439,11 @@ pub fn setup_display_pipeline(
     }
 
     if display_width == 0 || display_height == 0 || display_stride == 0 {
-        warn!("SPROUT: Invalid display geometry, skipping display pipeline");
+        debug!("SPROUT: Invalid display geometry, skipping display pipeline");
         return None;
     }
 
-    info!(
+    debug!(
         "SPROUT: Display backend selected: {} (Driver: {:?}, Geometry: {}x{} stride={})",
         backend_name, driver_name, display_width, display_height, display_stride
     );
@@ -452,7 +452,7 @@ pub fn setup_display_pipeline(
     let bs_id = match stem::syscall::memfd_create("display.buffer", size) {
         Ok(fd) => fd,
         Err(e) => {
-            warn!("SPROUT: memfd_create failed: {:?}", e);
+            debug!("SPROUT: memfd_create failed: {:?}", e);
             return None;
         }
     };
@@ -466,14 +466,14 @@ pub fn setup_display_pipeline(
         let drv_req = match channel_create(4096) {
             Ok(handles) => handles,
             Err(e) => {
-                warn!("SPROUT: drv_req channel_create failed: {:?}", e);
+                debug!("SPROUT: drv_req channel_create failed: {:?}", e);
                 return None;
             }
         };
         let drv_resp = match channel_create(4096) {
             Ok(handles) => handles,
             Err(e) => {
-                warn!("SPROUT: drv_resp channel_create failed: {:?}", e);
+                debug!("SPROUT: drv_resp channel_create failed: {:?}", e);
                 return None;
             }
         };
@@ -508,7 +508,7 @@ pub fn setup_display_pipeline(
                 slice[3] = id_low;
                 slice[4] = id_high;
 
-                info!("SPROUT: Bootstrapping driver {} via memfd {}: req_r={}, resp_w={}, svc={}, id={}", 
+                debug!("SPROUT: Bootstrapping driver {} via memfd {}: req_r={}, resp_w={}, svc={}, id={}", 
                     driver_name, boot_fd, slice[0], slice[1], slice[2], bind_instance_id);
             }
         }
@@ -532,7 +532,7 @@ pub fn setup_display_pipeline(
 
         if let Ok(resp) = spawn_res {
             let pid = resp.child_tid;
-            info!(
+            debug!(
                 "SPROUT: Spawned display driver '{}' (PID={})",
                 driver_name, pid
             );
@@ -572,11 +572,11 @@ pub fn setup_terminal(
     display: Option<DisplayHandles>,
     _input: InputHandles,
 ) {
-    info!("SPROUT: Setting up Terminal...");
+    debug!("SPROUT: Setting up Terminal...");
     ensure_session_roots();
 
     let Some(display) = display else {
-        warn!("SPROUT: Cannot setup terminal without display!");
+        debug!("SPROUT: Cannot setup terminal without display!");
         return;
     };
 
@@ -602,7 +602,7 @@ pub fn setup_terminal(
             slice[1] = display.drv_req_write as u32;
             slice[2] = display.drv_resp_read as u32;
             slice[4] = display.bs_id;
-            info!("SPROUT: Bootstrapping terminal via memfd {}: req_w={}, resp_r={}, bs_id={}", boot_fd, slice[1], slice[2], slice[4]);
+            debug!("SPROUT: Bootstrapping terminal via memfd {}: req_w={}, resp_r={}, bs_id={}", boot_fd, slice[1], slice[2], slice[4]);
         }
     }
 
@@ -610,7 +610,7 @@ pub fn setup_terminal(
 
     match stem::syscall::spawn_process("/bin/terminal", term_arg as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned terminal (PID={})", pid);
+            debug!("SPROUT: Spawned terminal (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "terminal".to_string(),
@@ -635,12 +635,12 @@ pub struct InputHandles {
 }
 
 pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
-    info!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
+    debug!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
 
     // Create kbd_raw port (ps2_kbd -> bristle)
     let kbd_raw = match stem::syscall::channel_create(4096) {
         Ok((write_h, read_h)) => {
-            info!("SPROUT: Created kbd_raw port (w={}, r={})", write_h, read_h);
+            debug!("SPROUT: Created kbd_raw port (w={}, r={})", write_h, read_h);
             (write_h, read_h)
         }
         Err(e) => {
@@ -655,7 +655,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     // Create mouse_raw port (ps2_mouse -> bristle)
     let mouse_raw = match stem::syscall::channel_create(4096) {
         Ok((write_h, read_h)) => {
-            info!(
+            debug!(
                 "SPROUT: Created mouse_raw port (w={}, r={})",
                 write_h, read_h
             );
@@ -696,7 +696,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     // Spawn ps2_kbd with raw write handle
     match stem::syscall::spawn_process("/bin/ps2_kbd", kbd_raw.0 as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
+            debug!("SPROUT: Spawned ps2_kbd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_kbd".to_string(),
@@ -716,7 +716,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     // Spawn ps2_mouse with raw write handle
     match stem::syscall::spawn_process("/bin/ps2_mouse", mouse_raw.0 as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned ps2_mouse (PID={})", pid);
+            debug!("SPROUT: Spawned ps2_mouse (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "ps2_mouse".to_string(),
@@ -741,7 +741,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 
     match stem::syscall::spawn_process("/bin/bristle", bristle_arg as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned bristle (PID={})", pid);
+            debug!("SPROUT: Spawned bristle (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "bristle".to_string(),
@@ -758,7 +758,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
     }
 
-    info!("SPROUT: Input broker ready (keyboard + mouse)");
+    debug!("SPROUT: Input broker ready (keyboard + mouse)");
     stem::sleep_ms(100);
     InputHandles {
         bloom_evt_read: bloom_evt.1,
@@ -769,7 +769,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up network stack...");
+    debug!("SPROUT: Setting up network stack...");
 
     // Prefer VirtIO NICs in QEMU/VM flows.
     if let Some(path) = find_sys_device_with_vendor("0x0200", "0x1af4") {
@@ -824,7 +824,7 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
             boot_resp_write: drv_resp.0,
         });
     } else if let Some(path) = find_sys_device("0x0200") {
-        info!("SPROUT: Found RTL8168 at {}", path);
+        debug!("SPROUT: Found RTL8168 at {}", path);
 
         // Pass path via bootstrap memfd
         let boot_size = 256;
@@ -849,7 +849,7 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
  
         match stem::syscall::spawn_process("/bin/rtl8168d", boot_fd as usize) {
             Ok(pid) => {
-                info!("SPROUT: Spawned rtl8168d (PID={})", pid);
+                debug!("SPROUT: Spawned rtl8168d (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
                     name: "rtl8168d".to_string(),
@@ -871,10 +871,10 @@ pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
 }
 
 fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: spawn_netd start");
+    debug!("SPROUT: spawn_netd start");
     match stem::syscall::spawn_process("/bin/netd", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned netd (PID={})", pid);
+            debug!("SPROUT: Spawned netd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "netd".to_string(),
@@ -893,11 +893,11 @@ fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
 }
 
 pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up network apps...");
+    debug!("SPROUT: Setting up network apps...");
 
     match stem::syscall::spawn_process("/bin/nectar", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned nectar (PID={})", pid);
+            debug!("SPROUT: Spawned nectar (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "nectar".to_string(),
@@ -916,7 +916,7 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
 
     match stem::syscall::spawn_process("/bin/fetchd", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned fetchd (PID={})", pid);
+            debug!("SPROUT: Spawned fetchd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "fetchd".to_string(),
@@ -962,7 +962,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
 
     match stem::syscall::spawn_process(name, 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned {} (PID={})", &name[1..], pid);
+            debug!("SPROUT: Spawned {} (PID={})", &name[1..], pid);
             let _ = stem::thread::set_priority(pid, priority);
             tasks.push(ManagedTask {
                 name: name.to_string(),
@@ -982,11 +982,11 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
 
 /// Set up audio driver - spawn virtio_sound or hdaudio
 pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up audio driver...");
+    debug!("SPROUT: Setting up audio driver...");
 
     // Check for HDA (PCI Class 0403)
     if let Some(path) = find_sys_device("0x0403") {
-        info!("SPROUT: Found HDA sound device at {}", path);
+        debug!("SPROUT: Found HDA sound device at {}", path);
 
         // Pass the VFS path via bootstrap bytespace
         let boot_size = 256;
@@ -1000,7 +1000,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
 
         match stem::syscall::spawn_process("/bin/hdaudio", boot_fd as usize) {
             Ok(pid) => {
-                info!("SPROUT: Spawned hdaudio (PID={})", pid);
+                debug!("SPROUT: Spawned hdaudio (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
                     name: "hdaudio".to_string(),
@@ -1020,7 +1020,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
 
     // Check for VirtIO Sound (PCI Class 0401)
     if let Some(path) = find_sys_device("0x0401") {
-        info!("SPROUT: Found VirtIO sound device at {}", path);
+        debug!("SPROUT: Found VirtIO sound device at {}", path);
         
         // Pass the VFS path via bootstrap bytespace (using memfd for string storage)
         let boot_size = 256;
@@ -1034,7 +1034,7 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
 
         match stem::syscall::spawn_process("/bin/virtio_sound", boot_fd as usize) {
             Ok(pid) => {
-                info!("SPROUT: Spawned virtio_sound (PID={})", pid);
+                debug!("SPROUT: Spawned virtio_sound (PID={})", pid);
                 let _ = stem::thread::set_priority(pid, 2);
                 tasks.push(ManagedTask {
                     name: "virtio_sound".to_string(),
@@ -1051,15 +1051,15 @@ pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
             }
         }
     } else {
-        info!("SPROUT: No VirtIO Sound device found");
+        debug!("SPROUT: No VirtIO Sound device found");
     }
 }
 
 pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Spawning beeper...");
+    debug!("SPROUT: Spawning beeper...");
     match stem::syscall::spawn_process("/bin/beeper", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned beeper (PID={})", pid);
+            debug!("SPROUT: Spawned beeper (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "beeper".to_string(),
@@ -1078,7 +1078,7 @@ pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
 }
 
 pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");
+    debug!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");
 
     // 1. Setup fontd
     let font_chan = channel_create(4096).expect("Failed to create fontd channel");
@@ -1086,7 +1086,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     
     match stem::syscall::spawn_process("/bin/fontd", font_chan.1 as usize) {
         Ok(pid) => {
-            info!("SPROUT: Spawned fontd (PID={})", pid);
+            debug!("SPROUT: Spawned fontd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "fontd".to_string(),
@@ -1106,7 +1106,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     // 2. Setup Bloom (Compositor)
     match stem::syscall::spawn_process("/bin/bloom", 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned bloom (PID={})", pid);
+            debug!("SPROUT: Spawned bloom (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 3); // High priority for compositor
             tasks.push(ManagedTask {
                 name: "bloom".to_string(),

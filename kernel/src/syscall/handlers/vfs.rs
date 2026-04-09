@@ -36,7 +36,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
     if path == "/dev/fb0" {
-        crate::kinfo!(
+        crate::kdebug!(
             "sys_fs_open: path='{}' len={} flags=0x{:x}",
             path,
             path_len,
@@ -70,7 +70,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
 
     if path == "/dev/fb0" {
         match node.stat() {
-            Ok(stat) => crate::kinfo!(
+            Ok(stat) => crate::kdebug!(
                 "sys_fs_open: resolved node for /dev/fb0 mode=0o{:o} size={} ino={}",
                 stat.mode,
                 stat.size,
@@ -97,12 +97,12 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
         }
     };
     if path == "/dev/fb0" {
-        crate::kinfo!("sys_fs_open: process info present for /dev/fb0");
+        crate::kdebug!("sys_fs_open: process info present for /dev/fb0");
     }
     let fd = pinfo_arc.lock().fd_table.open(node, open_flags, abs_path)?;
 
     if path == "/dev/fb0" {
-        crate::kinfo!("sys_fs_open: fd_table.open('/dev/fb0') -> {}", fd);
+        crate::kdebug!("sys_fs_open: fd_table.open('/dev/fb0') -> {}", fd);
     }
 
     Ok(fd as usize)

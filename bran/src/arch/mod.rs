@@ -76,39 +76,39 @@ pub fn init_ioapic() {}
 
 #[cfg(target_arch = "x86_64")]
 fn init_x86_64_ioapic() {
-    use kernel::kinfo;
+    use kernel::kdebug;
 
     let hhdm = crate::requests::HHDM_REQUEST
         .get_response()
         .map(|r| r.offset())
         .unwrap_or(0);
 
-    kinfo!("IOAPIC: hhdm=0x{:x}", hhdm);
+    kernel::kdebug!("IOAPIC: hhdm=0x{:x}", hhdm);
 
     // 1. Disable the legacy PIC
-    kinfo!("IOAPIC: Disabling legacy PIC...");
+    kernel::kdebug!("IOAPIC: Disabling legacy PIC...");
     x86_64::pic::disable_pic();
-    kinfo!("IOAPIC: PIC disabled OK");
+    kernel::kdebug!("IOAPIC: PIC disabled OK");
 
     // 2. Parse ACPI MADT to find IOAPIC
     // Limine (Base Revision 4+) returns HHDM-mapped virtual address for RSDP
     let rsdp_virt = match crate::requests::RSDP_REQUEST.get_response() {
         Some(r) => r.address() as u64,
         None => {
-            kinfo!("IOAPIC: No ACPI RSDP available, skipping");
+            kernel::kdebug!("IOAPIC: No ACPI RSDP available, skipping");
             return;
         }
     };
-    kinfo!("IOAPIC: RSDP virt=0x{:x}", rsdp_virt);
+    kernel::kdebug!("IOAPIC: RSDP virt=0x{:x}", rsdp_virt);
 
     let madt_info = match unsafe { x86_64::acpi::parse_madt(rsdp_virt, hhdm) } {
         Some(info) => info,
         None => {
-            kinfo!("IOAPIC: Failed to parse MADT");
+            kernel::kdebug!("IOAPIC: Failed to parse MADT");
             return;
         }
     };
-    kinfo!("IOAPIC: MADT parsed OK");
+    kernel::kdebug!("IOAPIC: MADT parsed OK");
 
     // Store CPU IDs
     {
@@ -120,7 +120,7 @@ fn init_x86_64_ioapic() {
             x86_64::CPU_IDS = ids;
         }
         x86_64::CPU_COUNT.store(madt_info.cpu_count as u64, Ordering::SeqCst);
-        kinfo!(
+        kernel::kdebug!(
             "SMP: Found {} CPUs (CPU_COUNT now = {})",
             madt_info.cpu_count,
             x86_64::CPU_COUNT.load(Ordering::SeqCst)
@@ -128,12 +128,12 @@ fn init_x86_64_ioapic() {
     }
 
     if madt_info.ioapic_count == 0 {
-        kinfo!("IOAPIC: No IOAPICs found");
+        kernel::kdebug!("IOAPIC: No IOAPICs found");
         return;
     }
 
     let ioapic = &madt_info.ioapics[0];
-    kinfo!(
+    kernel::kdebug!(
         "IOAPIC: Found at phys 0x{:08x}, GSI base {}",
         ioapic.mmio_base,
         ioapic.gsi_base
@@ -141,21 +141,21 @@ fn init_x86_64_ioapic() {
 
     // 3. Initialize IOAPIC with HHDM offset
     x86_64::ioapic::init(ioapic.mmio_base, madt_info.local_apic_addr, hhdm);
-    kinfo!("IOAPIC: Registers initialized");
+    kernel::kdebug!("IOAPIC: Registers initialized");
 
     // Enable Local APIC (SVR, TPR)
     x86_64::ioapic::enable_local_apic();
-    kinfo!("IOAPIC: Local APIC enabled (SVR=0x1FF, TPR=0)");
+    kernel::kdebug!("IOAPIC: Local APIC enabled (SVR=0x1FF, TPR=0)");
 
     let (version, max_entries) = x86_64::ioapic::get_version();
-    kinfo!(
+    kernel::kdebug!(
         "IOAPIC: version 0x{:02x}, {} redir entries",
         version,
         max_entries
     );
 
     x86_64::ioapic::mask_all();
-    kinfo!("IOAPIC: All pins masked");
+    kernel::kdebug!("IOAPIC: All pins masked");
 
     // 4. Route IRQ1 (keyboard) -> vector 0x21
     let (gsi1, active_low1, level1) = madt_info.irq_to_gsi(1);
@@ -164,7 +164,7 @@ fn init_x86_64_ioapic() {
     entry1.level_triggered = level1;
     x86_64::ioapic::write_redir(gsi1 as u8, entry1);
     x86_64::ioapic::unmask_pin(gsi1 as u8);
-    kinfo!("IOAPIC: IRQ1 -> GSI {} -> 0x21", gsi1);
+    kernel::kdebug!("IOAPIC: IRQ1 -> GSI {} -> 0x21", gsi1);
 
     // IRQ12 (mouse) -> vector 0x2C
     let (gsi12, active_low12, level12) = madt_info.irq_to_gsi(12);
@@ -173,7 +173,7 @@ fn init_x86_64_ioapic() {
     entry12.level_triggered = level12;
     x86_64::ioapic::write_redir(gsi12 as u8, entry12);
     x86_64::ioapic::unmask_pin(gsi12 as u8);
-    kinfo!("IOAPIC: IRQ12 -> GSI {} -> 0x2C", gsi12);
+    kernel::kdebug!("IOAPIC: IRQ12 -> GSI {} -> 0x2C", gsi12);
 
     // IRQ4 (serial COM1) -> vector 0x24
     let (gsi4, active_low4, level4) = madt_info.irq_to_gsi(4);
@@ -182,7 +182,7 @@ fn init_x86_64_ioapic() {
     entry4.level_triggered = level4;
     x86_64::ioapic::write_redir(gsi4 as u8, entry4);
     x86_64::ioapic::unmask_pin(gsi4 as u8);
-    kinfo!("IOAPIC: IRQ4 -> GSI {} -> 0x24", gsi4);
+    kernel::kdebug!("IOAPIC: IRQ4 -> GSI {} -> 0x24", gsi4);
 
-    kinfo!("IOAPIC: Init complete");
+    kernel::kdebug!("IOAPIC: Init complete");
 }

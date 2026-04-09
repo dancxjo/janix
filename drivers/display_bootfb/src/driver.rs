@@ -4,7 +4,7 @@ use abi::pixel::PixelFormat;
 use abi::errors::{Errno, SysResult};
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use alloc::collections::BTreeMap;
-use stem::info;
+use stem::{debug, info};
 use stem::syscall::{vfs_close, vfs_open, vfs_read, vm_map, vm_unmap};
 
 /// HW Framebuffer description
@@ -83,7 +83,7 @@ impl BootFbDriver {
             format: handle.format,
         });
 
-        info!("display_bootfb: imported buffer {} ({}x{} @ {:p})", id.0, handle.width, handle.height, resp.addr as *mut u8);
+        debug!("display_bootfb: imported buffer {} ({}x{} @ {:p})", id.0, handle.width, handle.height, resp.addr as *mut u8);
         Ok(id)
     }
 
@@ -144,7 +144,7 @@ fn find_framebuffer() -> Option<Framebuffer> {
     use abi::display_driver_protocol::{FbInfoPayload};
     use abi::syscall::vfs_flags::O_RDONLY;
 
-    info!("display_bootfb: probing /dev/fb0...");
+    debug!("display_bootfb: probing /dev/fb0...");
     let fd = vfs_open("/dev/fb0", O_RDONLY).ok()?;
 
     let mut payload = FbInfoPayload {
@@ -179,7 +179,7 @@ fn find_framebuffer() -> Option<Framebuffer> {
     let resp = match vm_map(&req) {
         Ok(resp) => resp,
         Err(e) => {
-            info!("display_bootfb: failed to map /dev/fb0: {:?}", e);
+            debug!("display_bootfb: failed to map /dev/fb0: {:?}", e);
             let _ = vfs_close(fd);
             return None;
         }

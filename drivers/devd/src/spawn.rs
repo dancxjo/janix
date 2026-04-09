@@ -2,7 +2,7 @@ use abi::types::TaskStatus;
 use alloc::string::String;
 use stem::syscall::{spawn_process, task_poll, vfs_umount};
 use stem::time::monotonic_ns;
-use stem::{info, warn};
+use stem::{debug, info, warn};
 
 use crate::binding::Binding;
 use crate::sysfs::{device_present, SysDevice};
@@ -46,7 +46,7 @@ impl ManagedDriver {
 
         match spawn_process(self.driver, self.device_handle as usize) {
             Ok(pid) => {
-                info!(
+                debug!(
                     "DEVD: launched driver {} for {} (device_handle={}, pid={})",
                     self.driver, self.slot, self.device_handle, pid
                 );

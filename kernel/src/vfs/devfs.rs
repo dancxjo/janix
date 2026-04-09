@@ -97,7 +97,7 @@ impl Default for DevFs {
 impl VfsDriver for DevFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
         if path == "fb0" || path.starts_with("fb") {
-            crate::kinfo!("devfs: lookup entry path='{}' len={}", path, path.len());
+            crate::kdebug!("devfs: lookup entry path='{}' len={}", path, path.len());
         }
         // Empty path → the /dev directory node itself.
         if path.is_empty() {
@@ -110,7 +110,7 @@ impl VfsDriver for DevFs {
             let reg = DEVICE_REGISTRY.lock();
             if let Some(node) = reg.get(path) {
                 if path == "fb0" || path.starts_with("fb") {
-                    crate::kinfo!("devfs: dynamic registry hit path='{}'", path);
+                    crate::kdebug!("devfs: dynamic registry hit path='{}'", path);
                 }
                 return Ok(node.clone());
             }
@@ -130,7 +130,7 @@ impl VfsDriver for DevFs {
             "zero" => Ok(Arc::new(ZeroNode)),
             "fb0" => {
                 if let Some((fb, graph_id)) = *BOOT_FB_INFO.lock() {
-                    crate::kinfo!(
+                    crate::kdebug!(
                         "devfs: lookup fb0 -> hit ({}x{} stride={})",
                         fb.width,
                         fb.height,
@@ -413,7 +413,7 @@ impl VfsNode for FbNode {
 
         let avail = &slice[off..];
         let n = avail.len().min(buf.len());
-        crate::kinfo!("FbNode::read: off={} n={} buf_len={} total={}", off, n, buf.len(), slice.len());
+        crate::kdebug!("FbNode::read: off={} n={} buf_len={} total={}", off, n, buf.len(), slice.len());
         buf[..n].copy_from_slice(&avail[..n]);
         Ok(n)
     }

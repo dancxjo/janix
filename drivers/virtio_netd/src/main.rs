@@ -21,7 +21,7 @@ use alloc::vec;
 use driver::VirtioNetDriver;
 use stem::syscall::vfs_mount;
 use stem::syscall::{channel_create, channel_try_recv};
-use stem::{error, info, warn};
+use stem::{debug, error, info, warn};
 use vfs_provider::{handle_vfs_rpc, NetVfsState};
 
 #[stem::main]
@@ -60,14 +60,14 @@ fn main(arg: usize) -> ! {
             let path_len = path_bytes.iter().position(|&b| b == 0).unwrap_or(128);
             claimed_path = core::str::from_utf8(&path_bytes[..path_len]).unwrap_or("").to_string();
 
-            info!("VIRTIO_NETD: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}, path={}", 
+            stem::debug!("VIRTIO_NETD: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}, path={}", 
                 drv_req_read, drv_resp_write, supervisor_port, bind_instance_id, claimed_path);
         } else {
             warn!("VIRTIO_NETD: Failed to map bootstrap memfd!");
         }
     }
     
-    info!("VIRTIO_NETD: Initializing hardware driver...");
+    stem::debug!("VIRTIO_NETD: Initializing hardware driver...");
 
     // Initialize VirtIO-NET driver.
     let mut driver = match if !claimed_path.is_empty() {
@@ -76,7 +76,7 @@ fn main(arg: usize) -> ! {
         VirtioNetDriver::find_and_claim()
     } {
         Ok(d) => {
-            stem::info!("VIRTIO_NETD: Driver initialized successfully");
+            stem::debug!("VIRTIO_NETD: Driver initialized successfully");
             d
         }
         Err(e) => {
@@ -137,7 +137,7 @@ fn main(arg: usize) -> ! {
             // Send handle to our private response channel, then notify
             let _ = stem::syscall::channel_send_handle(drv_resp_write, req_write);
             let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
-            info!("VIRTIO_NETD: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
+            stem::debug!("VIRTIO_NETD: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
     }
 
@@ -150,7 +150,7 @@ fn main(arg: usize) -> ! {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
                         let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
-                        info!("VIRTIO_NETD: Sovereign registration COMPLETE. Assigned: {}", path);
+                        stem::debug!("VIRTIO_NETD: Sovereign registration COMPLETE. Assigned: {}", path);
                         break;
                     }
                 }

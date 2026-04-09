@@ -189,7 +189,7 @@ pub fn on_tick<R: BootRuntime>() {
     
     // Periodically log on CPU 0 to show time is passing
     if ticks % 1000 == 0 && cpu_idx == 0 {
-        crate::kinfo!("SCHED: Tick {} on CPU 0", ticks);
+        crate::kdebug!("SCHED: Tick {} on CPU 0", ticks);
     }
     
     try_resched_if_needed::<R>();
@@ -198,7 +198,7 @@ pub fn on_tick<R: BootRuntime>() {
 /// Called from IPI handler - triggers reschedule without advancing time
 pub fn on_resched_ipi<R: BootRuntime>() {
     let cpu = crate::runtime::<R>().current_cpu_id().0;
-    crate::kinfo!("SCHED: Received Resched IPI on CPU {}", cpu);
+    crate::kdebug!("SCHED: Received Resched IPI on CPU {}", cpu);
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
     try_resched_if_needed::<R>();
 }
@@ -241,17 +241,17 @@ pub(crate) fn current_cpu_index<R: BootRuntime>() -> usize {
 }
 
 pub fn init<R: BootRuntime>() {
-    crate::kinfo!("  Acquiring scheduler lock...");
+    crate::kdebug!("  Acquiring scheduler lock...");
     let mut lock = SCHEDULER.lock();
-    crate::kinfo!("  Lock acquired, checking if initialized...");
+    crate::kdebug!("  Lock acquired, checking if initialized...");
     if lock.is_none() {
-        crate::kinfo!("  Allocating scheduler...");
+        crate::kdebug!("  Allocating scheduler...");
         let sched = alloc::boxed::Box::new(types::Scheduler::<R>::new());
-        crate::kinfo!("  Leaking scheduler...");
+        crate::kdebug!("  Leaking scheduler...");
         let s = alloc::boxed::Box::leak(sched);
-        crate::kinfo!("  Initializing boot task...");
+        crate::kdebug!("  Initializing boot task...");
         init_boot_task::<R>(s);
-        crate::kinfo!("  Storing scheduler pointer...");
+        crate::kdebug!("  Storing scheduler pointer...");
         *lock = Some(s as *mut types::Scheduler<R> as usize);
         unsafe {
             hooks::YIELD_HOOK = Some(sleep::yield_now::<R>);
@@ -311,7 +311,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     sched.total_cpu_count = cpu_total;
     sched.state.online_cpu_count = 1;
 
-    crate::kinfo!("  Creating boot task...");
+    crate::kdebug!("  Creating boot task...");
 
     let layout = alloc::alloc::Layout::from_size_align(16384, 8).unwrap();
     let stack_base = unsafe { alloc::alloc::alloc(layout) };
@@ -373,7 +373,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
 
     // Link boot task to CPU 0
 
-    crate::kinfo!("  Creating idle tasks...");
+    crate::kdebug!("  Creating idle tasks...");
 
     // Create idle task for CPU 0 initially
     {
@@ -406,7 +406,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         }
     }
 
-    crate::kinfo!("  Boot task initialized");
+    crate::kdebug!("  Boot task initialized");
 }
 
 impl<R: BootRuntime> types::Scheduler<R> {
@@ -553,7 +553,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
 
                     if actual_cpu != current_cpu_index::<R>() {
-                        crate::kinfo!("SCHED: Nudging CPU {} for task {} (prio {})", actual_cpu, tid, priority);
+                        crate::kdebug!("SCHED: Nudging CPU {} for task {} (prio {})", actual_cpu, tid, priority);
                         crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                     }
                 }

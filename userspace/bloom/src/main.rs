@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use stem::{info, error};
+use stem::{debug, info, error};
 use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_device_call};
 use abi::syscall::vfs_flags::O_RDONLY;
 use abi::display::{
@@ -20,11 +20,11 @@ use alloc::vec::Vec;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("Bloom: VFS-native compositor starting...");
+    stem::debug!("Bloom: VFS-native compositor starting...");
 
     // 1. Discover card at /dev/display/cardN
     let card_path = find_display_card().expect("No display card found!");
-    info!("Bloom: Selected display card: {}", card_path);
+    stem::debug!("Bloom: Selected display card: {}", card_path);
 
     let fd = vfs_open(&card_path, O_RDONLY).expect("Failed to open display card");
 
@@ -34,7 +34,7 @@ fn main(_arg: usize) -> ! {
     
     match vfs_device_call(fd, DeviceKind::Display, DISPLAY_OP_GET_INFO, info_slice.as_ptr() as u64) {
         Ok(_) => {
-            info!("Bloom: Display {}x{} format_mask=0x{:x}", 
+            stem::debug!("Bloom: Display {}x{} format_mask=0x{:x}", 
                 info_payload.preferred_mode.width, 
                 info_payload.preferred_mode.height, 
                 info_payload.supported_formats);
@@ -47,10 +47,10 @@ fn main(_arg: usize) -> ! {
 
     // 3. Load Wallpaper
     let wallpaper_path = get_wallpaper_path();
-    info!("Bloom: Loading wallpaper: {}", wallpaper_path);
+    stem::debug!("Bloom: Loading wallpaper: {}", wallpaper_path);
     
     let wallpaper = load_bmp(&wallpaper_path).expect("Failed to load wallpaper BMP");
-    info!("Bloom: Wallpaper loaded ({}x{})", wallpaper.width, wallpaper.height);
+    stem::debug!("Bloom: Wallpaper loaded ({}x{})", wallpaper.width, wallpaper.height);
 
     // 4. Import Buffer to card
     let import_req = BufferHandle {
@@ -70,7 +70,7 @@ fn main(_arg: usize) -> ! {
             loop { stem::yield_now(); }
         }
     };
-    info!("Bloom: Buffer imported as id={:?}", buffer_id);
+    stem::debug!("Bloom: Buffer imported as id={:?}", buffer_id);
 
     // 5. Commit to screen
     let commit = PlaneCommit {
@@ -98,7 +98,7 @@ fn main(_arg: usize) -> ! {
         }
     }
 
-    info!("Bloom: Transitioning to event loop...");
+    stem::debug!("Bloom: Transitioning to event loop...");
     loop {
         stem::yield_now();
     }

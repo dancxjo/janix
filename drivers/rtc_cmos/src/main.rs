@@ -4,7 +4,7 @@
 extern crate alloc;
 use stem::abi::driver_ctx::DriverCtx;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::{error, info, warn};
+use stem::{debug, error, info, warn};
 
 #[link_section = ".thing_manifest"]
 #[no_mangle]
@@ -122,20 +122,20 @@ fn rtc_to_unix(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) 
 #[stem::main]
 fn main(arg: usize) -> ! {
     let cpu = stem::arch::whoami();
-    info!(
+    debug!(
         "whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
         cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
     );
 
-    info!("Starting... arg={:x}", arg);
+    debug!("Starting... arg={:x}", arg);
 
     let dev_id = if arg != 0 {
         let ctx = DriverCtx::from_raw(arg);
         let id = stem::thing::ThingId(ctx.device_id.0);
-        info!("Serving device ID: {:?}", id);
+        debug!("Serving device ID: {:?}", id);
         id
     } else {
-        info!("Starting without explicit context (phased boot mode).");
+        debug!("Starting without explicit context (phased boot mode).");
         stem::thing::ThingId::default()
     };
 
@@ -143,16 +143,16 @@ fn main(arg: usize) -> ! {
     let (year, month, day, hour, minute, second) = read_rtc();
     let unix_secs = rtc_to_unix(year, month, day, hour, minute, second);
 
-    info!(
+    debug!(
         "RTC: {:04}-{:02}-{:02} {:02}:{:02}:{:02} = {} unix_secs",
         year, month, day, hour, minute, second, unix_secs
     );
 
     // Anchor the system clock!
     stem::syscall::time_anchor(unix_secs);
-    info!("RTC: System clock anchored to {} unix_secs", unix_secs);
+    debug!("RTC: System clock anchored to {} unix_secs", unix_secs);
 
-    info!("RTC: Entering maintenance loop.");
+    debug!("RTC: Entering maintenance loop.");
  
     loop {
         stem::sleep(core::time::Duration::from_secs(3600)); // Update once per hour

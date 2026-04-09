@@ -33,7 +33,7 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
 
     if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
         if let Some(claim_handle) = reg.claim(device_idx, task_id) {
-            crate::kinfo!(
+            crate::kdebug!(
                 "DEVICE: task {} claimed device {} (handle {})",
                 task_id,
                 graph_id,
@@ -41,12 +41,12 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
             );
             return Ok(claim_handle);
         } else {
-            crate::kinfo!("DEVICE: claim failed - device {} is already claimed", graph_id);
+            crate::kdebug!("DEVICE: claim failed - device {} is already claimed", graph_id);
             return Err(Errno::EBUSY);
         }
     }
 
-    crate::kinfo!("DEVICE: device {} not found in registry", graph_id);
+    crate::kdebug!("DEVICE: device {} not found in registry", graph_id);
     Err(Errno::ENODEV)
 }
 
@@ -62,7 +62,7 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
     let (phys_addr, size) = {
         let reg = REGISTRY.lock();
         if !reg.verify_claim(claim_handle, task_id) {
-            crate::kinfo!(
+            crate::kdebug!(
                 "DEVICE: map_mmio failed - claim {} not owned by task {}",
                 claim_handle,
                 task_id
@@ -73,24 +73,24 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
         let (phys_addr, size) = reg
             .get_bar_info(claim_handle, bar_index)
             .ok_or_else(|| {
-                crate::kinfo!("DEVICE: map_mmio failed - BAR{} info not found for claim {}", bar_index, claim_handle);
+                crate::kdebug!("DEVICE: map_mmio failed - BAR{} info not found for claim {}", bar_index, claim_handle);
                 Errno::ENODEV
             })?;
         (phys_addr, size)
     };
 
     if phys_addr == 0 || size == 0 {
-        crate::kinfo!("DEVICE: map_mmio failed - BAR{} phys/size is 0", bar_index);
+        crate::kdebug!("DEVICE: map_mmio failed - BAR{} phys/size is 0", bar_index);
         return Err(Errno::ENODEV);
     }
 
     // Safety check: don't allow mapping more than 1GB in one go to prevent DOS/hangs
     if size > 1024 * 1024 * 1024 {
-        crate::kinfo!("DEVICE: map_mmio failed - requested size 0x{:x} exceeds 1GB safety limit", size);
+        crate::kdebug!("DEVICE: map_mmio failed - requested size 0x{:x} exceeds 1GB safety limit", size);
         return Err(Errno::EINVAL);
     }
 
-    crate::kinfo!("DEVICE: mapping BAR{} (phys=0x{:x}, size=0x{:x}) for task {}", bar_index, phys_addr, size, task_id);
+    crate::kdebug!("DEVICE: mapping BAR{} (phys=0x{:x}, size=0x{:x}) for task {}", bar_index, phys_addr, size, task_id);
 
     let page_count = (size + 4095) / 4096;
     let user_va = crate::memory::alloc_user_va((page_count * 4096) as usize);

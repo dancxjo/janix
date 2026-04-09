@@ -87,7 +87,7 @@ pub fn init<R: BootRuntime>(_rt: &R) {
         INNER_ALLOCATOR.lock().init(base as *mut u8, size);
     }
 
-    crate::kinfo!("Global allocator initialized (LinkedHeap, 128MB)");
+    crate::kdebug!("Global allocator initialized (LinkedHeap, 128MB)");
 }
 
 /// Get diagnostics about large allocations

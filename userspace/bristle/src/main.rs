@@ -12,7 +12,7 @@ use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
     KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
-use stem::info;
+use stem::{debug, info};
 use stem::syscall::{ChannelHandle, channel_recv, channel_send_all};
 use stem::syscall::vfs::{vfs_open, vfs_write, vfs_close, vfs_mkdir};
 use abi::syscall::vfs_flags::{O_RDWR, O_CREAT, O_TRUNC};
@@ -28,7 +28,7 @@ fn update_active_ui(target: &str) {
     if let Ok(fd) = vfs_open("/session/active_ui", O_RDWR | O_CREAT | O_TRUNC) {
         let _ = vfs_write(fd, target.as_bytes());
         let _ = vfs_close(fd);
-        info!("bristle: active_ui set to '{}'", target);
+        stem::debug!("bristle: active_ui set to '{}'", target);
     }
 }
 
@@ -57,7 +57,7 @@ fn main(packed_handles: usize) -> ! {
     let bloom_evt_write = ((packed >> 16) & 0xFFFF) as ChannelHandle;
     let evt_input_echo_write = (packed & 0xFFFF) as ChannelHandle;
 
-    info!("bristle: online (kbd={}, mouse={}, bloom_evt={}, input_echo={})",
+    stem::debug!("bristle: online (kbd={}, mouse={}, bloom_evt={}, input_echo={})",
         kbd_read, mouse_read, bloom_evt_write, evt_input_echo_write
     );
 

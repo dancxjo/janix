@@ -249,14 +249,14 @@ fn generate_limine_config(
             || clean_path.ends_with("themes/genie_circles.wasm")
             || clean_path.ends_with("unifont.hex");
 
-        if allowed && !clean_path.ends_with("unifont.hex") {
+        if allowed && !clean_path.ends_with("unifont.hex") && !clean_path.ends_with("locale.conf") {
             conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));
         }
     }
 
+    // Explicitly add unifont and locale at /boot/ where terminal and userspace expect them
     conf.push_str("    module_path: boot():/boot/unifont.hex\n");
     conf.push_str("    module_path: boot():/boot/locale.conf\n");
-
 
     conf
 }
@@ -388,6 +388,7 @@ pub fn build_iso_with_config(
     }
 
     let limine_conf_content = generate_limine_config(sh, programs, &asset_files, config.resolution);
+    println!("--- DEBUG: Generated limine.conf ---\n{}\n--- END DEBUG ---", limine_conf_content);
     sh.write_file(
         iso_root.join("boot/limine/limine.conf"),
         limine_conf_content,

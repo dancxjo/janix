@@ -50,10 +50,14 @@ impl Supervisor {
         stem::sleep_ms(100);
 
         // --- STAGE 3: UI (Terminal & Compositor) ---
-        info!("SPROUT: [Stage 3] Starting Terminal Interface");
+        info!("SPROUT: [Stage 3] Starting UI Pipeline");
+        info!("SPROUT: [Stage 3] -> Setting up Terminal...");
         crate::pipelines::setup_terminal(&mut self.tasks, display_handles.clone(), input_handles.clone());
+        
+        info!("SPROUT: [Stage 3] -> Setting up Compositor (Bloom)...");
         crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
         
+        info!("SPROUT: [Stage 3] UI initialization triggered, settling...");
         stem::sleep_ms(200);
 
         // --- STAGE 4: Final Polish (Beeper) ---

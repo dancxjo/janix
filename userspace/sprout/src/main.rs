@@ -18,7 +18,7 @@ fn main(arg0: usize) -> ! {
         cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
     );
 
-    info!("SPROUT: v0.4 starting (Supervisor Mode)...");
+    info!("SPROUT: v0.4.1 [REBUILT] starting (Supervisor Mode)...");
 
     match devtree::init() {
         Ok(ctx) => {

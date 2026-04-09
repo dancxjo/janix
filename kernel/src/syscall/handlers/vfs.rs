@@ -99,7 +99,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     if path == "/dev/fb0" {
         crate::kinfo!("sys_fs_open: process info present for /dev/fb0");
     }
-    let fd = pinfo_arc.lock().fd_table.open(node, open_flags)?;
+    let fd = pinfo_arc.lock().fd_table.open(node, open_flags, abs_path)?;
 
     if path == "/dev/fb0" {
         crate::kinfo!("sys_fs_open: fd_table.open('/dev/fb0') -> {}", fd);
@@ -181,16 +181,39 @@ pub fn sys_fs_readdir(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<us
         return Ok(0);
     }
 
-    let (node, offset_cell) = {
+    let (node, offset_cell, path) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), file.path.clone())
     };
 
     let mut kbuf = vec![0u8; buf_len];
-    let offset = *offset_cell.lock();
-    let n = node.readdir(offset, &mut kbuf)?;
+    let offset: u64 = *offset_cell.lock();
+    
+    // 1. First, call the node's own readdir. 
+    // This fills the buffer using the filesystem's own entries.
+    let mut n = node.readdir(offset, &mut kbuf)?;
+
+    // 2. Then, supplement with mount points if there is space and we've reached 
+    // the "end" of the node's natural entries (heuristic: n < buf_len).
+    // Note: This simple implementation works best for small directories like /dev.
+    if n < buf_len {
+        let mounts = crate::vfs::mount::get_mounts_under(&path);
+        if !mounts.is_empty() {
+            // We need a way to track which mounts we've already returned.
+            // For now, we use a simple hack: if the node returned nothing, 
+            // we use write_readdir_entries for the mounts.
+            if n == 0 {
+                let m_n = crate::vfs::write_readdir_entries(
+                    mounts.iter().map(|s| s.as_str()),
+                    offset,
+                    &mut kbuf,
+                )?;
+                n = m_n;
+            }
+        }
+    }
 
     if n > 0 {
         *offset_cell.lock() = offset.saturating_add(n as u64);
@@ -322,15 +345,15 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
 
-    let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(4096, false);
+    let (pipe_id, read_node, write_node) = crate::ipc::pipe::create_fd_pair_with_id(4096, false);
     let (read_fd, write_fd) = {
         let mut lock = pinfo_arc.lock();
         let read_fd = lock
             .fd_table
-            .open(read_node, crate::vfs::OpenFlags::read_only())?;
+            .open(read_node, crate::vfs::OpenFlags::read_only(), alloc::format!("pipe:{}", pipe_id))?;
         match lock
             .fd_table
-            .open(write_node, crate::vfs::OpenFlags::write_only())
+            .open(write_node, crate::vfs::OpenFlags::write_only(), alloc::format!("pipe:{}", pipe_id))
         {
             Ok(wfd) => (read_fd, wfd),
             Err(e) => {
@@ -598,7 +621,7 @@ pub fn sys_watch_fd(fd: usize, mask: usize, flags: usize) -> SysResult<usize> {
     let watch_fd = pinfo_arc
         .lock()
         .fd_table
-        .open(watch, crate::vfs::OpenFlags::read_only())?;
+        .open(watch, crate::vfs::OpenFlags::read_only(), "watch:fd".into())?;
     Ok(watch_fd as usize)
 }
 
@@ -623,7 +646,7 @@ pub fn sys_watch_path(
     let watch_fd = pinfo_arc
         .lock()
         .fd_table
-        .open(watch, crate::vfs::OpenFlags::read_only())?;
+        .open(watch, crate::vfs::OpenFlags::read_only(), alloc::format!("watch:{}", abs_path))?;
     Ok(watch_fd as usize)
 }
 

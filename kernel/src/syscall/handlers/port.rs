@@ -356,7 +356,7 @@ pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<us
     let new_fd = pinfo_arc
         .lock()
         .fd_table
-        .open(cap, crate::vfs::OpenFlags::read_write())?;
+        .open(cap, crate::vfs::OpenFlags::read_write(), "port".into())?;
 
     let new_fd_bytes = new_fd.to_ne_bytes();
     unsafe { super::copyout(out_fd_ptr, &new_fd_bytes)? };

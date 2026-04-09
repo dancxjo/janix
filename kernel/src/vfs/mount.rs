@@ -104,6 +104,32 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     Err(Errno::ENOENT)
 }
 
+/// Return all mount points that are immediate children of `parent_path`.
+///
+/// For example, if we have mounts at `/dev`, `/dev/display/card0`, and `/sys`,
+/// `get_mounts_under("/dev/display")` would return `["card0"]`.
+pub fn get_mounts_under(parent_path: &str) -> Vec<String> {
+    let prefix = normalise(parent_path);
+    let table = MOUNT_TABLE.lock();
+    let mut results = Vec::new();
+
+    for entry in table.iter() {
+        if entry.prefix == prefix {
+            continue;
+        }
+
+        if let Some(rel) = strip_prefix(&entry.prefix, &prefix) {
+            // Check if it's an immediate child (no further slashes).
+            let rel = rel.trim_start_matches('/');
+            if !rel.is_empty() && !rel.contains('/') {
+                results.push(rel.to_string());
+            }
+        }
+    }
+
+    results
+}
+
 /// Create a new regular file at `path` by finding the best-matching mount.
 ///
 /// `path` must be absolute.  Returns the new open node on success.

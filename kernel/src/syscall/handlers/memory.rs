@@ -280,7 +280,7 @@ pub fn sys_memfd_create(name_ptr: usize, name_len: usize, size: usize) -> SysRes
     let mut pinfo = pinfo_arc.lock();
     let fd = pinfo
         .fd_table
-        .open(node_arc, crate::vfs::OpenFlags::read_write())?;
+        .open(node_arc, crate::vfs::OpenFlags::read_write(), "memfd".into())?;
     Ok(fd as usize)
 }
 

@@ -115,6 +115,13 @@ impl VfsDriver for DevFs {
             }
         }
 
+        // Handle synthetic subdirectories
+        match path {
+            "display" => return Ok(Arc::new(DevSubDirNode::new("display/"))),
+            "input" => return Ok(Arc::new(DevSubDirNode::new("input/"))),
+            _ => {}
+        }
+
         // Fall back to built-in nodes.
         match path {
             "console" => Ok(Arc::new(ConsoleNode)),
@@ -137,6 +144,49 @@ impl VfsDriver for DevFs {
             "rtc" => Ok(Arc::new(RtcNode)),
             _ => Err(Errno::ENOENT),
         }
+    }
+}
+
+// ── Synthetic subdirectory node ──────────────────────────────────────────────
+
+struct DevSubDirNode {
+    prefix: String,
+}
+
+impl DevSubDirNode {
+    fn new(prefix: &str) -> Self {
+        Self { prefix: prefix.to_string() }
+    }
+}
+
+impl VfsNode for DevSubDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o755,
+            size: 0,
+            ino: 101, // arbitrary
+        })
+    }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let mut names = Vec::new();
+        {
+            let reg = DEVICE_REGISTRY.lock();
+            for name in reg.keys() {
+                if name.starts_with(&self.prefix) {
+                    let subname = &name[self.prefix.len()..];
+                    if !subname.is_empty() && !subname.contains('/') {
+                        names.push(subname.to_string());
+                    }
+                }
+            }
+        }
+        super::write_readdir_entries(names.iter().map(|s| s.as_str()), offset, buf)
     }
 }
 
@@ -164,6 +214,8 @@ impl VfsNode for DevDirNode {
         if BOOT_FB_INFO.lock().is_some() {
             names.push("fb0".to_string());
         }
+        names.push("display".to_string());
+        names.push("input".to_string());
         names.push("rtc".to_string());
         {
             let reg = DEVICE_REGISTRY.lock();

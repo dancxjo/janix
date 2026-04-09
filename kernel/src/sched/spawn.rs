@@ -28,9 +28,9 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
     let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
         alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
     let mut fd_table = crate::vfs::fd_table::FdTable::new();
-    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only());
-    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only());
-    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only());
+    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only(), "/dev/console".into());
+    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only(), "/dev/console".into());
+    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only(), "/dev/console".into());
     alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid,
         ppid,
@@ -598,20 +598,20 @@ fn setup_stdio_fds<R: BootRuntime>(
     match stdin_spec {
         StdioSpec::Inherit => {
             if let Some((node, flags)) = inherited_node(0) {
-                let _ = fd_table.insert_at(0, node, flags);
+                let _ = fd_table.insert_at(0, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(0, console.clone(), OpenFlags::read_only());
+                let _ = fd_table.insert_at(0, console.clone(), OpenFlags::read_only(), "/dev/console".into());
             }
         }
         StdioSpec::Null => {
-            let _ = fd_table.insert_at(0, null.clone(), OpenFlags::read_only());
+            let _ = fd_table.insert_at(0, null.clone(), OpenFlags::read_only(), "/dev/null".into());
         }
         StdioSpec::Pipe => {
             // Create the raw pipe (readers=1, writers=1).  The child's fd 0 is
             // the read end; the parent retains the write end via stdin_pipe.
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(read_node) = crate::ipc::pipe::read_node_for_id(id) {
-                let _ = fd_table.insert_at(0, read_node, OpenFlags::read_only());
+                let _ = fd_table.insert_at(0, read_node, OpenFlags::read_only(), alloc::format!("pipe:{}", id));
             }
             stdin_pipe = id;
         }
@@ -621,18 +621,18 @@ fn setup_stdio_fds<R: BootRuntime>(
     match stdout_spec {
         StdioSpec::Inherit => {
             if let Some((node, flags)) = inherited_node(1) {
-                let _ = fd_table.insert_at(1, node, flags);
+                let _ = fd_table.insert_at(1, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(1, console.clone(), OpenFlags::write_only());
+                let _ = fd_table.insert_at(1, console.clone(), OpenFlags::write_only(), "/dev/console".into());
             }
         }
         StdioSpec::Null => {
-            let _ = fd_table.insert_at(1, null.clone(), OpenFlags::write_only());
+            let _ = fd_table.insert_at(1, null.clone(), OpenFlags::write_only(), "/dev/null".into());
         }
         StdioSpec::Pipe => {
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
-                let _ = fd_table.insert_at(1, write_node, OpenFlags::write_only());
+                let _ = fd_table.insert_at(1, write_node, OpenFlags::write_only(), alloc::format!("pipe:{}", id));
             }
             stdout_pipe = id;
         }
@@ -642,18 +642,18 @@ fn setup_stdio_fds<R: BootRuntime>(
     match stderr_spec {
         StdioSpec::Inherit => {
             if let Some((node, flags)) = inherited_node(2) {
-                let _ = fd_table.insert_at(2, node, flags);
+                let _ = fd_table.insert_at(2, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(2, console, OpenFlags::write_only());
+                let _ = fd_table.insert_at(2, console, OpenFlags::write_only(), "/dev/console".into());
             }
         }
         StdioSpec::Null => {
-            let _ = fd_table.insert_at(2, null, OpenFlags::write_only());
+            let _ = fd_table.insert_at(2, null, OpenFlags::write_only(), "/dev/null".into());
         }
         StdioSpec::Pipe => {
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
-                let _ = fd_table.insert_at(2, write_node, OpenFlags::write_only());
+                let _ = fd_table.insert_at(2, write_node, OpenFlags::write_only(), alloc::format!("pipe:{}", id));
             }
             stderr_pipe = id;
         }

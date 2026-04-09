@@ -252,6 +252,9 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     let _ = root_fs.mkdir("share");
     let _ = root_fs.mkdir("mnt");
     let _ = root_fs.mkdir("dev");
+    let _ = root_fs.mkdir("dev/display");
+    crate::kinfo!("VFS: Created /dev/display directory");
+    let _ = root_fs.mkdir("dev/input");
     let _ = root_fs.mkdir("proc");
     let _ = root_fs.mkdir("sys");
     let _ = root_fs.mkdir("tmp");

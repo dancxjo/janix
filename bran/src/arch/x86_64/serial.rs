@@ -18,21 +18,34 @@ impl SerialPort {
 
     pub fn putchar(&self, c: u8) {
         unsafe {
-            // Wait for transmit empty
+            // Wait for COM1 transmit empty
             while (inb(0x3F8 + 5) & 0x20) == 0 {}
             outb(0x3F8, c);
+
+            // Mirror to COM2 if it exists (check if Scratch Register sticks)
+            // COM2 might not always be present or mapped, so we do a quick probe.
+            outb(0x2F8 + 7, 0xAE);
+            if inb(0x2F8 + 7) == 0xAE {
+                while (inb(0x2F8 + 5) & 0x20) == 0 {}
+                outb(0x2F8, c);
+            }
         }
     }
 
-    /// Non-blocking read from COM1. Returns `Some(byte)` if data ready.
+    /// Read from COM1 or COM2. Returns `Some(byte)` if data ready on either.
     pub fn getchar(&self) -> Option<u8> {
         unsafe {
-            // Check LSR bit 0 (Data Ready)
+            // Check COM1 (Data Ready)
             if (inb(0x3F8 + 5) & 0x01) != 0 {
-                Some(inb(0x3F8))
-            } else {
-                None
+                return Some(inb(0x3F8));
             }
+            
+            // Check COM2 (Data Ready)
+            if (inb(0x2F8 + 5) & 0x01) != 0 {
+                return Some(inb(0x2F8));
+            }
+            
+            None
         }
     }
 

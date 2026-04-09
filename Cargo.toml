@@ -44,6 +44,7 @@ members = [
     "userspace/smallsh",
     "userspace/ls",
     "userspace/cat",
+    "userspace/clear",
 
     "userspace/iso9660",
     "userspace/iso9660d",

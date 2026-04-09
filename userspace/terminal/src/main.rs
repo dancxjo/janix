@@ -64,6 +64,12 @@ impl Font {
     }
 }
 
+enum AnsiState {
+    Normal,
+    Esc,
+    Csi,
+}
+
 struct Terminal {
     width: u32,
     height: u32,
@@ -72,6 +78,7 @@ struct Terminal {
     font: Font,
     cursor_x: u32,
     cursor_y: u32,
+    ansi_state: AnsiState,
 }
 
 impl Terminal {
@@ -84,6 +91,7 @@ impl Terminal {
             font,
             cursor_x: 0,
             cursor_y: 0,
+            ansi_state: AnsiState::Normal,
         }
     }
 
@@ -96,13 +104,57 @@ impl Terminal {
     }
 
     fn putc(&mut self, c: char, fg: u32, bg: u32) {
-        if c == '\n' {
-            self.cursor_x = 0;
-            self.cursor_y += 16;
-            if self.cursor_y + 16 > self.height {
-                self.scroll();
+        match self.ansi_state {
+            AnsiState::Normal => {
+                if c == '\x1B' {
+                    self.ansi_state = AnsiState::Esc;
+                    return;
+                }
+                if c == '\n' {
+                    self.cursor_x = 0;
+                    self.cursor_y += 16;
+                    if self.cursor_y + 16 > self.height {
+                        self.scroll();
+                    }
+                    return;
+                }
+                // Handle tab as 4 spaces
+                if c == '\t' {
+                    for _ in 0..4 {
+                        self.putc(' ', fg, bg);
+                    }
+                    return;
+                }
             }
-            return;
+            AnsiState::Esc => {
+                if c == '[' {
+                    self.ansi_state = AnsiState::Csi;
+                } else {
+                    self.ansi_state = AnsiState::Normal;
+                }
+                return;
+            }
+            AnsiState::Csi => {
+                if c == '2' {
+                    // Part of [2J
+                    return;
+                } else if c == 'J' {
+                    // Clear screen
+                    self.clear(0xFF000000); // Black
+                    self.ansi_state = AnsiState::Normal;
+                    return;
+                } else if c == 'H' {
+                    // Cursor home
+                    self.cursor_x = 0;
+                    self.cursor_y = 0;
+                    self.ansi_state = AnsiState::Normal;
+                    return;
+                } else {
+                    // Unsupported CSI, just go back to normal
+                    self.ansi_state = AnsiState::Normal;
+                    return;
+                }
+            }
         }
 
         let width = self.font.get_glyph(c).map(|g| g.width).or_else(|| self.font.get_glyph('?').map(|g| g.width)).unwrap_or(8);

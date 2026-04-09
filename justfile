@@ -35,9 +35,19 @@ hdd arch=karch:
     cargo xtask hdd --env {{arch}} --profile {{rust_profile}}
 
 # Run with QEMU (UEFI mode)
-# Examples: just run, just run aarch64, just run riscv64
-run arch=karch:
-    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}} -device intel-hda -device hda-duplex,audiodev=snd0 -device virtio-sound-pci,audiodev=snd0 -audiodev none,id=snd0"
+# Examples: just run, just run aarch64, just run -i, just run x86_64 -i
+run *args:
+    #!/usr/bin/env bash
+    set -e
+    ARCH="{{karch}}"
+    # We use a helper to split args into a proper array
+    ARGS_ARRAY=({{args}})
+    if [[ "${ARGS_ARRAY[0]}" != "" && "${ARGS_ARRAY[0]}" != -* ]]; then
+        ARCH="${ARGS_ARRAY[0]}"
+        # Shift the array
+        ARGS_ARRAY=("${ARGS_ARRAY[@]:1}")
+    fi
+    RUSTFLAGS="-Awarnings" cargo xtask run --env "$ARCH" --profile "{{rust_profile}}" "${ARGS_ARRAY[@]}" --qemu-flags "{{qemuflags}} -device intel-hda -device hda-duplex,audiodev=snd0 -device virtio-sound-pci,audiodev=snd0 -audiodev none,id=snd0"
 
 # Start HTTPS proxy for guest (runs on port 8081)
 # Guest accesses via: http://10.0.2.2:8081/?url=https://example.com/
@@ -61,8 +71,16 @@ run-with-proxy arch=karch port="8081":
     RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
 
 # Run HDD with QEMU
-run-hdd arch=karch:
-    cargo xtask run-hdd --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+run-hdd *args:
+    #!/usr/bin/env bash
+    set -e
+    ARCH="{{karch}}"
+    # If first arg doesn't start with -, treat as arch
+    if [[ "$1" != "" && "$1" != -* ]]; then
+        ARCH="$1"
+        shift
+    fi
+    cargo xtask run-hdd --env "$ARCH" --profile "{{rust_profile}}" "$@" --qemu-flags "{{qemuflags}}"
 
 # Run with BIOS (x86_64 only)
 run-bios:

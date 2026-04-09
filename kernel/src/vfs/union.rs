@@ -144,28 +144,43 @@ impl super::VfsNode for UnionDirNode {
 
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         // Gather all unique names from all layers.
+        // We do this by reading each layer from start to finish.
         let mut names = BTreeSet::new();
-        let mut scratch = alloc::vec![0u8; 4096];
+        let mut scratch = alloc::vec![0u8; 8192];
 
         for layer in &self.layers {
             let mut off = 0;
+            let mut pending_name = String::new();
+
             loop {
                 match layer.readdir(off, &mut scratch) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        // If we had a pending name without a NUL terminator, it's probably EOF
+                        if !pending_name.is_empty() {
+                            names.insert(pending_name);
+                        }
+                        break;
+                    }
                     Ok(n) => {
                         let mut start = 0;
                         for i in 0..n {
                             if scratch[i] == 0 {
-                                let name_bytes = &scratch[start..i];
-                                if let Ok(name) = core::str::from_utf8(name_bytes) {
-                                    if !name.is_empty() {
-                                        names.insert(String::from(name));
-                                    }
+                                let part = core::str::from_utf8(&scratch[start..i]).unwrap_or("");
+                                if !pending_name.is_empty() {
+                                    pending_name.push_str(part);
+                                    names.insert(core::mem::take(&mut pending_name));
+                                } else if !part.is_empty() {
+                                    names.insert(String::from(part));
                                 }
                                 start = i + 1;
                             }
                         }
-                        off += n as u64; // Move byte offset forward
+                        if start < n {
+                            // Part of a name is left over
+                            let part = core::str::from_utf8(&scratch[start..n]).unwrap_or("");
+                            pending_name.push_str(part);
+                        }
+                        off += n as u64;
                     }
                     Err(_) => break,
                 }

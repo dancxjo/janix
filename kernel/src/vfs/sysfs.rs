@@ -29,6 +29,7 @@ impl Default for SysFs {
 
 impl VfsDriver for SysFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        crate::kinfo!("sysfs: lookup path='{}'", path);
         match SysPath::parse(path)? {
             SysPath::Root => {
                 Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"])))
@@ -36,11 +37,13 @@ impl VfsDriver for SysFs {
             SysPath::Devices => Ok(Arc::new(DevicesDirNode)),
             SysPath::DeviceDir(name) => {
                 let (_, entry) = find_device_by_slot(name)?;
+                crate::kinfo!("sysfs: matched device dir '{}' to graph_id={}", name, entry.graph_id);
                 Ok(Arc::new(DeviceDirNode::new(entry)))
             }
             SysPath::DeviceFile(name, file) => {
                 let (_, entry) = find_device_by_slot(name)?;
                 let node = lookup_device_file(entry, file)?;
+                crate::kinfo!("sysfs: matched device file '{}/{}'", name, file);
                 Ok(Arc::new(node))
             }
             SysPath::VirtioDir(name) => {
@@ -186,7 +189,9 @@ impl VfsNode for DevicesDirNode {
 
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let slots = pci_slot_names();
+        crate::kinfo!("sysfs: readdir found {} slots", slots.len());
         let n = write_dir_entries(slots.iter().map(|s| s.as_str()), buf)?;
+        crate::kinfo!("sysfs: readdir wrote {} bytes", n);
         Ok(n)
     }
 }

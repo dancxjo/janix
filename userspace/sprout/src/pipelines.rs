@@ -53,31 +53,35 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
 
     let mut offset = 0usize;
     while offset < n {
+        if buf[offset] == 0 {
+            offset += 1;
+            continue;
+        }
+
         let mut end = offset;
         while end < n && buf[end] != 0 {
             end += 1;
         }
-        if end > offset {
-            if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
-                warn!("SPROUT:   Found entry: '{}'", name);
-                if name.starts_with("pci-") {
-                    let class_path = alloc::format!("/sys/devices/{}/class", name);
-                    if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
-                        let mut class_buf = [0u8; 16];
-                        if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
-                            let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
-                            info!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
-                            if class_str.trim().starts_with(class_prefix) {
-                                let _ = vfs_close(class_fd);
-                                return Some(alloc::format!("/sys/devices/{}", name));
-                            }
-                        } else {
-                            warn!("SPROUT: Failed to read {}", class_path);
+
+        if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+            warn!("SPROUT:   Checking entry at {}: '{}'", offset, name);
+            if name.starts_with("pci-") {
+                let class_path = alloc::format!("/sys/devices/{}/class", name);
+                if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
+                    let mut class_buf = [0u8; 16];
+                    if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
+                        let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
+                        info!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
+                        if class_str.trim().starts_with(class_prefix) {
+                            let _ = vfs_close(class_fd);
+                            return Some(alloc::format!("/sys/devices/{}", name));
                         }
-                        let _ = vfs_close(class_fd);
                     } else {
-                        warn!("SPROUT: Failed to open {}", class_path);
+                        warn!("SPROUT: Failed to read {}", class_path);
                     }
+                    let _ = vfs_close(class_fd);
+                } else {
+                    warn!("SPROUT: Failed to open {}", class_path);
                 }
             }
         }

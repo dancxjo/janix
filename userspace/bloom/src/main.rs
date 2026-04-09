@@ -1086,16 +1086,26 @@ fn main(arg: usize) -> ! {
             stem::info!("[bloom] after desktop watch poll");
         }
 
-        // 0. Update surface if buffer changed
-        if let PresenterImpl::Driver(ref mut d) = presenter {
+        // 0. Acquire next buffer from swapchain
+        let (acquired_fd, acquired_width, acquired_height, acquired_stride, _f, acquired_age) = 
+            presenter.acquire_buffer();
+        
+        if acquired_fd != 0 {
+            final_fd = acquired_fd;
+            final_width = acquired_width;
+            final_height = acquired_height;
+            final_stride = acquired_stride;
+            current_age = acquired_age;
+        }
+
+        if let PresenterImpl::Driver(_) = presenter {
             if current_fd != final_fd {
                 // Remap surface for new buffer
-                let (fd, w, h, s, _f, age) = (
+                let (fd, w, h, s, age) = (
                     final_fd,
                     final_width,
                     final_height,
                     final_stride,
-                    0,
                     current_age,
                 );
 

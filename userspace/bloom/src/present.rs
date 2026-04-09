@@ -390,7 +390,7 @@ impl DriverPresenter {
                 drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
                 let status = self.send_reliable(&buf[..len]);
-                stem::trace!(
+                stem::info!(
                     "bloom: sent MSG_PRESENT rects={} len={} status={:?}",
                     rect_count,
                     len,

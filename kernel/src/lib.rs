@@ -668,7 +668,18 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             let mut reg = crate::device_registry::REGISTRY.lock();
             let mut bars = [0; 6];
             let mut sizes = [0; 6];
-            bars[0] = fb.addr as u64;
+
+            // CRITICAL: fb.addr from the runtime depends on the bootloader/arch,
+            // but is typically a kernel virtual address (HHDM).
+            // device_registry expects PHYSICAL addresses for BARs.
+            let ph_offset = runtime.phys_to_virt_offset();
+            let phys_addr = if fb.addr >= ph_offset {
+                fb.addr - ph_offset
+            } else {
+                fb.addr
+            };
+
+            bars[0] = phys_addr;
             sizes[0] = fb.byte_len as u64;
             reg.register(crate::device_registry::DeviceEntry::new_mmio(
                 "display_fb",

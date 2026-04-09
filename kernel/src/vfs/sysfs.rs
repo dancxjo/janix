@@ -186,9 +186,7 @@ impl VfsNode for DevicesDirNode {
 
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let slots = pci_slot_names();
-        crate::kinfo!("sysfs: readdir found {} slots", slots.len());
         let n = write_dir_entries(slots.iter().map(|s| s.as_str()), buf)?;
-        crate::kinfo!("sysfs: readdir wrote {} bytes", n);
         Ok(n)
     }
 }
@@ -399,9 +397,7 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
     let (status, cap_ptr_initial) = {
         let status = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x04)? >> 16;
         let cap_ptr = (runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x34)? & 0xFF) as u8;
-        crate::kinfo!("SYSFS: Device {} PCI Status=0x{:x} CapPtr=0x{:x}", slot_name(entry), status, cap_ptr);
         if (status & 0x10) == 0 {
-            crate::kwarn!("SYSFS: Device {} has no capabilities list", slot_name(entry));
             return Err(Errno::ENOSYS);
         }
         (status, cap_ptr)
@@ -411,7 +407,6 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
     while cap_ptr != 0 {
         let cap_header = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr)?;
         let cap_id = (cap_header & 0xFF) as u8;
-        crate::kinfo!("SYSFS: Found Cap ID 0x{:x} at 0x{:x}", cap_id, cap_ptr);
         if cap_id == 0x09 {
             // Vendor specific (VirtIO)
             let len = ((cap_header >> 8) & 0xFF) as u8;

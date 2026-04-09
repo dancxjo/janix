@@ -735,9 +735,11 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         dtb_ptr: runtime.dtb_ptr(),
     });
 
-    // The Root service is no longer used (decommissioned).
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
+    for (i, m) in modules.iter().enumerate() {
+        crate::kinfo!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
+    }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
     let init_module = modules

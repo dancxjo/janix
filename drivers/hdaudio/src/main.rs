@@ -672,15 +672,20 @@ fn find_hda_device() -> Option<u64> {
     use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
     use abi::syscall::vfs_flags;
 
+    stem::info!("HDAUDIO: Searching for HDA controller in /sys/devices...");
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
         Ok(fd) => fd,
-        Err(_) => return None,
+        Err(e) => {
+            stem::error!("HDAUDIO: Failed to open /sys/devices: {:?}", e);
+            return None;
+        }
     };
 
     let mut buf = [0u8; 4096];
     let n = match vfs_readdir(fd, &mut buf) {
         Ok(n) => n,
-        Err(_) => {
+        Err(e) => {
+            stem::error!("HDAUDIO: readdir(/sys/devices) failed: {:?}", e);
             let _ = vfs_close(fd);
             return None;
         }
@@ -694,38 +699,39 @@ fn find_hda_device() -> Option<u64> {
         if name.is_empty() { break; }
         
         if name.starts_with("pci-") {
-            let path = alloc::format!("/sys/devices/{}/class", name);
-            if let Ok(id_fd) = vfs_open(&path, vfs_flags::O_RDONLY) {
-                let mut id_buf = [0u8; 64];
-                if let Ok(id_len) = vfs_read(id_fd, &mut id_buf) {
-                    let id_str = core::str::from_utf8(&id_buf[..id_len]).unwrap_or("");
-                    if id_str.trim().starts_with("0x0403") {
-                        let handle_path = alloc::format!("/sys/devices/{}/handle", name);
-                        if let Some(graph_id) = read_sys_u64(&handle_path) {
-                            let _ = vfs_close(id_fd);
-                            info!("HDAUDIO: Found device via scan: /sys/devices/{} (graph_id={})", name, graph_id);
-                            return stem::syscall::device_claim(graph_id).ok().map(|h| h as u64);
-                        }
-                    }
+            let class_path = alloc::format!("/sys/devices/{}/class", name);
+            let class_str = read_sys_string(&class_path).unwrap_or("".to_string());
+            
+            stem::info!("HDAUDIO: Checking device {} class={}", name, class_str.trim());
+            
+            if class_str.trim().starts_with("0x0403") {
+                let handle_path = alloc::format!("/sys/devices/{}/handle", name);
+                if let Some(graph_id) = read_sys_u64(&handle_path) {
+                    stem::info!("HDAUDIO: Found device via scan: {} (graph_id={})", name, graph_id);
+                    return stem::syscall::device_claim(graph_id).ok().map(|h| h as u64);
                 }
-                let _ = vfs_close(id_fd);
             }
         }
         pos += name.len() + 1;
     }
+    stem::warn!("HDAUDIO: No HDA controller found in /sys/devices.");
     None
 }
 
-fn read_sys_u64(path: &str) -> Option<u64> {
+fn read_sys_string(path: &str) -> Option<alloc::string::String> {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 
     let fd = vfs_open(path, O_RDONLY).ok()?;
-    let mut buf = [0u8; 64];
+    let mut buf = [0u8; 128];
     let n = vfs_read(fd, &mut buf).ok()?;
     let _ = vfs_close(fd);
 
-    let s = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    Some(alloc::string::String::from_utf8_lossy(&buf[..n]).trim().to_string())
+}
+
+fn read_sys_u64(path: &str) -> Option<u64> {
+    let s = read_sys_string(path)?;
     if s.starts_with("0x") {
         u64::from_str_radix(&s[2..], 16).ok()
     } else {

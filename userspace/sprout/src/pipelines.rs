@@ -41,12 +41,15 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
     let mut buf = [0u8; 4096];
     let n = match stem::syscall::vfs::vfs_readdir(fd, &mut buf) {
         Ok(n) => n,
-        Err(_) => {
+        Err(e) => {
+            warn!("SPROUT: readdir(/sys/devices) failed: {:?}", e);
             let _ = vfs_close(fd);
             return None;
         }
     };
     let _ = vfs_close(fd);
+
+    warn!("SPROUT: readdir found {} bytes", n);
 
     let mut offset = 0usize;
     while offset < n {
@@ -56,19 +59,24 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
         }
         if end > offset {
             if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
+                warn!("SPROUT:   Found entry: '{}'", name);
                 if name.starts_with("pci-") {
                     let class_path = alloc::format!("/sys/devices/{}/class", name);
                     if let Ok(class_fd) = vfs_open(&class_path, O_RDONLY) {
                         let mut class_buf = [0u8; 16];
                         if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
                             let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
-                            info!("SPROUT: Checked device {} class={}", name, class_str.trim());
+                            info!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
                             if class_str.trim().starts_with(class_prefix) {
                                 let _ = vfs_close(class_fd);
                                 return Some(alloc::format!("/sys/devices/{}", name));
                             }
+                        } else {
+                            warn!("SPROUT: Failed to read {}", class_path);
                         }
                         let _ = vfs_close(class_fd);
+                    } else {
+                        warn!("SPROUT: Failed to open {}", class_path);
                     }
                 }
             }
@@ -482,6 +490,7 @@ pub fn setup_terminal(
             slice[1] = display.drv_req_write as u32;
             slice[2] = display.drv_resp_read as u32;
             slice[4] = display.bs_id;
+            info!("SPROUT: Bootstrapping terminal via memfd {}: req_w={}, resp_r={}, bs_id={}", boot_fd, slice[1], slice[2], slice[4]);
         }
     }
 

@@ -31,6 +31,7 @@ impl BootFs {
 
 impl VfsDriver for BootFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        crate::kinfo!("BootFs: lookup path='{}'", path);
         if path.is_empty() {
             return Ok(Arc::new(BootDirNode { modules: self.modules }));
         }
@@ -44,13 +45,22 @@ impl VfsDriver for BootFs {
 
         // Search in modules
         for (i, m) in self.modules.iter().enumerate() {
-            // Modules may have full paths like "/boot/terminal" or just names "terminal"
             let name = m.name.strip_prefix("/boot/").unwrap_or(m.name);
             if name == path {
+                crate::kinfo!("BootFs: found module match for '{}' at index {}", path, i);
                 return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
+            }
+
+            // Also try matching basename (e.g. "/assets/fonts/unifont.hex" matches "unifont.hex")
+            if let Some(slash_idx) = m.name.rfind('/') {
+                if &m.name[slash_idx + 1..] == path {
+                    crate::kinfo!("BootFs: found module match via basename for '{}' at index {}", path, i);
+                    return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
+                }
             }
         }
 
+        crate::kerror!("BootFs: ENOENT for '{}'", path);
         Err(Errno::ENOENT)
     }
 }
@@ -82,11 +92,17 @@ impl VfsNode for BootDirNode {
         
         for m in self.modules {
             let name = m.name.strip_prefix("/boot/").unwrap_or(m.name);
+            let final_name = if let Some(slash_idx) = name.rfind('/') {
+                &name[slash_idx + 1..]
+            } else {
+                name
+            };
+
             // Skip entries that are already hardcoded
-            if name == "version" || name == "motd" {
+            if final_name == "version" || final_name == "motd" {
                 continue;
             }
-            entries.extend_from_slice(name.as_bytes());
+            entries.extend_from_slice(final_name.as_bytes());
             entries.push(0);
         }
 

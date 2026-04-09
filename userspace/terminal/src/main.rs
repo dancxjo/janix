@@ -200,24 +200,6 @@ fn get_active_ui() -> String {
 fn main(arg: usize) -> ! {
     info!("Terminal: Starting...");
 
-    let font = match Font::load("/boot/unifont.hex") {
-        Ok(f) => f,
-        Err(e) => {
-            error!("Terminal: Failed to load font: {}", e);
-            stem::syscall::exit(1);
-        }
-    };
-
-    let fb_info = match read_fb_info() {
-        Some(info) => info,
-        None => {
-            error!("Terminal: Failed to read fb info from /dev/fb0");
-            stem::syscall::exit(1);
-        }
-    };
-
-    info!("Terminal: Display {}x{}, stride={}", fb_info.width, fb_info.height, fb_info.stride);
-
     let boot_fd = arg as u32;
     let mut display_req_write = 0u32;
     let mut display_resp_read = 0u32;
@@ -238,19 +220,44 @@ fn main(arg: usize) -> ! {
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *const u32;
             let slice = unsafe { core::slice::from_raw_parts(ptr, 1024) };
+            info!("Terminal: slice[0]=0x{:08x} [1]=0x{:x} [2]=0x{:x} [4]=0x{:x}", slice[0], slice[1], slice[2], slice[4]);
             if slice[0] == 0xB100AA01 {
                 display_req_write = slice[1];
                 display_resp_read = slice[2];
                 fb_id = slice[4];
                 info!("Terminal: Bootstrapped via memfd: req={}, resp={}, fb_id={}", display_req_write, display_resp_read, fb_id);
+            } else {
+                error!("Terminal: Bootstrap magic mismatch! expected 0xB100AA01, got 0x{:08x}", slice[0]);
             }
+        } else {
+            error!("Terminal: Failed to map bootstrap memfd");
         }
+    } else {
+        warn!("Terminal: No bootstrap FD provided (arg was 0)");
     }
 
     if fb_id == 0 {
         error!("Terminal: No framebuffer ID provided!");
         stem::syscall::exit(1);
     }
+
+    let font = match Font::load("/boot/unifont.hex") {
+        Ok(f) => f,
+        Err(e) => {
+            error!("Terminal: Failed to load font: {}", e);
+            stem::syscall::exit(1);
+        }
+    };
+
+    let fb_info = match read_fb_info() {
+        Some(info) => info,
+        None => {
+            error!("Terminal: Failed to read fb info from /dev/fb0");
+            stem::syscall::exit(1);
+        }
+    };
+
+    info!("Terminal: Display {}x{}, stride={}", fb_info.width, fb_info.height, fb_info.stride);
 
     let fb_ptr = {
         use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};

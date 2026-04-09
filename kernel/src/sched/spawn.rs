@@ -176,7 +176,7 @@ impl<R: BootRuntime> Scheduler<R> {
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
             super::DIAG_IPI_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kinfo!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
@@ -301,7 +301,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
-            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kinfo!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
@@ -401,7 +401,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
-            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kinfo!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;

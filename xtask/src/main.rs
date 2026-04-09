@@ -97,6 +97,9 @@ enum Commands {
         /// Run in interactive mode (GUI console)
         #[arg(short, long)]
         interactive: bool,
+        /// Enable dedicated QEMU monitor on stdio
+        #[arg(short, long)]
+        monitor: bool,
     },
     /// Run in QEMU (BIOS mode, x86_64 only)
     RunBios {
@@ -106,6 +109,9 @@ enum Commands {
         /// Run in interactive mode (GUI console)
         #[arg(short, long)]
         interactive: bool,
+        /// Enable dedicated QEMU monitor on stdio
+        #[arg(short, long)]
+        monitor: bool,
     },
     /// Run HDD image in QEMU (UEFI mode)
     RunHdd {
@@ -124,6 +130,9 @@ enum Commands {
         /// Run in interactive mode (GUI console)
         #[arg(short, long)]
         interactive: bool,
+        /// Enable dedicated QEMU monitor on stdio
+        #[arg(short, long)]
+        monitor: bool,
     },
     /// Clone and build Limine bootloader
     Limine,
@@ -216,6 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             init,
             qemu_flags,
             interactive,
+            monitor,
         } => {
             fetch()?;
             limine(&sh)?;
@@ -223,17 +233,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let iso_path = build_iso(&sh, &env, &programs)?;
-            run(&sh, &env, &qemu_flags, &iso_path, interactive)?;
+            run(&sh, &env, &qemu_flags, &iso_path, interactive, monitor)?;
         }
         Commands::RunBios {
             qemu_flags,
             interactive,
+            monitor,
         } => {
             limine(&sh)?;
             build(&sh, "x86_64", "dev")?;
             let programs = default_programs();
             let iso = build_iso(&sh, "x86_64", &programs)?;
-            run_bios(&sh, &qemu_flags, &iso, interactive)?;
+            run_bios(&sh, &qemu_flags, &iso, interactive, monitor)?;
         }
         Commands::RunHdd {
             env,
@@ -241,6 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             init,
             qemu_flags,
             interactive,
+            monitor,
         } => {
             fetch()?;
             limine(&sh)?;
@@ -248,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let hdd_path = build_hdd(&sh, &env, &programs)?;
-            run_hdd(&sh, &env, &qemu_flags, &hdd_path, interactive)?;
+            run_hdd(&sh, &env, &qemu_flags, &hdd_path, interactive, monitor)?;
         }
         Commands::Limine => limine(&sh)?,
         Commands::Ovmf { env: _ } => fetch()?,

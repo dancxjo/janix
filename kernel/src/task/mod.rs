@@ -263,11 +263,18 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
     // Enable interrupts so this CPU can be preempted or woken from idle (HLT)
     crate::runtime::<R>().irq_restore(crate::IrqState(1));
 
+    let mut idle_count: u64 = 0;
     loop {
         if !yield_now::<R>() {
             // No runnable work — halt until next IRQ (timer tick, device, IPI)
             crate::runtime::<R>().wait_for_interrupt();
             crate::sched::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            
+            idle_count += 1;
+            if idle_count % 1000 == 0 {
+                let cpu = crate::sched::current_cpu_index::<R>();
+                crate::kinfo!("SCHED: CPU {} idle pulse", cpu);
+            }
         }
     }
 }

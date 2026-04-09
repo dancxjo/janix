@@ -178,13 +178,27 @@ pub fn sched_lock_metrics_snapshot_and_reset() -> SchedLockSiteMetrics {
 /// Called from timer ISR - records tick and triggers reschedule if needed
 /// Uses try_resched_if_needed to avoid deadlock when SCHEDULER is held by main code
 pub fn on_tick<R: BootRuntime>() {
-    TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    let cpu_idx = crate::runtime::<R>().current_cpu_id().0;
+    let ticks = if cpu_idx == 0 {
+        TICK_COUNT.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        TICK_COUNT.load(Ordering::Relaxed)
+    };
+
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
+    
+    // Periodically log on CPU 0 to show time is passing
+    if ticks % 1000 == 0 && cpu_idx == 0 {
+        crate::kinfo!("SCHED: Tick {} on CPU 0", ticks);
+    }
+    
     try_resched_if_needed::<R>();
 }
 
 /// Called from IPI handler - triggers reschedule without advancing time
 pub fn on_resched_ipi<R: BootRuntime>() {
+    let cpu = crate::runtime::<R>().current_cpu_id().0;
+    crate::kinfo!("SCHED: Received Resched IPI on CPU {}", cpu);
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
     try_resched_if_needed::<R>();
 }
@@ -407,8 +421,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
     > {
         match reason {
             ScheduleReason::PreemptTick => {
-                // Wake any sleeping tasks whose time has expired
-                self.wake_sleepers();
+                // Wake any sleeping tasks whose time has expired (Timekeeper only)
+                if current_cpu_index::<R>() == 0 {
+                    self.wake_sleepers();
+                }
 
                 // Check preemption watchdog
                 self.check_preempt_watchdog();
@@ -537,6 +553,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
 
                     if actual_cpu != current_cpu_index::<R>() {
+                        crate::kinfo!("SCHED: Nudging CPU {} for task {} (prio {})", actual_cpu, tid, priority);
                         crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                     }
                 }
@@ -838,6 +855,17 @@ impl<R: BootRuntime> types::Scheduler<R> {
         unsafe {
             let old_task = &mut **tasks_ptr.add(old_idx);
             let new_task = &mut **tasks_ptr.add(new_idx);
+            let old_name = core::str::from_utf8_unchecked(&old_task.name[..old_task.name_len as usize]);
+            let new_name = core::str::from_utf8_unchecked(&new_task.name[..new_task.name_len as usize]);
+            
+            crate::kinfo!(
+                "SCHED: CPU {} switching task {}:{} -> {}:{}",
+                cpu_idx,
+                current_id,
+                old_name,
+                next_id,
+                new_name
+            );
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;

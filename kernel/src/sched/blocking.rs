@@ -152,6 +152,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
 
     // 4. Send IPI OUTSIDE of all locks
     if is_remote {
+        crate::kinfo!("SCHED: Nudging CPU {} for remote wake", safe_cpu);
         rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
     }
 

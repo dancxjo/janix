@@ -21,10 +21,10 @@ impl WaitQueue {
     pub fn push_back(&self, tid: u64) {
         let mut waiters = self.waiters.lock();
         if !waiters.contains(&tid) {
-            crate::ktrace!("WaitQueue::push_back: adding task {}", tid);
+            crate::kinfo!("WaitQueue::push_back: adding task {}", tid);
             waiters.push_back(tid);
         } else {
-            crate::ktrace!("WaitQueue::push_back: task {} already in queue", tid);
+            crate::kinfo!("WaitQueue::push_back: task {} already in queue", tid);
         }
     }
 
@@ -36,6 +36,7 @@ impl WaitQueue {
         };
 
         if let Some(tid) = tid {
+            crate::kinfo!("WaitQueue::wake_one: waking task {}", tid);
             unsafe {
                 crate::sched::wake_task_erased(tid);
             }
@@ -47,7 +48,7 @@ impl WaitQueue {
         let mut waiters = self.waiters.lock();
         while let Some(tid) = waiters.pop_front() {
             unsafe {
-                crate::ktrace!("WaitQueue::wake_all: waking task {}", tid);
+                crate::kinfo!("WaitQueue::wake_all: waking task {}", tid);
                 crate::sched::wake_task_erased(tid);
             }
         }

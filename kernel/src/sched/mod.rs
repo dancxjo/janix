@@ -943,7 +943,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
     /// Mark a secondary CPU as online and initialize its idle task.
     pub fn cpu_online(&mut self, cpu_index: usize) {
-        crate::kinfo!(
+        crate::kdebug!(
             "SMP: CPU {} online (triggered by scheduler spawn)",
             cpu_index
         );
@@ -1442,7 +1442,7 @@ pub static CPU_ONLINE: AtomicUsize = AtomicUsize::new(0);
 pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
     // Mark as online
     CPU_ONLINE.fetch_add(1, Ordering::Relaxed);
-    crate::kinfo!("SMP: Secondary CPU {} online!", cpu_index);
+    crate::kdebug!("SMP: Secondary CPU {} online!", cpu_index);
 
     // Enter scheduler loop via the hook which bootstraps this CPU.
     // The run_scheduler hook will call bootstrap_cpu to set up this CPU's

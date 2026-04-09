@@ -229,7 +229,7 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
             let ts = writer.runtime.mono_ticks();
             let _ = write!(
                 writer,
-                "[{}] [CONTRACT] [{}] [CPU{}] ",
+                "[{}] [---] [{}] [CPU{}] ",
                 ts,
                 source,
                 writer.runtime.current_cpu_id().0

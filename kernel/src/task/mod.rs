@@ -236,7 +236,7 @@ fn bootstrap_cpu<R: BootRuntime>() {
                 if let Some(idle_id) = pc.idle_task {
                     pc.current = Some(idle_id);
                     rt.set_current_tid(idle_id);
-                    crate::kinfo!(
+                    crate::kdebug!(
                         "SMP: CPU {} bootstrapped with idle task {}",
                         cpu_idx,
                         idle_id
@@ -273,7 +273,7 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
             idle_count += 1;
             if idle_count % 1000 == 0 {
                 let cpu = crate::sched::current_cpu_index::<R>();
-                crate::kinfo!("SCHED: CPU {} idle pulse", cpu);
+                crate::kdebug!("SCHED: CPU {} idle pulse", cpu);
             }
         }
     }

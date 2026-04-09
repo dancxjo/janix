@@ -722,7 +722,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     // Bring up all secondary CPUs during early boot.
     let cpu_total = runtime.cpu_total_count();
     if cpu_total > 1 {
-        crate::kinfo!(
+        crate::kdebug!(
             "Kernel: Detected {} CPUs. Starting {} secondaries...",
             cpu_total,
             cpu_total - 1
@@ -746,7 +746,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     });
 
     let modules = runtime.modules();
-    contract!("thing-os kernel starting...");
     kdebug!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {
         crate::kdebug!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
@@ -845,7 +844,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         // Flush TLB by reloading CR3
         runtime.tasking().activate_address_space(aspace);
 
-        kinfo!("Spawning sprout with registry at 0x600000...");
+        kdebug!("Spawning sprout with registry at 0x600000...");
         unsafe {
             contract!("Spawning init process...");
             let mut entry = user_entry;
@@ -860,13 +859,13 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             );
         }
     } else {
-        kinfo!("Sprout not found. Checking fallback...");
+        kdebug!("Sprout not found. Checking fallback...");
 
         let spawned_fallback = false;
         #[cfg(feature = "diagnostic-apps")]
         {
             if let Some(mod_desc) = modules.iter().find(|m| m.name.contains("threads_demo")) {
-                kinfo!("Found threads_demo fallback...");
+                kdebug!("Found threads_demo fallback...");
                 let aspace = runtime.tasking().make_user_address_space();
                 let (user_entry, stack_info, regions) =
                     crate::task::loader::load_module(runtime, aspace, mod_desc)
@@ -885,17 +884,17 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         }
 
         if !spawned_fallback {
-            kinfo!("No modules found. Checking threads_supported...");
+            kdebug!("No modules found. Checking threads_supported...");
             if runtime.threads_supported() {
-                kinfo!("Spawning initial threads...");
-                kinfo!("Spawning Thread A...");
+                kdebug!("Spawning initial threads...");
+                kdebug!("Spawning Thread A...");
                 crate::task::spawn::<R>(
                     thread_a,
                     StartupArg::Raw(1),
                     crate::task::TaskPriority::Normal,
                     crate::task::Affinity::Any,
                 );
-                kinfo!("Spawning Thread B...");
+                kdebug!("Spawning Thread B...");
                 crate::task::spawn::<R>(
                     thread_b,
                     StartupArg::Raw(2),

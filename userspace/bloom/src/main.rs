@@ -732,11 +732,25 @@ fn main(arg: usize) -> ! {
     );
     let target = if display_fd != 0 {
         CompositorTarget::map_from_fd(display_fd, display_geometry, (arg_req, arg_resp))
-            .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
+            .or_else(|e| {
+                stem::warn!("[bloom] map_from_fd failed: {:?}", e);
+                CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
+            })
     } else {
         CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
-    }
-    .expect("compositor discover");
+    };
+    let target = match target.or_else(|e| {
+        stem::warn!("[bloom] compositor discovery failed: {:?}; trying direct /dev/fb0 fallback", e);
+        CompositorTarget::fallback_bootfb()
+    }) {
+        Ok(target) => target,
+        Err(e) => {
+            stem::error!("[bloom] unable to acquire compositor target: {:?}", e);
+            loop {
+                stem::sleep_ms(1000);
+            }
+        }
+    };
     let _ = target.backend;
 
     // Buffer mapping cache for swapchain - maps file descriptors to their virtual addresses

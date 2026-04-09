@@ -158,6 +158,12 @@ impl CompositorTarget {
         Err(CompositorError::DiscoveryTimeout)
     }
 
+    pub fn fallback_bootfb() -> Result<Self, CompositorError> {
+        let (width, height, stride, format) =
+            Self::probe_bootfb().ok_or(CompositorError::DiscoveryTimeout)?;
+        Self::build_bootfb_staging_target(width, height, stride, format)
+    }
+
     fn build_from_config(
         fd: u32,
         width: u32,

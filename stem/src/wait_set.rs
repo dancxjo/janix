@@ -324,6 +324,9 @@ impl WaitSet {
         // push_spec() guarantees specs.len() <= WAIT_MANY_MAX_ITEMS.
         let n =
             syscall::wait::wait_many(&self.specs, &mut results[..self.specs.len()], timeout_dur)?;
+        if n > self.specs.len() || n > results.len() {
+            return Err(Errno::EIO);
+        }
 
         let events = results[..n]
             .iter()

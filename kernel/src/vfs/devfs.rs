@@ -401,6 +401,10 @@ impl VfsNode for FbNode {
             ino: 4,
         })
     }
+
+    fn phys_region(&self) -> SysResult<(u64, usize)> {
+        Ok((self.fb.addr, self.fb.byte_len))
+    }
 }
 
 // ── /dev/rtc ─────────────────────────────────────────────────────────────────

@@ -410,9 +410,15 @@ fn fetch_unifont(assets: &Path) -> Result<()> {
                 .arg(&gz_path),
         )?;
         
-        let extracted = fonts_dir.join("unifont_all-17.0.04.hex");
+        let extracted = fonts_dir.join("unifont_all.hex");
         if extracted.exists() {
             fs::rename(&extracted, &unifont_dest)?;
+        } else {
+            // Try the versioned name just in case the URL changed
+            let versioned = fonts_dir.join("unifont_all-17.0.04.hex");
+            if versioned.exists() {
+                fs::rename(&versioned, &unifont_dest)?;
+            }
         }
     } else {
         println!("    unifont.hex already exists.");

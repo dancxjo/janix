@@ -67,22 +67,14 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     if !path.starts_with('/') {
         return Err(Errno::ENOENT);
     }
-    if path == "/dev/fb0" {
-        crate::kinfo!("mount::lookup: entering path='{}'", path);
-    }
+    
     let table = MOUNT_TABLE.lock();
     for entry in table.iter() {
         if let Some(rel) = strip_prefix(path, &entry.prefix) {
-            if path == "/dev/fb0" {
-                crate::kinfo!(
-                    "mount::lookup: matched prefix='{}' rel='{}'",
-                    entry.prefix,
-                    rel
-                );
-            }
+            crate::kinfo!("mount::lookup: trying prefix='{}' rel='{}' for path='{}'", entry.prefix, rel, path);
             match entry.driver.lookup(rel) {
                 Ok(node) => return Ok(node),
-                Err(Errno::ENOENT) if path == "/dev/fb0" && entry.prefix == "/dev" => {
+                Err(Errno::ENOENT) if entry.prefix == "/dev" && rel == "fb0" => {
                     crate::kwarn!(
                         "mount::lookup: mounted /dev driver returned ENOENT for fb0, trying builtin devfs fallback"
                     );
@@ -100,13 +92,16 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
                         }
                     }
                 }
-                Err(err) => return Err(err),
+                Err(err) => {
+                    if err != Errno::ENOENT {
+                        crate::kwarn!("mount::lookup: driver logic error for prefix='{}' rel='{}' err={:?}", entry.prefix, rel, err);
+                    }
+                    return Err(err);
+                }
             }
         }
     }
-    if path == "/dev/fb0" {
-        crate::kwarn!("mount::lookup: no match for '{}'", path);
-    }
+    crate::kwarn!("mount::lookup: no prefix match for '{}'", path);
     Err(Errno::ENOENT)
 }
 

@@ -25,6 +25,7 @@ pub const MAX_FDS: usize = 256;
 /// The `offset` is wrapped in `Arc<Mutex<u64>>` so that file descriptors
 /// created by `dup` or `dup2` share the same file position, matching POSIX
 /// open-file-description semantics.
+#[derive(Clone)]
 pub struct OpenFile {
     pub node: Arc<dyn VfsNode>,
     pub flags: OpenFlags,
@@ -33,6 +34,7 @@ pub struct OpenFile {
 }
 
 /// Per-process file descriptor table.
+#[derive(Clone)]
 pub struct FdTable {
     entries: alloc::vec::Vec<Option<OpenFile>>,
 }

@@ -37,6 +37,15 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     indicate_progress();
+    
+    // Start boot theme animation
+    if let Some(fb_response) = FRAMEBUFFER_REQUEST.get_response() {
+        if let Some(framebuffer) = fb_response.framebuffers().next() {
+            let display = Framebuffer::new(&framebuffer);
+            theme::init(display);
+        }
+    }
+
     kernel::start(&RUNTIME);
 }
 

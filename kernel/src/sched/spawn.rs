@@ -41,6 +41,29 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
     }))
 }
 
+fn inherit_process_info<R: BootRuntime>(
+    pid: u32,
+    ppid: u32,
+) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
+    let tid = crate::runtime::<R>().current_tid();
+    let current_pinfo = crate::task::registry::get_task::<R>(tid)
+        .and_then(|t| t.process_info.clone());
+
+    if let Some(parent_pi) = current_pinfo {
+        let parent = parent_pi.lock();
+        alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
+            pid,
+            ppid,
+            argv: alloc::vec::Vec::new(),
+            env: parent.env.clone(),
+            fd_table: parent.fd_table.clone(),
+            namespace: parent.namespace.clone(),
+        }))
+    } else {
+        default_process_info(pid, ppid)
+    }
+}
+
 // Global round-robin index for CPU selection
 pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
@@ -502,7 +525,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     let ppid = current_parent_pid::<R>(sched);
 
     // Create per-process identity
-    let pinfo = default_process_info(id as u32, ppid);
+    let pinfo = inherit_process_info::<R>(id as u32, ppid);
     {
         let mut lock = pinfo.lock();
         lock.argv = alloc::vec![module.name.as_bytes().to_vec()];
@@ -711,7 +734,16 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     };
 
     // Populate stdio fds in the child's fd_table.
-    let mut fd_table = crate::vfs::fd_table::FdTable::new();
+    let tid = crate::runtime::<R>().current_tid();
+    let parent_pinfo = crate::task::registry::get_task::<R>(tid)
+        .and_then(|t| t.process_info.clone());
+
+    let mut fd_table = if let Some(parent_pi) = parent_pinfo {
+        parent_pi.lock().fd_table.clone()
+    } else {
+        crate::vfs::fd_table::FdTable::new()
+    };
+    
     let (stdin_pipe, stdout_pipe, stderr_pipe) =
         setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
 

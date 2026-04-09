@@ -643,6 +643,8 @@ pub fn setup_compositor(
     display: Option<DisplayHandles>,
     input: InputHandles,
 ) {
+    info!("SPROUT: setup_compositor (display={:?})", display.is_some());
+
     // Extract display handles early for bloom compositor
     let (drv_req_write, drv_resp_read, display_bs_id) = display
         .as_ref()

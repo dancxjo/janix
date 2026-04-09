@@ -233,12 +233,21 @@ fn main(arg: usize) -> ! {
             error!("Terminal: Failed to map bootstrap memfd");
         }
     } else {
-        warn!("Terminal: No bootstrap FD provided (arg was 0)");
+        info!("Terminal: No bootstrap FD provided (arg was 0)");
     }
 
     if fb_id == 0 {
-        error!("Terminal: No framebuffer ID provided!");
-        stem::syscall::exit(1);
+        info!("Terminal: No bootstrap FB, trying /dev/fb0 fallback...");
+        match vfs_open("/dev/fb0", O_RDONLY) {
+            Ok(fd) => {
+                fb_id = fd;
+                info!("Terminal: Using /dev/fb0 as fb_id={}", fb_id);
+            }
+            Err(e) => {
+                error!("Terminal: Failed to open /dev/fb0: {:?}", e);
+                stem::syscall::exit(1);
+            }
+        }
     }
 
     let font = match Font::load("/boot/unifont.hex") {
@@ -294,19 +303,25 @@ fn main(arg: usize) -> ! {
         stride: fb_info.stride,
         format: fb_info.format,
     };
-    let mut header_buf = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
-    let mut payload_buf = [0u8; abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
-    abi::display_driver_protocol::encode_bind_payload_le(&bind_payload, &mut payload_buf);
-    if let Some(total) = abi::display_driver_protocol::encode_message(&mut header_buf, abi::display_driver_protocol::MSG_BIND, &payload_buf) {
-        let _ = stem::syscall::channel_send_all(display_req_write, &header_buf[..total]);
+    if display_req_write != 0 {
+        let mut header_buf = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
+        let mut payload_buf = [0u8; abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
+        abi::display_driver_protocol::encode_bind_payload_le(&bind_payload, &mut payload_buf);
+        if let Some(total) = abi::display_driver_protocol::encode_message(&mut header_buf, abi::display_driver_protocol::MSG_BIND, &payload_buf) {
+            let _ = stem::syscall::channel_send_all(display_req_write, &header_buf[..total]);
+        }
     }
 
     // Focus handling
     let focus_watch = vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
-    let mut has_focus = get_active_ui() == "terminal";
+    let mut has_focus = if display_req_write == 0 {
+        true // In fallback mode, we are always active
+    } else {
+        get_active_ui() == "terminal"
+    };
 
     loop {
-        if has_focus {
+        if has_focus && display_req_write != 0 {
             // Present!
             let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
             let mut payload = [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
@@ -334,11 +349,13 @@ fn main(arg: usize) -> ! {
                             info!("Terminal: Lost focus. Blanking screen.");
                             term.clear(0xFF000000); // Black
                             // Send one last present to show the black screen
-                            let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
-                            let mut payload = [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
-                            abi::display_driver_protocol::encode_present_header_le(0, &mut payload);
-                            if let Some(total) = abi::display_driver_protocol::encode_message(&mut present_header, abi::display_driver_protocol::MSG_PRESENT, &payload) {
-                                let _ = stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
+                            if display_req_write != 0 {
+                                let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
+                                let mut payload = [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
+                                abi::display_driver_protocol::encode_present_header_le(0, &mut payload);
+                                if let Some(total) = abi::display_driver_protocol::encode_message(&mut present_header, abi::display_driver_protocol::MSG_PRESENT, &payload) {
+                                    let _ = stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
+                                }
                             }
                         }
                     }

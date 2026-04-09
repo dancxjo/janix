@@ -45,16 +45,21 @@ impl VfsDriver for BootFs {
 
         // Search in modules
         for (i, m) in self.modules.iter().enumerate() {
-            let name = m.name.strip_prefix("/boot/").unwrap_or(m.name);
+            let m_name = m.name.trim_matches('\0').trim();
+            let name = m_name.strip_prefix("/boot/").unwrap_or(m_name);
+            
+            crate::kinfo!("BootFs: module[{}] name='{}' (raw='{}') path_to_match='{}'", i, name, m.name, path);
+
             if name == path {
-                crate::kinfo!("BootFs: found module match for '{}' at index {}", path, i);
+                crate::kinfo!("BootFs: EXACT match for '{}' at index {}", path, i);
                 return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
             }
 
             // Also try matching basename (e.g. "/assets/fonts/unifont.hex" matches "unifont.hex")
-            if let Some(slash_idx) = m.name.rfind('/') {
-                if &m.name[slash_idx + 1..] == path {
-                    crate::kinfo!("BootFs: found module match via basename for '{}' at index {}", path, i);
+            if let Some(slash_idx) = m_name.rfind('/') {
+                let basename = &m_name[slash_idx + 1..];
+                if basename == path {
+                    crate::kinfo!("BootFs: BASENAME match for '{}' at index {}", path, i);
                     return Ok(Arc::new(StaticFileNode::new(m.bytes, 100 + i as u64)));
                 }
             }

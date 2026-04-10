@@ -41,8 +41,9 @@ pub fn read_user_fs_base() -> u64 {
 /// # Safety
 /// Requires WRMSR privilege (CPL 0).  Must not be called from user mode.
 /// The caller is responsible for ensuring `base` is a valid canonical address
-/// (bits 63:48 must equal bit 47) when the value will eventually be used by
-/// user-mode code; an invalid address triggers a #GP on first access.
+/// (bits 63:47 must all be identical — all 0 or all 1) when the value will
+/// eventually be used by user-mode code; an invalid address triggers a #GP on
+/// first access.
 #[inline(always)]
 pub unsafe fn write_user_fs_base(base: u64) {
     let lo = base as u32;

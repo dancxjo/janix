@@ -485,15 +485,15 @@ fn deserialize_env(blob: &[u8]) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, Errno> {
 /// this call succeeds silently (no-op).
 ///
 /// Returns `EINVAL` if `base` is a non-canonical address on x86_64 (bits
-/// 63:48 must sign-extend bit 47).
+/// 63:47 must all be identical — all 0 or all 1).
 pub fn sys_task_set_tls_base(base: usize) -> SysResult<usize> {
     let base = base as u64;
 
-    // Validate canonical address: bits 63:47 must all be the same value.
-    // Non-canonical addresses would cause a #GP on the first FS-relative
-    // access from user mode; reject them here to give a clean error.
+    // Validate canonical address: shift right by 47 to get bits [63:47] (17 bits).
+    // A canonical address has them all 0 (user low half) or all 1 (kernel high half).
+    // Non-canonical addresses trigger a #GP on the first FS-relative user access.
     let sign_bits = base >> 47;
-    if sign_bits != 0 && sign_bits != (1u64 << 17) - 1 {
+    if sign_bits != 0 && sign_bits != 0x1_FFFF {
         return Err(abi::errors::Errno::EINVAL);
     }
 

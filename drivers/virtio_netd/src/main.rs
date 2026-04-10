@@ -141,22 +141,47 @@ fn main(arg: usize) -> ! {
         }
     }
 
-    // Wait for MSG_BIND_ASSIGNED
+    // Wait for MSG_BIND_ASSIGNED or MSG_BIND_FAILED
     let mut wait_buf = [0u8; 512];
+    let mut assigned_bind_id = bind_instance_id;
     loop {
         if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
             if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n]) {
                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        assigned_bind_id = assigned.bind_instance_id;
                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
                         let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
                         stem::debug!("VIRTIO_NETD: Sovereign registration COMPLETE. Assigned: {}", path);
                         break;
                     }
+                } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
+                    if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
+                        let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
+                        let reason = core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
+                        stem::warn!("VIRTIO_NETD: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
+                        loop { stem::syscall::yield_now(); }
+                    }
                 }
             }
         }
         stem::syscall::yield_now();
+    }
+
+    // Notify supervisor that this service is fully operational.
+    {
+        let svc_ready = supervisor_protocol::ServiceReadyPayload {
+            bind_instance_id: assigned_bind_id,
+            _reserved: 0,
+        };
+        let mut payload_bytes = [0u8; supervisor_protocol::SERVICE_READY_PAYLOAD_SIZE];
+        let mut svc_buf = [0u8; 64];
+        if let Some(p_len) = supervisor_protocol::encode_service_ready_le(&svc_ready, &mut payload_bytes) {
+            if let Some(total_len) = display_driver_protocol::encode_message(&mut svc_buf, supervisor_protocol::MSG_SERVICE_READY, &payload_bytes[..p_len]) {
+                let _ = stem::syscall::channel_send_all(drv_resp_write, &svc_buf[..total_len]);
+                stem::debug!("VIRTIO_NETD: Sent MSG_SERVICE_READY.");
+            }
+        }
     }
 
     // Initialize shared VFS state.

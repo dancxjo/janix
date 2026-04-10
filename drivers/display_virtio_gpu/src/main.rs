@@ -463,8 +463,9 @@ fn main(boot_fd: usize) -> ! {
     let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> =
         alloc::collections::BTreeMap::new();
 
-    // Wait for MSG_BIND_ASSIGNED (optional but good for synchronization)
+    // Wait for MSG_BIND_ASSIGNED or MSG_BIND_FAILED
     let mut assigned_path = alloc::string::String::new();
+    let mut assigned_bind_id = bind_instance_id;
     let mut wait_buf = [0u8; 512];
     info!("display_virtio_gpu: Waiting for BIND_ASSIGNED...");
     loop {
@@ -472,15 +473,39 @@ fn main(boot_fd: usize) -> ! {
             if let Some((header, payload)) = drvproto::parse_message(&wait_buf[..n]) {
                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        assigned_bind_id = assigned.bind_instance_id;
                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
                         assigned_path = alloc::string::String::from_utf8_lossy(&assigned.primary_path[..path_len]).to_string();
                         info!("display_virtio_gpu: Sovereign registration COMPLETE. Assigned: {}", assigned_path);
                         break;
                     }
+                } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
+                    if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
+                        let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
+                        let reason = core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
+                        warn!("display_virtio_gpu: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
+                        loop { stem::yield_now(); }
+                    }
                 }
             }
         }
         stem::time::sleep_ms(10);
+    }
+
+    // Notify supervisor that this service is now fully operational.
+    {
+        let svc_ready = supervisor_protocol::ServiceReadyPayload {
+            bind_instance_id: assigned_bind_id,
+            _reserved: 0,
+        };
+        let mut payload_bytes = [0u8; supervisor_protocol::SERVICE_READY_PAYLOAD_SIZE];
+        let mut svc_buf = [0u8; 64];
+        if let Some(p_len) = supervisor_protocol::encode_service_ready_le(&svc_ready, &mut payload_bytes) {
+            if let Some(total_len) = drvproto::encode_message(&mut svc_buf, supervisor_protocol::MSG_SERVICE_READY, &payload_bytes[..p_len]) {
+                let _ = stem::syscall::channel_send_all(supervisor_port, &svc_buf[..total_len]);
+                info!("display_virtio_gpu: Sent MSG_SERVICE_READY.");
+            }
+        }
     }
 
     let mut ws = stem::wait_set::WaitSet::new();

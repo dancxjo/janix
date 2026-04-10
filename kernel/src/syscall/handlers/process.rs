@@ -10,7 +10,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
-    crate::kprintln!("SYSCALL EXIT: TID={} code={}", unsafe { crate::sched::current_tid_current() }, code);
+    // crate::kprintln!("SYSCALL EXIT: TID={} code={}", unsafe { crate::sched::current_tid_current() }, code);
     unsafe {
         crate::sched::exit_current(code);
     }
@@ -149,11 +149,11 @@ pub fn sys_waitpid(pid: usize, status_ptr: usize, flags: usize) -> SysResult<usi
         validate_user_range(status_ptr, core::mem::size_of::<i32>(), true)?;
     }
 
-    crate::kprintln!("SYSCALL WAITPID: TID={} waiting for TargetPID={} flags={:x}", unsafe { crate::sched::current_tid_current() }, pid, flags);
+    // crate::kprintln!("SYSCALL WAITPID: TID={} waiting for TargetPID={} flags={:x}", unsafe { crate::sched::current_tid_current() }, pid, flags);
     let (child_pid, code) = unsafe {
         crate::sched::waitpid_current(pid, flags)?
     };
-    crate::kprintln!("SYSCALL WAITPID: TID={} wake up, TargetPID={} ChildPID={} exited with {}", unsafe { crate::sched::current_tid_current() }, pid, child_pid, code);
+    // crate::kprintln!("SYSCALL WAITPID: TID={} wake up, TargetPID={} ChildPID={} exited with {}", unsafe { crate::sched::current_tid_current() }, pid, child_pid, code);
     if status_ptr != 0 {
         unsafe {
             super::copyout(status_ptr, &code.to_le_bytes())?;

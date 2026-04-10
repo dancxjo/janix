@@ -63,6 +63,7 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
         cwd: alloc::string::String::from("/"),
+        thread_ids: alloc::vec![pid as TaskId],
     }))
 }
 
@@ -85,6 +86,7 @@ fn inherit_process_info<R: BootRuntime>(
             fd_table: parent.fd_table.clone(),
             namespace: parent.namespace.clone(),
             cwd: parent.cwd.clone(),
+            thread_ids: alloc::vec![pid as TaskId],
         }))
     } else {
         default_process_info(pid, ppid)
@@ -332,6 +334,13 @@ impl<R: BootRuntime> Scheduler<R> {
         self.state.insert_task(sched_fields);
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
         self.state.enqueue_task(safe_cpu, priority as usize, id);
+
+        // Register this new thread TID in the shared ProcessInfo thread list.
+        if let Some(pinfo) = crate::task::registry::get_task::<R>(id)
+            .and_then(|t| t.process_info.clone())
+        {
+            pinfo.lock().thread_ids.push(id);
+        }
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -847,6 +856,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         } else {
             alloc::string::String::from("/")
         },
+        thread_ids: alloc::vec![id],
     }));
 
     // Store name and process_info on the task struct

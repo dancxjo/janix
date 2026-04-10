@@ -3366,6 +3366,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_threads"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "test_vm_protect"
 version = "0.1.0"
 dependencies = [

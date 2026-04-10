@@ -1146,6 +1146,7 @@ mod tests {
             fd_table,
             namespace: crate::vfs::NamespaceRef::global(),
             cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![1],
         }))
     }
 

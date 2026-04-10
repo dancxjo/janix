@@ -28,13 +28,14 @@ pub use hooks::{
     ProcessSnapshot, add_user_mapping_current, alloc_user_stack_current,
     check_user_mapping_current, current_priority_current, current_task_name_current,
     current_tid_current, dump_stats_current, exit_current, get_user_mapping_at_current,
-    graph_thing_for_current, handle_user_stack_fault_current, kill_by_tid_current,
-    list_processes_current, poll_task_exit_current, process_info_current,
+    graph_thing_for_current, handle_user_stack_fault_current, interrupt_task_current,
+    kill_by_tid_current, list_processes_current, poll_task_exit_current, process_info_current,
     process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
     remove_user_mappings_current, set_current_user_fs_base_current, set_priority_current,
     sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_exec_current, task_status_current, task_wait_current,
-    unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
+    take_pending_interrupt_current, unregister_task_exit_waiter_current,
+    unregister_timeout_wake_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -266,6 +267,8 @@ pub fn init<R: BootRuntime>() {
             hooks::SPAWN_USER_HOOK = Some(spawn::spawn_user_thread::<R>);
             hooks::SPAWN_PROCESS_HOOK = Some(spawn::spawn_process::<R>);
             hooks::CURRENT_TID_HOOK = Some(current_tid::<R>);
+            hooks::INTERRUPT_TASK_HOOK = Some(interrupt_task::<R>);
+            hooks::TAKE_PENDING_INTERRUPT_HOOK = Some(take_pending_interrupt::<R>);
             hooks::TASK_STATUS_HOOK = Some(task_status::<R>);
             hooks::TASK_WAIT_HOOK = Some(wait_task::<R>);
             hooks::SET_PRIORITY_HOOK = Some(set_priority::<R>);
@@ -346,6 +349,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         exit_waiters: crate::sched::WaitQueue::new(),
         is_user: false,
         wake_pending: false,
+        pending_interrupt: false,
         stack_info: None,
         mappings: alloc::sync::Arc::new(spin::Mutex::new(
             crate::memory::mappings::MappingList::new(),
@@ -1075,6 +1079,35 @@ fn set_current_user_fs_base<R: BootRuntime>(base: u64) {
     }
 }
 
+fn interrupt_task<R: BootRuntime>(tid: TaskId) -> Result<(), abi::errors::Errno> {
+    let should_wake = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        if task.state == TaskState::Dead {
+            return Err(abi::errors::Errno::ESRCH);
+        }
+        task.pending_interrupt = true;
+        task.state == TaskState::Blocked
+    } else {
+        return Err(abi::errors::Errno::ESRCH);
+    };
+
+    if should_wake {
+        wake_task::<R>(tid);
+    }
+
+    Ok(())
+}
+
+fn take_pending_interrupt<R: BootRuntime>() -> bool {
+    let tid = crate::runtime::<R>().current_tid();
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        let was_pending = task.pending_interrupt;
+        task.pending_interrupt = false;
+        was_pending
+    } else {
+        false
+    }
+}
+
 /// Get the current task's ProcessInfo Arc, if any.
 pub fn process_info<R: BootRuntime>()
 -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
@@ -1613,6 +1646,14 @@ mod tests {
         fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> {
             Ok(None)
         }
+        fn protect_page(
+            &self,
+            _as: Self::AddressSpace,
+            _virt: u64,
+            _perms: MapPerms,
+        ) -> Result<(), ()> {
+            Ok(())
+        }
         fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> {
             None
         }
@@ -1648,6 +1689,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1687,6 +1729,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1717,6 +1760,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1783,6 +1827,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1813,6 +1858,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1873,6 +1919,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1903,6 +1950,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -1988,6 +2036,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2065,6 +2114,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2160,6 +2210,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2189,6 +2240,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2252,6 +2304,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2281,6 +2334,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2337,6 +2391,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2386,6 +2441,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2438,6 +2494,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2467,6 +2524,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2496,6 +2554,7 @@ mod tests {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2666,5 +2725,32 @@ mod tests {
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;
+    }
+
+    #[test]
+    fn test_interrupt_task_marks_and_consumes_pending_interrupt() {
+        init_test_env();
+
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_task(0, TaskState::Runnable, TaskPriority::Normal),
+        ));
+
+        interrupt_task::<MockRuntime>(0).expect("interrupt task");
+        assert!(
+            crate::task::registry::get_task::<MockRuntime>(0)
+                .unwrap()
+                .pending_interrupt
+        );
+        assert!(take_pending_interrupt::<MockRuntime>());
+        assert!(!take_pending_interrupt::<MockRuntime>());
+    }
+
+    #[test]
+    fn test_interrupt_task_returns_esrch_for_missing_task() {
+        init_test_env();
+        assert_eq!(
+            interrupt_task::<MockRuntime>(9999).unwrap_err(),
+            abi::errors::Errno::ESRCH
+        );
     }
 }

@@ -46,6 +46,10 @@ fn futex_key(uaddr: usize) -> FutexKey {
 /// - `Err(EAGAIN)` if `*uaddr != expected` (value changed)
 /// - `Err(ETIMEDOUT)` on timeout
 pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult<usize> {
+    if crate::sched::take_pending_interrupt_current() {
+        return Err(Errno::EINTR);
+    }
+
     // Validate the userspace address is readable.
     validate_user_range(uaddr, 4, false)?;
 
@@ -70,6 +74,18 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
         unsafe {
             crate::sched::block_current_erased();
         }
+        let mut table = FUTEX_TABLE.lock();
+        if let Some(waiters) = table.get_mut(&key) {
+            if let Some(pos) = waiters.iter().position(|&w| w == tid) {
+                waiters.remove(pos);
+                if waiters.is_empty() {
+                    table.remove(&key);
+                }
+            }
+        }
+        if crate::sched::take_pending_interrupt_current() {
+            return Err(Errno::EINTR);
+        }
     } else {
         // Timed wait — use scheduler sleep with the same coarse rounding as SYS_SLEEP.
         let ticks = crate::time::duration_to_sleep_ticks(timeout_ns);
@@ -79,6 +95,19 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
             }
         } else {
             crate::sched::sleep_ticks_current(ticks);
+        }
+
+        if crate::sched::take_pending_interrupt_current() {
+            let mut table = FUTEX_TABLE.lock();
+            if let Some(waiters) = table.get_mut(&key) {
+                if let Some(pos) = waiters.iter().position(|&w| w == tid) {
+                    waiters.remove(pos);
+                    if waiters.is_empty() {
+                        table.remove(&key);
+                    }
+                }
+            }
+            return Err(Errno::EINTR);
         }
 
         // After waking, remove ourselves from the wait queue if still there

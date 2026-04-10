@@ -281,6 +281,11 @@ pub fn task_get_tls_base() -> Result<usize, Errno> {
     abi::errors::errno(ret).map(|v| v as usize)
 }
 
+pub fn task_interrupt(tid: u64) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_INTERRUPT, tid as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
 pub fn spawn_process_ex(
     name: &str,
     argv: &[&[u8]],

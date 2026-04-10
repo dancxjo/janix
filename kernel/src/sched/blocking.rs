@@ -8,7 +8,7 @@ use super::SCHEDULER;
 
 use super::types::Scheduler;
 
-static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
+pub(crate) static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 pub(crate) static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());

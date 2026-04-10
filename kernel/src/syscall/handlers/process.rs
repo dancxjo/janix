@@ -143,6 +143,11 @@ pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
     if killed { Ok(0) } else { Err(Errno::ESRCH) }
 }
 
+pub fn sys_task_interrupt(tid: usize) -> SysResult<usize> {
+    crate::sched::interrupt_task_current(tid as u64)?;
+    Ok(0)
+}
+
 pub fn sys_task_dump() -> SysResult<usize> {
     crate::sched::dump_stats_current();
     Ok(0)

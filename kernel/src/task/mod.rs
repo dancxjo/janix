@@ -66,6 +66,7 @@ pub struct Task<R: BootRuntime> {
     pub exit_waiters: crate::sched::WaitQueue,
     pub is_user: bool,
     pub wake_pending: bool,
+    pub pending_interrupt: bool,
     pub affinity: Affinity,
 
     pub kstack_base: *mut u8,

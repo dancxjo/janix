@@ -153,6 +153,7 @@ impl<R: BootRuntime> Scheduler<R> {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
+            pending_interrupt: false,
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -282,6 +283,7 @@ impl<R: BootRuntime> Scheduler<R> {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: true,
             wake_pending: false,
+            pending_interrupt: false,
             stack_info: Some(stack_info),
             mappings,
             timeslice_remaining: DEFAULT_TIMESLICE,
@@ -383,6 +385,7 @@ impl<R: BootRuntime> Scheduler<R> {
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: true,
             wake_pending: false,
+            pending_interrupt: false,
             stack_info: Some(stack_info),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(mapping_list)),
             timeslice_remaining: DEFAULT_TIMESLICE,
@@ -832,7 +835,7 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
 mod tests {
     use super::*;
     use crate::task::TaskPriority;
-    use crate::{BootRuntime, BootRuntimeBase, BootTasking, UserEntry, UserTaskSpec};
+    use crate::{BootRuntime, BootRuntimeBase, BootTasking, MapPerms, UserEntry, UserTaskSpec};
 
     #[test]
     fn boot_module_match_requires_exact_basename() {
@@ -927,6 +930,14 @@ mod tests {
         }
         fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> {
             Ok(None)
+        }
+        fn protect_page(
+            &self,
+            _as: Self::AddressSpace,
+            _virt: u64,
+            _perms: MapPerms,
+        ) -> Result<(), ()> {
+            Ok(())
         }
         fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> {
             None

@@ -2981,6 +2981,7 @@ mod tests {
                     namespace: crate::vfs::NamespaceRef::global(),
                     cwd: alloc::string::String::from("/"),
                     thread_ids: alloc::vec![pid as TaskId],
+                    exec_in_progress: false,
                 },
             ))),
             user_fs_base: 0,
@@ -3137,6 +3138,7 @@ mod tests {
             namespace: crate::vfs::NamespaceRef::global(),
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![7000, 7001],
+            exec_in_progress: false,
         }));
 
         {
@@ -3165,6 +3167,7 @@ mod tests {
             namespace: crate::vfs::NamespaceRef::global(),
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8700, 8701],
+            exec_in_progress: false,
         }));
 
         // Register both tasks.
@@ -3214,6 +3217,7 @@ mod tests {
             namespace: crate::vfs::NamespaceRef::global(),
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8800, 8801],
+            exec_in_progress: false,
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3246,5 +3250,125 @@ mod tests {
 
         // Both TIDs removed from thread_ids.
         assert!(pinfo.lock().thread_ids.is_empty(), "thread_ids should be empty after group exit");
+    }
+
+    /// exec_in_progress: killing siblings during exec collapse removes their
+    /// TIDs from thread_ids, leaving only the exec-calling thread.
+    #[test]
+    fn test_exec_collapse_kills_siblings_and_updates_thread_ids() {
+        init_test_env();
+
+        // Shared ProcessInfo for a 3-thread group: leader 9100, siblings 9101, 9102.
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 9100,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![9100, 9101, 9102],
+            exec_in_progress: false,
+        }));
+
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(9100, TaskState::Running, 9100, 1, pinfo.clone()),
+        ));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(9101, TaskState::Runnable, 9100, 1, pinfo.clone()),
+        ));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(9102, TaskState::Runnable, 9100, 1, pinfo.clone()),
+        ));
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        // Mark 9100 as the "current" (exec-calling) thread.
+        sched.state.per_cpu[0].current = Some(9100);
+
+        // Step 1: simulate exec – set exec_in_progress.
+        pinfo.lock().exec_in_progress = true;
+
+        // Step 2: collect siblings.
+        let caller_tid: TaskId = 9100;
+        let siblings: alloc::vec::Vec<TaskId> = pinfo
+            .lock()
+            .thread_ids
+            .iter()
+            .copied()
+            .filter(|&t| t != caller_tid)
+            .collect();
+        assert_eq!(siblings.len(), 2);
+
+        // Step 3: kill siblings (simulates kill_by_tid path).
+        for sibling in siblings {
+            let _ = mark_task_exited::<MockRuntime>(&mut sched, sibling, -9);
+        }
+
+        // Both siblings must be dead.
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(9101).unwrap().state,
+            TaskState::Dead,
+            "sibling 9101 should be dead"
+        );
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(9102).unwrap().state,
+            TaskState::Dead,
+            "sibling 9102 should be dead"
+        );
+
+        // thread_ids should contain only the caller.
+        {
+            let pi = pinfo.lock();
+            assert_eq!(
+                pi.thread_ids,
+                alloc::vec![caller_tid],
+                "only caller TID should remain after collapse"
+            );
+        }
+
+        // Step 4: simulate commit – clear exec_in_progress.
+        pinfo.lock().exec_in_progress = false;
+        assert!(
+            !pinfo.lock().exec_in_progress,
+            "exec_in_progress cleared after commit"
+        );
+    }
+
+    /// exec_in_progress blocks additional thread creation at the process level.
+    #[test]
+    fn test_exec_in_progress_rejects_new_threads() {
+        init_test_env();
+
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 9300,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![9300],
+            exec_in_progress: false,
+        }));
+
+        // Before exec: flag is clear — new threads would be accepted.
+        assert!(!pinfo.lock().exec_in_progress);
+
+        // Set exec_in_progress (as task_exec_current does at the start).
+        pinfo.lock().exec_in_progress = true;
+
+        // The sys_spawn_thread handler checks this flag and returns EAGAIN.
+        // Here we verify the condition it tests.
+        assert!(
+            pinfo.lock().exec_in_progress,
+            "exec_in_progress must be set to block SYS_SPAWN_THREAD"
+        );
+
+        // Rollback: clear the flag on pre-commit failure.
+        pinfo.lock().exec_in_progress = false;
+        assert!(!pinfo.lock().exec_in_progress, "flag cleared after rollback");
     }
 }

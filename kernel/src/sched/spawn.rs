@@ -64,6 +64,7 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         namespace: crate::vfs::NamespaceRef::global(),
         cwd: alloc::string::String::from("/"),
         thread_ids: alloc::vec![pid as TaskId],
+        exec_in_progress: false,
     }))
 }
 
@@ -87,6 +88,7 @@ fn inherit_process_info<R: BootRuntime>(
             namespace: parent.namespace.clone(),
             cwd: parent.cwd.clone(),
             thread_ids: alloc::vec![pid as TaskId],
+            exec_in_progress: false,
         }))
     } else {
         default_process_info(pid, ppid)
@@ -857,6 +859,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
             alloc::string::String::from("/")
         },
         thread_ids: alloc::vec![id],
+        exec_in_progress: false,
     }));
 
     // Store name and process_info on the task struct

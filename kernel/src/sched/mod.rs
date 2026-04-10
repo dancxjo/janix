@@ -1245,7 +1245,8 @@ fn mark_task_exited<R: BootRuntime>(
     }
 
     // Remove this TID from the process's thread group list.
-    // Collect sibling TIDs to kill if this is the thread-group leader.
+    // If this is the thread-group leader, drain the remaining siblings in one
+    // step to avoid a separate clone + clear pass.
     let siblings_to_kill: alloc::vec::Vec<TaskId> = {
         let pinfo_opt = crate::task::registry::get_task::<R>(tid)
             .and_then(|t| t.process_info.clone());
@@ -1254,9 +1255,9 @@ fn mark_task_exited<R: BootRuntime>(
             pi.thread_ids.retain(|&t| t != tid);
 
             // If the exiting thread is the thread-group leader (its TID == pid),
-            // schedule all remaining sibling threads for termination.
+            // drain all remaining siblings and schedule them for termination.
             if pi.pid as TaskId == tid {
-                pi.thread_ids.clone()
+                core::mem::take(&mut pi.thread_ids)
             } else {
                 alloc::vec::Vec::new()
             }
@@ -1266,15 +1267,6 @@ fn mark_task_exited<R: BootRuntime>(
     };
 
     // Kill sibling threads (thread-group exit).
-    // Also clear all remaining TIDs from thread_ids since the group is exiting.
-    if !siblings_to_kill.is_empty() {
-        // Remove all sibling TIDs from the thread list.
-        let pinfo_opt = crate::task::registry::get_task::<R>(tid)
-            .and_then(|t| t.process_info.clone());
-        if let Some(pinfo) = pinfo_opt {
-            pinfo.lock().thread_ids.clear();
-        }
-    }
     for &sibling in &siblings_to_kill {
         if let Some(mut task) = crate::task::registry::get_task_mut::<R>(sibling) {
             if task.state != TaskState::Dead {

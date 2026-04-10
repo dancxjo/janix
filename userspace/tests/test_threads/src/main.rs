@@ -269,4 +269,3 @@ fn main(_arg: usize) -> ! {
     println!("--- test_threads: all tests PASSED ---");
     exit(0);
 }
-

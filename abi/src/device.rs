@@ -7,6 +7,7 @@ pub enum DeviceKind {
     Framebuffer = 4,
     Pci = 5,
     Display = 6,
+    Terminal = 7,
 }
 
 #[repr(C)]

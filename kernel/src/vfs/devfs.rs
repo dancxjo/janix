@@ -248,63 +248,158 @@ impl VfsNode for DevDirNode {
 static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> =
     Mutex::new(alloc::collections::VecDeque::new());
 
+/// Global termios settings for `/dev/console`.
+///
+/// Initialised to a sane canonical-mode default.  Can be updated via the
+/// `TCSETS` device-call ioctl, which allows userspace to switch to raw mode.
+static CONSOLE_TERMIOS: Mutex<abi::termios::Termios> =
+    Mutex::new(abi::termios::DEFAULT_TERMIOS);
+
 /// Character device node for `/dev/console`.
 ///
 /// - **write**: each byte is forwarded to the kernel's boot console via
 ///   [`crate::runtime_base()`].
-/// - **read**: reads from the boot console, applying a canonical line discipline.
-///   Blocks (yields) until a complete line is available.
+/// - **read**: reads from the boot console, honouring the current termios
+///   settings (canonical vs. raw mode, echo, ISIG, etc.).  Blocks (yields)
+///   until data is available, and returns `EINTR` if a pending interrupt is
+///   detected or if Ctrl-C is received while `ISIG` is set.
+/// - **device_call**: supports `TERMINAL_OP_TCGETS` and `TERMINAL_OP_TCSETS`
+///   to query/update the termios settings from userspace.
 pub struct ConsoleNode;
+
+impl ConsoleNode {
+    /// Return a copy of the current termios settings.
+    pub fn get_termios() -> abi::termios::Termios {
+        *CONSOLE_TERMIOS.lock()
+    }
+
+    /// Replace the current termios settings.
+    pub fn set_termios(t: abi::termios::Termios) {
+        *CONSOLE_TERMIOS.lock() = t;
+    }
+}
 
 impl VfsNode for ConsoleNode {
     fn read(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        use abi::termios::{ECHO, ECHOE, ICANON, ICRNL, ISIG, VMIN};
+
         if buf.is_empty() {
             return Ok(0);
         }
-        let rt = crate::runtime_base();
         let mut read_bytes = 0;
+
         loop {
-            // Drain hardware
+            // ── Check for a pending interrupt (e.g. from SYS_TASK_INTERRUPT) ──
+            if crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
+
+            let rt = crate::runtime_base();
+
+            // Snapshot current terminal flags so we are consistent across
+            // one drain + one dequeue pass.
+            let termios = *CONSOLE_TERMIOS.lock();
+            let canonical = termios.c_lflag & ICANON != 0;
+            let do_echo = termios.c_lflag & ECHO != 0;
+            let do_echo_erase = termios.c_lflag & ECHOE != 0;
+            let isig = termios.c_lflag & ISIG != 0;
+            let icrnl = termios.c_iflag & ICRNL != 0;
+
+            // ── Drain hardware FIFO into the software buffer ──────────────────
             while let Some(c) = rt.getchar() {
-                let mut cb = CONSOLE_BUF.lock();
                 match c {
                     b'\r' | b'\n' => {
-                        rt.putchar(b'\r');
-                        rt.putchar(b'\n');
-                        cb.push_back(b'\n');
+                        let mapped = if icrnl { b'\n' } else { c };
+                        if do_echo {
+                            rt.putchar(b'\r');
+                            rt.putchar(b'\n');
+                        }
+                        CONSOLE_BUF.lock().push_back(mapped);
                     }
                     0x08 | 0x7f => {
-                        if !cb.is_empty() && *cb.back().unwrap() != b'\n' {
-                            cb.pop_back();
-                            rt.putchar(0x08);
-                            rt.putchar(b' ');
-                            rt.putchar(0x08);
+                        // Backspace / DEL
+                        if canonical {
+                            let mut cb = CONSOLE_BUF.lock();
+                            let last = cb.back().copied();
+                            if last.is_some() && last != Some(b'\n') {
+                                cb.pop_back();
+                                if do_echo && do_echo_erase {
+                                    rt.putchar(0x08);
+                                    rt.putchar(b' ');
+                                    rt.putchar(0x08);
+                                }
+                            }
+                        } else {
+                            CONSOLE_BUF.lock().push_back(c);
+                        }
+                    }
+                    0x03 => {
+                        // Ctrl-C
+                        if do_echo {
+                            rt.putchar(b'^');
+                            rt.putchar(b'C');
+                            rt.putchar(b'\r');
+                            rt.putchar(b'\n');
+                        }
+                        if isig {
+                            // Discard pending input and return EINTR to the
+                            // caller; the pending interrupt flag has already
+                            // been consumed so we return directly.
+                            CONSOLE_BUF.lock().clear();
+                            return Err(abi::errors::Errno::EINTR);
+                        } else {
+                            // ISIG disabled — pass Ctrl-C as a literal byte.
+                            CONSOLE_BUF.lock().push_back(0x03);
+                        }
+                    }
+                    0x04 => {
+                        // Ctrl-D (EOF in canonical mode)
+                        if canonical {
+                            CONSOLE_BUF.lock().push_back(0x04);
+                        } else {
+                            CONSOLE_BUF.lock().push_back(c);
                         }
                     }
                     0x20..=0x7e => {
-                        cb.push_back(c);
-                        rt.putchar(c);
+                        if do_echo {
+                            rt.putchar(c);
+                        }
+                        CONSOLE_BUF.lock().push_back(c);
                     }
-                    0x03 => {
-                        rt.putchar(b'^');
-                        rt.putchar(b'C');
-                        rt.putchar(b'\r');
-                        rt.putchar(b'\n');
-                        cb.clear();
-                        cb.push_back(0x03);
+                    _ => {
+                        // In raw mode pass all bytes through; in canonical
+                        // mode silently discard control chars we don't handle.
+                        if !canonical {
+                            CONSOLE_BUF.lock().push_back(c);
+                        }
                     }
-                    _ => {}
                 }
             }
 
+            // ── Check whether enough data is available to satisfy the read ───
+            let vmin = termios.c_cc[VMIN] as usize;
+            let vmin_eff = vmin.max(1);
+
             let mut cb = CONSOLE_BUF.lock();
-            let has_line = cb.iter().any(|&b| b == b'\n' || b == 0x03);
-            if has_line || cb.len() >= buf.len() {
+            let ready = if canonical {
+                // Canonical: a full line (terminated by NL or special char)
+                // is required, or the buffer is at least as large as `buf`.
+                cb.iter().any(|&b| b == b'\n' || b == 0x04) || cb.len() >= buf.len()
+            } else {
+                // Raw: VMIN bytes must be available.
+                cb.len() >= vmin_eff || cb.len() >= buf.len()
+            };
+
+            if ready {
                 while read_bytes < buf.len() {
                     if let Some(b) = cb.pop_front() {
                         buf[read_bytes] = b;
                         read_bytes += 1;
-                        if b == b'\n' || b == 0x03 {
+                        if canonical && (b == b'\n' || b == 0x04) {
+                            // Line complete.
+                            break;
+                        }
+                        if !canonical && read_bytes >= vmin_eff {
                             break;
                         }
                     } else {
@@ -341,6 +436,68 @@ impl VfsNode for ConsoleNode {
 
     fn is_tty(&self) -> bool {
         true
+    }
+
+    /// Device-specific control for the console terminal.
+    ///
+    /// Supported operations (set `kind = DeviceKind::Terminal`):
+    ///
+    /// | `op`                    | Direction | Description                    |
+    /// |-------------------------|-----------|--------------------------------|
+    /// | `TERMINAL_OP_TCGETS`    | out       | Copy termios → `out_ptr`       |
+    /// | `TERMINAL_OP_TCSETS`    | in        | Copy `in_ptr` → termios        |
+    /// | `TERMINAL_OP_TCSETSW`   | in        | Same as `TCSETS` (no drain)    |
+    /// | `TERMINAL_OP_TCSETSF`   | in        | Same as `TCSETS` (no flush)    |
+    fn device_call(&self, call: &abi::device::DeviceCall) -> SysResult<usize> {
+        use abi::device::DeviceKind;
+        use abi::termios::{
+            TERMINAL_OP_TCGETS, TERMINAL_OP_TCSETS, TERMINAL_OP_TCSETSF, TERMINAL_OP_TCSETSW,
+        };
+
+        if call.kind != DeviceKind::Terminal {
+            return Err(abi::errors::Errno::ENOSYS);
+        }
+
+        let termios_size = core::mem::size_of::<abi::termios::Termios>();
+
+        match call.op {
+            TERMINAL_OP_TCGETS => {
+                // Write current termios to userspace out_ptr.
+                if call.out_len < termios_size as u32 || call.out_ptr == 0 {
+                    return Err(abi::errors::Errno::EINVAL);
+                }
+                let termios = *CONSOLE_TERMIOS.lock();
+                let bytes = unsafe {
+                    core::slice::from_raw_parts(
+                        &termios as *const abi::termios::Termios as *const u8,
+                        termios_size,
+                    )
+                };
+                unsafe {
+                    crate::syscall::validate::copyout(call.out_ptr as usize, bytes)?;
+                }
+                Ok(0)
+            }
+            TERMINAL_OP_TCSETS | TERMINAL_OP_TCSETSW | TERMINAL_OP_TCSETSF => {
+                // Read new termios from userspace in_ptr.
+                if call.in_len < termios_size as u32 || call.in_ptr == 0 {
+                    return Err(abi::errors::Errno::EINVAL);
+                }
+                let mut new_termios = abi::termios::Termios::default();
+                let bytes = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        &mut new_termios as *mut abi::termios::Termios as *mut u8,
+                        termios_size,
+                    )
+                };
+                unsafe {
+                    crate::syscall::validate::copyin(bytes, call.in_ptr as usize)?;
+                }
+                *CONSOLE_TERMIOS.lock() = new_termios;
+                Ok(0)
+            }
+            _ => Err(abi::errors::Errno::ENOSYS),
+        }
     }
 }
 
@@ -844,5 +1001,165 @@ mod tests {
         let s = core::str::from_utf8(&buf[..n]).unwrap();
         assert!(s.contains("random"));
         assert!(s.contains("urandom"));
+    }
+
+    // ── ConsoleNode termios tests ─────────────────────────────────────────────
+
+    /// Serialise console-state tests that touch global statics.
+    static CONSOLE_TEST_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+
+    #[test]
+    fn test_console_is_tty() {
+        let node = lookup("console").unwrap();
+        assert!(node.is_tty());
+    }
+
+    #[test]
+    fn test_console_default_termios_icanon() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        // Reset to a known state.
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+        let t = ConsoleNode::get_termios();
+        assert_ne!(t.c_lflag & abi::termios::ICANON, 0, "ICANON should be set");
+        assert_ne!(t.c_lflag & abi::termios::ECHO, 0, "ECHO should be set");
+        assert_ne!(t.c_lflag & abi::termios::ISIG, 0, "ISIG should be set");
+        assert_ne!(t.c_iflag & abi::termios::ICRNL, 0, "ICRNL should be set");
+    }
+
+    #[test]
+    fn test_console_set_raw_mode_clears_icanon() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        let mut raw = abi::termios::DEFAULT_TERMIOS;
+        raw.c_lflag &= !(abi::termios::ICANON | abi::termios::ECHO | abi::termios::ISIG);
+        raw.c_iflag &= !(abi::termios::ICRNL | abi::termios::IXON);
+        ConsoleNode::set_termios(raw);
+
+        let t = ConsoleNode::get_termios();
+        assert_eq!(t.c_lflag & abi::termios::ICANON, 0, "ICANON should be clear");
+        assert_eq!(t.c_lflag & abi::termios::ECHO, 0, "ECHO should be clear");
+        assert_eq!(t.c_lflag & abi::termios::ISIG, 0, "ISIG should be clear");
+
+        // Restore.
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+    }
+
+    #[test]
+    fn test_console_read_returns_eintr_on_pending_interrupt() {
+        use crate::sched::hooks::TAKE_PENDING_INTERRUPT_HOOK;
+        use core::sync::atomic::{AtomicBool, Ordering};
+
+        static INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
+
+        fn take_interrupt() -> bool {
+            INTERRUPT_PENDING.swap(false, Ordering::SeqCst)
+        }
+
+        // Set the interrupt flag so the first loop iteration returns EINTR.
+        INTERRUPT_PENDING.store(true, Ordering::SeqCst);
+        unsafe { TAKE_PENDING_INTERRUPT_HOOK = Some(take_interrupt) };
+
+        let node = ConsoleNode;
+        let mut buf = [0u8; 4];
+        let result = node.read(0, &mut buf);
+
+        // Clear the hook to not affect other tests.
+        unsafe { TAKE_PENDING_INTERRUPT_HOOK = None };
+
+        assert_eq!(result, Err(abi::errors::Errno::EINTR));
+    }
+
+    #[test]
+    fn test_console_device_call_unknown_kind_returns_enosys() {
+        let node = ConsoleNode;
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::RtcCmos,
+            op: 1,
+            in_ptr: 0,
+            in_len: 0,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Err(abi::errors::Errno::ENOSYS));
+    }
+
+    #[test]
+    fn test_console_device_call_tcgets_null_ptr_returns_einval() {
+        let node = ConsoleNode;
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCGETS,
+            in_ptr: 0,
+            in_len: 0,
+            out_ptr: 0, // null → EINVAL
+            out_len: 0,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Err(abi::errors::Errno::EINVAL));
+    }
+
+    #[test]
+    fn test_console_device_call_tcsets_null_ptr_returns_einval() {
+        let node = ConsoleNode;
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCSETS,
+            in_ptr: 0, // null → EINVAL
+            in_len: 0,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Err(abi::errors::Errno::EINVAL));
+    }
+
+    #[test]
+    fn test_console_device_call_tcgets_writes_termios() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+
+        let node = ConsoleNode;
+        let mut out = abi::termios::Termios::default();
+        let size = core::mem::size_of::<abi::termios::Termios>();
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCGETS,
+            in_ptr: 0,
+            in_len: 0,
+            out_ptr: &mut out as *mut _ as u64,
+            out_len: size as u32,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Ok(0));
+        assert_eq!(out.c_lflag & abi::termios::ICANON, abi::termios::ICANON);
+    }
+
+    #[test]
+    fn test_console_device_call_tcsets_updates_termios() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+
+        let node = ConsoleNode;
+        let mut raw = abi::termios::DEFAULT_TERMIOS;
+        raw.c_lflag &= !(abi::termios::ICANON | abi::termios::ECHO);
+
+        let size = core::mem::size_of::<abi::termios::Termios>();
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCSETS,
+            in_ptr: &raw as *const _ as u64,
+            in_len: size as u32,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Ok(0));
+
+        let t = ConsoleNode::get_termios();
+        assert_eq!(t.c_lflag & abi::termios::ICANON, 0);
+        assert_eq!(t.c_lflag & abi::termios::ECHO, 0);
+
+        // Restore.
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
     }
 }

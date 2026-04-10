@@ -24,6 +24,7 @@ pub mod supervisor_protocol;
 pub mod symbols;
 pub mod syscall;
 pub mod time;
+pub mod termios;
 pub mod trace;
 pub mod tree_provider;
 pub mod types;

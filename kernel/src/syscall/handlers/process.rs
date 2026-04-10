@@ -349,6 +349,61 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     Ok(needed)
 }
 
+/// Serialize the auxiliary vector (AT_* entries) into a userspace buffer.
+///
+/// Format: `count: u32 LE`, then for each entry: `type: u64 LE, value: u64 LE`.
+/// A terminating `AT_NULL (0, 0)` sentinel is always appended after the stored
+/// entries so the buffer is self-delimiting.
+///
+/// Returns the total bytes needed (includes the sentinel).  Callers should
+/// first pass `buf_len = 0` to learn the size, then retry with a larger buffer.
+pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+    let info = scheduler::process_info_current().ok_or(Errno::ENOENT)?;
+    let pi = info.lock();
+
+    // Total entries = stored entries + AT_NULL sentinel.
+    let entry_count = pi.auxv.len() + 1;
+    // Layout: 4 bytes for count, then entry_count * 16 bytes (each entry is two u64s).
+    let total = 4 + entry_count * 16;
+
+    if buf_ptr == 0 || buf_len == 0 {
+        return Ok(total);
+    }
+
+    let copy_len = buf_len.min(total);
+    let mut out = alloc::vec![0u8; copy_len];
+    let mut pos = 0usize;
+
+    // Write count (number of entries including sentinel).
+    let count_bytes = (entry_count as u32).to_le_bytes();
+    if pos + 4 <= copy_len {
+        out[pos..pos + 4].copy_from_slice(&count_bytes);
+    }
+    pos += 4;
+
+    // Write stored entries.
+    for &(kind, value) in &pi.auxv {
+        if pos + 16 <= copy_len {
+            out[pos..pos + 8].copy_from_slice(&kind.to_le_bytes());
+            out[pos + 8..pos + 16].copy_from_slice(&value.to_le_bytes());
+        }
+        pos += 16;
+    }
+
+    // Append AT_NULL sentinel (type=0, value=0).
+    if pos + 16 <= copy_len {
+        out[pos..pos + 16].copy_from_slice(&[0u8; 16]);
+    }
+
+    drop(pi);
+
+    validate_user_range(buf_ptr, copy_len, true)?;
+    unsafe {
+        super::copyout(buf_ptr, &out[..copy_len])?;
+    }
+    Ok(total)
+}
+
 /// SYS_SPAWN_PROCESS_EX handler.
 /// Args: req_ptr = pointer to SpawnProcessExReq, resp_ptr = pointer to SpawnProcessExResp.
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {

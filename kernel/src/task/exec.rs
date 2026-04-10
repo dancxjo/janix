@@ -88,15 +88,19 @@ pub fn task_exec_current<R: BootRuntime>(
         kind: crate::BootModuleKind::Elf,
     };
 
-    let (entry, stack_info, mappings) =
+    let (entry, stack_info, mappings, aux_info) =
         crate::task::loader::load_module::<R>(rt, new_aspace, &module_desc)
             .ok_or(Errno::ENOEXEC)?;
 
-    // 5. Update ProcessInfo metadata
+    // 5. Update ProcessInfo metadata (argv, env, and auxv)
     {
+        let page_size = rt.page_size() as u64;
         let mut pinfo = pinfo_arc.lock();
         pinfo.argv = argv;
         pinfo.env = env;
+        // Rebuild auxv from freshly loaded image.  AT_* constants follow
+        // the standard ELF auxiliary-vector specification (see elf.h).
+        pinfo.auxv = build_auxv(&aux_info, page_size);
     }
 
     // 6. Finalize the new task state
@@ -150,4 +154,90 @@ pub fn task_exec_current<R: BootRuntime>(
 
     // switch() should never return to this stack because we didn't save it into any task.ctx
     unreachable!("task_exec: switch returned unexpectedly")
+}
+
+// Standard AT_* auxiliary-vector type constants (matches Linux/SysV ABI).
+const AT_PAGESZ: u64 = 6;
+const AT_PHDR: u64 = 3;
+const AT_PHENT: u64 = 4;
+const AT_PHNUM: u64 = 5;
+const AT_ENTRY: u64 = 9;
+
+/// Build the standard auxiliary-vector entries for a freshly loaded image.
+///
+/// Returns a `Vec<(type, value)>` ready to store in [`ProcessInfo::auxv`].
+/// Only entries with non-zero values are included (e.g. phdr info is omitted
+/// for flat-binary fallback loads where `aux_info.phdr_vaddr == 0`).
+pub fn build_auxv(
+    aux_info: &crate::task::loader::LoaderAuxInfo,
+    page_size: u64,
+) -> Vec<(u64, u64)> {
+    let mut v = Vec::new();
+    v.push((AT_PAGESZ, page_size));
+    if aux_info.phdr_vaddr != 0 {
+        v.push((AT_PHDR, aux_info.phdr_vaddr));
+        v.push((AT_PHENT, aux_info.phent));
+        v.push((AT_PHNUM, aux_info.phnum));
+    }
+    if aux_info.entry_vaddr != 0 {
+        v.push((AT_ENTRY, aux_info.entry_vaddr));
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::loader::LoaderAuxInfo;
+
+    #[test]
+    fn build_auxv_elf_image() {
+        let info = LoaderAuxInfo {
+            phdr_vaddr: 0x200040,
+            phent: 56,
+            phnum: 3,
+            entry_vaddr: 0x201000,
+        };
+        let auxv = build_auxv(&info, 4096);
+
+        // AT_PAGESZ is always present.
+        assert!(auxv.contains(&(AT_PAGESZ, 4096)));
+        // ELF-specific entries present when phdr_vaddr != 0.
+        assert!(auxv.contains(&(AT_PHDR, 0x200040)));
+        assert!(auxv.contains(&(AT_PHENT, 56)));
+        assert!(auxv.contains(&(AT_PHNUM, 3)));
+        // AT_ENTRY present when entry_vaddr != 0.
+        assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
+    }
+
+    #[test]
+    fn build_auxv_flat_binary() {
+        // Flat-binary fallback: phdr_vaddr and entry_vaddr are both 0.
+        let info = LoaderAuxInfo::default();
+        let auxv = build_auxv(&info, 4096);
+
+        // Only AT_PAGESZ should be emitted.
+        assert_eq!(auxv.len(), 1);
+        assert!(auxv.contains(&(AT_PAGESZ, 4096)));
+        // No ELF-specific or entry entries.
+        assert!(!auxv.iter().any(|&(k, _)| k == AT_PHDR));
+        assert!(!auxv.iter().any(|&(k, _)| k == AT_ENTRY));
+    }
+
+    #[test]
+    fn build_auxv_no_phdr_but_has_entry() {
+        // Edge case: entry known but no phdr info (should not happen in practice
+        // but the function must not panic).
+        let info = LoaderAuxInfo {
+            phdr_vaddr: 0,
+            phent: 56,
+            phnum: 0,
+            entry_vaddr: 0x201000,
+        };
+        let auxv = build_auxv(&info, 0x1000);
+        assert!(auxv.contains(&(AT_PAGESZ, 0x1000)));
+        assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
+        // phdr_vaddr == 0 → no AT_PHDR/AT_PHENT/AT_PHNUM emitted.
+        assert!(!auxv.iter().any(|&(k, _)| k == AT_PHDR));
+    }
 }

@@ -59,6 +59,7 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         ppid,
         argv: alloc::vec::Vec::new(),
         env: alloc::collections::BTreeMap::new(),
+        auxv: alloc::vec::Vec::new(),
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
         cwd: alloc::string::String::from("/"),
@@ -80,6 +81,7 @@ fn inherit_process_info<R: BootRuntime>(
             ppid,
             argv: alloc::vec::Vec::new(),
             env: parent.env.clone(),
+            auxv: alloc::vec::Vec::new(),
             fd_table: parent.fd_table.clone(),
             namespace: parent.namespace.clone(),
             cwd: parent.cwd.clone(),
@@ -545,7 +547,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)?;
+    let (mut entry, stack_info, regions, aux_info) = crate::task::loader::load_module(rt, aspace, module)?;
     entry.arg0 = arg.to_raw();
 
     let _irq = rt.irq_disable();
@@ -580,8 +582,10 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     // Create per-process identity
     let pinfo = inherit_process_info::<R>(id as u32, ppid);
     {
+        let page_size = rt.page_size() as u64;
         let mut lock = pinfo.lock();
         lock.argv = alloc::vec![module.name.as_bytes().to_vec()];
+        lock.auxv = crate::task::exec::build_auxv(&aux_info, page_size);
     }
 
     // Store name and process_info on the task struct
@@ -774,7 +778,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let (mut entry, stack_info, regions) =
+    let (mut entry, stack_info, regions, aux_info) =
         crate::task::loader::load_module(rt, aspace, module).ok_or(abi::errors::Errno::ENOEXEC)?;
     entry.arg0 = boot_arg as usize;
 
@@ -834,6 +838,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         ppid,
         argv: final_argv,
         env,
+        auxv: crate::task::exec::build_auxv(&aux_info, rt.page_size() as u64),
 
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),

@@ -46,6 +46,13 @@ pub struct ProcessInfo {
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
+    /// Auxiliary vector (ELF AT_* entries).
+    ///
+    /// Each entry is a `(type, value)` pair matching the standard ELF auxv
+    /// format.  Required entries: `AT_PAGESZ`, `AT_PHDR`, `AT_PHENT`,
+    /// `AT_PHNUM`, `AT_ENTRY`.  Terminated implicitly — no `AT_NULL` sentinel
+    /// is stored here; the kernel adds it when serialising to userspace.
+    pub auxv: Vec<(u64, u64)>,
     /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
     /// VFS namespace for this process.

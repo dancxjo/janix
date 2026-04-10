@@ -36,6 +36,7 @@ pub const SYS_ENV_GET: u32 = 0x1101;
 pub const SYS_ENV_SET: u32 = 0x1102;
 pub const SYS_ENV_UNSET: u32 = 0x1103;
 pub const SYS_ENV_LIST: u32 = 0x1104;
+pub const SYS_AUXV_GET: u32 = 0x1105;
 
 // ============================================================================
 // Time & Waiting (0x1200)

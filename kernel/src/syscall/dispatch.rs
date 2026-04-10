@@ -33,6 +33,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ENV_SET => handlers::sys_env_set(args[0], args[1], args[2], args[3]),
         SYS_ENV_UNSET => handlers::sys_env_unset(args[0], args[1]),
         SYS_ENV_LIST => handlers::sys_env_list(args[0], args[1]),
+        SYS_AUXV_GET => handlers::sys_auxv_get(args[0], args[1]),
         SYS_SPAWN_PROCESS_EX => handlers::sys_spawn_process_ex(args[0], args[1]),
         SYS_ALLOC_STACK => handlers::sys_alloc_stack(args[0]),
         SYS_FUTEX_WAIT => handlers::sys_futex_wait(args[0], args[1] as u32, args[2] as u64),

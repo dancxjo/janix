@@ -3321,6 +3321,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_exec_env"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "test_futex"
 version = "0.1.0"
 dependencies = [

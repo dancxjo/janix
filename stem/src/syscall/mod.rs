@@ -237,6 +237,31 @@ pub fn env_list(buf: &mut [u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
+/// Retrieve the process auxiliary vector (AT_* entries) into `buf`.
+///
+/// Returns the total bytes needed.  On the first call pass an empty slice to
+/// learn the required buffer size, then retry with a buffer of that size.
+///
+/// The serialized format is:
+/// - `count: u32 LE` — number of entries including the terminating `AT_NULL` sentinel
+/// - For each entry: `type: u64 LE`, `value: u64 LE`
+///
+/// The last entry is always `(AT_NULL=0, 0)`.
+pub fn auxv_get(buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_AUXV_GET,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 pub fn monotonic_ns() -> u64 {
     time_now(ClockId::Monotonic)
         .ok()

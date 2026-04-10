@@ -1,7 +1,7 @@
 //! QEMU run tasks.
 
 use crate::common::{Result, image_name};
-use xshell::{Shell, cmd};
+use xshell::Shell;
 
 use std::net::TcpListener;
 use std::path::Path;
@@ -93,40 +93,94 @@ pub fn run(
     let netdev = user_netdev_arg();
     match arch {
         "x86_64" => {
-            let mut cmd = if x86_qemu_trace_enabled() {
-                cmd!(sh, "qemu-system-x86_64 -M q35 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let netdev_arg = format!("virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on");
+            let netdev_val = netdev.to_string();
+
+            let mut args = if x86_qemu_trace_enabled() {
+                vec![
+                    "-M", "q35",
+                    "-drive", &pflash0,
+                    "-drive", &pflash1,
+                    "-cdrom", iso,
+                    "-no-reboot",
+                    "-d", "int,cpu_reset", "-D", "qemu.log",
+                    "-device", &netdev_arg,
+                    "-netdev", &netdev_val,
+                ]
             } else {
-                cmd!(sh, "qemu-system-x86_64 -M q35 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+                vec![
+                    "-M", "q35",
+                    "-drive", &pflash0,
+                    "-drive", &pflash1,
+                    "-cdrom", iso,
+                    "-no-reboot",
+                    "-device", &netdev_arg,
+                    "-netdev", &netdev_val,
+                ]
             };
 
             if interactive {
-                cmd = cmd.args(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
+                args.extend_from_slice(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
             }
 
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-x86_64", &args, &qemu_args)?;
         }
         "aarch64" => {
-            let mut cmd = cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -semihosting -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}");
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let mut args = vec![
+                "-M", "virt",
+                "-cpu", "cortex-a72",
+                "-semihosting",
+                "-drive", &pflash0,
+                "-drive", &pflash1,
+                "-cdrom", iso,
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-aarch64", &args, &qemu_args)?;
         }
         "riscv64" => {
             // riscv64 virt requires blockdev syntax with machine-level pflash assignment
             // Also uses virtio-blk instead of -cdrom since riscv64 virt doesn't expose cdrom to UEFI properly
-            let mut cmd = cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -drive file={iso},format=raw,if=none,id=drive0,readonly=on -device virtio-blk-device,drive=drive0");
+            let pflash0 = format!("node-name=pflash0,driver=file,read-only=on,filename={}", ovmf_code);
+            let pflash1 = format!("node-name=pflash1,driver=file,filename={}", ovmf_vars);
+            let drive0 = format!("file={},format=raw,if=none,id=drive0,readonly=on", iso);
+            let mut args = vec![
+                "-blockdev", &pflash0,
+                "-blockdev", &pflash1,
+                "-M", "virt,pflash0=pflash0,pflash1=pflash1",
+                "-cpu", "rv64",
+                "-m", "2G",
+                "-drive", &drive0,
+                "-device", "virtio-blk-device,drive=drive0",
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-riscv64", &args, &qemu_args)?;
         }
         "loongarch64" => {
-            let mut cmd = cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}");
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let mut args = vec![
+                "-M", "virt",
+                "-cpu", "la464",
+                "-drive", &pflash0,
+                "-drive", &pflash1,
+                "-cdrom", iso,
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-loongarch64", &args, &qemu_args)?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }
@@ -157,18 +211,20 @@ pub fn run_bios(
     }
 
     println!("Running in QEMU BIOS mode...");
-    let mut cmd = cmd!(
-        sh,
-        "qemu-system-x86_64 -M q35 -cdrom {iso} -boot d -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}"
-    );
+    let mut args = vec![
+        "-M", "q35",
+        "-cdrom", iso,
+        "-boot", "d",
+        "-device", "virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on",
+        "-netdev", &netdev,
+    ];
 
     if interactive {
-        cmd = cmd.args(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
+        args.extend_from_slice(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
     }
 
-    cmd.args(&final_args)
-        .args(&qemu_args)
-        .run()?;
+    args.extend(&final_args);
+    run_qemu(sh, "qemu-system-x86_64", &args, &qemu_args)?;
     Ok(())
 }
 
@@ -202,39 +258,103 @@ pub fn run_hdd(
     let netdev = user_netdev_arg();
     match arch {
         "x86_64" => {
-            let mut cmd = cmd!(sh, "qemu-system-x86_64 -M q35 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd} -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}");
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let netdev_val = netdev.to_string();
+            let mut args = vec![
+                "-M", "q35",
+                "-drive", &pflash0,
+                "-drive", &pflash1,
+                "-hda", hdd,
+                "-device", "virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on",
+                "-netdev", &netdev_val,
+            ];
 
             if interactive {
-                cmd = cmd.args(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
+                args.extend_from_slice(&["-device", "virtio-vga", "-M", "q35,usb=off,vmport=off,i8042=on"]);
             }
 
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-x86_64", &args, &qemu_args)?;
         }
         "aarch64" => {
-            let mut cmd = cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}");
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let mut args = vec![
+                "-M", "virt",
+                "-cpu", "cortex-a72",
+                "-drive", &pflash0,
+                "-drive", &pflash1,
+                "-hda", hdd,
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-aarch64", &args, &qemu_args)?;
         }
         "riscv64" => {
             // riscv64 virt requires blockdev syntax with machine-level pflash assignment
             // Also uses virtio-blk instead of -hda since riscv64 virt doesn't expose IDE to UEFI properly
-            let mut cmd = cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -drive file={hdd},format=raw,if=none,id=drive0 -device virtio-blk-device,drive=drive0");
+            let pflash0 = format!("node-name=pflash0,driver=file,read-only=on,filename={}", ovmf_code);
+            let pflash1 = format!("node-name=pflash1,driver=file,filename={}", ovmf_vars);
+            let hda = format!("file={},format=raw,if=none,id=drive0", hdd);
+            let mut args = vec![
+                "-blockdev", &pflash0,
+                "-blockdev", &pflash1,
+                "-M", "virt,pflash0=pflash0,pflash1=pflash1",
+                "-cpu", "rv64",
+                "-m", "2G",
+                "-drive", &hda,
+                "-device", "virtio-blk-device,drive=drive0",
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-riscv64", &args, &qemu_args)?;
         }
         "loongarch64" => {
-            let mut cmd = cmd!(sh, "qemu-system-loongarch64 -M virt -cpu la464 -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}");
+            let pflash0 = format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code);
+            let pflash1 = format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars);
+            let mut args = vec![
+                "-M", "virt",
+                "-cpu", "la464",
+                "-drive", &pflash0,
+                "-drive", &pflash1,
+                "-hda", hdd,
+            ];
             if interactive {
-                cmd = cmd.args(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
+                args.extend_from_slice(&["-device", "ramfb", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse"]);
             }
-            cmd.args(&final_args).args(&qemu_args).run()?;
+            args.extend(&final_args);
+            run_qemu(sh, "qemu-system-loongarch64", &args, &qemu_args)?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }
 
+    Ok(())
+}
+
+fn run_qemu(_sh: &Shell, program: &str, base_args: &[&str], extra_args: &[&str]) -> Result<()> {
+    let mut cmd = std::process::Command::new(program);
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+    cmd.stdin(std::process::Stdio::inherit());
+
+    for arg in base_args {
+        cmd.arg(arg);
+    }
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+
+    // Print command for debugging (similar to xshell)
+    println!("$ {} {}", program, cmd.get_args().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "));
+
+    let status = cmd.status().map_err(|e| format!("failed to run qemu: {}", e))?;
+    if !status.success() {
+        return Err(format!("qemu exited with non-zero code: {}", status).into());
+    }
     Ok(())
 }

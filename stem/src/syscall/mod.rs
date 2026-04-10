@@ -1029,6 +1029,31 @@ pub fn getrandom(buf: &mut [u8]) -> Result<(), Errno> {
     Ok(())
 }
 
+/// Mix `buf` bytes into the kernel entropy pool and mark it seeded.
+///
+/// This is the entropy analogue of [`time_anchor`]: a privileged entropy-source
+/// driver collects hardware randomness and calls this to seed the kernel CSPRNG.
+/// At most 256 bytes are consumed per call; call in a loop for larger inputs.
+pub fn entropy_seed(buf: &[u8]) {
+    let mut offset = 0;
+    while offset < buf.len() {
+        let chunk = &buf[offset..];
+        let len = chunk.len().min(256);
+        unsafe {
+            raw_syscall6(
+                SYS_ENTROPY_SEED,
+                chunk.as_ptr() as usize,
+                len,
+                0,
+                0,
+                0,
+                0,
+            );
+        }
+        offset += len;
+    }
+}
+
 pub fn vm_map(req: &abi::vm::VmMapReq) -> Result<abi::vm::VmMapResp, Errno> {
     let mut resp = abi::vm::VmMapResp { addr: 0, len: 0 };
     let req_ptr = req as *const _ as usize;

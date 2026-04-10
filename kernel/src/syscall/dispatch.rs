@@ -82,6 +82,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_MEMFD_PHYS => handlers::sys_memfd_phys(args[0]),
 
         SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
+        SYS_ENTROPY_SEED => handlers::sys_entropy_seed(args[0], args[1]),
         SYS_LOG_SET_LEVEL => {
             crate::logging::set_log_level(args[0] as u8);
             Ok(0)

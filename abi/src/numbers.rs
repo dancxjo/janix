@@ -143,6 +143,9 @@ pub const SYS_REBOOT: u32 = 0x7000;
 pub const SYS_GETRANDOM: u32 = 0x7001;
 pub const SYS_CONSOLE_ENABLE: u32 = 0x7002;
 pub const SYS_LOG_SET_LEVEL: u32 = 0x7003;
+/// Mix caller-supplied bytes into the kernel entropy pool and mark it seeded.
+/// Intended for privileged entropy-source drivers (analogous to `SYS_TIME_ANCHOR`).
+pub const SYS_ENTROPY_SEED: u32 = 0x7004;
 
 // ============================================================================
 // ABI Flags & Constants

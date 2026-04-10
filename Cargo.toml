@@ -35,6 +35,7 @@ members = [
     "drivers/rtc_cmos",
     "drivers/ps2_kbd",
     "drivers/ps2_mouse",
+    "drivers/hwrng",
 
     "userspace/sprout",
     "userspace/bristle",

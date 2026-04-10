@@ -50,6 +50,9 @@ members = [
     "userspace/rm",
     "userspace/mkdir",
     "userspace/clear",
+    "userspace/pwd",
+    "userspace/true",
+    "userspace/false",
 
     "userspace/iso9660",
     "userspace/iso9660d",

@@ -35,7 +35,7 @@ pub use hooks::{
     sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_exec_current, task_status_current, task_wait_current,
     take_pending_interrupt_current, unregister_task_exit_waiter_current,
-    unregister_timeout_wake_current, yield_now_current,
+    unregister_timeout_wake_current, waitpid_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -301,6 +301,7 @@ pub fn init<R: BootRuntime>() {
             hooks::CURRENT_TASK_NAME_HOOK = Some(current_task_name_impl::<R>);
             hooks::TASK_EXEC_HOOK = Some(crate::task::exec::task_exec_current::<R>);
             hooks::SET_CURRENT_USER_FS_BASE_HOOK = Some(set_current_user_fs_base::<R>);
+            hooks::WAITPID_HOOK = Some(waitpid::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -1371,6 +1372,142 @@ pub fn wait_task<R: BootRuntime>(tid: TaskId) -> Result<i32, abi::errors::Errno>
             block_current_erased();
         }
     }
+}
+
+/// Collect TIDs of all tasks that are children of `our_pid`.
+///
+/// If `target_pid > 0`, only the specific child with that PID is returned.
+/// Otherwise, all direct children are returned.
+fn collect_child_tids<R: BootRuntime>(our_pid: u32, target_pid: i64) -> alloc::vec::Vec<TaskId> {
+    let reg = crate::task::registry::get_registry::<R>();
+    reg.tasks
+        .iter()
+        .filter_map(|task| {
+            task.process_info.as_ref().and_then(|pi| {
+                let pi = pi.lock();
+                if pi.ppid != our_pid {
+                    return None;
+                }
+                if target_pid > 0 && pi.pid != target_pid as u32 {
+                    return None;
+                }
+                Some(task.id)
+            })
+        })
+        .collect()
+}
+
+/// Internal implementation: performs the wait with an explicit `our_pid`.
+///
+/// Factored out so tests can exercise the core logic without registering a
+/// task at the current-TID slot (which is always 0 in the `MockRuntime`).
+fn waitpid_for_pid<R: BootRuntime>(
+    our_pid: u32,
+    pid: i64,
+    flags: u32,
+) -> Result<(u64, i32), abi::errors::Errno> {
+    use abi::types::waitpid_flags;
+    let wnohang = (flags & waitpid_flags::WNOHANG) != 0;
+
+    let our_tid = current_tid::<R>();
+
+    loop {
+        // Collect matching children (releases registry guard before returning).
+        let children = collect_child_tids::<R>(our_pid, pid);
+
+        if children.is_empty() {
+            return Err(abi::errors::Errno::ECHILD);
+        }
+
+        // Fast path: look for a dead child without registering.
+        for &child_tid in &children {
+            if let Some(task) = crate::task::registry::get_task::<R>(child_tid) {
+                if task.state == TaskState::Dead {
+                    let code = task.exit_code.unwrap_or(0);
+                    let child_pid = task
+                        .process_info
+                        .as_ref()
+                        .map(|pi| pi.lock().pid as u64)
+                        .unwrap_or(child_tid);
+                    return Ok((child_pid, code));
+                }
+            }
+        }
+
+        if wnohang {
+            // POSIX: return 0 as the child PID to indicate "no child exited yet".
+            return Ok((0, 0));
+        }
+
+        // Register as an exit waiter for every live child.  If any child has
+        // already died between the check above and the register call,
+        // `register_task_exit_waiter` returns `Some(code)` immediately.
+        let mut registered: alloc::vec::Vec<TaskId> = alloc::vec::Vec::new();
+        let mut early_result: Option<(u64, i32)> = None;
+
+        for &child_tid in &children {
+            match register_task_exit_waiter::<R>(child_tid, our_tid) {
+                Ok(Some(code)) => {
+                    // Child died between our fast-path check and now.
+                    let child_pid = crate::task::registry::get_task::<R>(child_tid)
+                        .and_then(|t| t.process_info.as_ref().map(|pi| pi.lock().pid as u64))
+                        .unwrap_or(child_tid);
+                    early_result = Some((child_pid, code));
+                    break;
+                }
+                Ok(None) => registered.push(child_tid),
+                Err(_) => {} // Child vanished — skip it.
+            }
+        }
+
+        if let Some(result) = early_result {
+            // Clean up any waiters we already registered before finding the dead child.
+            for &child_tid in &registered {
+                let _ = unregister_task_exit_waiter::<R>(child_tid, our_tid);
+            }
+            return Ok(result);
+        }
+
+        if registered.is_empty() {
+            // All children died in the window between collection and registration.
+            continue;
+        }
+
+        // Block until any registered child exits.
+        unsafe {
+            block_current_erased();
+        }
+
+        // After waking, unregister from children that haven't yet exited.
+        for &child_tid in &registered {
+            let _ = unregister_task_exit_waiter::<R>(child_tid, our_tid);
+        }
+
+        // Loop back to find which child exited.
+    }
+}
+
+/// Wait for a child process to exit, returning `(child_pid, exit_code)`.
+///
+/// - `pid > 0`: wait for the specific child with that PID.
+/// - `pid == -1` or `pid == 0`: wait for any child of the calling process.
+/// - `flags & WNOHANG`: return `Ok((0, 0))` immediately if no child has exited.
+///
+/// Returns `Err(ECHILD)` when no matching children exist at all.
+pub fn waitpid<R: BootRuntime>(pid: i64, flags: u32) -> Result<(u64, i32), abi::errors::Errno> {
+    let our_tid = current_tid::<R>();
+
+    // Retrieve the calling process's PID from its ProcessInfo.
+    let our_pid = {
+        let task =
+            crate::task::registry::get_task::<R>(our_tid).ok_or(abi::errors::Errno::EINVAL)?;
+        task.process_info
+            .as_ref()
+            .map(|pi| pi.lock().pid)
+            .ok_or(abi::errors::Errno::EINVAL)?
+    };
+
+    waitpid_for_pid::<R>(our_pid, pid, flags)
 }
 
 pub fn register_timeout_wake<R: BootRuntime>(tid: TaskId, wake_tick: u64) {
@@ -2752,5 +2889,146 @@ mod tests {
             interrupt_task::<MockRuntime>(9999).unwrap_err(),
             abi::errors::Errno::ESRCH
         );
+    }
+
+    // ── waitpid tests ─────────────────────────────────────────────────────────
+
+    /// Helper: build a task with a populated ProcessInfo (pid + ppid).
+    fn make_process_task(
+        id: TaskId,
+        state: TaskState,
+        pid: u32,
+        ppid: u32,
+        exit_code: Option<i32>,
+    ) -> crate::task::Task<MockRuntime> {
+        crate::task::Task {
+            id,
+            state,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: Some(alloc::sync::Arc::new(spin::Mutex::new(
+                crate::task::ProcessInfo {
+                    pid,
+                    ppid,
+                    argv: alloc::vec::Vec::new(),
+                    env: alloc::collections::BTreeMap::new(),
+                    fd_table: crate::vfs::fd_table::FdTable::new(),
+                    namespace: crate::vfs::NamespaceRef::global(),
+                    cwd: alloc::string::String::from("/"),
+                },
+            ))),
+            user_fs_base: 0,
+        }
+    }
+
+    #[test]
+    fn test_waitpid_returns_exit_code_for_dead_specific_child() {
+        init_test_env();
+
+        // Child task: pid=1001, ppid=1000, exit_code=42.
+        // Tests call waitpid_for_pid directly so no parent task is needed.
+        let child = make_process_task(9101, TaskState::Dead, 1001, 1000, Some(42));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        let (child_pid, code) =
+            waitpid_for_pid::<MockRuntime>(1000, 1001, 0).expect("waitpid specific");
+        assert_eq!(child_pid, 1001, "returned child pid");
+        assert_eq!(code, 42, "returned exit code");
+    }
+
+    #[test]
+    fn test_waitpid_returns_exit_code_for_any_dead_child() {
+        init_test_env();
+
+        // Child: pid=2001, ppid=2000, exit_code=7
+        let child = make_process_task(9201, TaskState::Dead, 2001, 2000, Some(7));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        // pid == -1: wait for any child of process 2000
+        let (child_pid, code) =
+            waitpid_for_pid::<MockRuntime>(2000, -1, 0).expect("waitpid any");
+        assert_eq!(child_pid, 2001);
+        assert_eq!(code, 7);
+    }
+
+    #[test]
+    fn test_waitpid_echild_when_no_children_exist() {
+        init_test_env();
+
+        // Registry is empty; no children for pid=3000
+        let err = waitpid_for_pid::<MockRuntime>(3000, -1, 0).unwrap_err();
+        assert_eq!(err, abi::errors::Errno::ECHILD);
+    }
+
+    #[test]
+    fn test_waitpid_echild_when_specific_child_not_found() {
+        init_test_env();
+
+        // A child with a *different* ppid — should not be found for pid=4000
+        let unrelated = make_process_task(9401, TaskState::Dead, 9999, 5000, Some(0));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(unrelated));
+
+        // Looking for child pid=9999 under parent pid=4000 → ECHILD
+        let err = waitpid_for_pid::<MockRuntime>(4000, 9999, 0).unwrap_err();
+        assert_eq!(err, abi::errors::Errno::ECHILD);
+    }
+
+    #[test]
+    fn test_waitpid_wnohang_returns_zero_when_child_alive() {
+        init_test_env();
+
+        // Live child — not yet exited
+        let child = make_process_task(9501, TaskState::Runnable, 5001, 5000, None);
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        let (child_pid, code) =
+            waitpid_for_pid::<MockRuntime>(5000, -1, abi::types::waitpid_flags::WNOHANG)
+                .expect("wnohang");
+        assert_eq!(child_pid, 0, "no child exited yet");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn test_waitpid_multiple_children_returns_first_dead() {
+        init_test_env();
+
+        // Two children under parent pid=6000: first alive, second dead
+        let child_alive = make_process_task(9601, TaskState::Runnable, 6001, 6000, None);
+        let child_dead = make_process_task(9602, TaskState::Dead, 6002, 6000, Some(99));
+
+        let mut reg = crate::task::registry::get_registry::<MockRuntime>();
+        reg.insert(alloc::boxed::Box::new(child_alive));
+        reg.insert(alloc::boxed::Box::new(child_dead));
+        drop(reg);
+
+        let (child_pid, code) =
+            waitpid_for_pid::<MockRuntime>(6000, -1, 0).expect("waitpid multi");
+        assert_eq!(child_pid, 6002);
+        assert_eq!(code, 99);
     }
 }

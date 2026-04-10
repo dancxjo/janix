@@ -57,6 +57,12 @@ pub enum TaskStatus {
     Dead = 4,
 }
 
+/// Flags for the `SYS_WAITPID` syscall.
+pub mod waitpid_flags {
+    /// Do not block; return immediately if no child has exited yet.
+    pub const WNOHANG: u32 = 1;
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StackInfo {

@@ -120,6 +120,36 @@ pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
     unsafe { crate::sched::task_wait_current(tid as u64) }.map(|code| code as usize)
 }
 
+/// `SYS_WAITPID`: Wait for a child process to exit and retrieve its exit status.
+///
+/// Arguments:
+/// - `pid`:  `i64` cast as `usize`.  `pid > 0` waits for the specific child;
+///           `pid == -1` (or `0`) waits for any child.
+/// - `status_ptr`: optional pointer to an `i32` that receives the exit code.
+///                 Pass `0` to discard.
+/// - `flags`: `waitpid_flags::WNOHANG` (1) for non-blocking poll.
+///
+/// Returns the child PID on success, `0` when `WNOHANG` and no child exited,
+/// or a negative errno on error.
+pub fn sys_waitpid(pid: usize, status_ptr: usize, flags: usize) -> SysResult<usize> {
+    let pid = pid as isize as i64;
+    let flags = flags as u32;
+
+    if status_ptr != 0 {
+        validate_user_range(status_ptr, core::mem::size_of::<i32>(), true)?;
+    }
+
+    let (child_pid, exit_code) = unsafe { crate::sched::waitpid_current(pid, flags) }?;
+
+    if status_ptr != 0 {
+        unsafe {
+            super::copyout(status_ptr, &exit_code.to_le_bytes())?;
+        }
+    }
+
+    Ok(child_pid as usize)
+}
+
 pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
     if priority > 4 {
         return Err(Errno::EINVAL);

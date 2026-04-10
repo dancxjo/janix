@@ -135,8 +135,9 @@ pub fn task_exec_current<R: BootRuntime>(
         };
 
     // 6. Update ProcessInfo metadata (argv, env, and auxv).
-    //    Also clear exec_in_progress now that we are about to commit — the
-    //    caller is the sole surviving thread from this point forward.
+    //    Also close all FD_CLOEXEC-flagged file descriptors and clear
+    //    exec_in_progress now that we are about to commit — the caller is the
+    //    sole surviving thread from this point forward.
     {
         let page_size = rt.page_size() as u64;
         let mut pinfo = pinfo_arc.lock();
@@ -145,6 +146,8 @@ pub fn task_exec_current<R: BootRuntime>(
         // Rebuild auxv from freshly loaded image.  AT_* constants follow
         // the standard ELF auxiliary-vector specification (see elf.h).
         pinfo.auxv = build_auxv(&aux_info, page_size);
+        // Close all file descriptors marked FD_CLOEXEC before the new image runs.
+        pinfo.fd_table.close_on_exec();
         // Commit: caller is now the only thread; clear the flag.
         pinfo.exec_in_progress = false;
     }
@@ -473,5 +476,118 @@ mod tests {
             2,
             "thread_ids still has both threads on rollback"
         );
+    }
+
+    // ── FD_CLOEXEC / close-on-exec unit tests ────────────────────────────────
+
+    use crate::vfs::fd_table::FD_CLOEXEC;
+    use crate::vfs::{OpenFlags, VfsNode, VfsStat};
+    use abi::errors::SysResult;
+
+    struct NullNode;
+    impl VfsNode for NullNode {
+        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+            Ok(buf.len())
+        }
+        fn stat(&self) -> SysResult<VfsStat> {
+            Ok(VfsStat {
+                mode: VfsStat::S_IFCHR | 0o666,
+                size: 0,
+                ino: 1,
+                ..Default::default()
+            })
+        }
+    }
+
+    fn null_node() -> alloc::sync::Arc<dyn VfsNode> {
+        alloc::sync::Arc::new(NullNode)
+    }
+
+    /// Simulates the commit phase of exec: close_on_exec is called on the fd
+    /// table, then exec_in_progress is cleared.  FDs with FD_CLOEXEC should be
+    /// gone; others should remain.
+    #[test]
+    fn exec_commit_closes_cloexec_fds() {
+        let pinfo = Arc::new(Mutex::new(ProcessInfo {
+            pid: 9300,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![9300],
+            exec_in_progress: false,
+        }));
+
+        // Set up: fd 0 survives, fd 1 has FD_CLOEXEC.
+        {
+            let mut pi = pinfo.lock();
+            pi.fd_table
+                .insert_at(0, null_node(), OpenFlags::read_only(), "/in".into())
+                .unwrap();
+            pi.fd_table
+                .insert_at(1, null_node(), OpenFlags::write_only(), "/cloexec".into())
+                .unwrap();
+            pi.fd_table.set_fd_flags(1, FD_CLOEXEC).unwrap();
+        }
+
+        // Simulate exec commit phase.
+        {
+            let mut pi = pinfo.lock();
+            pi.exec_in_progress = true;
+            pi.fd_table.close_on_exec();
+            pi.exec_in_progress = false;
+        }
+
+        let pi = pinfo.lock();
+        assert!(
+            pi.fd_table.get(0).is_ok(),
+            "fd 0 (no FD_CLOEXEC) must survive exec"
+        );
+        assert!(
+            matches!(pi.fd_table.get(1), Err(abi::errors::Errno::EBADF)),
+            "fd 1 (FD_CLOEXEC) must be closed on exec"
+        );
+        assert!(!pi.exec_in_progress, "exec_in_progress cleared after commit");
+    }
+
+    /// When no fds have FD_CLOEXEC, close_on_exec during exec is a no-op and
+    /// all fds survive.
+    #[test]
+    fn exec_commit_preserves_all_fds_without_cloexec() {
+        let pinfo = Arc::new(Mutex::new(ProcessInfo {
+            pid: 9310,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![9310],
+            exec_in_progress: false,
+        }));
+
+        {
+            let mut pi = pinfo.lock();
+            pi.fd_table
+                .insert_at(0, null_node(), OpenFlags::read_only(), "/in".into())
+                .unwrap();
+            pi.fd_table
+                .insert_at(1, null_node(), OpenFlags::write_only(), "/out".into())
+                .unwrap();
+        }
+
+        // Exec commit with no FD_CLOEXEC flags set.
+        pinfo.lock().fd_table.close_on_exec();
+
+        let pi = pinfo.lock();
+        assert!(pi.fd_table.get(0).is_ok(), "fd 0 should survive");
+        assert!(pi.fd_table.get(1).is_ok(), "fd 1 should survive");
     }
 }

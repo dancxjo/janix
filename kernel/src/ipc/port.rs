@@ -5,12 +5,23 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
 /// Unique identifier for a port in the global registry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PortId(pub u32);
+
+/// A structured message that bundles data bytes and zero or more capability
+/// handles (VFS nodes).  This is the unit stored in the message queue and
+/// exchanged via `SYS_CHANNEL_SEND_MSG` / `SYS_CHANNEL_RECV_MSG`.
+pub struct KernelMessage {
+    /// Payload bytes (may be empty for handle-only messages).
+    pub data: alloc::vec::Vec<u8>,
+    /// Attached capability handles transferred with this message.
+    pub caps: alloc::vec::Vec<Arc<dyn crate::vfs::VfsNode>>,
+}
 
 /// Fixed-size ring buffer port (SPSC for v0)
 ///
@@ -27,7 +38,9 @@ pub struct Port {
     send_lock: Mutex<()>,
     recv_lock: Mutex<()>,
     endpoints: Mutex<PortEndpoints>,
-    caps: Mutex<alloc::collections::VecDeque<Arc<dyn crate::vfs::VfsNode>>>,
+    /// Structured message queue (used by send_msg / recv_msg and the
+    /// send_handle / recv_handle compatibility wrappers).
+    msgs: Mutex<alloc::collections::VecDeque<KernelMessage>>,
 
     #[cfg(debug_assertions)]
     sender_tid: AtomicU64,
@@ -59,7 +72,7 @@ impl Port {
                 readers: 1,
                 writers: 1,
             }),
-            caps: Mutex::new(alloc::collections::VecDeque::new()),
+            msgs: Mutex::new(alloc::collections::VecDeque::new()),
             #[cfg(debug_assertions)]
             sender_tid: AtomicU64::new(0),
             #[cfg(debug_assertions)]
@@ -72,24 +85,24 @@ impl Port {
         self.capacity
     }
 
-    /// Returns the number of bytes currently in the buffer
+    /// Returns the number of bytes currently in the byte-stream buffer
     pub fn len(&self) -> usize {
         let head = self.head.load(Ordering::Acquire);
         let tail = self.tail.load(Ordering::Acquire);
         head.wrapping_sub(tail)
     }
 
-    /// Returns true if the buffer is empty
+    /// Returns true if both the byte-stream buffer and the message queue are empty
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len() == 0 && self.msgs.lock().is_empty()
     }
 
-    /// Returns true if the buffer is full
+    /// Returns true if the byte-stream buffer is full
     pub fn is_full(&self) -> bool {
         self.len() >= self.capacity
     }
 
-    /// Returns available space for writing
+    /// Returns available space for writing in the byte-stream buffer
     pub fn available(&self) -> usize {
         self.capacity - self.len()
     }
@@ -170,18 +183,53 @@ impl Port {
         true
     }
 
-    /// Send a capability (VFS Node) via the port
-    pub fn send_cap(&self, node: Arc<dyn crate::vfs::VfsNode>) {
+    // ── Structured message API ────────────────────────────────────────────────
+
+    /// Enqueue a structured message with optional data and capability handles.
+    ///
+    /// This is the kernel-internal primitive used by both the new
+    /// `SYS_CHANNEL_SEND_MSG` path and the legacy `send_handle` compatibility
+    /// wrapper.
+    ///
+    /// # Transfer semantics
+    /// The caller passes pre-resolved `Arc<dyn VfsNode>` values.  Ownership of
+    /// those arcs is **moved** into the message queue; the sender is responsible
+    /// for removing the corresponding FD/handle from its own table before calling
+    /// this function if move semantics are desired.
+    pub fn send_msg(
+        &self,
+        data: alloc::vec::Vec<u8>,
+        caps: alloc::vec::Vec<Arc<dyn crate::vfs::VfsNode>>,
+    ) {
         let tid = unsafe { crate::sched::current_tid_current() };
-        self.caps.lock().push_back(node);
+        self.msgs.lock().push_back(KernelMessage { data, caps });
         self.waiters_read.wake_one();
-        crate::ktrace!("PORT: Port capability sent from TID {}", tid);
+        crate::ktrace!("PORT: Port message sent from TID {}", tid);
     }
 
-    /// Receive a capability (VFS Node) from the port
-    pub fn try_recv_cap(&self) -> Option<Arc<dyn crate::vfs::VfsNode>> {
-        self.caps.lock().pop_front()
+    /// Dequeue the next structured message, if one is available.
+    pub fn try_recv_msg(&self) -> Option<KernelMessage> {
+        self.msgs.lock().pop_front()
     }
+
+    // ── Legacy single-cap helpers (kept for internal use by compat wrappers) ──
+
+    /// Send a single capability as a handle-only message (zero data bytes).
+    ///
+    /// Compatibility shim: callers should prefer `send_msg` for new code.
+    pub fn send_cap(&self, node: Arc<dyn crate::vfs::VfsNode>) {
+        self.send_msg(alloc::vec::Vec::new(), alloc::vec![node]);
+    }
+
+    /// Receive a single capability from the message queue.
+    ///
+    /// Compatibility shim: callers should prefer `try_recv_msg` for new code.
+    pub fn try_recv_cap(&self) -> Option<Arc<dyn crate::vfs::VfsNode>> {
+        let msg = self.msgs.lock().pop_front()?;
+        msg.caps.into_iter().next()
+    }
+
+    // ── Wait queue management ─────────────────────────────────────────────────
 
     /// Add a reader waiter to the port
     pub fn add_waiter_read(&self, tid: u64) {
@@ -475,5 +523,88 @@ mod tests {
 
         assert!(port.close_reader());
         assert!(!port.has_readers());
+    }
+
+    // ── Structured message queue tests ────────────────────────────────────────
+
+    /// A trivial no-op VfsNode used purely for capability transfer tests.
+    struct DummyCap;
+    impl crate::vfs::VfsNode for DummyCap {
+        fn read(&self, _: u64, _: &mut [u8]) -> abi::errors::SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, _: &[u8]) -> abi::errors::SysResult<usize> {
+            Ok(0)
+        }
+        fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
+            Ok(crate::vfs::VfsStat::default())
+        }
+    }
+
+    #[test]
+    fn test_send_msg_data_only() {
+        let port = Arc::new(Port::new(64));
+        port.send_msg(alloc::vec![1u8, 2, 3], alloc::vec![]);
+        let msg = port.try_recv_msg().expect("message should be present");
+        assert_eq!(msg.data, &[1u8, 2, 3]);
+        assert!(msg.caps.is_empty());
+    }
+
+    #[test]
+    fn test_send_msg_cap_only() {
+        let port = Arc::new(Port::new(64));
+        let cap: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        port.send_msg(alloc::vec![], alloc::vec![cap]);
+        let msg = port.try_recv_msg().expect("message should be present");
+        assert!(msg.data.is_empty());
+        assert_eq!(msg.caps.len(), 1);
+    }
+
+    #[test]
+    fn test_send_msg_data_and_caps() {
+        let port = Arc::new(Port::new(64));
+        let cap1: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        let cap2: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        port.send_msg(alloc::vec![0xAB, 0xCD], alloc::vec![cap1, cap2]);
+        let msg = port.try_recv_msg().expect("message should be present");
+        assert_eq!(msg.data, &[0xAB, 0xCDu8]);
+        assert_eq!(msg.caps.len(), 2);
+    }
+
+    #[test]
+    fn test_send_cap_compat_wrapper() {
+        let port = Arc::new(Port::new(64));
+        let cap: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        port.send_cap(cap);
+        let received = port.try_recv_cap().expect("cap should be present");
+        // Just check it's not null (it's a valid Arc)
+        let _ = received;
+    }
+
+    #[test]
+    fn test_multiple_messages_ordered() {
+        let port = Arc::new(Port::new(64));
+        port.send_msg(alloc::vec![1], alloc::vec![]);
+        port.send_msg(alloc::vec![2], alloc::vec![]);
+        port.send_msg(alloc::vec![3], alloc::vec![]);
+
+        for expected in 1u8..=3 {
+            let msg = port.try_recv_msg().expect("message should be present");
+            assert_eq!(msg.data[0], expected);
+        }
+        assert!(port.try_recv_msg().is_none());
+    }
+
+    #[test]
+    fn test_is_empty_considers_message_queue() {
+        let port = Arc::new(Port::new(64));
+        // Both ring buffer and message queue empty
+        assert!(port.is_empty());
+        // Add a message — port should not be considered empty
+        port.send_msg(alloc::vec![], alloc::vec![]);
+        assert!(!port.is_empty());
+        // Drain the message
+        port.try_recv_msg();
+        assert!(port.is_empty());
     }
 }

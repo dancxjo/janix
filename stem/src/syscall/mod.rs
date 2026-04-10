@@ -77,8 +77,8 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
 
 pub use channel::{
     channel_capacity, channel_close, channel_create, channel_len, channel_recv,
-    channel_recv_handle, channel_send, channel_send_all, channel_send_handle, channel_try_recv,
-    channel_wait, ChannelHandle,
+    channel_recv_handle, channel_recv_msg, channel_send, channel_send_all, channel_send_handle,
+    channel_send_msg, channel_try_recv, channel_wait, ChannelHandle,
 };
 pub use vfs::{
     dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_close, vfs_fcntl, vfs_fsync,

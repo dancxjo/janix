@@ -922,3 +922,43 @@ pub fn sys_fs_getcwd(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     }
     Ok(needed)
 }
+
+/// Resolve `path` (relative or absolute) to its canonical absolute form,
+/// writing the result into the caller-supplied buffer.
+///
+/// Signature: `SYS_FS_REALPATH(path_ptr, path_len, buf_ptr, buf_len) → len`
+///
+/// - On success returns the length of the canonical path (excluding NUL).
+/// - If `buf_len` is smaller than the canonical path length, the output
+///   buffer is not written; the needed length is still returned so the
+///   caller can retry with a suitably sized buffer.
+/// - `buf_ptr` may be `0` (null) to query the required size without
+///   writing any output; `buf_len` is ignored in that case.
+/// - Returns `EINVAL` if `path` is empty or too long.
+/// - Returns `ENOENT` if no process context is available (relative path + no cwd).
+pub fn sys_fs_realpath(
+    path_ptr: usize,
+    path_len: usize,
+    buf_ptr: usize,
+    buf_len: usize,
+) -> SysResult<usize> {
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(path_ptr, path_len, false)?;
+
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let canonical = resolve_path(path)?;
+    let canonical_bytes = canonical.as_bytes();
+    let needed = canonical_bytes.len();
+
+    if buf_ptr != 0 && buf_len >= needed {
+        validate_user_range(buf_ptr, needed, true)?;
+        unsafe { copyout(buf_ptr, canonical_bytes)? };
+    }
+
+    Ok(needed)
+}

@@ -10,6 +10,8 @@ use abi::syscall::{
     SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DEVICE_CALL, SYS_FS_CHDIR, SYS_FS_GETCWD, SYS_FD_FROM_HANDLE, SYS_FS_NOTIFY,
+    SYS_FS_REALPATH,
 };
 
 use super::arch::raw_syscall6;
@@ -390,4 +392,33 @@ pub fn vfs_notify(req_handle: u32, node_handle: u64, revents: u16) -> SysResult<
         )
     };
     abi::errors::errno(ret).map(|_| ())
+}
+
+/// Resolve `path` (relative or absolute) to its canonical absolute form.
+///
+/// The kernel normalises `.` and `..` components and prepends the process
+/// working directory when `path` is relative.  The result is written into
+/// `buf` as raw UTF-8 bytes **without** a NUL terminator; callers that need
+/// a C-style string must append `\0` themselves.
+///
+/// Returns the number of bytes of the canonical path.  If the return value
+/// is greater than `buf.len()`, the buffer was too small and nothing was
+/// written; the caller should retry with a larger buffer.
+///
+/// # Errors
+/// - [`Errno::EINVAL`]  — `path` is empty or not valid UTF-8.
+/// - [`Errno::ENOENT`]  — no process context (relative path with missing cwd).
+pub fn vfs_realpath(path: &str, buf: &mut [u8]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_REALPATH,
+            path.as_ptr() as usize,
+            path.len(),
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as usize)
 }

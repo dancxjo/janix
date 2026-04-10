@@ -113,6 +113,7 @@ pub const SYS_FS_CHDIR: u32 = 0x4012;
 pub const SYS_FS_GETCWD: u32 = 0x4013;
 pub const SYS_FD_FROM_HANDLE: u32 = 0x4014;
 pub const SYS_FS_NOTIFY: u32 = 0x4015;
+pub const SYS_FS_REALPATH: u32 = 0x4016;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

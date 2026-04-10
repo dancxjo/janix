@@ -1230,6 +1230,7 @@ fn mark_task_exited<R: BootRuntime>(
     tid: TaskId,
     code: i32,
 ) -> alloc::vec::Vec<u64> {
+    // Collect exit waiters and mark the task dead.
     let waiters = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
         task.state = TaskState::Dead;
         task.exit_code = Some(code);
@@ -1241,6 +1242,56 @@ fn mark_task_exited<R: BootRuntime>(
     if let Some(task) = sched.state.get_task_mut(tid) {
         task.state = TaskState::Dead;
         task.runq_location = None;
+    }
+
+    // Remove this TID from the process's thread group list.
+    // Collect sibling TIDs to kill if this is the thread-group leader.
+    let siblings_to_kill: alloc::vec::Vec<TaskId> = {
+        let pinfo_opt = crate::task::registry::get_task::<R>(tid)
+            .and_then(|t| t.process_info.clone());
+        if let Some(pinfo) = pinfo_opt {
+            let mut pi = pinfo.lock();
+            pi.thread_ids.retain(|&t| t != tid);
+
+            // If the exiting thread is the thread-group leader (its TID == pid),
+            // schedule all remaining sibling threads for termination.
+            if pi.pid as TaskId == tid {
+                pi.thread_ids.clone()
+            } else {
+                alloc::vec::Vec::new()
+            }
+        } else {
+            alloc::vec::Vec::new()
+        }
+    };
+
+    // Kill sibling threads (thread-group exit).
+    // Also clear all remaining TIDs from thread_ids since the group is exiting.
+    if !siblings_to_kill.is_empty() {
+        // Remove all sibling TIDs from the thread list.
+        let pinfo_opt = crate::task::registry::get_task::<R>(tid)
+            .and_then(|t| t.process_info.clone());
+        if let Some(pinfo) = pinfo_opt {
+            pinfo.lock().thread_ids.clear();
+        }
+    }
+    for &sibling in &siblings_to_kill {
+        if let Some(mut task) = crate::task::registry::get_task_mut::<R>(sibling) {
+            if task.state != TaskState::Dead {
+                task.state = TaskState::Dead;
+                task.exit_code = Some(code);
+                let sibling_waiters = task.exit_waiters.drain();
+                drop(task);
+                // Wake anyone waiting on these siblings.
+                wake_waiters(&sibling_waiters);
+                if let Some(sf) = sched.state.get_task_mut(sibling) {
+                    sf.state = TaskState::Dead;
+                    sf.runq_location = None;
+                }
+                sched.state.remove_task_from_runq(sibling);
+                crate::kdebug!("SCHED: Killed sibling thread {} (thread-group exit)", sibling);
+            }
+        }
     }
 
     waiters
@@ -2937,6 +2988,7 @@ mod tests {
                     fd_table: crate::vfs::fd_table::FdTable::new(),
                     namespace: crate::vfs::NamespaceRef::global(),
                     cwd: alloc::string::String::from("/"),
+                    thread_ids: alloc::vec![pid as TaskId],
                 },
             ))),
             user_fs_base: 0,
@@ -3031,5 +3083,176 @@ mod tests {
             waitpid_for_pid::<MockRuntime>(6000, -1, 0).expect("waitpid multi");
         assert_eq!(child_pid, 6002);
         assert_eq!(code, 99);
+    }
+
+    // ── Thread-group tests ────────────────────────────────────────────────────
+
+    /// Helper: create a task + ProcessInfo with `tgid` populated and a shared
+    /// thread_ids list for multi-thread tests.
+    fn make_thread_task(
+        id: TaskId,
+        state: TaskState,
+        pid: u32,
+        ppid: u32,
+        shared_pinfo: alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>,
+    ) -> crate::task::Task<MockRuntime> {
+        crate::task::Task {
+            id,
+            state,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: Some(shared_pinfo),
+            user_fs_base: 0,
+        }
+    }
+
+    /// Thread IDs are tracked in ProcessInfo.thread_ids when tasks share the
+    /// same ProcessInfo Arc.
+    #[test]
+    fn test_thread_ids_tracked_in_process_info() {
+        init_test_env();
+
+        // Build a shared ProcessInfo for a 2-thread group.
+        // pid = 7000 (thread-group leader), thread_ids = [7000, 7001].
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 7000,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![7000, 7001],
+        }));
+
+        {
+            let pi = pinfo.lock();
+            assert_eq!(pi.thread_ids.len(), 2);
+            assert!(pi.thread_ids.contains(&7000));
+            assert!(pi.thread_ids.contains(&7001));
+            assert_eq!(pi.pid, 7000);
+        }
+    }
+
+    /// When the thread-group leader exits, sibling threads are removed from the
+    /// thread_ids list and their scheduler state is set to Dead.
+    #[test]
+    fn test_mark_task_exited_removes_tid_from_thread_ids() {
+        init_test_env();
+
+        // Shared ProcessInfo for a 2-thread group: leader 8700, sibling 8701.
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 8700,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![8700, 8701],
+        }));
+
+        // Register both tasks.
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(8700, TaskState::Running, 8700, 1, pinfo.clone()),
+        ));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(8701, TaskState::Runnable, 8700, 1, pinfo.clone()),
+        ));
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(8700);
+
+        // Exit the sibling thread first — its TID should be removed from thread_ids.
+        let _ = mark_task_exited::<MockRuntime>(&mut sched, 8701, 0);
+
+        {
+            let pi = pinfo.lock();
+            // 8701 should have been removed.
+            assert!(!pi.thread_ids.contains(&8701), "sibling TID still in thread_ids");
+            // 8700 (leader) is still present — it hasn't exited yet.
+            assert!(pi.thread_ids.contains(&8700), "leader TID wrongly removed");
+        }
+
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8701).unwrap().state,
+            TaskState::Dead,
+            "sibling should be dead"
+        );
+    }
+
+    /// When the thread-group leader (tid == pid) exits, remaining sibling
+    /// threads are also killed (thread-group exit).
+    #[test]
+    fn test_thread_group_leader_exit_kills_siblings() {
+        init_test_env();
+
+        // Shared ProcessInfo for a 2-thread group: leader 8800, sibling 8801.
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 8800,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![8800, 8801],
+        }));
+
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(8800, TaskState::Running, 8800, 1, pinfo.clone()),
+        ));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(8801, TaskState::Runnable, 8800, 1, pinfo.clone()),
+        ));
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(8800);
+
+        // Exit the thread-group leader.
+        let _ = mark_task_exited::<MockRuntime>(&mut sched, 8800, 42);
+
+        // Leader must be dead.
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8800).unwrap().state,
+            TaskState::Dead,
+            "leader should be dead"
+        );
+
+        // Sibling must also be dead (killed by thread-group exit).
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8801).unwrap().state,
+            TaskState::Dead,
+            "sibling should be killed on leader exit"
+        );
+
+        // Both TIDs removed from thread_ids.
+        assert!(pinfo.lock().thread_ids.is_empty(), "thread_ids should be empty after group exit");
     }
 }

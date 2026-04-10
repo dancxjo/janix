@@ -42,6 +42,12 @@ impl StartupArg {
 /// Kernel tasks typically have `None` — only user processes created
 /// by `spawn_process` get one.
 pub struct ProcessInfo {
+    /// Thread Group ID (TGID) — the PID of the thread group leader.
+    ///
+    /// For the initial thread of a process, `tgid == pid`.  All additional
+    /// threads spawned by that process inherit the same `ProcessInfo` Arc and
+    /// therefore see the same `tgid`.  This is the value returned by
+    /// `SYS_GETPID` from userspace (analogous to POSIX `getpid()`).
     pub pid: u32,
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
@@ -62,6 +68,13 @@ pub struct ProcessInfo {
     pub namespace: crate::vfs::NamespaceRef,
     /// Current working directory.
     pub cwd: alloc::string::String,
+    /// TIDs of all threads belonging to this thread group (process).
+    ///
+    /// The first entry is the thread-group leader (its TID equals `pid`).
+    /// New entries are appended when `spawn_user_thread` creates a sibling
+    /// thread; entries are removed when a thread terminates.  When this list
+    /// becomes empty the address space and process resources can be reclaimed.
+    pub thread_ids: Vec<TaskId>,
 }
 
 pub struct Task<R: BootRuntime> {

@@ -110,9 +110,12 @@ impl MemFdRef {
         if src.len() < MEMFD_REF_WIRE_SIZE {
             return None;
         }
-        let fd = u32::from_le_bytes(src[0..4].try_into().ok()?);
-        let _pad = u32::from_le_bytes(src[4..8].try_into().ok()?);
-        let length = u64::from_le_bytes(src[8..16].try_into().ok()?);
+        // SAFETY: the length check above guarantees these sub-slices are
+        // exactly 4 / 4 / 8 bytes, so the fixed-size array conversions below
+        // cannot fail.
+        let fd = u32::from_le_bytes(src[0..4].try_into().unwrap());
+        let _pad = u32::from_le_bytes(src[4..8].try_into().unwrap());
+        let length = u64::from_le_bytes(src[8..16].try_into().unwrap());
         Some(Self { fd, _pad, length })
     }
 }

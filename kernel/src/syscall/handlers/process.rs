@@ -361,6 +361,52 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     Ok(needed)
 }
 
+/// Serialize `entries` (without AT_NULL sentinel) into `out`, appending a
+/// terminating `AT_NULL (0, 0)` sentinel automatically.
+///
+/// # Format
+/// ```text
+/// count: u32 LE          (number of entries *including* the AT_NULL sentinel)
+/// [type: u64 LE, value: u64 LE]  × entry_count
+/// ```
+///
+/// Returns the **total** number of bytes required for the complete serialized
+/// form (including the sentinel), regardless of how large `out` is.  Only as
+/// many bytes as fit in `out` are written; the caller may retry with a larger
+/// buffer using the returned size.
+pub(crate) fn serialize_auxv_to_buf(entries: &[(u64, u64)], out: &mut [u8]) -> usize {
+    // Total entries = stored entries + AT_NULL sentinel.
+    let entry_count = entries.len() + 1;
+    // Layout: 4 bytes for count, then entry_count * 16 bytes (each entry = two u64s).
+    let total = 4 + entry_count * 16;
+
+    let copy_len = out.len().min(total);
+    let mut pos = 0usize;
+
+    // Write count (includes the sentinel).
+    let count_bytes = (entry_count as u32).to_le_bytes();
+    if pos + 4 <= copy_len {
+        out[pos..pos + 4].copy_from_slice(&count_bytes);
+    }
+    pos += 4;
+
+    // Write stored entries.
+    for &(kind, value) in entries {
+        if pos + 16 <= copy_len {
+            out[pos..pos + 8].copy_from_slice(&kind.to_le_bytes());
+            out[pos + 8..pos + 16].copy_from_slice(&value.to_le_bytes());
+        }
+        pos += 16;
+    }
+
+    // Append AT_NULL sentinel (type=0, value=0).
+    if pos + 16 <= copy_len {
+        out[pos..pos + 16].copy_from_slice(&[0u8; 16]);
+    }
+
+    total
+}
+
 /// Serialize the auxiliary vector (AT_* entries) into a userspace buffer.
 ///
 /// Format: `count: u32 LE`, then for each entry: `type: u64 LE, value: u64 LE`.
@@ -373,10 +419,7 @@ pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     let info = scheduler::process_info_current().ok_or(Errno::ENOENT)?;
     let pi = info.lock();
 
-    // Total entries = stored entries + AT_NULL sentinel.
-    let entry_count = pi.auxv.len() + 1;
-    // Layout: 4 bytes for count, then entry_count * 16 bytes (each entry is two u64s).
-    let total = 4 + entry_count * 16;
+    let total = serialize_auxv_to_buf(&pi.auxv, &mut []);
 
     if buf_ptr == 0 || buf_len == 0 {
         return Ok(total);
@@ -384,28 +427,7 @@ pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 
     let copy_len = buf_len.min(total);
     let mut out = alloc::vec![0u8; copy_len];
-    let mut pos = 0usize;
-
-    // Write count (number of entries including sentinel).
-    let count_bytes = (entry_count as u32).to_le_bytes();
-    if pos + 4 <= copy_len {
-        out[pos..pos + 4].copy_from_slice(&count_bytes);
-    }
-    pos += 4;
-
-    // Write stored entries.
-    for &(kind, value) in &pi.auxv {
-        if pos + 16 <= copy_len {
-            out[pos..pos + 8].copy_from_slice(&kind.to_le_bytes());
-            out[pos + 8..pos + 16].copy_from_slice(&value.to_le_bytes());
-        }
-        pos += 16;
-    }
-
-    // Append AT_NULL sentinel (type=0, value=0).
-    if pos + 16 <= copy_len {
-        out[pos..pos + 16].copy_from_slice(&[0u8; 16]);
-    }
+    serialize_auxv_to_buf(&pi.auxv, &mut out);
 
     drop(pi);
 
@@ -663,4 +685,138 @@ pub fn sys_task_exec(
     // If task_exec_current returns, it means it failed.
     // However, on success it should NEVER return.
     unreachable!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_auxv_to_buf;
+
+    // AT_* constants used in tests (must match kernel/src/task/exec.rs).
+    const AT_NULL: u64 = 0;
+    const AT_PAGESZ: u64 = 6;
+    const AT_PHDR: u64 = 3;
+    const AT_ENTRY: u64 = 9;
+
+    /// Helper: parse the serialized auxv blob back into `(type, value)` pairs.
+    fn parse_blob(buf: &[u8]) -> alloc::vec::Vec<(u64, u64)> {
+        let mut out = alloc::vec::Vec::new();
+        if buf.len() < 4 {
+            return out;
+        }
+        let count = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
+        let mut pos = 4;
+        for _ in 0..count {
+            if pos + 16 > buf.len() {
+                break;
+            }
+            let kind = u64::from_le_bytes(buf[pos..pos + 8].try_into().unwrap());
+            let val = u64::from_le_bytes(buf[pos + 8..pos + 16].try_into().unwrap());
+            out.push((kind, val));
+            pos += 16;
+        }
+        out
+    }
+
+    /// Empty auxv: only the AT_NULL sentinel is serialized.
+    #[test]
+    fn serialize_empty_auxv_emits_only_null_sentinel() {
+        let entries: &[(u64, u64)] = &[];
+        // Size query: pass a zero-length buffer.
+        let total = serialize_auxv_to_buf(entries, &mut []);
+        // 4 bytes count + 1 entry (AT_NULL) × 16 bytes = 20.
+        assert_eq!(total, 20, "empty auxv must be 20 bytes");
+
+        let mut buf = alloc::vec![0u8; total];
+        let written = serialize_auxv_to_buf(entries, &mut buf);
+        assert_eq!(written, total);
+
+        let parsed = parse_blob(&buf);
+        assert_eq!(parsed.len(), 1, "should have exactly one entry (AT_NULL)");
+        assert_eq!(parsed[0], (AT_NULL, 0), "single entry must be AT_NULL");
+    }
+
+    /// Full ELF auxv: AT_PAGESZ + AT_PHDR + AT_ENTRY are all serialized before AT_NULL.
+    #[test]
+    fn serialize_elf_auxv_entries_and_null_sentinel() {
+        let entries: &[(u64, u64)] = &[
+            (AT_PAGESZ, 4096),
+            (AT_PHDR, 0x200040),
+            (AT_ENTRY, 0x201000),
+        ];
+        let total = serialize_auxv_to_buf(entries, &mut []);
+        // 4 + (3 + 1) * 16 = 68.
+        assert_eq!(total, 68);
+
+        let mut buf = alloc::vec![0u8; total];
+        serialize_auxv_to_buf(entries, &mut buf);
+
+        let parsed = parse_blob(&buf);
+        // 3 real entries + 1 AT_NULL = 4.
+        assert_eq!(parsed.len(), 4);
+        assert_eq!(parsed[0], (AT_PAGESZ, 4096));
+        assert_eq!(parsed[1], (AT_PHDR, 0x200040));
+        assert_eq!(parsed[2], (AT_ENTRY, 0x201000));
+        assert_eq!(parsed[3], (AT_NULL, 0), "last entry must be AT_NULL");
+    }
+
+    /// AT_PAGESZ value round-trips correctly for both 4 KiB and 64 KiB pages.
+    #[test]
+    fn serialize_pagesz_value_round_trips() {
+        for &pagesz in &[4096u64, 65536u64] {
+            let entries: &[(u64, u64)] = &[(AT_PAGESZ, pagesz)];
+            let total = serialize_auxv_to_buf(entries, &mut []);
+            let mut buf = alloc::vec![0u8; total];
+            serialize_auxv_to_buf(entries, &mut buf);
+
+            let parsed = parse_blob(&buf);
+            let found = parsed.iter().find(|&&(k, _)| k == AT_PAGESZ);
+            assert!(found.is_some(), "AT_PAGESZ must be present for pagesz={}", pagesz);
+            assert_eq!(found.unwrap().1, pagesz);
+        }
+    }
+
+    /// Size query (empty output buffer) always returns the full required size.
+    #[test]
+    fn size_query_returns_total_bytes_needed() {
+        let entries: &[(u64, u64)] = &[(AT_PAGESZ, 4096), (AT_ENTRY, 0x201000)];
+        let total_from_query = serialize_auxv_to_buf(entries, &mut []);
+        let mut full_buf = alloc::vec![0u8; total_from_query];
+        let total_from_write = serialize_auxv_to_buf(entries, &mut full_buf);
+        assert_eq!(total_from_query, total_from_write,
+            "size query and full-write must return the same total");
+    }
+
+    /// Partial read: a buffer smaller than the full size must not panic and must
+    /// still return the full required size so the caller can retry.
+    #[test]
+    fn partial_read_returns_total_and_does_not_panic() {
+        let entries: &[(u64, u64)] = &[(AT_PAGESZ, 4096)];
+        let total = serialize_auxv_to_buf(entries, &mut []);
+
+        // Write only the count field (4 bytes).
+        let mut small = alloc::vec![0u8; 4];
+        let returned = serialize_auxv_to_buf(entries, &mut small);
+        assert_eq!(returned, total, "must return full size even for partial buffer");
+
+        // The count field should still be written.
+        let count = u32::from_le_bytes(small[0..4].try_into().unwrap());
+        // 1 real entry + 1 AT_NULL = 2 entries total.
+        assert_eq!(count, 2, "count field must be written into partial buffer");
+    }
+
+    /// The count field always equals the number of real entries plus one for AT_NULL.
+    #[test]
+    fn count_field_includes_null_sentinel() {
+        for n in 0usize..=5 {
+            let entries: alloc::vec::Vec<(u64, u64)> =
+                (0..n).map(|i| (i as u64 + 1, i as u64 * 100)).collect();
+            let total = serialize_auxv_to_buf(&entries, &mut []);
+            let mut buf = alloc::vec![0u8; total];
+            serialize_auxv_to_buf(&entries, &mut buf);
+
+            let count = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
+            assert_eq!(count, n + 1,
+                "count should be n_entries + 1 (AT_NULL), got {} for n={}", count, n);
+        }
+    }
 }

@@ -134,6 +134,7 @@ impl VfsNode for ProcDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 200,
+        ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -169,6 +170,7 @@ impl VfsNode for ProcPidDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 300 + self.pid as u64 * 10,
+        ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -196,6 +198,7 @@ impl VfsNode for ProcPidFdDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 300 + self.pid as u64 * 10 + 3,
+        ..Default::default()
         })
     }
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -238,6 +241,7 @@ impl VfsNode for StaticTextNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
+        ..Default::default()
         })
     }
 }
@@ -274,6 +278,7 @@ impl VfsNode for MountsNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: 0, // dynamic — size not known until read
             ino: 201,
+        ..Default::default()
         })
     }
 }
@@ -312,6 +317,7 @@ impl VfsNode for DynamicTextNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
+        ..Default::default()
         })
     }
 }
@@ -348,6 +354,7 @@ impl VfsNode for MemInfoNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: 0,
             ino: 202,
+        ..Default::default()
         })
     }
 }
@@ -376,6 +383,7 @@ impl VfsNode for CpuInfoNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: 0,
             ino: 203,
+        ..Default::default()
         })
     }
 }
@@ -406,6 +414,7 @@ impl VfsNode for UptimeNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: 0,
             ino: 204,
+        ..Default::default()
         })
     }
 }

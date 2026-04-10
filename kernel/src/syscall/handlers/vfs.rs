@@ -154,13 +154,12 @@ pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
 
 pub fn sys_fs_stat(
     fd: usize,
-    mode_ptr: usize,
-    size_ptr: usize,
-    ino_ptr: usize,
+    stat_ptr: usize,
+    _a2: usize,
+    _a3: usize,
 ) -> SysResult<usize> {
-    validate_user_range(mode_ptr, 4, true)?;
-    validate_user_range(size_ptr, 8, true)?;
-    validate_user_range(ino_ptr, 8, true)?;
+    let stat_size = core::mem::size_of::<abi::fs::FileStat>();
+    validate_user_range(stat_ptr, stat_size, true)?;
 
     let node = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
@@ -170,11 +169,15 @@ pub fn sys_fs_stat(
     };
 
     let stat = node.stat()?;
-    unsafe {
-        copyout(mode_ptr, &stat.mode.to_ne_bytes())?;
-        copyout(size_ptr, &stat.size.to_ne_bytes())?;
-        copyout(ino_ptr, &stat.ino.to_ne_bytes())?;
-    }
+    let file_stat = stat.to_abi_stat();
+    // SAFETY: `file_stat` is a plain repr(C) struct on the stack; we read it as bytes.
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            &file_stat as *const abi::fs::FileStat as *const u8,
+            stat_size,
+        )
+    };
+    unsafe { copyout(stat_ptr, bytes)? };
 
     Ok(0)
 }

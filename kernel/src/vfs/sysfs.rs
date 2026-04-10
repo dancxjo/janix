@@ -160,6 +160,7 @@ impl VfsNode for StaticDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
+        ..Default::default()
         })
     }
 
@@ -184,6 +185,7 @@ impl VfsNode for DevicesDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 301,
+        ..Default::default()
         })
     }
 
@@ -222,6 +224,7 @@ impl VfsNode for DeviceDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
+        ..Default::default()
         })
     }
 
@@ -285,6 +288,7 @@ impl VfsNode for StaticTextNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
+        ..Default::default()
         })
     }
 }
@@ -369,6 +373,7 @@ impl VfsNode for VirtioDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
+        ..Default::default()
         })
     }
  

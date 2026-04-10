@@ -114,24 +114,22 @@ pub fn vfs_seek(fd: u32, offset: i64, whence: u32) -> SysResult<u64> {
 
 /// Stat an open file descriptor.
 ///
-/// Returns (mode, size, ino) on success.
-pub fn vfs_stat(fd: u32) -> SysResult<(u32, u64, u64)> {
-    let mut mode = 0u32;
-    let mut size = 0u64;
-    let mut ino = 0u64;
-
+/// Returns a [`abi::fs::FileStat`] containing mode, size, inode, and the
+/// three standard timestamps (`atime`, `mtime`, `ctime`).
+pub fn vfs_stat(fd: u32) -> SysResult<abi::fs::FileStat> {
+    let mut stat = abi::fs::FileStat::default();
     let ret = unsafe {
         raw_syscall6(
             SYS_FS_STAT,
             fd as usize,
-            &mut mode as *mut _ as usize,
-            &mut size as *mut _ as usize,
-            &mut ino as *mut _ as usize,
+            &mut stat as *mut abi::fs::FileStat as usize,
+            0,
+            0,
             0,
             0,
         )
     };
-    abi::errors::errno(ret).map(|_| (mode, size, ino))
+    abi::errors::errno(ret).map(|_| stat)
 }
 
 /// Remove a file or empty directory at `path`.

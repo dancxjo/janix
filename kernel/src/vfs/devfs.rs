@@ -172,6 +172,7 @@ impl VfsNode for DevSubDirNode {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 101, // arbitrary
+            ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -208,6 +209,7 @@ impl VfsNode for DevDirNode {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 100,
+        ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -320,6 +322,7 @@ impl VfsNode for ConsoleNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 1,
+        ..Default::default()
         })
     }
 }
@@ -344,6 +347,7 @@ impl VfsNode for NullNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 2,
+        ..Default::default()
         })
     }
 }
@@ -369,6 +373,7 @@ impl VfsNode for ZeroNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 3,
+        ..Default::default()
         })
     }
 }
@@ -445,6 +450,7 @@ impl VfsNode for FbNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: FB_INFO_PAYLOAD_SIZE as u64,
             ino: 4,
+        ..Default::default()
         })
     }
 
@@ -491,6 +497,7 @@ impl VfsNode for RtcNode {
             mode: VfsStat::S_IFCHR | 0o444,
             size: 0,
             ino: 5,
+        ..Default::default()
         })
     }
 }
@@ -593,6 +600,7 @@ mod tests {
                     mode: VfsStat::S_IFCHR | 0o666,
                     size: 0,
                     ino: 999,
+                ..Default::default()
                 })
             }
         }
@@ -619,6 +627,7 @@ mod tests {
                     mode: VfsStat::S_IFCHR | 0o666,
                     size: 0,
                     ino: 998,
+                ..Default::default()
                 })
             }
         }

@@ -143,6 +143,7 @@ impl VfsNode for Watch {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 0,
+        ..Default::default()
         })
     }
 

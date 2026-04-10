@@ -49,6 +49,7 @@ impl VfsNode for PortNode {
             mode: VfsStat::S_IFIFO | r | w,
             size: self.port.len() as u64,
             ino: 0,
+        ..Default::default()
         })
     }
 

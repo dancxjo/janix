@@ -31,20 +31,79 @@ fn alloc_ino() -> u64 {
     NEXT_INO.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
 }
 
+// ── Timestamp helper ─────────────────────────────────────────────────────────
+
+/// Return the current wall-clock time as `(sec, nsec)`.
+/// Delegates to the kernel time module; returns `(0, 0)` when the clock
+/// has not been anchored yet (early boot).
+#[inline]
+fn now() -> (u64, u32) {
+    crate::time::now_timespec()
+}
+
 // ── Internal tree node ───────────────────────────────────────────────────────
 
+/// Per-file mutable state (data + timestamps).
+struct RamfsFileInner {
+    data: Vec<u8>,
+    /// Last access time (seconds, nanoseconds).
+    atime: (u64, u32),
+    /// Last modification time (content write / truncate).
+    mtime: (u64, u32),
+    /// Last status-change time (content or metadata change).
+    ctime: (u64, u32),
+}
+
+impl RamfsFileInner {
+    fn new(data: Vec<u8>) -> Self {
+        let ts = now();
+        Self {
+            data,
+            atime: ts,
+            mtime: ts,
+            ctime: ts,
+        }
+    }
+}
+
+/// Per-directory mutable state (children + timestamps).
+struct RamfsDirInner {
+    children: BTreeMap<String, Arc<RamfsEntry>>,
+    /// Last access time.
+    atime: (u64, u32),
+    /// Last modification time (child added / removed).
+    mtime: (u64, u32),
+    /// Last status-change time.
+    ctime: (u64, u32),
+}
+
+impl RamfsDirInner {
+    fn new() -> Self {
+        let ts = now();
+        Self {
+            children: BTreeMap::new(),
+            atime: ts,
+            mtime: ts,
+            ctime: ts,
+        }
+    }
+}
+
 enum RamfsEntry {
-    File(Mutex<Vec<u8>>, u64 /* ino */),
-    Dir(Mutex<BTreeMap<String, Arc<RamfsEntry>>>, u64 /* ino */),
+    File(Mutex<RamfsFileInner>, u64 /* ino */),
+    Dir(Mutex<RamfsDirInner>, u64 /* ino */),
 }
 
 impl RamfsEntry {
     fn new_dir() -> Arc<Self> {
-        Arc::new(RamfsEntry::Dir(Mutex::new(BTreeMap::new()), alloc_ino()))
+        Arc::new(RamfsEntry::Dir(Mutex::new(RamfsDirInner::new()), alloc_ino()))
     }
 
     fn new_file(data: Vec<u8>) -> Arc<Self> {
-        Arc::new(RamfsEntry::File(Mutex::new(data), alloc_ino()))
+        Arc::new(RamfsEntry::File(
+            Mutex::new(RamfsFileInner::new(data)),
+            alloc_ino(),
+        ))
     }
 
     fn ino(&self) -> u64 {
@@ -57,16 +116,22 @@ impl RamfsEntry {
     /// Look up a child by name inside a directory entry.
     fn lookup_child(&self, name: &str) -> SysResult<Arc<RamfsEntry>> {
         match self {
-            RamfsEntry::Dir(children, _) => children.lock().get(name).cloned().ok_or(Errno::ENOENT),
+            RamfsEntry::Dir(inner, _) => {
+                inner.lock().children.get(name).cloned().ok_or(Errno::ENOENT)
+            }
             _ => Err(Errno::ENOTDIR),
         }
     }
 
-    /// Insert a child into a directory entry.
+    /// Insert a child into a directory entry, updating the directory's mtime/ctime.
     fn insert_child(&self, name: &str, child: Arc<RamfsEntry>) -> SysResult<()> {
         match self {
-            RamfsEntry::Dir(children, _) => {
-                children.lock().insert(name.to_string(), child);
+            RamfsEntry::Dir(inner, _) => {
+                let mut lock = inner.lock();
+                lock.children.insert(name.to_string(), child);
+                let ts = now();
+                lock.mtime = ts;
+                lock.ctime = ts;
                 Ok(())
             }
             _ => Err(Errno::ENOTDIR),
@@ -81,15 +146,20 @@ struct RamfsNode(Arc<RamfsEntry>);
 impl VfsNode for RamfsNode {
     fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         match &*self.0 {
-            RamfsEntry::File(data, _) => {
-                let data = data.lock();
+            RamfsEntry::File(inner, _) => {
+                let mut lock = inner.lock();
                 let off = offset as usize;
-                if off >= data.len() {
+                if off >= lock.data.len() {
                     return Ok(0);
                 }
-                let avail = &data[off..];
+                let avail = &lock.data[off..];
                 let n = avail.len().min(buf.len());
                 buf[..n].copy_from_slice(&avail[..n]);
+                // atime policy: update atime on every successful non-empty read (eager policy).
+                // This matches the VfsStat contract documented in kernel/src/vfs/mod.rs.
+                if n > 0 {
+                    lock.atime = now();
+                }
                 Ok(n)
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
@@ -98,14 +168,17 @@ impl VfsNode for RamfsNode {
 
     fn write(&self, offset: u64, buf: &[u8]) -> SysResult<usize> {
         match &*self.0 {
-            RamfsEntry::File(data, _) => {
-                let mut data = data.lock();
+            RamfsEntry::File(inner, _) => {
+                let mut lock = inner.lock();
                 let off = offset as usize;
                 let end = off + buf.len();
-                if end > data.len() {
-                    data.resize(end, 0);
+                if end > lock.data.len() {
+                    lock.data.resize(end, 0);
                 }
-                data[off..end].copy_from_slice(buf);
+                lock.data[off..end].copy_from_slice(buf);
+                let ts = now();
+                lock.mtime = ts;
+                lock.ctime = ts;
                 Ok(buf.len())
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
@@ -114,24 +187,45 @@ impl VfsNode for RamfsNode {
 
     fn stat(&self) -> SysResult<VfsStat> {
         match &*self.0 {
-            RamfsEntry::File(data, ino) => Ok(VfsStat {
-                mode: VfsStat::S_IFREG | 0o644,
-                size: data.lock().len() as u64,
-                ino: *ino,
-            }),
-            RamfsEntry::Dir(_, ino) => Ok(VfsStat {
-                mode: VfsStat::S_IFDIR | 0o755,
-                size: 0,
-                ino: *ino,
-            }),
+            RamfsEntry::File(inner, ino) => {
+                let lock = inner.lock();
+                Ok(VfsStat {
+                    mode: VfsStat::S_IFREG | 0o644,
+                    size: lock.data.len() as u64,
+                    ino: *ino,
+                    atime_sec: lock.atime.0,
+                    atime_nsec: lock.atime.1,
+                    mtime_sec: lock.mtime.0,
+                    mtime_nsec: lock.mtime.1,
+                    ctime_sec: lock.ctime.0,
+                    ctime_nsec: lock.ctime.1,
+                })
+            }
+            RamfsEntry::Dir(inner, ino) => {
+                let lock = inner.lock();
+                Ok(VfsStat {
+                    mode: VfsStat::S_IFDIR | 0o755,
+                    size: 0,
+                    ino: *ino,
+                    atime_sec: lock.atime.0,
+                    atime_nsec: lock.atime.1,
+                    mtime_sec: lock.mtime.0,
+                    mtime_nsec: lock.mtime.1,
+                    ctime_sec: lock.ctime.0,
+                    ctime_nsec: lock.ctime.1,
+                })
+            }
         }
     }
 
     fn truncate(&self, new_size: u64) -> SysResult<()> {
         match &*self.0 {
-            RamfsEntry::File(data, _) => {
-                let mut data = data.lock();
-                data.resize(new_size as usize, 0);
+            RamfsEntry::File(inner, _) => {
+                let mut lock = inner.lock();
+                lock.data.resize(new_size as usize, 0);
+                let ts = now();
+                lock.mtime = ts;
+                lock.ctime = ts;
                 Ok(())
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
@@ -140,9 +234,13 @@ impl VfsNode for RamfsNode {
 
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         match &*self.0 {
-            RamfsEntry::Dir(children, _) => {
-                let lock = children.lock();
-                super::write_readdir_entries(lock.keys().map(|s| s.as_str()), offset, buf)
+            RamfsEntry::Dir(inner, _) => {
+                let lock = inner.lock();
+                super::write_readdir_entries(
+                    lock.children.keys().map(|s| s.as_str()),
+                    offset,
+                    buf,
+                )
             }
             _ => Err(Errno::ENOTDIR),
         }
@@ -266,9 +364,12 @@ impl VfsDriver for RamFs {
         let (dir_path, file_name) = split_last(path).ok_or(Errno::EINVAL)?;
         let dir = self.resolve_entry(dir_path)?;
         match &*dir {
-            RamfsEntry::Dir(children, _) => {
-                let mut lock = children.lock();
-                if lock.remove(file_name).is_some() {
+            RamfsEntry::Dir(inner, _) => {
+                let mut lock = inner.lock();
+                if lock.children.remove(file_name).is_some() {
+                    let ts = now();
+                    lock.mtime = ts;
+                    lock.ctime = ts;
                     Ok(())
                 } else {
                     Err(Errno::ENOENT)
@@ -286,35 +387,48 @@ impl VfsDriver for RamFs {
         let old_dir = self.resolve_entry(old_dir_path)?;
         let new_dir = self.resolve_entry(new_dir_path)?;
 
-        let old_children = match &*old_dir {
+        let old_inner = match &*old_dir {
             RamfsEntry::Dir(c, _) => c,
             _ => return Err(Errno::ENOTDIR),
         };
-        let new_children = match &*new_dir {
+        let new_inner = match &*new_dir {
             RamfsEntry::Dir(c, _) => c,
             _ => return Err(Errno::ENOTDIR),
         };
 
         if Arc::ptr_eq(&old_dir, &new_dir) {
-            let mut lock = old_children.lock();
-            let entry = lock.remove(old_name).ok_or(Errno::ENOENT)?;
-            lock.insert(new_name.to_string(), entry);
+            let mut lock = old_inner.lock();
+            let entry = lock.children.remove(old_name).ok_or(Errno::ENOENT)?;
+            lock.children.insert(new_name.to_string(), entry);
+            let ts = now();
+            lock.mtime = ts;
+            lock.ctime = ts;
         } else {
             // Cross-directory rename within the same ramfs instance.
             // Lock in a stable order by pointer address to avoid deadlocks.
-            let ptr_old = old_children as *const _ as usize;
-            let ptr_new = new_children as *const _ as usize;
+            let ptr_old = old_inner as *const _ as usize;
+            let ptr_new = new_inner as *const _ as usize;
 
             if ptr_old < ptr_new {
-                let mut lock_old = old_children.lock();
-                let mut lock_new = new_children.lock();
-                let entry = lock_old.remove(old_name).ok_or(Errno::ENOENT)?;
-                lock_new.insert(new_name.to_string(), entry);
+                let mut lock_old = old_inner.lock();
+                let mut lock_new = new_inner.lock();
+                let entry = lock_old.children.remove(old_name).ok_or(Errno::ENOENT)?;
+                lock_new.children.insert(new_name.to_string(), entry);
+                let ts = now();
+                lock_old.mtime = ts;
+                lock_old.ctime = ts;
+                lock_new.mtime = ts;
+                lock_new.ctime = ts;
             } else {
-                let mut lock_new = new_children.lock();
-                let mut lock_old = old_children.lock();
-                let entry = lock_old.remove(old_name).ok_or(Errno::ENOENT)?;
-                lock_new.insert(new_name.to_string(), entry);
+                let mut lock_new = new_inner.lock();
+                let mut lock_old = old_inner.lock();
+                let entry = lock_old.children.remove(old_name).ok_or(Errno::ENOENT)?;
+                lock_new.children.insert(new_name.to_string(), entry);
+                let ts = now();
+                lock_old.mtime = ts;
+                lock_old.ctime = ts;
+                lock_new.mtime = ts;
+                lock_new.ctime = ts;
             }
         }
 
@@ -553,5 +667,92 @@ mod tests {
         fs.mkdir("adir").unwrap();
         let node = fs.lookup("adir").unwrap();
         assert!(matches!(node.truncate(0), Err(Errno::EISDIR)));
+    }
+
+    // ── timestamps ──────────────────────────────────────────────────────────
+
+    /// Timestamps are initialised (non-garbage) on file creation.
+    /// In tests the clock is not anchored so all timestamps are zero,
+    /// but they must be consistent across stat calls.
+    #[test]
+    fn test_create_initialises_timestamps() {
+        let fs = RamFs::new();
+        fs.create_file("ts.txt", b"hello".to_vec()).unwrap();
+        let node = fs.lookup("ts.txt").unwrap();
+        let stat = node.stat().unwrap();
+        // All three timestamps must be valid (non-garbage).
+        assert!(stat.atime_nsec < 1_000_000_000);
+        assert!(stat.mtime_nsec < 1_000_000_000);
+        assert!(stat.ctime_nsec < 1_000_000_000);
+        // On creation, atime == mtime == ctime.
+        assert_eq!(stat.atime_sec, stat.mtime_sec);
+        assert_eq!(stat.mtime_sec, stat.ctime_sec);
+    }
+
+    /// Write must update mtime and ctime; atime must be unchanged.
+    #[test]
+    fn test_write_updates_mtime_and_ctime() {
+        let fs = RamFs::new();
+        let node = fs.create("wts.txt").unwrap();
+        let before = node.stat().unwrap();
+        // Write updates mtime/ctime regardless of clock value.
+        node.write(0, b"data").unwrap();
+        let after = node.stat().unwrap();
+        // mtime_sec and ctime_sec must be >= before.
+        assert!(after.mtime_sec >= before.mtime_sec);
+        assert!(after.ctime_sec >= before.ctime_sec);
+    }
+
+    /// Truncate must update mtime and ctime.
+    #[test]
+    fn test_truncate_updates_mtime_and_ctime() {
+        let fs = RamFs::new();
+        fs.create_file("tts.txt", b"hello world".to_vec()).unwrap();
+        let node = fs.lookup("tts.txt").unwrap();
+        let before = node.stat().unwrap();
+        node.truncate(3).unwrap();
+        let after = node.stat().unwrap();
+        assert!(after.mtime_sec >= before.mtime_sec);
+        assert!(after.ctime_sec >= before.ctime_sec);
+    }
+
+    /// stat() must return consistent timestamps (atime, mtime, ctime are valid).
+    #[test]
+    fn test_stat_timestamps_are_non_garbage() {
+        let fs = RamFs::new();
+        fs.create_file("ng.txt", b"x".to_vec()).unwrap();
+        let node = fs.lookup("ng.txt").unwrap();
+        let stat = node.stat().unwrap();
+        // nsec components must be in valid range.
+        assert!(stat.atime_nsec < 1_000_000_000);
+        assert!(stat.mtime_nsec < 1_000_000_000);
+        assert!(stat.ctime_nsec < 1_000_000_000);
+    }
+
+    /// Directory timestamps must be consistent.
+    #[test]
+    fn test_dir_timestamps_consistent() {
+        let fs = RamFs::new();
+        fs.mkdir("dts").unwrap();
+        let node = fs.lookup("dts").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.atime_nsec < 1_000_000_000);
+        assert!(stat.mtime_nsec < 1_000_000_000);
+        assert!(stat.ctime_nsec < 1_000_000_000);
+        assert_eq!(stat.atime_sec, stat.mtime_sec);
+    }
+
+    /// Creating a file in a directory must update the directory's mtime/ctime.
+    #[test]
+    fn test_dir_mtime_updates_on_child_create() {
+        let fs = RamFs::new();
+        fs.mkdir("dmu").unwrap();
+        let dir_node = fs.lookup("dmu").unwrap();
+        let dir_before = dir_node.stat().unwrap();
+        // Create a child file.
+        fs.create_file("dmu/child.txt", b"x".to_vec()).unwrap();
+        let dir_after = dir_node.stat().unwrap();
+        assert!(dir_after.mtime_sec >= dir_before.mtime_sec);
+        assert!(dir_after.ctime_sec >= dir_before.ctime_sec);
     }
 }

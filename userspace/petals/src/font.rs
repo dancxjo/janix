@@ -15,7 +15,7 @@ impl TextRenderer {
         
         // Get size
         let stat = vfs_stat(fd).ok()?;
-        let size = stat.1 as usize;
+        let size = stat.size as usize;
         
         let mut data = vec![0u8; size];
         if vfs_read(fd, &mut data).ok()? < size {

@@ -13,6 +13,12 @@ struct MemFdInner {
     phys_base: u64,
     size: usize,
     name: alloc::string::String,
+    /// Creation / initial access time.
+    atime: (u64, u32),
+    /// Last modification time (write).
+    mtime: (u64, u32),
+    /// Last status-change time.
+    ctime: (u64, u32),
 }
 
 impl MemFdNode {
@@ -31,11 +37,15 @@ impl MemFdNode {
             core::ptr::write_bytes((phys_base + hhdm) as *mut u8, 0, aligned_size);
         }
 
+        let ts = crate::time::now_timespec();
         Ok(Self {
             inner: Arc::new(Mutex::new(MemFdInner {
                 phys_base,
                 size: aligned_size,
                 name: alloc::string::String::from(name),
+                atime: ts,
+                mtime: ts,
+                ctime: ts,
             })),
         })
     }
@@ -43,7 +53,7 @@ impl MemFdNode {
 
 impl VfsNode for MemFdNode {
     fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         let off = offset as usize;
         if off >= inner.size {
             return Ok(0);
@@ -56,11 +66,14 @@ impl VfsNode for MemFdNode {
             core::slice::from_raw_parts((inner.phys_base + hhdm + offset) as *const u8, n)
         };
         buf[..n].copy_from_slice(src);
+        if n > 0 {
+            inner.atime = crate::time::now_timespec();
+        }
         Ok(n)
     }
 
     fn write(&self, offset: u64, buf: &[u8]) -> SysResult<usize> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         let off = offset as usize;
         if off >= inner.size {
             return Err(Errno::ENOSPC);
@@ -73,6 +86,9 @@ impl VfsNode for MemFdNode {
             core::slice::from_raw_parts_mut((inner.phys_base + hhdm + offset) as *mut u8, n)
         };
         dst[..n].copy_from_slice(&buf[..n]);
+        let ts = crate::time::now_timespec();
+        inner.mtime = ts;
+        inner.ctime = ts;
         Ok(n)
     }
 
@@ -82,6 +98,12 @@ impl VfsNode for MemFdNode {
             mode: VfsStat::S_IFREG | 0o666,
             size: inner.size as u64,
             ino: inner.phys_base, // Use phys_base as unique ino for now
+            atime_sec: inner.atime.0,
+            atime_nsec: inner.atime.1,
+            mtime_sec: inner.mtime.0,
+            mtime_nsec: inner.mtime.1,
+            ctime_sec: inner.ctime.0,
+            ctime_nsec: inner.ctime.1,
         })
     }
 

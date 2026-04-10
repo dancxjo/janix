@@ -44,7 +44,7 @@ fn read_text(path: &str) -> alloc::string::String {
     let Ok(fd) = vfs_open(path, O_RDONLY) else {
         return alloc::string::String::new();
     };
-    let size = vfs_stat(fd).map(|(_, len, _)| len as usize).unwrap_or(0);
+    let size = vfs_stat(fd).map(|s| s.size as usize).unwrap_or(0);
     let mut buf = alloc::vec![0u8; size];
     if size > 0 {
         let n = vfs_read(fd, &mut buf).unwrap_or(0);

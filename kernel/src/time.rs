@@ -33,6 +33,35 @@ pub fn anchor_system_clock(unix_secs: u64, mono_ns: u64) {
     );
 }
 
+/// Return the current wall-clock time as `(seconds, nanoseconds)`.
+///
+/// If the runtime has not yet been initialized (e.g. during early boot or
+/// in unit tests), or if the clock has not been anchored to a real-time
+/// source, returns `(0, 0)` — which corresponds to the Unix epoch.
+/// Callers that need precise wall-clock time should check [`is_anchored`] first.
+///
+/// This is the canonical time source for VFS node timestamps.
+pub fn now_timespec() -> (u64, u32) {
+    if !crate::is_runtime_initialized() {
+        return (0, 0);
+    }
+    let rt = crate::runtime_base();
+    let ticks = rt.mono_ticks();
+    let freq = rt.mono_freq_hz();
+    if freq == 0 {
+        return (0, 0);
+    }
+    let mono_ns = (ticks as u128 * 1_000_000_000) / (freq as u128);
+    let sys_ns = if is_anchored() {
+        get_system_time_ns(mono_ns as u64)
+    } else {
+        0
+    };
+    let sec = sys_ns / 1_000_000_000;
+    let nsec = (sys_ns % 1_000_000_000) as u32;
+    (sec, nsec)
+}
+
 pub struct MonotonicClamp {
     last: AtomicU64,
 }

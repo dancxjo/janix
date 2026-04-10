@@ -1104,22 +1104,22 @@ mod tests {
         }
     }
 
-    // ── Thread-local test state ───────────────────────────────────────────────
+    // ── Serialization guard ───────────────────────────────────────────────────
     //
-    // Tests run concurrently in separate OS threads.  Global mutable statics
-    // (like `PROCESS_INFO_HOOK`) would race; instead we:
-    //   1. Set `PROCESS_INFO_HOOK` once to `process_info_hook` (safe: same fn ptr).
-    //   2. Store the per-test `ProcessInfo` in a thread-local so each thread
-    //      sees its own copy and no cleanup can clobber a sibling test.
+    // The kernel hooks (`PROCESS_INFO_HOOK`, `CURRENT_TID_HOOK`) are global
+    // mutable statics.  Tests run concurrently, so we serialize them with a
+    // spin-mutex guard.  The critical sections are short (non-blocking poll)
+    // so spinning is acceptable here.
 
-    std::thread_local! {
-        static CURRENT_TEST_PINFO: std::cell::RefCell<
-            Option<Arc<Mutex<crate::task::ProcessInfo>>>,
-        > = const { std::cell::RefCell::new(None) };
-    }
+    static TEST_POLL_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+
+    // Holds the current test's ProcessInfo while inside the critical section.
+    static TEST_PROCESS_INFO: spin::Mutex<
+        Option<Arc<Mutex<crate::task::ProcessInfo>>>,
+    > = spin::Mutex::new(None);
 
     fn process_info_hook() -> Option<Arc<Mutex<crate::task::ProcessInfo>>> {
-        CURRENT_TEST_PINFO.with(|cell| cell.borrow().clone())
+        TEST_PROCESS_INFO.lock().clone()
     }
 
     fn test_current_tid() -> u64 {
@@ -1151,19 +1151,21 @@ mod tests {
 
     /// Run `sys_fs_poll` with `timeout_ms = 0` (non-blocking) over `fds`.
     ///
-    /// Sets up the per-thread process info via a thread-local hook so that
-    /// concurrent tests don't interfere with each other.
+    /// Acquires `TEST_POLL_GUARD` to serialize concurrent tests that share
+    /// the global `PROCESS_INFO_HOOK` and `CURRENT_TID_HOOK`.
     fn poll_nonblocking(
         pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
         fds: &mut [PollFd],
     ) -> SysResult<usize> {
-        // Install hooks (idempotent — same fn pointer each time).
+        let _guard = TEST_POLL_GUARD.lock();
+
+        // Install hooks while holding the guard so no other test can clobber
+        // them between setup and the actual sys_fs_poll call.
         unsafe {
             CURRENT_TID_HOOK = Some(test_current_tid);
             crate::sched::hooks::PROCESS_INFO_HOOK = Some(process_info_hook);
         }
-        // Store this test's process info in the thread-local.
-        CURRENT_TEST_PINFO.with(|cell| cell.borrow_mut().replace(pinfo));
+        TEST_PROCESS_INFO.lock().replace(pinfo);
 
         // Use the slice's heap address as "user" memory.
         // validate_user_range only rejects NULL and kernel-high addresses.
@@ -1171,11 +1173,15 @@ mod tests {
         let nfds = fds.len();
         let res = sys_fs_poll(ptr, nfds, 0 /* non-blocking */);
 
-        // Clear only the thread-local; leave the hooks installed so concurrent
-        // tests that set the same fn ptr are unaffected.
-        CURRENT_TEST_PINFO.with(|cell| cell.borrow_mut().take());
+        // Clean up before releasing the guard.
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            CURRENT_TID_HOOK = None;
+        }
+        TEST_PROCESS_INFO.lock().take();
 
         res
+        // _guard released here
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────

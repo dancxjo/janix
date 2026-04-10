@@ -75,19 +75,26 @@ impl<R: BootRuntime> Scheduler<R> {
         let count = self.state.online_cpu_count;
         let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
 
-        let selected = match affinity {
+        match affinity {
             Affinity::Pinned(cpu) => cpu,
             Affinity::Any => {
-                let selected = if count > 1 {
+                // will be brought up manually when needed.
+                //     if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                //         let target_cpu = next_cpu_id.0 as usize;
+                //         unsafe {
+                //             let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, target_cpu);
+                //         }
+                //         return target_cpu;
+                //     }
+                // }
+                let _ = rt; // Suppress unused variable warning
+                if count > 1 {
                     (idx % (count - 1)) + 1
                 } else {
                     0
-                };
-                crate::kdebug!("SCHED: pick_cpu_and_bringup count={} idx={} -> selected={}", count, idx, selected);
-                selected
+                }
             }
-        };
-        selected
+        }
 
     }
     pub fn spawn(

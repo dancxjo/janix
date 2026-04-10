@@ -759,13 +759,11 @@ impl ArchRuntime for X86_64Runtime {
         // Initialize preemption timer using cached BSP calibration
         let vector = self.timer_vector.load(Ordering::SeqCst);
         let init_cnt = self.timer_init_cnt.load(Ordering::SeqCst);
-        kernel::kdebug!("SMP: CPU {} init_secondary complete (vector={}, init_cnt={})", cpu_index, vector, init_cnt);
         if vector != 0 && init_cnt != 0 {
             ioapic::set_lapic_timer_periodic(vector as u8, init_cnt as u32);
-        } else {
-            kernel::kwarn!("SMP: CPU {} timer calibration missing!", cpu_index);
         }
     }
+
 
 
     fn send_ipi(&self, cpu_index: usize, vector: u8) {

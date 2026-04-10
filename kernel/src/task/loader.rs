@@ -282,6 +282,11 @@ pub fn load_module<R: BootRuntime>(
         grow_chunk_bytes,
     };
 
+    if entry_pc == 0 {
+        crate::kerror!("LOADER: Invalid entry point 0 for module '{}'", module.name);
+        return None;
+    }
+
     Some((
         UserEntry {
             entry_pc: entry_pc as usize,
@@ -291,6 +296,7 @@ pub fn load_module<R: BootRuntime>(
         stack_info,
         regions,
     ))
+
 }
 
 fn align_up_u64(value: u64, align: u64) -> u64 {

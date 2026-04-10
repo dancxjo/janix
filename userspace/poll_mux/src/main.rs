@@ -5,8 +5,8 @@ extern crate alloc;
 use stem::syscall::vfs::*;
 use abi::syscall::{PollFd, poll_flags};
 
-#[no_main]
-fn main() {
+#[stem::main]
+fn main(_arg: usize) -> ! {
     stem::println!("--- poll_mux start ---");
 
     // 1. Create a pipe
@@ -89,5 +89,5 @@ fn main() {
         "Expected readiness on VFS file in mixed");
 
     stem::println!("--- poll_mux success ---");
-    stem::syscall::exit(0);
+    stem::syscall::exit(0)
 }

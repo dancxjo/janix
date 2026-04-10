@@ -524,10 +524,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         priority = task.priority as usize;
                         target_cpu = match task.affinity {
                             crate::task::Affinity::Pinned(cpu) => cpu,
-                            crate::task::Affinity::Any => task.last_cpu.unwrap_or_else(|| {
+                            crate::task::Affinity::Any => {
                                 let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
                                 idx % self.state.online_cpu_count
-                            }),
+                            },
                         };
                     } else {
                         continue;
@@ -949,13 +949,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
     /// Mark a secondary CPU as online and initialize its idle task.
     pub fn cpu_online(&mut self, cpu_index: usize) {
         crate::kdebug!(
-            "SMP: CPU {} reaching Scheduler::cpu_online (bringup_in_progress={} -> false)",
-            cpu_index,
-            self.bringup_in_progress
+            "SMP: CPU {} online (triggered by scheduler spawn)",
+            cpu_index
         );
         self.bringup_in_progress = false;
         self.state.online_cpu_count += 1;
-        crate::kdebug!("SMP: CPU {} incremented online_cpu_count to {}", cpu_index, self.state.online_cpu_count);
+
 
 
         // Create idle task for this new CPU
@@ -1463,14 +1462,14 @@ pub static CPU_ONLINE: AtomicUsize = AtomicUsize::new(0);
 /// Must only be called from `kernel_secondary_entry`.
 pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
     // Mark as online
-    let previous_online = CPU_ONLINE.fetch_add(1, Ordering::Relaxed);
-    crate::kdebug!("SMP: CPU {} reaching enter_secondary (global CPU_ONLINE={})", cpu_index, previous_online + 1);
+    CPU_ONLINE.fetch_add(1, Ordering::Relaxed);
+    crate::kdebug!("SMP: Secondary CPU {} online!", cpu_index);
 
     // Enter scheduler loop via the hook which bootstraps this CPU.
     // The run_scheduler hook will call bootstrap_cpu to set up this CPU's
     if let Some(hook) = unsafe { hooks::RUN_SCHEDULER_HOOK } {
-        crate::kdebug!("SMP: CPU {} calling run_scheduler hook...", cpu_index);
         hook();
+
 
     } else {
         panic!("Scheduler hook not initialized!");

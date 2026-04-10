@@ -477,3 +477,40 @@ fn deserialize_env(blob: &[u8]) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, Errno> {
     }
     Ok(result)
 }
+
+pub fn sys_task_exec(
+    fd: u32,
+    argv_ptr: usize,
+    argv_len: usize,
+    envp_ptr: usize,
+    envp_len: usize,
+) -> SysResult<usize> {
+    // Deserialize argv
+    let argv = if argv_ptr != 0 && argv_len > 0 {
+        validate_user_range(argv_ptr, argv_len, false)?;
+        let mut blob = alloc::vec![0u8; argv_len];
+        unsafe { copyin(&mut blob, argv_ptr)?; }
+        deserialize_argv(&blob)?
+    } else {
+        Vec::new()
+    };
+
+    // Deserialize env
+    let env = if envp_ptr != 0 && envp_len > 0 {
+        validate_user_range(envp_ptr, envp_len, false)?;
+        let mut blob = alloc::vec![0u8; envp_len];
+        unsafe { copyin(&mut blob, envp_ptr)?; }
+        deserialize_env(&blob)?
+    } else {
+        BTreeMap::new()
+    };
+
+    // Call the internal exec helper via erased hook
+    unsafe {
+        scheduler::task_exec_current(fd, argv, env)?;
+    }
+
+    // If task_exec_current returns, it means it failed.
+    // However, on success it should NEVER return.
+    unreachable!()
+}

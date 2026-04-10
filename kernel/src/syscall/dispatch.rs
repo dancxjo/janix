@@ -46,6 +46,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_VM_ADVISE => handlers::sys_vm_advise(args[0]),
         SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
+        SYS_TASK_EXEC => handlers::sys_task_exec(
+            args[0] as u32,
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+        ),
 
         SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
         SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),

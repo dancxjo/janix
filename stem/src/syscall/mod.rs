@@ -215,6 +215,37 @@ pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> 
     abi::errors::errno(ret).map(|v| v as u64)
 }
 
+/// Replace the current process image with a new executable from the given FD.
+/// PID and file descriptors are preserved.
+pub fn task_exec(fd: u32, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(), Errno> {
+    let argv_blob = serialize_argv(argv);
+    let env_blob = serialize_env(env);
+
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_TASK_EXEC,
+            fd as usize,
+            argv_blob.as_ptr() as usize,
+            argv_blob.len(),
+            env_blob.as_ptr() as usize,
+            env_blob.len(),
+            0,
+        )
+    };
+
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Higher-level POSIX-friendly execve. Opens the path and calls task_exec.
+pub fn execve(path: &str, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(), Errno> {
+    let fd = vfs_open(path, abi::syscall::vfs_flags::O_RDONLY)?;
+    let res = task_exec(fd, argv, env);
+    if res.is_err() {
+        let _ = vfs_close(fd);
+    }
+    res
+}
+
 pub fn spawn_process_ex(
     name: &str,
     argv: &[&[u8]],

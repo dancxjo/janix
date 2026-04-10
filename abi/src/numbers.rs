@@ -20,6 +20,7 @@ pub const SYS_TASK_DUMP: u32 = 0x1009;
 pub const SYS_TASK_POLL: u32 = 0x100A;
 pub const SYS_YIELD: u32 = 0x100B;
 pub const SYS_SET_PRIORITY: u32 = 0x100C;
+pub const SYS_TASK_EXEC: u32 = 0x100D;
 
 // ============================================================================
 // Process Environment (0x1100)

@@ -33,7 +33,7 @@ pub use hooks::{
     set_priority_current, sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_status_current, task_wait_current,
     unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
-    current_task_name_current,
+    current_task_name_current, task_exec_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -288,6 +288,7 @@ pub fn init<R: BootRuntime>() {
             hooks::UNREGISTER_TIMEOUT_WAKE_HOOK = Some(unregister_timeout_wake::<R>);
             hooks::LIST_PROCESSES_HOOK = Some(list_processes::<R>);
             hooks::CURRENT_TASK_NAME_HOOK = Some(current_task_name_impl::<R>);
+            hooks::TASK_EXEC_HOOK = Some(crate::task::exec::task_exec_current::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();

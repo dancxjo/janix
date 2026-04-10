@@ -1,5 +1,6 @@
 pub mod loader;
 pub mod registry;
+pub mod exec;
 use crate::sched as scheduler;
 
 pub use crate::sched::Scheduler;

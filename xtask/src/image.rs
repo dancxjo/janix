@@ -226,6 +226,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "test_exec",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

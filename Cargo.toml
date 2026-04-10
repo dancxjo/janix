@@ -62,6 +62,7 @@ members = [
     "userspace/bloom",
     "userspace/loglevel",
     "userspace/poll_mux",
+    "userspace/test_exec",
 ]
 
 # Exclude wasm32 theme crates (different target)

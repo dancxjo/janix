@@ -498,4 +498,44 @@ pub fn vfs_readlink(path: &str, buf: &mut [u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret).map(|v| v as usize)
+// ── Terminal I/O control (termios) ────────────────────────────────────────────
+
+/// Query the termios settings for the terminal device on `fd`.
+///
+/// On success the current [`abi::termios::Termios`] is written into `termios`
+/// and `Ok(())` is returned.  If `fd` is not a terminal device the kernel
+/// returns [`abi::errors::Errno::ENOSYS`].
+///
+/// Equivalent to POSIX `tcgetattr(fd, termios)`.
+pub fn tcgetattr(fd: u32, termios: &mut abi::termios::Termios) -> SysResult<()> {
+    let size = core::mem::size_of::<abi::termios::Termios>();
+    let call = abi::device::DeviceCall {
+        kind: abi::device::DeviceKind::Terminal,
+        op: abi::termios::TERMINAL_OP_TCGETS,
+        in_ptr: 0,
+        in_len: 0,
+        out_ptr: termios as *mut abi::termios::Termios as u64,
+        out_len: size as u32,
+    };
+    vfs_device_call_raw(fd, &call).map(|_| ())
+}
+
+/// Set the termios settings for the terminal device on `fd`.
+///
+/// The new settings are applied immediately (equivalent to `TCSANOW`).
+/// Returns `Ok(())` on success; [`abi::errors::Errno::ENOSYS`] if `fd` is not
+/// a terminal device.
+///
+/// Equivalent to POSIX `tcsetattr(fd, TCSANOW, termios)`.
+pub fn tcsetattr(fd: u32, termios: &abi::termios::Termios) -> SysResult<()> {
+    let size = core::mem::size_of::<abi::termios::Termios>();
+    let call = abi::device::DeviceCall {
+        kind: abi::device::DeviceKind::Terminal,
+        op: abi::termios::TERMINAL_OP_TCSETS,
+        in_ptr: termios as *const abi::termios::Termios as u64,
+        in_len: size as u32,
+        out_ptr: 0,
+        out_len: 0,
+    };
+    vfs_device_call_raw(fd, &call).map(|_| ())
 }

@@ -519,4 +519,22 @@ mod tests {
         let n = node.read(0, &mut buf).unwrap();
         assert_eq!(n, 0);
     }
+
+    #[test]
+    fn test_vfs_node_sync_default_is_ok_for_file_like_nodes() {
+        let node = MemNode {
+            data: vec![1, 2, 3],
+            mode: VfsStat::S_IFREG | 0o644,
+        };
+        assert_eq!(node.sync(), Ok(()));
+    }
+
+    #[test]
+    fn test_vfs_node_sync_default_is_ok_for_dir_like_nodes() {
+        let node = MemNode {
+            data: vec![],
+            mode: VfsStat::S_IFDIR | 0o755,
+        };
+        assert_eq!(node.sync(), Ok(()));
+    }
 }

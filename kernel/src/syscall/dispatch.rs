@@ -113,6 +113,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_REALPATH => {
             handlers::vfs::sys_fs_realpath(args[0], args[1], args[2], args[3])
         }
+        SYS_FS_SYNC => handlers::vfs::sys_fs_sync(args[0]),
 
         _ => Err(abi::errors::Errno::ENOSYS),
     };

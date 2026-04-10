@@ -196,6 +196,15 @@ pub trait VfsNode: Send + Sync {
         Err(abi::errors::Errno::ENOSYS)
     }
 
+    /// Flush any pending writes to the backing store.
+    ///
+    /// For RAM-backed filesystems this is a no-op that always succeeds.
+    /// Drivers with real backing storage should override this to drain their
+    /// write buffers and ensure durability.
+    fn sync(&self) -> SysResult<()> {
+        Ok(())
+    }
+
     /// Add a task to the wait queue for this node.
     fn add_waiter(&self, _tid: u64) {}
 

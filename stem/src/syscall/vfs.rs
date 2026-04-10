@@ -9,9 +9,8 @@ use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
-    SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
-    SYS_FS_DEVICE_CALL, SYS_FS_CHDIR, SYS_FS_GETCWD, SYS_FD_FROM_HANDLE, SYS_FS_NOTIFY,
-    SYS_FS_REALPATH,
+    SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
+    SYS_FS_WRITE, SYS_FS_REALPATH, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -421,4 +420,13 @@ pub fn vfs_realpath(path: &str, buf: &mut [u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret).map(|v| v as usize)
+}
+
+/// Flush all pending writes on `fd` to the backing store (fsync).
+///
+/// For RAM-backed filesystems this is a no-op that always succeeds.
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_fsync(fd: u32) -> SysResult<()> {
+    let ret = unsafe { raw_syscall6(SYS_FS_SYNC, fd as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
 }

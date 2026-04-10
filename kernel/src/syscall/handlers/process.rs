@@ -60,6 +60,13 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         return Err(Errno::EINVAL);
     }
 
+    // Reject thread creation while an exec is in progress for this process.
+    if let Some(pinfo) = crate::sched::process_info_current() {
+        if pinfo.lock().exec_in_progress {
+            return Err(Errno::EAGAIN);
+        }
+    }
+
     let current_p = unsafe { crate::sched::current_priority_current() };
 
     let tid = unsafe {

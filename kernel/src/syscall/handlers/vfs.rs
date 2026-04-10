@@ -1147,6 +1147,7 @@ mod tests {
             namespace: crate::vfs::NamespaceRef::global(),
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![1],
+            exec_in_progress: false,
         }))
     }
 

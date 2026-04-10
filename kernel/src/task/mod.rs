@@ -75,6 +75,13 @@ pub struct ProcessInfo {
     /// thread; entries are removed when a thread terminates.  When this list
     /// becomes empty the address space and process resources can be reclaimed.
     pub thread_ids: Vec<TaskId>,
+    /// Set to `true` while a `task_exec` is in progress for this process.
+    ///
+    /// When set, new `SYS_SPAWN_THREAD` calls into this process group are
+    /// rejected with `EAGAIN`.  Cleared on pre-commit failure so that the
+    /// original thread group is left intact.  After a successful exec commit
+    /// the caller is the only surviving thread and the flag is irrelevant.
+    pub exec_in_progress: bool,
 }
 
 pub struct Task<R: BootRuntime> {

@@ -11,7 +11,7 @@ use abi::driver_frame::FrameReader;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::info;
+use stem::{info, warn};
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
 use stem::syscall::{channel_create, channel_recv, channel_send, ChannelHandle, vfs_mount};
 use virtio_gpu::{Rect, VirtioGpu};

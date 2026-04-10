@@ -115,8 +115,10 @@ pub fn vfs_seek(fd: u32, offset: i64, whence: u32) -> SysResult<u64> {
 
 /// Stat an open file descriptor.
 ///
-/// Returns a [`abi::fs::FileStat`] containing mode, size, inode, and the
-/// three standard timestamps (`atime`, `mtime`, `ctime`).
+/// Returns a [`abi::fs::FileStat`] containing mode, size, inode, ownership
+/// (`uid`/`gid`), link count (`nlink`), device number (`rdev`), block
+/// accounting (`blksize`/`blocks`), and the three standard timestamps
+/// (`atime`, `mtime`, `ctime`).
 pub fn vfs_stat(fd: u32) -> SysResult<abi::fs::FileStat> {
     let mut stat = abi::fs::FileStat::default();
     let ret = unsafe {
@@ -498,6 +500,8 @@ pub fn vfs_readlink(path: &str, buf: &mut [u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret).map(|v| v as usize)
+}
+
 // ── Terminal I/O control (termios) ────────────────────────────────────────────
 
 /// Query the termios settings for the terminal device on `fd`.

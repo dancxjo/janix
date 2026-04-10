@@ -120,6 +120,13 @@ impl OpenFlags {
 /// - `mtime`: updated when file contents change (write, truncate).
 /// - `ctime`: updated when file content or metadata changes.
 /// - Synthetic/virtual nodes return zero (epoch) timestamps.
+///
+/// # Ownership and extended metadata
+/// - `uid`/`gid`: owner IDs (0 = root for kernel-managed synthetic nodes).
+/// - `nlink`: hard-link count (1 for files/devices; ≥ 2 for directories).
+/// - `rdev`: device number `(major << 8) | minor` for char/block nodes; 0 otherwise.
+/// - `blksize`: preferred I/O block size in bytes (0 → defaults to 4096).
+/// - `blocks`: 512-byte block count (0 → caller may derive from `size`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VfsStat {
     /// File type and permissions bitmask (same encoding as POSIX st_mode).
@@ -128,6 +135,19 @@ pub struct VfsStat {
     pub size: u64,
     /// Inode-like unique identifier within the filesystem.
     pub ino: u64,
+    /// Hard-link count (1 for files/device nodes; ≥ 2 for directories).
+    pub nlink: u32,
+    /// Owner user ID (0 = root for kernel/synthetic nodes).
+    pub uid: u32,
+    /// Owner group ID (0 = root for kernel/synthetic nodes).
+    pub gid: u32,
+    /// Device number for character/block device nodes (`(major << 8) | minor`);
+    /// 0 for regular files and directories.
+    pub rdev: u64,
+    /// Preferred I/O block size in bytes (0 means caller should default to 4096).
+    pub blksize: u32,
+    /// Number of 512-byte blocks allocated.
+    pub blocks: u64,
     /// Last access time — seconds since Unix epoch.
     pub atime_sec: u64,
     /// Last access time — nanosecond component (0–999_999_999).
@@ -151,6 +171,15 @@ impl VfsStat {
     /// Symbolic link.
     pub const S_IFLNK: u32 = 0o120000;
 
+    /// Encode a major/minor device number pair into a single `rdev` value.
+    ///
+    /// Uses the simplified Linux encoding: `(major << 8) | (minor & 0xFF)`.
+    /// Sufficient for the small set of built-in devices in janix.
+    #[inline]
+    pub const fn makedev(major: u32, minor: u32) -> u64 {
+        ((major as u64) << 8) | ((minor as u64) & 0xFF)
+    }
+
     pub fn is_dir(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFDIR
     }
@@ -170,14 +199,27 @@ impl VfsStat {
     /// Convert this kernel-internal stat into the ABI-stable [`abi::fs::FileStat`]
     /// suitable for copying to userspace.
     pub fn to_abi_stat(self) -> abi::fs::FileStat {
+        // Derive blksize/blocks when the node hasn't set them explicitly.
+        let blksize = if self.blksize == 0 { 4096 } else { self.blksize };
+        let blocks = if self.blocks == 0 && self.size > 0 {
+            (self.size + 511) / 512
+        } else {
+            self.blocks
+        };
         abi::fs::FileStat {
             mode: self.mode,
-            _mode_pad: 0,
+            nlink: self.nlink,
             size: self.size,
             ino: self.ino,
             atime: abi::fs::Timespec::new(self.atime_sec, self.atime_nsec),
             mtime: abi::fs::Timespec::new(self.mtime_sec, self.mtime_nsec),
             ctime: abi::fs::Timespec::new(self.ctime_sec, self.ctime_nsec),
+            uid: self.uid,
+            gid: self.gid,
+            rdev: self.rdev,
+            blksize,
+            _blksize_pad: 0,
+            blocks,
         }
     }
 }
@@ -649,5 +691,88 @@ mod tests {
             mode: VfsStat::S_IFDIR | 0o755,
         };
         assert_eq!(node.sync(), Ok(()));
+    }
+
+    #[test]
+    fn test_makedev_encodes_major_and_minor() {
+        assert_eq!(VfsStat::makedev(1, 3), 0x0103);
+        assert_eq!(VfsStat::makedev(29, 0), 0x1D00);
+        assert_eq!(VfsStat::makedev(5, 1), 0x0501);
+    }
+
+    #[test]
+    fn test_to_abi_stat_propagates_ownership_and_rdev() {
+        let stat = VfsStat {
+            mode: VfsStat::S_IFCHR | 0o666,
+            size: 0,
+            ino: 42,
+            nlink: 1,
+            uid: 1000,
+            gid: 100,
+            rdev: VfsStat::makedev(1, 3),
+            ..Default::default()
+        };
+        let abi = stat.to_abi_stat();
+        assert_eq!(abi.mode, VfsStat::S_IFCHR | 0o666);
+        assert_eq!(abi.nlink, 1);
+        assert_eq!(abi.uid, 1000);
+        assert_eq!(abi.gid, 100);
+        assert_eq!(abi.rdev, VfsStat::makedev(1, 3));
+        assert_eq!(abi.ino, 42);
+    }
+
+    #[test]
+    fn test_to_abi_stat_derives_blocks_from_size() {
+        let stat = VfsStat {
+            mode: VfsStat::S_IFREG | 0o644,
+            size: 1024,
+            ino: 1,
+            nlink: 1,
+            ..Default::default()
+        };
+        let abi = stat.to_abi_stat();
+        // 1024 bytes → 2 × 512-byte blocks
+        assert_eq!(abi.blocks, 2);
+        assert_eq!(abi.blksize, 4096);
+    }
+
+    #[test]
+    fn test_to_abi_stat_partial_block_rounds_up() {
+        let stat = VfsStat {
+            mode: VfsStat::S_IFREG | 0o644,
+            size: 513,
+            ino: 1,
+            nlink: 1,
+            ..Default::default()
+        };
+        let abi = stat.to_abi_stat();
+        // 513 bytes → ceil(513/512) = 2 blocks
+        assert_eq!(abi.blocks, 2);
+    }
+
+    #[test]
+    fn test_to_abi_stat_empty_file_has_zero_blocks() {
+        let stat = VfsStat {
+            mode: VfsStat::S_IFREG | 0o644,
+            size: 0,
+            ino: 1,
+            nlink: 1,
+            ..Default::default()
+        };
+        let abi = stat.to_abi_stat();
+        assert_eq!(abi.blocks, 0);
+    }
+
+    #[test]
+    fn test_dir_stat_has_nlink_at_least_two() {
+        let stat = VfsStat {
+            mode: VfsStat::S_IFDIR | 0o755,
+            size: 0,
+            ino: 10,
+            nlink: 2,
+            ..Default::default()
+        };
+        let abi = stat.to_abi_stat();
+        assert!(abi.nlink >= 2, "directory nlink must be >= 2, got {}", abi.nlink);
     }
 }

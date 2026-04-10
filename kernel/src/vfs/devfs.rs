@@ -176,6 +176,7 @@ impl VfsNode for DevSubDirNode {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 101, // arbitrary
+            nlink: 2,
             ..Default::default()
         })
     }
@@ -213,6 +214,7 @@ impl VfsNode for DevDirNode {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 100,
+            nlink: 2,
             ..Default::default()
         })
     }
@@ -430,6 +432,8 @@ impl VfsNode for ConsoleNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 1,
+            nlink: 1,
+            rdev: VfsStat::makedev(5, 1),
             ..Default::default()
         })
     }
@@ -521,6 +525,8 @@ impl VfsNode for NullNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 2,
+            nlink: 1,
+            rdev: VfsStat::makedev(1, 3),
             ..Default::default()
         })
     }
@@ -547,6 +553,8 @@ impl VfsNode for ZeroNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 3,
+            nlink: 1,
+            rdev: VfsStat::makedev(1, 5),
             ..Default::default()
         })
     }
@@ -636,6 +644,8 @@ impl VfsNode for FbNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: FB_INFO_PAYLOAD_SIZE as u64,
             ino: 4,
+            nlink: 1,
+            rdev: VfsStat::makedev(29, 0),
             ..Default::default()
         })
     }
@@ -683,6 +693,8 @@ impl VfsNode for RtcNode {
             mode: VfsStat::S_IFCHR | 0o444,
             size: 0,
             ino: 5,
+            nlink: 1,
+            rdev: VfsStat::makedev(254, 0),
             ..Default::default()
         })
     }
@@ -719,6 +731,8 @@ impl VfsNode for RandomNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 6,
+            nlink: 1,
+            rdev: VfsStat::makedev(1, 8),
             ..Default::default()
         })
     }
@@ -765,6 +779,8 @@ impl VfsNode for UrandomNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 7,
+            nlink: 1,
+            rdev: VfsStat::makedev(1, 9),
             ..Default::default()
         })
     }
@@ -1161,5 +1177,64 @@ mod tests {
 
         // Restore.
         ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+    }
+
+    // ── Ownership / rdev / nlink metadata tests ──────────────────────────────
+
+    #[test]
+    fn test_null_stat_has_rdev_and_nlink() {
+        let st = NullNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(1, 3));
+        assert_eq!(st.uid, 0);
+        assert_eq!(st.gid, 0);
+    }
+
+    #[test]
+    fn test_zero_stat_has_rdev_and_nlink() {
+        let st = ZeroNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(1, 5));
+    }
+
+    #[test]
+    fn test_console_stat_has_rdev_and_nlink() {
+        let st = ConsoleNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(5, 1));
+    }
+
+    #[test]
+    fn test_rtc_stat_has_rdev_and_nlink() {
+        let st = RtcNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(254, 0));
+    }
+
+    #[test]
+    fn test_random_stat_has_rdev_and_nlink() {
+        let st = RandomNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(1, 8));
+    }
+
+    #[test]
+    fn test_urandom_stat_has_rdev_and_nlink() {
+        let st = UrandomNode.stat().unwrap();
+        assert!(st.is_chr());
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.rdev, VfsStat::makedev(1, 9));
+    }
+
+    #[test]
+    fn test_dev_dir_stat_has_nlink_two() {
+        let st = DevDirNode.stat().unwrap();
+        assert!(st.is_dir());
+        assert!(st.nlink >= 2, "dev dir nlink should be >= 2, got {}", st.nlink);
     }
 }

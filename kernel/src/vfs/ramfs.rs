@@ -204,36 +204,48 @@ impl VfsNode for RamfsNode {
         match &*self.0 {
             RamfsEntry::File(inner, ino) => {
                 let lock = inner.lock();
+                let size = lock.data.len() as u64;
                 Ok(VfsStat {
                     mode: VfsStat::S_IFREG | 0o644,
-                    size: lock.data.len() as u64,
+                    size,
                     ino: *ino,
+                    nlink: 1,
                     atime_sec: lock.atime.0,
                     atime_nsec: lock.atime.1,
                     mtime_sec: lock.mtime.0,
                     mtime_nsec: lock.mtime.1,
                     ctime_sec: lock.ctime.0,
                     ctime_nsec: lock.ctime.1,
+                    ..Default::default()
                 })
             }
             RamfsEntry::Dir(inner, ino) => {
                 let lock = inner.lock();
+                // nlink = 2 (self + parent) + number of subdirectory children.
+                let subdir_count = lock
+                    .children
+                    .values()
+                    .filter(|e| matches!(***e, RamfsEntry::Dir(_, _)))
+                    .count() as u32;
                 Ok(VfsStat {
                     mode: VfsStat::S_IFDIR | 0o755,
                     size: 0,
                     ino: *ino,
+                    nlink: 2 + subdir_count,
                     atime_sec: lock.atime.0,
                     atime_nsec: lock.atime.1,
                     mtime_sec: lock.mtime.0,
                     mtime_nsec: lock.mtime.1,
                     ctime_sec: lock.ctime.0,
                     ctime_nsec: lock.ctime.1,
+                    ..Default::default()
                 })
             }
             RamfsEntry::Symlink(target, ino) => Ok(VfsStat {
                 mode: VfsStat::S_IFLNK | 0o777,
                 size: target.len() as u64,
                 ino: *ino,
+                nlink: 1,
                 ..Default::default()
             }),
         }
@@ -893,5 +905,46 @@ mod tests {
         let node = fs.lookup("sub/link_in_sub").unwrap();
         assert!(node.stat().unwrap().is_symlink());
         assert_eq!(node.readlink().unwrap(), "/other");
+    }
+
+    #[test]
+    fn test_file_stat_has_nlink_one_and_zero_uid_gid() {
+        let fs = RamFs::new();
+        fs.create_file("owned.txt", b"hello".to_vec()).unwrap();
+        let node = fs.lookup("owned.txt").unwrap();
+        let st = node.stat().unwrap();
+        assert_eq!(st.nlink, 1);
+        assert_eq!(st.uid, 0);
+        assert_eq!(st.gid, 0);
+        assert_eq!(st.rdev, 0);
+    }
+
+    #[test]
+    fn test_dir_stat_has_nlink_at_least_two() {
+        let fs = RamFs::new();
+        let root = fs.lookup("").unwrap();
+        let st = root.stat().unwrap();
+        assert!(st.nlink >= 2, "directory nlink should be >= 2, got {}", st.nlink);
+        assert_eq!(st.uid, 0);
+        assert_eq!(st.gid, 0);
+    }
+
+    #[test]
+    fn test_dir_nlink_increases_with_subdirs() {
+        let fs = RamFs::new();
+        let root_before = fs.lookup("").unwrap().stat().unwrap().nlink;
+        fs.mkdir("sub1").unwrap();
+        fs.mkdir("sub2").unwrap();
+        let root_after = fs.lookup("").unwrap().stat().unwrap().nlink;
+        assert_eq!(root_after, root_before + 2);
+    }
+
+    #[test]
+    fn test_symlink_stat_has_nlink_one() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target", "lnk3").unwrap();
+        let node = fs.lookup("lnk3").unwrap();
+        let st = node.stat().unwrap();
+        assert_eq!(st.nlink, 1);
     }
 }

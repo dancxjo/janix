@@ -98,12 +98,14 @@ impl VfsNode for MemFdNode {
             mode: VfsStat::S_IFREG | 0o666,
             size: inner.size as u64,
             ino: inner.phys_base, // Use phys_base as unique ino for now
+            nlink: 1,
             atime_sec: inner.atime.0,
             atime_nsec: inner.atime.1,
             mtime_sec: inner.mtime.0,
             mtime_nsec: inner.mtime.1,
             ctime_sec: inner.ctime.0,
             ctime_nsec: inner.ctime.1,
+            ..Default::default()
         })
     }
 

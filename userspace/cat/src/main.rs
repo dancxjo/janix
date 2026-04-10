@@ -2,9 +2,9 @@
 #![no_main]
 
 extern crate alloc;
-use stem::abi::syscall::vfs_flags;
 use alloc::string::String;
 use alloc::vec::Vec;
+use stem::abi::syscall::vfs_flags;
 use stem::syscall::{argv_get, vfs_close, vfs_open, vfs_read, vfs_write};
 
 fn get_args() -> Vec<String> {

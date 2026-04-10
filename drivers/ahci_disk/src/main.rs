@@ -201,7 +201,6 @@ fn start_port(hba_base: u64, port: u32) {
     mmio_write32(pb, PORT_CMD, cmd);
 }
 
-
 // -----------------------------------------------------------------------------
 // ATAPI Block Device Implementation
 // -----------------------------------------------------------------------------
@@ -376,10 +375,13 @@ fn register_disk(port: &mut AhciPort) {
     port.read_port_handle = Some(read_handle);
 
     // Publish to VFS
-    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
     let _ = vfs_mkdir("/services/storage");
     let name = alloc::format!("/services/storage/ahci{}", port.port_num);
-    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+    if let Ok(fd) = vfs_open(
+        &name,
+        abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR,
+    ) {
         let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
         let _ = vfs_close(fd);
     }
@@ -390,11 +392,7 @@ fn register_disk(port: &mut AhciPort) {
 
     info!(
         "AHCI: Registered block device port={} sectors={} lba48={} model='{}' rpc_port={}",
-        port.port_num,
-        port.sector_count,
-        port.supports_lba48,
-        model_str,
-        write_handle
+        port.port_num, port.sector_count, port.supports_lba48, model_str, write_handle
     );
 }
 
@@ -410,10 +408,13 @@ fn register_atapi_disk(port: &mut AhciPort) {
     port.read_port_handle = Some(read_handle);
 
     // Publish to VFS
-    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
     let _ = vfs_mkdir("/services/storage");
     let name = alloc::format!("/services/storage/atapi{}", port.port_num);
-    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+    if let Ok(fd) = vfs_open(
+        &name,
+        abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR,
+    ) {
         let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
         let _ = vfs_close(fd);
     }
@@ -424,9 +425,7 @@ fn register_atapi_disk(port: &mut AhciPort) {
 
     debug!(
         "AHCI: Registered ATAPI block device port={} model='{}' rpc_port={}",
-        port.port_num,
-        model_str,
-        write_handle
+        port.port_num, model_str, write_handle
     );
 }
 
@@ -443,10 +442,13 @@ fn main(boot_fd: usize) -> ! {
                 let count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
                 if count >= 2 {
                     let mut offset = 4;
-                    let arg0_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                    let arg0_len =
+                        u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap()) as usize;
                     offset += 4 + arg0_len;
                     if offset + 4 <= buf.len() {
-                        let arg1_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                        let arg1_len =
+                            u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
+                                as usize;
                         offset += 4;
                         if offset + arg1_len <= buf.len() {
                             if let Ok(s) = core::str::from_utf8(&buf[offset..offset + arg1_len]) {
@@ -463,17 +465,22 @@ fn main(boot_fd: usize) -> ! {
 
     let mut path_buf = [0u8; 128];
     let path = if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
             prot: VmProt::READ | VmProt::USER,
             flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            backing: VmBacking::File {
+                fd: boot_fd as u32,
+                offset: 0,
+            },
         };
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *const u8;
-            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            let len = (0..128)
+                .find(|&i| unsafe { *ptr.add(i) == 0 })
+                .unwrap_or(128);
             unsafe { core::slice::from_raw_parts(ptr, len) }
         } else {
             b"/sys/devices/pci-0000:00:1f.2" // Default to QEMU AHCI (q35)
@@ -497,7 +504,9 @@ fn main(boot_fd: usize) -> ! {
 
     if pci_handle == 0 {
         error!("AHCI: Failed to find controller info at '{}'", path_str);
-        loop { stem::sleep(Duration::from_secs(60)); }
+        loop {
+            stem::sleep(Duration::from_secs(60));
+        }
     }
 
     let claim_handle = match stem::syscall::device_claim(pci_handle) {
@@ -507,7 +516,9 @@ fn main(boot_fd: usize) -> ! {
         }
         Err(e) => {
             error!("AHCI: Failed to claim: {:?}", e);
-            loop { stem::sleep(Duration::from_secs(60)); }
+            loop {
+                stem::sleep(Duration::from_secs(60));
+            }
         }
     };
 
@@ -878,8 +889,8 @@ fn send_error_response(port_handle: ChannelHandle, error_code: BlockDeviceError)
 }
 
 fn find_ahci_device() -> Option<u64> {
-    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close};
     use abi::syscall::vfs_flags;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
         Ok(fd) => fd,
@@ -935,7 +946,11 @@ fn read_sys_string(path: &str) -> Option<alloc::string::String> {
     let n = vfs_read(fd, &mut buf).ok()?;
     let _ = vfs_close(fd);
 
-    Some(alloc::string::String::from_utf8_lossy(&buf[..n]).trim().to_string())
+    Some(
+        alloc::string::String::from_utf8_lossy(&buf[..n])
+            .trim()
+            .to_string(),
+    )
 }
 
 fn read_sys_u64(path: &str) -> Option<u64> {

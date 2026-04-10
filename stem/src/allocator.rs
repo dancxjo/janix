@@ -23,11 +23,17 @@ impl VmHeapAllocator {
     }
 }
 
-#[cfg(all(not(test), any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))))]
+#[cfg(all(
+    not(test),
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
+))]
 #[global_allocator]
 static ALLOCATOR: VmHeapAllocator = VmHeapAllocator::new();
 
-#[cfg(not(all(not(test), any(target_os = "none", any(target_os = "thingos", target_env = "thingos")))))]
+#[cfg(not(all(
+    not(test),
+    any(target_os = "none", any(target_os = "thingos", target_env = "thingos"))
+)))]
 static ALLOCATOR: VmHeapAllocator = VmHeapAllocator::new();
 
 pub(crate) fn init_heap(heap_start: usize, heap_size: usize) {

@@ -387,7 +387,10 @@ pub fn build_iso_with_config(
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
-    sh.copy_file("assets/fonts/unifont.hex", iso_root.join("share/fonts/unifont.hex"))?;
+    sh.copy_file(
+        "assets/fonts/unifont.hex",
+        iso_root.join("share/fonts/unifont.hex"),
+    )?;
 
     sh.write_file(
         iso_root.join("etc/locale.conf"),
@@ -421,7 +424,10 @@ pub fn build_iso_with_config(
     }
 
     let limine_conf_content = generate_limine_config(sh, programs, &asset_files, config.resolution);
-    println!("--- DEBUG: Generated limine.conf ---\n{}\n--- END DEBUG ---", limine_conf_content);
+    println!(
+        "--- DEBUG: Generated limine.conf ---\n{}\n--- END DEBUG ---",
+        limine_conf_content
+    );
     sh.write_file(
         iso_root.join("boot/limine/limine.conf"),
         limine_conf_content,

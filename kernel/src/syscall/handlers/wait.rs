@@ -645,8 +645,8 @@ mod tests {
 
         // Stash the pipe read node in a temporary FdTable so we can look it
         // up through the Fd WaitKind path.
-        use crate::vfs::fd_table::FdTable;
         use crate::vfs::OpenFlags;
+        use crate::vfs::fd_table::FdTable;
         let mut table = FdTable::new();
         table
             .insert_at(0, read_node, OpenFlags::read_only(), "/pipe/read".into())
@@ -666,8 +666,11 @@ mod tests {
         // Poll the Fd spec directly against the node from the table.
         let node = table.get(0).expect("get fd").node.clone();
         let fd_ready_flags = node.poll();
-        assert_ne!(fd_ready_flags & abi::syscall::poll_flags::POLLIN, 0,
-            "pipe read-end should be POLLIN-ready after write");
+        assert_ne!(
+            fd_ready_flags & abi::syscall::poll_flags::POLLIN,
+            0,
+            "pipe read-end should be POLLIN-ready after write"
+        );
         // Keep write_node alive until after the assertion so POLLHUP is not set.
         let _ = write_node;
     }

@@ -2,8 +2,8 @@
 //!
 //! Aligned with the "Broker of Buffers" architectural model.
 
-use crate::pixel::PixelFormat;
 use crate::display_protocol::Rect;
+use crate::pixel::PixelFormat;
 
 /// Opaque handle for a persistent imported buffer in the driver.
 #[repr(transparent)]
@@ -122,7 +122,12 @@ impl CommitRequest {
         if self.commit_count == 0 || self.commits_ptr == 0 {
             &[]
         } else {
-            unsafe { core::slice::from_raw_parts(self.commits_ptr as *const PlaneCommit, self.commit_count as usize) }
+            unsafe {
+                core::slice::from_raw_parts(
+                    self.commits_ptr as *const PlaneCommit,
+                    self.commit_count as usize,
+                )
+            }
         }
     }
 }

@@ -3,7 +3,6 @@ extern crate alloc;
 extern crate self as abi;
 
 pub mod block_device_protocol;
-pub mod fs;
 pub mod debug;
 pub mod device;
 pub mod display;
@@ -13,8 +12,10 @@ pub mod drawlist;
 pub mod driver_ctx;
 pub mod driver_frame;
 pub mod errors;
+pub mod fs;
 pub mod geometry;
 pub mod ids;
+pub mod memfd;
 pub mod module;
 pub mod module_manifest;
 pub mod schema;
@@ -28,7 +29,6 @@ pub mod tree_provider;
 pub mod types;
 pub mod ui_event;
 pub mod ui_paint;
-pub mod memfd;
 pub mod vm;
 pub mod wait;
 
@@ -37,8 +37,8 @@ pub mod font_protocol;
 pub mod hid;
 pub mod logging;
 pub mod pixel;
-pub mod svg_protocol;
 pub mod sound;
+pub mod svg_protocol;
 
 pub mod macros;
 pub mod packed;

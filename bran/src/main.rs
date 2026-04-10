@@ -37,7 +37,7 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     indicate_progress();
-    
+
     kernel::start(&RUNTIME);
 }
 

@@ -23,8 +23,8 @@ use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
 use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
-use stem::syscall::{channel_send, ChannelHandle};
 use stem::info;
+use stem::syscall::{channel_send, ChannelHandle};
 
 use crate::driver::VirtioNetDriver;
 
@@ -411,7 +411,10 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
             }
         }
         HANDLE_EVENTS => {
-            info!("VIRTIO_NETD: read events queued={}", state.events_queue.len());
+            info!(
+                "VIRTIO_NETD: read events queued={}",
+                state.events_queue.len()
+            );
             // Return one newline-terminated event, or empty if none queued.
             if let Some(event) = state.events_queue.pop_front() {
                 send_ok_data(resp_port, &event);

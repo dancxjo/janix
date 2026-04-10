@@ -11,6 +11,14 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 const KERNEL_STACK_SIZE: usize = 65536;
 
+fn boot_module_matches(name: &str, module_name: &str) -> bool {
+    if module_name == name {
+        return true;
+    }
+
+    module_name.rsplit('/').next().unwrap_or(module_name) == name.rsplit('/').next().unwrap_or(name)
+}
+
 fn current_parent_pid<R: BootRuntime>(sched: &Scheduler<R>) -> u32 {
     let cpu_idx = super::current_cpu_index::<R>();
     sched
@@ -700,10 +708,9 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    let basename = name.rsplit('/').next().unwrap_or(name);
     let module = modules
         .iter()
-        .find(|m| m.name.contains(basename))
+        .find(|m| boot_module_matches(name, m.name))
         .ok_or(abi::errors::Errno::ENOENT)?;
 
     let aspace = rt.tasking().make_user_address_space();
@@ -758,7 +765,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     } else {
         crate::vfs::fd_table::FdTable::new()
     };
-    
+
     let (stdin_pipe, stdout_pipe, stderr_pipe) =
         setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
 
@@ -826,6 +833,14 @@ mod tests {
     use super::*;
     use crate::task::TaskPriority;
     use crate::{BootRuntime, BootRuntimeBase, BootTasking, UserEntry, UserTaskSpec};
+
+    #[test]
+    fn boot_module_match_requires_exact_basename() {
+        assert!(boot_module_matches("ls", "/bin/ls"));
+        assert!(boot_module_matches("/bin/ls", "/bin/ls"));
+        assert!(!boot_module_matches("ls", "/bin/smallsh"));
+        assert!(!boot_module_matches("/bin/ls", "/bin/smallsh"));
+    }
 
     #[derive(Clone, Copy, Default)]
     struct MockContext(usize);

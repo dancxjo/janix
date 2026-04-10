@@ -39,10 +39,10 @@ use alloc::vec::Vec;
 use iso9660::{IsoFs, ISO_SECTOR_SIZE};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
+use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir};
 use stem::syscall::{
     channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
 };
-use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir};
 use stem::{info, warn};
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -436,20 +436,23 @@ fn main(_arg: usize) -> ! {
                             if let Ok(h_n) = vfs_read(h_fd, &mut h_buf) {
                                 let h_str = core::str::from_utf8(&h_buf[..h_n]).unwrap_or("");
                                 if let Ok(port_handle) = h_str.trim().parse::<u32>() {
-                                    let block_dev = match PortBlockDevice::new(port_handle as ChannelHandle) {
-                                        Some(d) => d,
-                                        None => {
-                                            let _ = vfs_close(h_fd);
-                                            offset = end + 1;
-                                            continue;
-                                        }
-                                    };
+                                    let block_dev =
+                                        match PortBlockDevice::new(port_handle as ChannelHandle) {
+                                            Some(d) => d,
+                                            None => {
+                                                let _ = vfs_close(h_fd);
+                                                offset = end + 1;
+                                                continue;
+                                            }
+                                        };
 
                                     if let Some(fs) = IsoFs::probe(&block_dev) {
                                         info!("iso9660d: found ISO9660 on device {}", name);
 
                                         // 3. Create the provider port pair.
-                                        let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 8) {
+                                        let (req_write, req_read) = match channel_create(
+                                            VFS_RPC_MAX_REQ * 8,
+                                        ) {
                                             Ok(p) => p,
                                             Err(e) => {
                                                 warn!("iso9660d: failed to create provider port: {:?}", e);
@@ -463,7 +466,8 @@ fn main(_arg: usize) -> ! {
                                         match vfs_mount(req_write, "/mnt/iso") {
                                             Ok(()) => {
                                                 info!("iso9660d: mounted at /mnt/iso (provider port w={} r={})", req_write, req_read);
-                                                mounted = Some((fs, block_dev, req_write, req_read));
+                                                mounted =
+                                                    Some((fs, block_dev, req_write, req_read));
                                                 let _ = vfs_close(h_fd);
                                                 break;
                                             }

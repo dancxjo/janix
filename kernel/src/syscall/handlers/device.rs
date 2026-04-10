@@ -112,11 +112,20 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
 
     // Safety check: don't allow mapping more than 1GB in one go to prevent DOS/hangs
     if size > 1024 * 1024 * 1024 {
-        crate::kdebug!("DEVICE: map_mmio failed - requested size 0x{:x} exceeds 1GB safety limit", size);
+        crate::kdebug!(
+            "DEVICE: map_mmio failed - requested size 0x{:x} exceeds 1GB safety limit",
+            size
+        );
         return Err(Errno::EINVAL);
     }
 
-    crate::kdebug!("DEVICE: mapping BAR{} (phys=0x{:x}, size=0x{:x}) for task {}", bar_index, phys_addr, size, task_id);
+    crate::kdebug!(
+        "DEVICE: mapping BAR{} (phys=0x{:x}, size=0x{:x}) for task {}",
+        bar_index,
+        phys_addr,
+        size,
+        task_id
+    );
 
     let page_count = (size + 4095) / 4096;
     let user_va = crate::memory::alloc_user_va((page_count * 4096) as usize);

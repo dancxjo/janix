@@ -593,7 +593,12 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
         self.arch.translate(aspace, virt)
     }
 
-    fn protect_page(&self, aspace: Self::AddressSpace, virt: u64, perms: MapPerms) -> Result<(), ()> {
+    fn protect_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        perms: MapPerms,
+    ) -> Result<(), ()> {
         self.arch.protect_page(aspace, virt, perms)
     }
 

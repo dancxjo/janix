@@ -2,8 +2,8 @@
 #![no_main]
 
 extern crate alloc;
+use stem::syscall::{argv_get, log_set_level};
 use stem::{info, println};
-use stem::syscall::{log_set_level, argv_get};
 
 fn get_args() -> alloc::vec::Vec<alloc::string::String> {
     let mut len = 0;

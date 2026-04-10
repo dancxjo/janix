@@ -529,7 +529,9 @@ pub fn sys_task_exec(
     let argv = if argv_ptr != 0 && argv_len > 0 {
         validate_user_range(argv_ptr, argv_len, false)?;
         let mut blob = alloc::vec![0u8; argv_len];
-        unsafe { copyin(&mut blob, argv_ptr)?; }
+        unsafe {
+            copyin(&mut blob, argv_ptr)?;
+        }
         deserialize_argv(&blob)?
     } else {
         Vec::new()
@@ -539,7 +541,9 @@ pub fn sys_task_exec(
     let env = if envp_ptr != 0 && envp_len > 0 {
         validate_user_range(envp_ptr, envp_len, false)?;
         let mut blob = alloc::vec![0u8; envp_len];
-        unsafe { copyin(&mut blob, envp_ptr)?; }
+        unsafe {
+            copyin(&mut blob, envp_ptr)?;
+        }
         deserialize_env(&blob)?
     } else {
         BTreeMap::new()

@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::syscall::{vfs_close, vfs_open, vfs_readdir, vfs_read, vfs_write, exit};
+use stem::syscall::{exit, vfs_close, vfs_open, vfs_read, vfs_readdir, vfs_write};
 
 fn print(msg: &str) {
     let _ = vfs_write(1, msg.as_bytes()).ok();
@@ -63,7 +63,7 @@ fn main(_arg: usize) -> ! {
                                         ppid = line.split('\t').nth(1).unwrap_or("").trim();
                                     }
                                 }
-                                
+
                                 // Try to get cmdline for a better command name
                                 let cmdline_path = format!("/proc/{}/cmdline", name);
                                 let cmd_display = if let Some(cmdline) = read_file(&cmdline_path) {
@@ -77,7 +77,10 @@ fn main(_arg: usize) -> ! {
                                     name_val.to_string()
                                 };
 
-                                print(&format!("{:>5} {:>5} {:<4} {}\n", pid, ppid, stat, cmd_display));
+                                print(&format!(
+                                    "{:>5} {:>5} {:<4} {}\n",
+                                    pid, ppid, stat, cmd_display
+                                ));
                             }
                         }
                     }

@@ -2,9 +2,9 @@
 #![no_main]
 
 extern crate alloc;
-use stem::vm::*;
+use abi::vm::{VmMapFlags, VmProt};
 use stem::println;
-use abi::vm::{VmProt, VmMapFlags};
+use stem::vm::*;
 
 #[stem::main]
 fn main(_arg0: usize) -> ! {
@@ -54,7 +54,7 @@ fn main(_arg0: usize) -> ! {
     };
     vm_protect(&prot_req_rw).expect("vm_protect failed");
     println!("Restored middle page to RW");
-    
+
     // 6. Verify writable again
     unsafe {
         ptr.add(0x1000).write_volatile(0x45);

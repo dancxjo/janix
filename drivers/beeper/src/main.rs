@@ -23,9 +23,9 @@ fn main(_arg: usize) -> ! {
     info!("Beeper: Waiting for sound device via /services/sound/main...");
 
     while write_port_handle == 0 {
+        use abi::sound::AudioInfoPayload;
         use abi::syscall::vfs_flags::O_RDONLY;
         use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
-        use abi::sound::AudioInfoPayload;
 
         if let Ok(fd) = vfs_open("/services/sound/main", O_RDONLY) {
             let mut payload = AudioInfoPayload {
@@ -37,14 +37,22 @@ fn main(_arg: usize) -> ! {
                 bits_per_sample: 0,
             };
             let slice = unsafe {
-                core::slice::from_raw_parts_mut(&mut payload as *mut _ as *mut u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+                core::slice::from_raw_parts_mut(
+                    &mut payload as *mut _ as *mut u8,
+                    abi::sound::AUDIO_INFO_PAYLOAD_SIZE,
+                )
             };
 
             if let Ok(n) = vfs_read(fd, slice) {
-                if n == abi::sound::AUDIO_INFO_PAYLOAD_SIZE && payload.magic == AudioInfoPayload::MAGIC {
+                if n == abi::sound::AUDIO_INFO_PAYLOAD_SIZE
+                    && payload.magic == AudioInfoPayload::MAGIC
+                {
                     write_port_handle = payload.write_handle as ChannelHandle;
                     sample_rate = payload.sample_rate;
-                    info!("Beeper: Connected to sound device (rate={}Hz, handle={})", sample_rate, write_port_handle);
+                    info!(
+                        "Beeper: Connected to sound device (rate={}Hz, handle={})",
+                        sample_rate, write_port_handle
+                    );
                     let _ = vfs_close(fd);
                     break;
                 }

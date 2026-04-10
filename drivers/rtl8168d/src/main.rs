@@ -6,31 +6,39 @@ extern crate alloc;
 mod driver;
 mod protocol;
 
+use alloc::format;
 use driver::Rtl8168Driver;
 use protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_MAC_REQ, MSG_MAC_RESP};
 use stem::syscall::{channel_create, channel_recv, channel_send};
 use stem::{error, info, warn};
-use alloc::format;
 
 const KIND_NET_DRIVER: &str = "svc.net.Driver";
 
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
-    info!("RTL8168D: starting Realtek RTL8111/8168 driver (boot_fd={})", boot_fd);
+    info!(
+        "RTL8168D: starting Realtek RTL8111/8168 driver (boot_fd={})",
+        boot_fd
+    );
 
     // 1. Get device path from bootstrap memfd
     let path = if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
             prot: VmProt::READ | VmProt::USER,
             flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            backing: VmBacking::File {
+                fd: boot_fd as u32,
+                offset: 0,
+            },
         };
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *const u8;
-            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            let len = (0..128)
+                .find(|&i| unsafe { *ptr.add(i) == 0 })
+                .unwrap_or(128);
             unsafe { core::slice::from_raw_parts(ptr, len) }
         } else {
             b"/sys/devices/pci-02:01.0" // Placeholder
@@ -87,7 +95,7 @@ fn main(boot_fd: usize) -> ! {
 
     let _ = vfs_mkdir("/services/net");
     let _ = vfs_mkdir("/services/net/rtl8168");
-    
+
     if let Ok(fd) = vfs_open("/services/net/rtl8168/tx", O_CREAT | O_RDWR) {
         let _ = vfs_write(fd, format!("{}", tx_write).as_bytes());
         let _ = vfs_close(fd);

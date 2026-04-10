@@ -26,16 +26,15 @@ pub use blocking::{
 };
 pub use hooks::{
     ProcessSnapshot, add_user_mapping_current, alloc_user_stack_current,
-    check_user_mapping_current, current_priority_current, current_tid_current, dump_stats_current,
-    exit_current, get_user_mapping_at_current, graph_thing_for_current,
-    handle_user_stack_fault_current, kill_by_tid_current, list_processes_current,
-    poll_task_exit_current, process_info_current, process_info_for_tid_current,
-    register_task_exit_waiter_current, register_timeout_wake_current, remove_user_mappings_current,
-    set_priority_current, set_current_user_fs_base_current, sleep_ticks_current,
-    spawn_process_current, spawn_process_ex_current,
-    spawn_user_thread_current, task_status_current, task_wait_current,
+    check_user_mapping_current, current_priority_current, current_task_name_current,
+    current_tid_current, dump_stats_current, exit_current, get_user_mapping_at_current,
+    graph_thing_for_current, handle_user_stack_fault_current, kill_by_tid_current,
+    list_processes_current, poll_task_exit_current, process_info_current,
+    process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
+    remove_user_mappings_current, set_current_user_fs_base_current, set_priority_current,
+    sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
+    spawn_user_thread_current, task_exec_current, task_status_current, task_wait_current,
     unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
-    current_task_name_current, task_exec_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -189,12 +188,12 @@ pub fn on_tick<R: BootRuntime>() {
     };
 
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
-    
+
     // Periodically log on CPU 0 to show time is passing
     if ticks % 1000 == 0 && cpu_idx == 0 {
         crate::kdebug!("SCHED: Tick {} on CPU 0", ticks);
     }
-    
+
     try_resched_if_needed::<R>();
 }
 
@@ -223,8 +222,13 @@ fn try_resched_if_needed<R: BootRuntime>() {
                 rt.tasking().activate_address_space(switch.to_aspace);
 
                 unsafe {
-                    rt.tasking()
-                        .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
+                    rt.tasking().switch_with_tls(
+                        &mut *switch.from_ctx,
+                        &*switch.to_ctx,
+                        switch.to_tid,
+                        switch.from_user_fs_base,
+                        switch.to_user_fs_base,
+                    );
                 }
             }
         }
@@ -534,7 +538,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                             crate::task::Affinity::Any => {
                                 let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
                                 idx % self.state.online_cpu_count
-                            },
+                            }
                         };
                     } else {
                         continue;
@@ -562,7 +566,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
 
                     if actual_cpu != current_cpu_index::<R>() {
-                        crate::kdebug!("SCHED: Nudging CPU {} for task {} (prio {})", actual_cpu, tid, priority);
+                        crate::kdebug!(
+                            "SCHED: Nudging CPU {} for task {} (prio {})",
+                            actual_cpu,
+                            tid,
+                            priority
+                        );
                         crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                     }
                 }
@@ -865,7 +874,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
             let old_task = &mut **tasks_ptr.add(old_idx);
             let new_task = &mut **tasks_ptr.add(new_idx);
 
-
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
                 old_task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
@@ -928,7 +936,11 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .lock()
             .release_all_for_task(current_id);
         if released > 0 {
-            crate::kinfo!("DEVICE: released {} claims for task {}", released, current_id);
+            crate::kinfo!(
+                "DEVICE: released {} claims for task {}",
+                released,
+                current_id
+            );
         }
 
         loop {
@@ -963,8 +975,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
         );
         self.bringup_in_progress = false;
         self.state.online_cpu_count += 1;
-
-
 
         // Create idle task for this new CPU
         let i = cpu_index;
@@ -1492,8 +1502,6 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
     // The run_scheduler hook will call bootstrap_cpu to set up this CPU's
     if let Some(hook) = unsafe { hooks::RUN_SCHEDULER_HOOK } {
         hook();
-
-
     } else {
         panic!("Scheduler hook not initialized!");
     }

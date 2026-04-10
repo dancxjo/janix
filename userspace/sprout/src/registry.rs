@@ -70,7 +70,8 @@ impl Registry {
                     let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
                     if let Ok(dk_str) = core::str::from_utf8(&raw[..end]) {
                         info!("SPROUT: Registering driver '{}' -> '{}'", dk_str, mod_name);
-                        self.drivers.insert(dk_str.to_string(), mod_name.to_string());
+                        self.drivers
+                            .insert(dk_str.to_string(), mod_name.to_string());
                     }
                 }
             }
@@ -82,7 +83,8 @@ impl Registry {
                     "SPROUT: Registering driver 'dev.rtc.Cmos' -> '{}' (fallback)",
                     mod_name
                 );
-                self.drivers.insert("dev.rtc.Cmos".to_string(), mod_name.to_string());
+                self.drivers
+                    .insert("dev.rtc.Cmos".to_string(), mod_name.to_string());
             }
         }
     }

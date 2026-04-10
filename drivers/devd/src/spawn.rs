@@ -48,9 +48,9 @@ impl ManagedDriver {
         let full_path = format!("/sys/devices/{}", self.slot);
         let boot_size = 4096;
         let boot_fd = stem::syscall::memfd_create("driver.boot", boot_size).unwrap_or(0);
-        
+
         if boot_fd != 0 {
-            use stem::syscall::vfs::{vfs_write, vfs_seek};
+            use stem::syscall::vfs::{vfs_seek, vfs_write};
             let _ = vfs_write(boot_fd, full_path.as_bytes());
             let _ = vfs_write(boot_fd, &[0]); // Null terminator
             let _ = vfs_seek(boot_fd, 0, 0);
@@ -63,10 +63,7 @@ impl ManagedDriver {
         };
 
         let boot_fd_str = format!("{}", boot_fd);
-        let argv: &[&[u8]] = &[
-            driver_path.as_bytes(),
-            boot_fd_str.as_bytes(),
-        ];
+        let argv: &[&[u8]] = &[driver_path.as_bytes(), boot_fd_str.as_bytes()];
 
         let spawn_res = stem::syscall::spawn_process_ex(
             &driver_path,

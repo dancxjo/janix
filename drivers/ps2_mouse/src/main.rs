@@ -5,8 +5,8 @@
 #![feature(restricted_std)]
 #![no_main]
 
-use stem::{debug, info};
 use stem::syscall::{ChannelHandle, channel_send_all, ioport_read, ioport_write, irq_subscribe};
+use stem::{debug, info};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;

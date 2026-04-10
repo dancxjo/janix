@@ -2,9 +2,9 @@
 #![no_main]
 
 extern crate alloc;
+use alloc::collections::BTreeMap;
 use stem::println;
 use stem::syscall::{execve, getpid};
-use alloc::collections::BTreeMap;
 
 #[stem::main]
 fn main(_arg0: usize) -> ! {
@@ -13,7 +13,9 @@ fn main(_arg0: usize) -> ! {
 
     // We assume /bin/echo exists on the system.
     let path = "/bin/echo";
-    let args: &[&[u8]] = &[b"echo", b"Hello", b"from", b"execve!", b"(PID", b"should", b"be", b"the", b"same)"];
+    let args: &[&[u8]] = &[
+        b"echo", b"Hello", b"from", b"execve!", b"(PID", b"should", b"be", b"the", b"same)",
+    ];
     let env = BTreeMap::new();
 
     println!("TEST_EXEC: Executing {} with args...", path);

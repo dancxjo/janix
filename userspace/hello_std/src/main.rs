@@ -250,7 +250,10 @@ fn test_time() -> Result<(), String> {
 
     if let Err(e) = stem::syscall::time_now_raw(0) {
         if e != abi::errors::Errno::EINVAL {
-            return Err(format!("invalid clock id returned {:?}, expected EINVAL", e));
+            return Err(format!(
+                "invalid clock id returned {:?}, expected EINVAL",
+                e
+            ));
         }
     } else {
         return Err("invalid clock id unexpectedly succeeded".into());
@@ -275,7 +278,10 @@ fn test_time() -> Result<(), String> {
         .as_nanos()
         .ok_or_else(|| "second monotonic timespec was invalid".to_string())?;
     if mono1_ns < mono0_ns {
-        return Err(format!("monotonic clock moved backwards: {} -> {}", mono0_ns, mono1_ns));
+        return Err(format!(
+            "monotonic clock moved backwards: {} -> {}",
+            mono0_ns, mono1_ns
+        ));
     }
 
     let sleep_start = Instant::now();

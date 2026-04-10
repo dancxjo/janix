@@ -6,8 +6,8 @@
 use crate::pal;
 
 // Re-export the ABI types for convenience
-pub use abi::types::instant::{Duration, Instant};
 pub use abi::time::{ClockId, TimeSpec};
+pub use abi::types::instant::{Duration, Instant};
 
 /// Returns the current monotonic instant.
 ///

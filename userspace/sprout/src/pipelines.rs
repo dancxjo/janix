@@ -4,13 +4,13 @@ use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::syscall::vfs_flags::O_RDONLY;
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use spin::Mutex;
 use stem::abi::driver_ctx::DriverCtx;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::syscall::{channel_create, ChannelHandle};
 use stem::{debug, info, warn};
-use alloc::sync::Arc;
-use spin::Mutex;
 
 fn ensure_session_roots() {
     use stem::syscall::vfs::vfs_mkdir;
@@ -73,7 +73,11 @@ fn find_sys_device(class_prefix: &str) -> Option<alloc::string::String> {
                     let mut class_buf = [0u8; 16];
                     if let Ok(cn) = vfs_read(class_fd, &mut class_buf) {
                         let class_str = core::str::from_utf8(&class_buf[..cn]).unwrap_or("");
-                        debug!("SPROUT: Checked device {} class='{}'", name, class_str.trim());
+                        debug!(
+                            "SPROUT: Checked device {} class='{}'",
+                            name,
+                            class_str.trim()
+                        );
                         if class_str.trim().starts_with(class_prefix) {
                             let _ = vfs_close(class_fd);
                             return Some(alloc::format!("/sys/devices/{}", name));
@@ -230,7 +234,10 @@ pub fn setup_display_pipeline(
     supervisor_port: stem::syscall::ChannelHandle,
     bind_instance_id: u64,
 ) -> Option<DisplayHandles> {
-    debug!("SPROUT: setup_display_pipeline start (bind_id={})", bind_instance_id);
+    debug!(
+        "SPROUT: setup_display_pipeline start (bind_id={})",
+        bind_instance_id
+    );
 
     let mut display_width = 0u32;
     let mut display_height = 0u32;
@@ -252,17 +259,17 @@ pub fn setup_display_pipeline(
             display_width, display_height, display_stride
         );
     }
-        // virtio-gpu: class 0x030000, vendor 0x1af4
-        if driver_name.is_none() && has_sys_device("0x0300") {
-            display_stride = display_width * 4;
-            display_format = 1;
-            driver_name = Some("/bin/display_virtio_gpu");
-            backend_name = "VirtIO-GPU";
-            debug!(
-                "SPROUT: Using VirtIO GPU at {}x{}",
-                display_width, display_height
-            );
-        }
+    // virtio-gpu: class 0x030000, vendor 0x1af4
+    if driver_name.is_none() && has_sys_device("0x0300") {
+        display_stride = display_width * 4;
+        display_format = 1;
+        driver_name = Some("/bin/display_virtio_gpu");
+        backend_name = "VirtIO-GPU";
+        debug!(
+            "SPROUT: Using VirtIO GPU at {}x{}",
+            display_width, display_height
+        );
+    }
 
     // Fallback to BootFB already handled by probe_bootfb_vfs() at start of function
 
@@ -323,7 +330,7 @@ pub fn setup_display_pipeline(
         let boot_size = 4096;
         let boot_fd = stem::syscall::memfd_create("driver.boot", boot_size).unwrap_or(0);
         if boot_fd != 0 {
-            use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+            use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
             let req = VmMapReq {
                 addr_hint: 0,
                 len: boot_size,
@@ -336,12 +343,17 @@ pub fn setup_display_pipeline(
             };
             if let Ok(resp) = stem::syscall::vm_map(&req) {
                 let ptr = resp.addr;
-                let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
-                
-                slice[0] = drv_req.1 as u32;  // Read end of req channel
+                let slice =
+                    unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
+
+                slice[0] = drv_req.1 as u32; // Read end of req channel
                 slice[1] = drv_resp.0 as u32; // Write end of resp channel
-                slice[2] = if supervisor_port != 0 { supervisor_port } else { drv_resp.0 as u32 };
-                
+                slice[2] = if supervisor_port != 0 {
+                    supervisor_port
+                } else {
+                    drv_resp.0 as u32
+                };
+
                 let id_low = (bind_instance_id & 0xFFFF_FFFF) as u32;
                 let id_high = (bind_instance_id >> 32) as u32;
                 slice[3] = id_low;
@@ -424,7 +436,7 @@ pub fn setup_terminal(
     let boot_fd = stem::syscall::memfd_create("terminal.boot", boot_size).unwrap_or(0);
 
     if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: boot_size,
@@ -442,7 +454,10 @@ pub fn setup_terminal(
             slice[1] = display.drv_req_write as u32;
             slice[2] = display.drv_resp_read as u32;
             slice[4] = display.bs_id;
-            debug!("SPROUT: Bootstrapping terminal via memfd {}: req_w={}, resp_r={}, bs_id={}", boot_fd, slice[1], slice[2], slice[4]);
+            debug!(
+                "SPROUT: Bootstrapping terminal via memfd {}: req_w={}, resp_r={}, bs_id={}",
+                boot_fd, slice[1], slice[2], slice[4]
+            );
         }
     }
 
@@ -460,7 +475,11 @@ pub fn setup_terminal(
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: term_arg as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -547,7 +566,11 @@ pub fn setup_input_broker(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) -> InputHa
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: kbd_raw.0 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -568,7 +591,11 @@ pub fn setup_input_broker(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) -> InputHa
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: mouse_raw.0 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -594,7 +621,11 @@ pub fn setup_input_broker(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) -> InputHa
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: bristle_arg as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -609,7 +640,6 @@ pub fn setup_input_broker(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) -> InputHa
         evt_input_echo_read: evt_input_echo.1,
     }
 }
-
 
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 // Network and Audio are now handled by devd
@@ -628,7 +658,11 @@ fn spawn_netd(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -652,7 +686,11 @@ pub fn setup_network_apps(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -672,7 +710,11 @@ pub fn setup_network_apps(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -702,7 +744,12 @@ pub fn setup_flytrap_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     spawn_ui_service(shared_tasks, "/bin/flytrap", "svc.flytrap", 2);
 }
 
-fn spawn_ui_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>, name: &str, service: &str, priority: usize) {
+fn spawn_ui_service(
+    shared_tasks: Arc<Mutex<Vec<ManagedTask>>>,
+    name: &str,
+    service: &str,
+    priority: usize,
+) {
     {
         let tasks = shared_tasks.lock();
         if tasks.iter().any(|t| t.name == name && t.pid.is_some()) {
@@ -722,7 +769,11 @@ fn spawn_ui_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>, name: &str, serv
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -739,7 +790,7 @@ pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     // 1. Setup fontd
     let font_chan = channel_create(4096).expect("Failed to create fontd channel");
     // font_chan.1 is the read end for fontd, font_chan.0 is the write end for clients
-    
+
     match stem::syscall::spawn_process("/bin/fontd", font_chan.1 as usize) {
         Ok(pid) => {
             debug!("SPROUT: Spawned fontd (PID={})", pid);
@@ -752,7 +803,11 @@ pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: font_chan.1 as usize,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -773,7 +828,11 @@ pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(pid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {
@@ -785,13 +844,14 @@ pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
 pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up serial shell on /dev/console...");
 
-    let console_fd = match stem::syscall::vfs::vfs_open("/dev/console", abi::syscall::vfs_flags::O_RDWR) {
-        Ok(fd) => fd,
-        Err(e) => {
-            warn!("SPROUT: Failed to open /dev/console for shell: {:?}", e);
-            return;
-        }
-    };
+    let console_fd =
+        match stem::syscall::vfs::vfs_open("/dev/console", abi::syscall::vfs_flags::O_RDWR) {
+            Ok(fd) => fd,
+            Err(e) => {
+                warn!("SPROUT: Failed to open /dev/console for shell: {:?}", e);
+                return;
+            }
+        };
 
     match stem::syscall::spawn_process_ex(
         "/bin/sh",
@@ -813,7 +873,11 @@ pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
                 pid: Some(resp.child_tid),
                 restarts: 0,
                 spawn_arg: 0,
-                bind_instance_id: 0, drv_req_write: 0, drv_resp_read: 0, boot_req_read: 0, boot_resp_write: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
             });
         }
         Err(e) => {

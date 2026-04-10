@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::syscall::{argv_get, vfs_close, vfs_open, vfs_readdir, vfs_write, vfs_stat, exit};
+use stem::syscall::{argv_get, exit, vfs_close, vfs_open, vfs_readdir, vfs_stat, vfs_write};
 
 #[derive(Debug, Default)]
 struct Flags {
@@ -30,7 +30,7 @@ fn get_args() -> (Vec<String>, Flags) {
     let raw_args = stem::utils::parse_argv(&buf);
     let mut paths = Vec::new();
     let mut flags = Flags::default();
-    
+
     // Skip arg[0] (command name)
     for arg_bytes in raw_args.into_iter().skip(1) {
         if let Ok(arg) = core::str::from_utf8(arg_bytes) {
@@ -63,10 +63,15 @@ fn print(msg: &str) {
 fn format_mode(mode: u32) -> String {
     let mut s = String::with_capacity(10);
     let kind = mode & 0o170000;
-    if kind == 0o040000 { s.push('d'); }
-    else if kind == 0o020000 { s.push('c'); }
-    else if kind == 0o010000 { s.push('p'); }
-    else { s.push('-'); }
+    if kind == 0o040000 {
+        s.push('d');
+    } else if kind == 0o020000 {
+        s.push('c');
+    } else if kind == 0o010000 {
+        s.push('p');
+    } else {
+        s.push('-');
+    }
 
     let perms = mode & 0o777;
     for i in (0..3).rev() {
@@ -84,11 +89,15 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         print(&format!("{}:\n", path));
     }
 
-    let fd = match vfs_open(path, 0) { // O_RDONLY = 0
+    let fd = match vfs_open(path, 0) {
+        // O_RDONLY = 0
         Ok(fd) => fd,
         Err(e) => {
             stem::error!("ls: failed to open '{}': {:?}", path, e);
-            print(&format!("ls: cannot access '{}': No such file or directory\n", path));
+            print(&format!(
+                "ls: cannot access '{}': No such file or directory\n",
+                path
+            ));
             return;
         }
     };
@@ -104,7 +113,12 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
     if (stat.mode & 0o170000) != 0o040000 {
         // Not a directory, just print the file itself
         if flags.long {
-            print(&format!("{} {:8} {}\n", format_mode(stat.mode), stat.size, path));
+            print(&format!(
+                "{} {:8} {}\n",
+                format_mode(stat.mode),
+                stat.size,
+                path
+            ));
         } else {
             print(&format!("{}\n", path));
         }
@@ -155,8 +169,17 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
             match vfs_open(&full_path, 0) {
                 Ok(child_fd) => {
                     if let Ok(child_stat) = vfs_stat(child_fd) {
-                        print(&format!("{} {:8} {}\n", format_mode(child_stat.mode), child_stat.size, name));
-                        if flags.recursive && (child_stat.mode & 0o170000) == 0o040000 && name != "." && name != ".." {
+                        print(&format!(
+                            "{} {:8} {}\n",
+                            format_mode(child_stat.mode),
+                            child_stat.size,
+                            name
+                        ));
+                        if flags.recursive
+                            && (child_stat.mode & 0o170000) == 0o040000
+                            && name != "."
+                            && name != ".."
+                        {
                             subdirs.push(full_path);
                         }
                     }
@@ -193,7 +216,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let (paths, flags) = get_args();
-    
+
     for (i, path) in paths.iter().enumerate() {
         if i > 0 {
             print("\n");

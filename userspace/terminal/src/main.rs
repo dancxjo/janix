@@ -9,11 +9,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
-use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE, BindPayload};
-use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY, O_CREAT};
+use abi::display_driver_protocol::{BindPayload, FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
+use abi::syscall::vfs_flags::{O_CREAT, O_RDONLY, O_WRONLY};
 use abi::vfs_watch::mask;
-use stem::{info, error};
-use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write, vfs_stat, vfs_watch_path};
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_stat, vfs_watch_path, vfs_write};
+use stem::{error, info};
 
 /// A single glyph from the Unifont font.
 struct Glyph {
@@ -27,13 +27,15 @@ struct Font {
 
 impl Font {
     fn load(path: &str) -> Result<Self, String> {
-        let fd = vfs_open(path, O_RDONLY).map_err(|e| format!("failed to open font file: {:?}", e))?;
+        let fd =
+            vfs_open(path, O_RDONLY).map_err(|e| format!("failed to open font file: {:?}", e))?;
         let stat = vfs_stat(fd).map_err(|e| format!("failed to stat font file: {:?}", e))?;
         let size = stat.size;
-        
+
         let mut data = Vec::with_capacity(size as usize);
         data.resize(size as usize, 0);
-        let n = vfs_read(fd, &mut data).map_err(|e| format!("failed to read font file: {:?}", e))?;
+        let n =
+            vfs_read(fd, &mut data).map_err(|e| format!("failed to read font file: {:?}", e))?;
         data.truncate(n);
         let _ = vfs_close(fd);
 
@@ -45,11 +47,11 @@ impl Font {
                 if let Ok(code) = u32::from_str_radix(code_str, 16) {
                     let mut bitmap = Vec::new();
                     for i in 0..(bitmap_str.len() / 2) {
-                        if let Ok(byte) = u8::from_str_radix(&bitmap_str[i*2..i*2+2], 16) {
+                        if let Ok(byte) = u8::from_str_radix(&bitmap_str[i * 2..i * 2 + 2], 16) {
                             bitmap.push(byte);
                         }
                     }
-                    
+
                     let width = if bitmap_str.len() <= 32 { 8 } else { 16 };
                     glyphs.insert(code, Glyph { width, bitmap });
                 }
@@ -158,16 +160,32 @@ impl Terminal {
             }
         }
 
-        let width = self.font.get_glyph(c).map(|g| g.width).or_else(|| self.font.get_glyph('?').map(|g| g.width)).unwrap_or(8);
-        
+        let width = self
+            .font
+            .get_glyph(c)
+            .map(|g| g.width)
+            .or_else(|| self.font.get_glyph('?').map(|g| g.width))
+            .unwrap_or(8);
+
         if self.cursor_x + width > self.width {
             self.putc('\n', fg, bg);
         }
 
-        let bitmap = self.font.get_glyph(c).or_else(|| self.font.get_glyph('?')).map(|g| g.bitmap.clone());
+        let bitmap = self
+            .font
+            .get_glyph(c)
+            .or_else(|| self.font.get_glyph('?'))
+            .map(|g| g.bitmap.clone());
 
         if let Some(bitmap) = bitmap {
-            self.draw_glyph_internal(bitmap.as_slice(), width, self.cursor_x, self.cursor_y, fg, bg);
+            self.draw_glyph_internal(
+                bitmap.as_slice(),
+                width,
+                self.cursor_x,
+                self.cursor_y,
+                fg,
+                bg,
+            );
             self.cursor_x += width;
         }
     }
@@ -210,16 +228,16 @@ impl Terminal {
         let stride_pixels = (self.stride / 4) as usize;
         let row_pixels = 16 * stride_pixels;
         let total_pixels = (self.height as usize) * stride_pixels;
-        
+
         unsafe {
             core::ptr::copy(
                 self.fb_ptr.add(row_pixels),
                 self.fb_ptr,
-                total_pixels - row_pixels
+                total_pixels - row_pixels,
             );
             let last_lines = core::slice::from_raw_parts_mut(
                 self.fb_ptr.add(total_pixels - row_pixels),
-                row_pixels
+                row_pixels,
             );
             last_lines.fill(0xFF000000); // Black
         }
@@ -260,7 +278,7 @@ fn main(arg: usize) -> ! {
     let mut fb_id = 0u32;
 
     if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
@@ -274,14 +292,23 @@ fn main(arg: usize) -> ! {
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *const u32;
             let slice = unsafe { core::slice::from_raw_parts(ptr, 1024) };
-            info!("Terminal: slice[0]=0x{:08x} [1]=0x{:x} [2]=0x{:x} [4]=0x{:x}", slice[0], slice[1], slice[2], slice[4]);
+            info!(
+                "Terminal: slice[0]=0x{:08x} [1]=0x{:x} [2]=0x{:x} [4]=0x{:x}",
+                slice[0], slice[1], slice[2], slice[4]
+            );
             if slice[0] == 0xB100AA01 {
                 display_req_write = slice[1];
                 display_resp_read = slice[2];
                 fb_id = slice[4];
-                info!("Terminal: Bootstrapped via memfd: req={}, resp={}, fb_id={}", display_req_write, display_resp_read, fb_id);
+                info!(
+                    "Terminal: Bootstrapped via memfd: req={}, resp={}, fb_id={}",
+                    display_req_write, display_resp_read, fb_id
+                );
             } else {
-                error!("Terminal: Bootstrap magic mismatch! expected 0xB100AA01, got 0x{:08x}", slice[0]);
+                error!(
+                    "Terminal: Bootstrap magic mismatch! expected 0xB100AA01, got 0x{:08x}",
+                    slice[0]
+                );
             }
         } else {
             error!("Terminal: Failed to map bootstrap memfd");
@@ -320,10 +347,13 @@ fn main(arg: usize) -> ! {
         }
     };
 
-    info!("Terminal: Display {}x{}, stride={}", fb_info.width, fb_info.height, fb_info.stride);
+    info!(
+        "Terminal: Display {}x{}, stride={}",
+        fb_info.width, fb_info.height, fb_info.stride
+    );
 
     let fb_ptr = {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: (fb_info.stride as usize) * (fb_info.height as usize),
@@ -358,17 +388,23 @@ fn main(arg: usize) -> ! {
         format: fb_info.format,
     };
     if display_req_write != 0 {
-        let mut header_buf = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
+        let mut header_buf = [0u8; abi::display_driver_protocol::HEADER_SIZE
+            + abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
         let mut payload_buf = [0u8; abi::display_driver_protocol::BIND_PAYLOAD_WIRE_SIZE];
         abi::display_driver_protocol::encode_bind_payload_le(&bind_payload, &mut payload_buf);
-        if let Some(total) = abi::display_driver_protocol::encode_message(&mut header_buf, abi::display_driver_protocol::MSG_BIND, &payload_buf) {
+        if let Some(total) = abi::display_driver_protocol::encode_message(
+            &mut header_buf,
+            abi::display_driver_protocol::MSG_BIND,
+            &payload_buf,
+        ) {
             let _ = stem::syscall::channel_send_all(display_req_write, &header_buf[..total]);
             let _ = stem::syscall::channel_send_handle(display_req_write, bind_payload.fb_fd);
         }
     }
 
     // Focus handling
-    let focus_watch = vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
+    let focus_watch =
+        vfs_watch_path("/session/active_ui", abi::vfs_watch::mask::MODIFY, 0).unwrap_or(0);
     let mut has_focus = if display_req_write == 0 {
         true // In fallback mode, we are always active
     } else {
@@ -379,11 +415,17 @@ fn main(arg: usize) -> ! {
     loop {
         if has_focus && display_req_write != 0 {
             // Present!
-            let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
+            let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE
+                + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
             let mut payload = [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
             abi::display_driver_protocol::encode_present_header_le(0, &mut payload);
-            if let Some(total) = abi::display_driver_protocol::encode_message(&mut present_header, abi::display_driver_protocol::MSG_PRESENT, &payload) {
-                let _ = stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
+            if let Some(total) = abi::display_driver_protocol::encode_message(
+                &mut present_header,
+                abi::display_driver_protocol::MSG_PRESENT,
+                &payload,
+            ) {
+                let _ =
+                    stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
             }
         }
 
@@ -392,20 +434,28 @@ fn main(arg: usize) -> ! {
             term.write_str(".");
             if frame_count % (60 * 40) == 0 {
                 let mut status = String::new();
-                let _ = write!(status, "\n[Terminal Liveness] Frame {} - Focus: {}\n", frame_count, has_focus);
+                let _ = write!(
+                    status,
+                    "\n[Terminal Liveness] Frame {} - Focus: {}\n",
+                    frame_count, has_focus
+                );
                 term.write_str(&status);
             }
         }
 
         // Check for focus change
         if focus_watch != 0 {
-            let mut fds = [abi::syscall::PollFd { fd: focus_watch as i32, events: abi::syscall::poll_flags::POLLIN as u16, revents: 0 }];
+            let mut fds = [abi::syscall::PollFd {
+                fd: focus_watch as i32,
+                events: abi::syscall::poll_flags::POLLIN as u16,
+                revents: 0,
+            }];
             if let Ok(n) = stem::syscall::vfs::vfs_poll(&mut fds, 0) {
                 if n > 0 {
                     // Read the watch event to clear it
                     let mut dummy = [0u8; 1024];
                     let _ = vfs_read(focus_watch, &mut dummy);
-                    
+
                     let new_focus = get_active_ui() == "terminal";
                     if new_focus != has_focus {
                         has_focus = new_focus;
@@ -414,13 +464,26 @@ fn main(arg: usize) -> ! {
                         } else {
                             info!("Terminal: Lost focus. Blanking screen.");
                             term.clear(0xFF000000); // Black
-                            // Send one last present to show the black screen
+                                                    // Send one last present to show the black screen
                             if display_req_write != 0 {
-                                let mut present_header = [0u8; abi::display_driver_protocol::HEADER_SIZE + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
-                                let mut payload = [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
-                                abi::display_driver_protocol::encode_present_header_le(0, &mut payload);
-                                if let Some(total) = abi::display_driver_protocol::encode_message(&mut present_header, abi::display_driver_protocol::MSG_PRESENT, &payload) {
-                                    let _ = stem::syscall::channel_send_all(display_req_write, &present_header[..total]);
+                                let mut present_header = [0u8;
+                                    abi::display_driver_protocol::HEADER_SIZE
+                                        + abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
+                                let mut payload =
+                                    [0u8; abi::display_driver_protocol::PRESENT_HEADER_WIRE_SIZE];
+                                abi::display_driver_protocol::encode_present_header_le(
+                                    0,
+                                    &mut payload,
+                                );
+                                if let Some(total) = abi::display_driver_protocol::encode_message(
+                                    &mut present_header,
+                                    abi::display_driver_protocol::MSG_PRESENT,
+                                    &payload,
+                                ) {
+                                    let _ = stem::syscall::channel_send_all(
+                                        display_req_write,
+                                        &present_header[..total],
+                                    );
                                 }
                             }
                         }
@@ -450,9 +513,16 @@ fn read_fb_info() -> Option<FbInfoPayload> {
     };
     let n = stem::syscall::vfs::vfs_read(fd, buf).ok()?;
     let _ = stem::syscall::vfs::vfs_close(fd);
-    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0 {
-        stem::error!("Terminal: FB info mismatch: n={}, expected={}, w={}, h={}, s={}", 
-            n, FB_INFO_PAYLOAD_SIZE, payload.width, payload.height, payload.stride);
+    if n < FB_INFO_PAYLOAD_SIZE || payload.width == 0 || payload.height == 0 || payload.stride == 0
+    {
+        stem::error!(
+            "Terminal: FB info mismatch: n={}, expected={}, w={}, h={}, s={}",
+            n,
+            FB_INFO_PAYLOAD_SIZE,
+            payload.width,
+            payload.height,
+            payload.stride
+        );
         return None;
     }
     Some(payload)

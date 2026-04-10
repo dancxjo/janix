@@ -83,7 +83,6 @@ impl ThingId {
 
         id
     }
-
 }
 
 impl PredicateId {

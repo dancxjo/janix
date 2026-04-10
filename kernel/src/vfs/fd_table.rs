@@ -13,8 +13,8 @@
 //! `MAX_FDS` open files per process.  This is intentionally small for now.
 
 use abi::errors::{Errno, SysResult};
-use alloc::sync::Arc;
 use alloc::string::String;
+use alloc::sync::Arc;
 use spin::Mutex;
 
 use super::{OpenFlags, VfsNode};
@@ -56,7 +56,12 @@ impl FdTable {
     /// Scans from slot 0 and returns the first free slot.  Because slots 0–2
     /// are pre-populated at spawn time, regular opens naturally receive fd ≥ 3.
     /// Returns `EMFILE` when all slots are exhausted.
-    pub fn open(&mut self, node: Arc<dyn VfsNode>, flags: OpenFlags, path: String) -> SysResult<u32> {
+    pub fn open(
+        &mut self,
+        node: Arc<dyn VfsNode>,
+        flags: OpenFlags,
+        path: String,
+    ) -> SysResult<u32> {
         for i in 0..MAX_FDS {
             if self.entries[i].is_none() {
                 self.entries[i] = Some(OpenFile {
@@ -227,7 +232,7 @@ mod tests {
                 mode: VfsStat::S_IFCHR | 0o666,
                 size: 0,
                 ino: 1,
-            ..Default::default()
+                ..Default::default()
             })
         }
     }
@@ -239,7 +244,9 @@ mod tests {
     #[test]
     fn test_open_allocates_from_0_when_empty() {
         let mut table = FdTable::new();
-        let fd = table.open(null_node(), OpenFlags::read_only(), "/null".into()).unwrap();
+        let fd = table
+            .open(null_node(), OpenFlags::read_only(), "/null".into())
+            .unwrap();
         assert_eq!(fd, 0, "first fd in empty table should be 0");
     }
 
@@ -256,7 +263,9 @@ mod tests {
         table
             .insert_at(2, null_node(), OpenFlags::write_only(), "/err".into())
             .unwrap();
-        let fd = table.open(null_node(), OpenFlags::read_only(), "/null".into()).unwrap();
+        let fd = table
+            .open(null_node(), OpenFlags::read_only(), "/null".into())
+            .unwrap();
         assert_eq!(fd, 3, "first non-stdio VFS fd should be 3");
     }
 
@@ -273,8 +282,12 @@ mod tests {
         table
             .insert_at(2, null_node(), OpenFlags::write_only(), "/err".into())
             .unwrap();
-        let fd1 = table.open(null_node(), OpenFlags::read_only(), "/f1".into()).unwrap();
-        let fd2 = table.open(null_node(), OpenFlags::read_only(), "/f2".into()).unwrap();
+        let fd1 = table
+            .open(null_node(), OpenFlags::read_only(), "/f1".into())
+            .unwrap();
+        let fd2 = table
+            .open(null_node(), OpenFlags::read_only(), "/f2".into())
+            .unwrap();
         assert_eq!(fd1, 3);
         assert_eq!(fd2, 4);
     }
@@ -288,7 +301,9 @@ mod tests {
     #[test]
     fn test_close_frees_slot() {
         let mut table = FdTable::new();
-        let fd = table.open(null_node(), OpenFlags::read_only(), "/null".into()).unwrap();
+        let fd = table
+            .open(null_node(), OpenFlags::read_only(), "/null".into())
+            .unwrap();
         table.close(fd).unwrap();
         assert!(matches!(table.get(fd), Err(Errno::EBADF)));
     }
@@ -296,9 +311,13 @@ mod tests {
     #[test]
     fn test_close_reuses_slot() {
         let mut table = FdTable::new();
-        let fd1 = table.open(null_node(), OpenFlags::read_only(), "/f1".into()).unwrap();
+        let fd1 = table
+            .open(null_node(), OpenFlags::read_only(), "/f1".into())
+            .unwrap();
         table.close(fd1).unwrap();
-        let fd2 = table.open(null_node(), OpenFlags::read_only(), "/f2".into()).unwrap();
+        let fd2 = table
+            .open(null_node(), OpenFlags::read_only(), "/f2".into())
+            .unwrap();
         // Slot 0 was freed, so it should be reused.
         assert_eq!(fd2, 0);
     }
@@ -342,7 +361,12 @@ mod tests {
     fn test_insert_at_rejects_out_of_range() {
         let mut table = FdTable::new();
         assert!(matches!(
-            table.insert_at(MAX_FDS as u32, null_node(), OpenFlags::read_only(), "/null".into()),
+            table.insert_at(
+                MAX_FDS as u32,
+                null_node(),
+                OpenFlags::read_only(),
+                "/null".into()
+            ),
             Err(Errno::EBADF)
         ));
     }

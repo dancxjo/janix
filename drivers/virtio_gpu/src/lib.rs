@@ -4,7 +4,10 @@
 //! display_virtio_gpu or as a standalone program.
 
 #![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
+#![cfg_attr(
+    any(target_os = "thingos", target_env = "thingos"),
+    feature(restricted_std)
+)]
 
 extern crate alloc;
 
@@ -71,16 +74,22 @@ impl VirtioGpu {
         use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
 
         // Read internal handle from /sys/devices/.../handle
-        let device_handle = read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
+        let device_handle =
+            read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
 
         let claim_handle = device_claim(device_handle)?;
 
         // Read VirtIO capability offsets from sysfs
-        let common_bar = read_sys_u32(&alloc::format!("{}/virtio/common_bar", sysfs_path)).unwrap_or(0) as usize;
-        let common_offset = read_sys_u32(&alloc::format!("{}/virtio/common_offset", sysfs_path)).unwrap_or(0) as u64;
-        let notify_bar = read_sys_u32(&alloc::format!("{}/virtio/notify_bar", sysfs_path)).unwrap_or(0) as usize;
-        let notify_offset = read_sys_u32(&alloc::format!("{}/virtio/notify_offset", sysfs_path)).unwrap_or(0) as u64;
-        let notify_multiplier = read_sys_u32(&alloc::format!("{}/virtio/notify_multiplier", sysfs_path)).unwrap_or(4);
+        let common_bar =
+            read_sys_u32(&alloc::format!("{}/virtio/common_bar", sysfs_path)).unwrap_or(0) as usize;
+        let common_offset = read_sys_u32(&alloc::format!("{}/virtio/common_offset", sysfs_path))
+            .unwrap_or(0) as u64;
+        let notify_bar =
+            read_sys_u32(&alloc::format!("{}/virtio/notify_bar", sysfs_path)).unwrap_or(0) as usize;
+        let notify_offset = read_sys_u32(&alloc::format!("{}/virtio/notify_offset", sysfs_path))
+            .unwrap_or(0) as u64;
+        let notify_multiplier =
+            read_sys_u32(&alloc::format!("{}/virtio/notify_multiplier", sysfs_path)).unwrap_or(4);
 
         stem::info!(
             "virtio_gpu: caps from sysfs - common BAR{} off=0x{:x}, notify BAR{} off=0x{:x} mult={}",

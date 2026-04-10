@@ -96,7 +96,10 @@ enum RamfsEntry {
 
 impl RamfsEntry {
     fn new_dir() -> Arc<Self> {
-        Arc::new(RamfsEntry::Dir(Mutex::new(RamfsDirInner::new()), alloc_ino()))
+        Arc::new(RamfsEntry::Dir(
+            Mutex::new(RamfsDirInner::new()),
+            alloc_ino(),
+        ))
     }
 
     fn new_file(data: Vec<u8>) -> Arc<Self> {
@@ -116,9 +119,12 @@ impl RamfsEntry {
     /// Look up a child by name inside a directory entry.
     fn lookup_child(&self, name: &str) -> SysResult<Arc<RamfsEntry>> {
         match self {
-            RamfsEntry::Dir(inner, _) => {
-                inner.lock().children.get(name).cloned().ok_or(Errno::ENOENT)
-            }
+            RamfsEntry::Dir(inner, _) => inner
+                .lock()
+                .children
+                .get(name)
+                .cloned()
+                .ok_or(Errno::ENOENT),
             _ => Err(Errno::ENOTDIR),
         }
     }
@@ -236,11 +242,7 @@ impl VfsNode for RamfsNode {
         match &*self.0 {
             RamfsEntry::Dir(inner, _) => {
                 let lock = inner.lock();
-                super::write_readdir_entries(
-                    lock.children.keys().map(|s| s.as_str()),
-                    offset,
-                    buf,
-                )
+                super::write_readdir_entries(lock.children.keys().map(|s| s.as_str()), offset, buf)
             }
             _ => Err(Errno::ENOTDIR),
         }

@@ -56,7 +56,14 @@ fn x86_qemu_trace_enabled() -> bool {
 }
 
 /// Run ISO image in QEMU (UEFI mode).
-pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path, interactive: bool, monitor: bool) -> Result<()> {
+pub fn run(
+    sh: &Shell,
+    arch: &str,
+    qemu_flags: &str,
+    iso_path: &Path,
+    interactive: bool,
+    monitor: bool,
+) -> Result<()> {
     let name = image_name(arch);
     let iso = iso_path.to_str().unwrap();
     let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
@@ -134,7 +141,13 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path, interactiv
 }
 
 /// Run in QEMU BIOS mode (x86_64 only).
-pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path, interactive: bool, monitor: bool) -> Result<()> {
+pub fn run_bios(
+    sh: &Shell,
+    qemu_flags: &str,
+    iso_path: &Path,
+    interactive: bool,
+    monitor: bool,
+) -> Result<()> {
     let iso = iso_path.to_str().unwrap();
     let qemu_args: Vec<&str> = qemu_flags.split_whitespace().collect();
     let netdev = user_netdev_arg();
@@ -163,7 +176,14 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path, interactive: bool
 }
 
 /// Run HDD image in QEMU (UEFI mode).
-pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str, hdd_path: &Path, interactive: bool, monitor: bool) -> Result<()> {
+pub fn run_hdd(
+    sh: &Shell,
+    arch: &str,
+    qemu_flags: &str,
+    hdd_path: &Path,
+    interactive: bool,
+    monitor: bool,
+) -> Result<()> {
     let name = image_name(arch);
     let hdd = hdd_path.to_str().unwrap();
     let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);

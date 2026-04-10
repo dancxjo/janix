@@ -1,5 +1,5 @@
 use crate::blit::PixelBuffer;
-use crate::geometry::{FillRule, Path2D, PathVerb, Rect, Transform2D, PointF};
+use crate::geometry::{FillRule, Path2D, PathVerb, PointF, Rect, Transform2D};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -21,7 +21,9 @@ fn fixed_floor(val: i32) -> i32 {
 pub fn fill_rect_copy(dst: &mut PixelBuffer, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let clip = Rect::new(0, 0, dst.width as i32, dst.height as i32);
     let r = Rect::new(x, y, w, h).clip(clip);
-    if r.is_empty() { return; }
+    if r.is_empty() {
+        return;
+    }
 
     for row_y in r.y()..r.y() + r.height() {
         let row = dst.row_mut(row_y as u32);
@@ -38,19 +40,23 @@ pub fn fill_path(
     clip: &Rect,
 ) {
     let sa = ((color >> 24) & 0xFF) as u8;
-    if sa == 0 { return; }
-    
+    if sa == 0 {
+        return;
+    }
+
     // Simplification: use a coverage buffer for AA
     let mut edges = build_edges(path, transform, SUPERSAMPLE_SCALE);
     edges.sort_by(|a, b| a.y_min.cmp(&b.y_min));
 
     let clip_w = clip.width();
     let clip_h = clip.height();
-    if clip_w <= 0 || clip_h <= 0 { return; }
+    if clip_w <= 0 || clip_h <= 0 {
+        return;
+    }
 
     let mut coverage = vec![0u8; (clip_w as usize) * (clip_h as usize)];
     let y_limit = (clip.y() + clip.height()) * SUPERSAMPLE_SCALE;
-    
+
     let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
     let mut edge_idx = 0;
 
@@ -63,7 +69,9 @@ pub fn fill_path(
         }
 
         active_edges.retain(|e| e.y_max > y_sub);
-        if active_edges.is_empty() { continue; }
+        if active_edges.is_empty() {
+            continue;
+        }
 
         active_edges.sort_by(|a, b| a.x.cmp(&b.x));
 
@@ -71,8 +79,10 @@ pub fn fill_path(
         let mut start_x = 0;
         for i in 0..active_edges.len() {
             let x = fixed_floor(active_edges[i].x);
-            if winding == 0 { start_x = x; }
-            
+            if winding == 0 {
+                start_x = x;
+            }
+
             match fill_rule {
                 FillRule::EvenOdd => winding ^= 1,
                 FillRule::NonZero => winding += active_edges[i].winding,
@@ -85,11 +95,12 @@ pub fn fill_path(
                 for xx in start..end {
                     let ix = (xx - clip.x()) as usize;
                     let iy = (y_sub / SUPERSAMPLE_SCALE - clip.y()) as usize;
-                    coverage[iy * (clip_w as usize) + ix] = coverage[iy * (clip_w as usize) + ix].saturating_add(1);
+                    coverage[iy * (clip_w as usize) + ix] =
+                        coverage[iy * (clip_w as usize) + ix].saturating_add(1);
                 }
             }
         }
-        
+
         // Update x for active edges
         for e in &mut active_edges {
             e.x += e.dx_dy;
@@ -106,12 +117,14 @@ pub fn fill_path(
         let row = surface.row_mut((clip.y() + y) as u32);
         for x in 0..clip_w {
             let cov = coverage[(y * clip_w + x) as usize] as u32;
-            if cov == 0 { continue; }
-            
+            if cov == 0 {
+                continue;
+            }
+
             let alpha = (sa as u32 * cov) / max_coverage;
             let dst_idx = (clip.x() + x) as usize;
             let dst_color = row[dst_idx];
-            
+
             row[dst_idx] = blend(dst_color, (alpha << 24) | (sr << 16) | (sg << 8) | sb);
         }
     }
@@ -173,16 +186,24 @@ fn build_edges(path: &Path2D, transform: &Transform2D, scale: i32) -> Vec<Edge> 
     edges
 }
 
-fn add_edge(edges: &mut Vec<Edge>, p1: (f32, f32), p2: (f32, f32), transform: &Transform2D, scale: i32) {
+fn add_edge(
+    edges: &mut Vec<Edge>,
+    p1: (f32, f32),
+    p2: (f32, f32),
+    transform: &Transform2D,
+    scale: i32,
+) {
     let (x1, y1) = transform.transform_point_f(p1.0, p1.1);
     let (x2, y2) = transform.transform_point_f(p2.0, p2.1);
-    
+
     let f_scale = scale as f32;
     let (x1, y1) = (x1 * f_scale, y1 * f_scale);
     let (x2, y2) = (x2 * f_scale, y2 * f_scale);
 
-    if y1 == y2 { return; }
-    
+    if y1 == y2 {
+        return;
+    }
+
     let (p1, p2, winding) = if y1 < y2 {
         ((x1, y1), (x2, y2), 1)
     } else {
@@ -201,9 +222,13 @@ fn add_edge(edges: &mut Vec<Edge>, p1: (f32, f32), p2: (f32, f32), transform: &T
 
 fn blend(dst: u32, src: u32) -> u32 {
     let sa = (src >> 24) & 0xFF;
-    if sa == 255 { return src; }
-    if sa == 0 { return dst; }
-    
+    if sa == 255 {
+        return src;
+    }
+    if sa == 0 {
+        return dst;
+    }
+
     let inv_sa = 255 - sa;
     let sr = (src >> 16) & 0xFF;
     let sg = (src >> 8) & 0xFF;

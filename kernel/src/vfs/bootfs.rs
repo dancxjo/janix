@@ -5,11 +5,11 @@
 //!
 //! The boot filesystem is mounted at `/boot` by [`crate::vfs::init`].
 
-use abi::errors::{Errno, SysResult};
-use alloc::sync::Arc;
-use alloc::string::{String, ToString};
-use alloc::collections::BTreeSet;
 use crate::BootModuleDesc;
+use abi::errors::{Errno, SysResult};
+use alloc::collections::BTreeSet;
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 
 use super::{VfsDriver, VfsNode, VfsStat};
 
@@ -105,7 +105,7 @@ impl VfsNode for BootDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 9,
-        ..Default::default()
+            ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -181,7 +181,7 @@ impl VfsNode for StaticFileNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }

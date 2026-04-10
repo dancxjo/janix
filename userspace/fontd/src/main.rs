@@ -3,19 +3,18 @@
 
 extern crate alloc;
 
-use stem::{info, error};
-use stem::syscall::{channel_recv_handle, channel_send_handle};
 use abi::font_protocol::{
-    AtlasFormat, FaceMetrics, FontRequestTag, FontResponseTag,
-    GlyphPlacement, EnsureGlyphs, EnsureGlyphsResp, GetFaceMetrics,
-    decode_request_tag, encode_error, FontError,
+    decode_request_tag, encode_error, AtlasFormat, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics,
+    FontError, FontRequestTag, FontResponseTag, GetFaceMetrics, GlyphPlacement,
 };
-use petals::font::TextRenderer;
 use abi::ids::HandleId;
 use abi::wire::ThingId;
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
+use petals::font::TextRenderer;
+use stem::syscall::{channel_recv_handle, channel_send_handle};
+use stem::{error, info};
 
 use petals::Atlas;
 
@@ -30,11 +29,13 @@ struct FontService {
 #[stem::main]
 fn main(arg0: usize) -> ! {
     info!("fontd: starting up...");
-    
+
     let listen_port = arg0 as u32;
     if listen_port == 0 {
         error!("fontd: No listen port provided!");
-        loop { stem::yield_now(); }
+        loop {
+            stem::yield_now();
+        }
     }
 
     let mut service = FontService {
@@ -57,7 +58,7 @@ fn main(arg0: usize) -> ! {
                         continue;
                     }
                 };
-                
+
                 match tag {
                     FontRequestTag::Ping => {
                         let mut resp = [0u8; 1];
@@ -67,9 +68,10 @@ fn main(arg0: usize) -> ! {
                     FontRequestTag::GetFaceMetrics => {
                         if let Some(req) = GetFaceMetrics::decode(&buf[1..n]) {
                             let font = &service.renderer.font;
-                            let metrics = font.horizontal_line_metrics(req.px_size as f32)
+                            let metrics = font
+                                .horizontal_line_metrics(req.px_size as f32)
                                 .unwrap_or_else(|| font.horizontal_line_metrics(16.0).unwrap());
-                            
+
                             let resp = FaceMetrics {
                                 ascent: metrics.ascent as i16,
                                 descent: metrics.descent as i16,
@@ -99,30 +101,36 @@ fn main(arg0: usize) -> ! {
 fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs) {
     let face_id_u64 = req.face_id.to_u64_lossy();
     let px_size = req.px_size;
-    
+
     // Get or create atlas
     if !service.atlases.contains_key(&(face_id_u64, px_size)) {
         let atlas = Atlas::new("font_atlas", 1024, 1024, 1).expect("Failed to create atlas");
         service.atlases.insert((face_id_u64, px_size), atlas);
     }
     let atlas = service.atlases.get_mut(&(face_id_u64, px_size)).unwrap();
-    
+
     let mut placements = Vec::new();
     let mut missing = Vec::new();
-    
+
     for &gid in &req.glyph_ids {
         if let Some(p) = service.cache.get(&(face_id_u64, px_size, gid)) {
             placements.push(*p);
             continue;
         }
-        
+
         // Rasterize
-        let (metrics, bitmap) = service.renderer.font.rasterize(char::from_u32(gid).unwrap_or(' '), px_size as f32);
-        
+        let (metrics, bitmap) = service
+            .renderer
+            .font
+            .rasterize(char::from_u32(gid).unwrap_or(' '), px_size as f32);
+
         if metrics.width == 0 || metrics.height == 0 {
             let p = GlyphPlacement {
                 glyph_id: gid,
-                x: 0, y: 0, w: 0, h: 0,
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
                 bearing_x: metrics.xmin as i16,
                 bearing_y: metrics.ymin as i16,
                 advance: metrics.advance_width as i16,
@@ -150,7 +158,7 @@ fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs)
             missing.push(gid);
         }
     }
-    
+
     let resp = EnsureGlyphsResp {
         req_face_id: req.face_id,
         req_px_size: px_size,
@@ -162,7 +170,7 @@ fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs)
         placements,
         missing,
     };
-    
+
     let mut resp_buf = vec![0u8; 4096 * 4];
     if let Some(len) = resp.encode(&mut resp_buf) {
         let _ = stem::syscall::channel_send(port, &resp_buf[..len]);

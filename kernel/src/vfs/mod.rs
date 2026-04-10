@@ -285,7 +285,7 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
 
     // Create the root filesystem (tmpfs) — writable, volatile.
     let root_fs = Arc::new(ramfs::RamFs::new());
-    
+
     // Pre-populate mount point directories in the root filesystem so they appear in readdir("/")
     let _ = root_fs.mkdir("boot");
     let _ = root_fs.mkdir("bin");
@@ -307,7 +307,7 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     let mut root_union = union::UnionFs::new_fallthrough();
     root_union.push(Arc::new(bootfs::BootFs::new(modules))); // Layer 0: Read-only boot modules
     root_union.push(root_fs); // Layer 1: Writable RAM overlay
-    
+
     mount::mount("/", Arc::new(root_union));
     crate::kdebug!("vfs: mounted union filesystem at / (root)");
 
@@ -426,7 +426,7 @@ mod tests {
                 mode: self.mode,
                 size: self.data.len() as u64,
                 ino: 1,
-            ..Default::default()
+                ..Default::default()
             })
         }
     }
@@ -452,7 +452,7 @@ mod tests {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 1,
-        ..Default::default()
+            ..Default::default()
         };
         assert!(dir.is_dir());
         assert!(!dir.is_reg());
@@ -462,7 +462,7 @@ mod tests {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 2,
-        ..Default::default()
+            ..Default::default()
         };
         assert!(chr.is_chr());
         assert!(!chr.is_dir());
@@ -471,7 +471,7 @@ mod tests {
             mode: VfsStat::S_IFREG | 0o644,
             size: 42,
             ino: 3,
-        ..Default::default()
+            ..Default::default()
         };
         assert!(reg.is_reg());
     }

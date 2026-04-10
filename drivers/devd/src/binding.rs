@@ -33,8 +33,8 @@ const BUILTIN_BINDINGS: &[Binding] = &[
 
 pub fn match_binding(device: &SysDevice) -> Option<Binding> {
     BUILTIN_BINDINGS.iter().copied().find(|binding| {
-        let id_match = (binding.vendor_id == 0 || binding.vendor_id == device.vendor_id) &&
-                       (binding.device_id == 0 || binding.device_id == device.device_id);
+        let id_match = (binding.vendor_id == 0 || binding.vendor_id == device.vendor_id)
+            && (binding.device_id == 0 || binding.device_id == device.device_id);
         let class_match = binding.class_code.map_or(true, |c| device.class_code == c);
         id_match && class_match
     })

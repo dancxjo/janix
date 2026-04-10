@@ -138,9 +138,9 @@ fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult
         &env,
         stdin_fd,
         stdout_fd,
-        1,  // stderr → shell's own stdout
-        0,  // boot_arg
-        &[] // No handles to inherit
+        1,   // stderr → shell's own stdout
+        0,   // boot_arg
+        &[], // No handles to inherit
     ) {
         Ok(resp) => {
             let _ = stem::syscall::task_wait(resp.child_tid);

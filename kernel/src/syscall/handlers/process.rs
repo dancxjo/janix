@@ -67,6 +67,9 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
 
     let current_p = unsafe { crate::sched::current_priority_current() };
 
+    let tls_base = req.tls_base as u64;
+    let detached = (req.flags & abi::types::spawn_thread_flags::DETACHED) != 0;
+
     let tid = unsafe {
         crate::sched::spawn_user_thread_current(
             req.entry,
@@ -74,6 +77,8 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
             StartupArg::Raw(req.arg),
             req.stack,
             current_p,
+            tls_base,
+            detached,
         )
     };
     if let Some(tid) = tid {

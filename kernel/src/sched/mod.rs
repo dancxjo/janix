@@ -40,7 +40,7 @@ pub use hooks::{
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
     SpawnExResult, StdioSpec, spawn, spawn_process, spawn_user_task_full, spawn_user_thread,
-    spawn_with_priority, user_thread_trampoline,
+    spawn_user_thread_ex, spawn_with_priority, user_thread_trampoline,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
 pub use types::{DEFAULT_TIMESLICE, ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
@@ -265,7 +265,7 @@ pub fn init<R: BootRuntime>() {
         unsafe {
             hooks::YIELD_HOOK = Some(sleep::yield_now::<R>);
             hooks::EXIT_HOOK = Some(exit::<R>);
-            hooks::SPAWN_USER_HOOK = Some(spawn::spawn_user_thread::<R>);
+            hooks::SPAWN_USER_HOOK = Some(spawn::spawn_user_thread_ex::<R>);
             hooks::SPAWN_PROCESS_HOOK = Some(spawn::spawn_process::<R>);
             hooks::CURRENT_TID_HOOK = Some(current_tid::<R>);
             hooks::INTERRUPT_TASK_HOOK = Some(interrupt_task::<R>);
@@ -372,6 +372,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         enqueued_at_tick: TICK_COUNT.load(Ordering::Relaxed),
         base_priority: TaskPriority::Normal,
         user_fs_base: 0,
+        detached: false,
     };
     let sched_fields = crate::sched::state::TaskSchedFields {
         tid: task.id,
@@ -1178,6 +1179,11 @@ fn register_task_exit_waiter<R: BootRuntime>(
     let target =
         crate::task::registry::get_task::<R>(target_tid).ok_or(abi::errors::Errno::ECHILD)?;
 
+    // Joining a detached thread is not permitted.
+    if target.detached {
+        return Err(abi::errors::Errno::EINVAL);
+    }
+
     if target.state == TaskState::Dead {
         return Ok(Some(target.exit_code.unwrap_or(0)));
     }
@@ -1878,6 +1884,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         }
     }
 
@@ -1918,6 +1925,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         // Create a low-priority task enqueued a long time ago
@@ -1949,6 +1957,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2016,6 +2025,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         // Task 2 is runnable
@@ -2047,6 +2057,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task1));
@@ -2108,6 +2119,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         // Task 2: Realtime priority, sleeping (about to wake)
@@ -2139,6 +2151,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2225,6 +2238,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         // Insert tasks out of order
@@ -2303,6 +2317,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2399,6 +2414,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         let sleeping_task = crate::task::Task {
@@ -2429,6 +2445,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2493,6 +2510,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         let blocked_task = crate::task::Task {
@@ -2523,6 +2541,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2580,6 +2599,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2630,6 +2650,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2683,6 +2704,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         let waiter_task = crate::task::Task {
@@ -2713,6 +2735,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         let target_task = crate::task::Task {
@@ -2743,6 +2766,7 @@ mod tests {
             name_len: 0,
             process_info: None,
             user_fs_base: 0,
+            detached: false,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2976,6 +3000,7 @@ mod tests {
                 },
             ))),
             user_fs_base: 0,
+            detached: false,
         }
     }
 
@@ -3108,6 +3133,7 @@ mod tests {
             name_len: 0,
             process_info: Some(shared_pinfo),
             user_fs_base: 0,
+            detached: false,
         }
     }
 
@@ -3361,5 +3387,152 @@ mod tests {
         // Rollback: clear the flag on pre-commit failure.
         pinfo.lock().exec_in_progress = false;
         assert!(!pinfo.lock().exec_in_progress, "flag cleared after rollback");
+    }
+
+    // ── TLS-base and detached-thread tests ───────────────────────────────────
+
+    /// A task constructed with a non-zero `user_fs_base` retains that value.
+    ///
+    /// This is the kernel-side invariant for the TLS-base handoff: the spawn
+    /// path stores `tls_base` in `Task.user_fs_base`, and the scheduler
+    /// writes it to hardware (FS_BASE) on the first context switch.
+    #[test]
+    fn test_tls_base_stored_in_task_user_fs_base() {
+        init_test_env();
+
+        let tls_base: u64 = 0xDEAD_CAFE_0000_0000;
+
+        let task = crate::task::Task {
+            id: 9800,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+            user_fs_base: tls_base,
+            detached: false,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(task));
+
+        let stored = crate::task::registry::get_task::<MockRuntime>(9800)
+            .expect("task must be in registry")
+            .user_fs_base;
+        assert_eq!(stored, tls_base, "user_fs_base must equal the requested tls_base");
+    }
+
+    /// Joining a detached thread must return `EINVAL`.
+    #[test]
+    fn test_detached_thread_cannot_be_joined() {
+        init_test_env();
+
+        let task = crate::task::Task {
+            id: 9801,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+            user_fs_base: 0,
+            detached: true, // detached — must not be joinable
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(task));
+
+        assert_eq!(
+            register_task_exit_waiter::<MockRuntime>(9801, 9802).unwrap_err(),
+            abi::errors::Errno::EINVAL,
+            "joining a detached thread must return EINVAL"
+        );
+    }
+
+    /// A live joinable (non-detached) thread allows waiting via
+    /// `register_task_exit_waiter`, returning `None` (not yet exited).
+    #[test]
+    fn test_joinable_thread_can_be_waited_on() {
+        init_test_env();
+
+        let task = crate::task::Task {
+            id: 9803,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+            user_fs_base: 0,
+            detached: false, // joinable
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(task));
+
+        // Should succeed and return None (thread still running).
+        assert_eq!(
+            register_task_exit_waiter::<MockRuntime>(9803, 9804).unwrap(),
+            None,
+            "joining a live joinable thread must return None"
+        );
     }
 }

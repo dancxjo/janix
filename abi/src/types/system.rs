@@ -74,6 +74,14 @@ pub struct StackInfo {
     pub grow_chunk_bytes: usize,
 }
 
+/// Flags for [`SpawnThreadReq`].
+pub mod spawn_thread_flags {
+    /// The new thread is detached: it cannot be joined and its resources are
+    /// reclaimed automatically when it exits.  Passing this flag and then
+    /// calling `SYS_TASK_WAIT` on the returned TID returns `EINVAL`.
+    pub const DETACHED: u32 = 1;
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SpawnThreadReq {
@@ -81,6 +89,16 @@ pub struct SpawnThreadReq {
     pub sp: usize,
     pub arg: usize,
     pub stack: StackInfo,
+    /// Initial user-mode TLS base for the new thread (e.g. FS_BASE on x86_64).
+    ///
+    /// When non-zero the kernel writes this value into the new thread's
+    /// hardware TLS register before the thread is first scheduled.  Passing
+    /// zero leaves the TLS register in its architecture-defined initial state
+    /// (typically zero as well).
+    pub tls_base: usize,
+    /// Spawn flags — see [`spawn_thread_flags`].
+    pub flags: u32,
+    pub _pad: u32,
 }
 
 #[repr(u32)]

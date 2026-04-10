@@ -187,6 +187,7 @@ impl<R: BootRuntime> Scheduler<R> {
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
             user_fs_base: 0,
+            detached: false,
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -235,6 +236,8 @@ impl<R: BootRuntime> Scheduler<R> {
         stack_info: abi::types::StackInfo,
         priority: crate::task::TaskPriority,
         affinity: Affinity,
+        tls_base: u64,
+        detached: bool,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -323,8 +326,22 @@ impl<R: BootRuntime> Scheduler<R> {
             process_info: parent_pinfo,
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
-            user_fs_base: 0,
+            user_fs_base: tls_base,
+            detached,
         };
+
+        // If a non-zero TLS base was requested, register it in the ProcessInfo
+        // thread list before the thread can run.  The actual hardware register
+        // write happens on the first context switch into this thread via
+        // `switch_with_tls`.
+        if tls_base != 0 {
+            if let Some(pinfo) = task.process_info.as_ref() {
+                let mut pi = pinfo.lock();
+                if !pi.thread_ids.contains(&id) {
+                    pi.thread_ids.push(id);
+                }
+            }
+        }
 
         let sched_fields = crate::sched::state::TaskSchedFields {
             tid: task.id,
@@ -429,6 +446,7 @@ impl<R: BootRuntime> Scheduler<R> {
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
             user_fs_base: 0,
+            detached: false,
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -500,6 +518,19 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
     stack_info: abi::types::StackInfo,
     priority: crate::task::TaskPriority,
 ) -> TaskId {
+    spawn_user_thread_ex::<R>(entry, stack, arg, stack_info, priority, 0, false)
+}
+
+/// Extended version of `spawn_user_thread` with explicit TLS base and detached flag.
+pub unsafe fn spawn_user_thread_ex<R: BootRuntime>(
+    entry: usize,
+    stack: usize,
+    arg: StartupArg,
+    stack_info: abi::types::StackInfo,
+    priority: crate::task::TaskPriority,
+    tls_base: u64,
+    detached: bool,
+) -> TaskId {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
@@ -512,6 +543,8 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
         stack_info,
         priority,
         crate::task::Affinity::Any,
+        tls_base,
+        detached,
     );
     rt.irq_restore(_irq);
     id
@@ -1091,6 +1124,8 @@ mod tests {
                 stack_info,
                 TaskPriority::Normal,
                 Affinity::Any,
+                0,     // tls_base
+                false, // detached
             );
             let task = crate::task::registry::get_task::<MockRuntime>(id).unwrap();
 

@@ -137,6 +137,12 @@ pub struct Task<R: BootRuntime> {
     /// Userspace sets/reads this via `SYS_TASK_SET_TLS_BASE` / `SYS_TASK_GET_TLS_BASE`.
     /// Initialized to 0 for all new threads; the runtime may update it later.
     pub user_fs_base: u64,
+
+    /// If `true` the thread was created as detached: it cannot be joined and
+    /// its kernel task record may be reclaimed immediately on exit.
+    ///
+    /// Joining a detached thread via `SYS_TASK_WAIT` returns `EINVAL`.
+    pub detached: bool,
 }
 
 pub fn init<R: BootRuntime>() {

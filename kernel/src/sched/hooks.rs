@@ -33,6 +33,8 @@ pub(crate) static mut SPAWN_USER_HOOK: Option<
         crate::task::StartupArg,
         abi::types::StackInfo,
         crate::task::TaskPriority,
+        u64,
+        bool,
     ) -> TaskId,
 > = None;
 pub(crate) static mut SPAWN_PROCESS_HOOK: Option<
@@ -228,9 +230,11 @@ pub unsafe fn spawn_user_thread_current(
     arg: crate::task::StartupArg,
     stack_info: abi::types::StackInfo,
     priority: crate::task::TaskPriority,
+    tls_base: u64,
+    detached: bool,
 ) -> Option<TaskId> {
     if let Some(hook) = unsafe { SPAWN_USER_HOOK } {
-        Some(unsafe { hook(entry, stack, arg, stack_info, priority) })
+        Some(unsafe { hook(entry, stack, arg, stack_info, priority, tls_base, detached) })
     } else {
         None
     }

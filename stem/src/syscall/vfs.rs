@@ -498,6 +498,8 @@ pub fn vfs_readlink(path: &str, buf: &mut [u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret).map(|v| v as usize)
+}
+
 // ── Terminal I/O control (termios) ────────────────────────────────────────────
 
 /// Query the termios settings for the terminal device on `fd`.

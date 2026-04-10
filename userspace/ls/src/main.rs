@@ -101,10 +101,10 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         }
     };
 
-    if (stat.0 & 0o170000) != 0o040000 {
+    if (stat.mode & 0o170000) != 0o040000 {
         // Not a directory, just print the file itself
         if flags.long {
-            print(&format!("{} {:8} {}\n", format_mode(stat.0), stat.1, path));
+            print(&format!("{} {:8} {}\n", format_mode(stat.mode), stat.size, path));
         } else {
             print(&format!("{}\n", path));
         }
@@ -155,8 +155,8 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
             match vfs_open(&full_path, 0) {
                 Ok(child_fd) => {
                     if let Ok(child_stat) = vfs_stat(child_fd) {
-                        print(&format!("{} {:8} {}\n", format_mode(child_stat.0), child_stat.1, name));
-                        if flags.recursive && (child_stat.0 & 0o170000) == 0o040000 && name != "." && name != ".." {
+                        print(&format!("{} {:8} {}\n", format_mode(child_stat.mode), child_stat.size, name));
+                        if flags.recursive && (child_stat.mode & 0o170000) == 0o040000 && name != "." && name != ".." {
                             subdirs.push(full_path);
                         }
                     }
@@ -172,7 +172,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
                 // We need to check if it's a directory
                 if let Ok(child_fd) = vfs_open(&full_path, 0) {
                     if let Ok(child_stat) = vfs_stat(child_fd) {
-                        if (child_stat.0 & 0o170000) == 0o040000 {
+                        if (child_stat.mode & 0o170000) == 0o040000 {
                             subdirs.push(full_path);
                         }
                     }

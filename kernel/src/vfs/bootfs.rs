@@ -105,6 +105,7 @@ impl VfsNode for BootDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 9,
+        ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
@@ -180,6 +181,7 @@ impl VfsNode for StaticFileNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
+        ..Default::default()
         })
     }
 }

@@ -274,6 +274,7 @@ mod tests {
                 mode: VfsStat::S_IFCHR | 0o666,
                 size: 0,
                 ino: 99,
+            ..Default::default()
             })
         }
     }

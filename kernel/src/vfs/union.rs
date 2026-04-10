@@ -250,6 +250,7 @@ mod tests {
                 mode: VfsStat::S_IFREG | 0o444,
                 size: self.content.len() as u64,
                 ino: self.ino,
+            ..Default::default()
             })
         }
     }

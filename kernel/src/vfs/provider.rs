@@ -379,7 +379,7 @@ fn parse_response_stat(resp: &[u8]) -> SysResult<VfsStat> {
     let mode = u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]);
     let size = u64::from_le_bytes([resp[5], resp[6], resp[7], resp[8], resp[9], resp[10], resp[11], resp[12],]);
     let ino = u64::from_le_bytes([resp[13], resp[14], resp[15], resp[16], resp[17], resp[18], resp[19], resp[20],]);
-    Ok(VfsStat { mode, size, ino })
+    Ok(VfsStat { mode, size, ino, ..Default::default() })
 }
 
 fn errno_from_u8(v: u8) -> Errno {

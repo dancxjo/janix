@@ -67,9 +67,18 @@ impl OpenFlags {
 
 // ── File metadata ───────────────────────────────────────────────────────────
 
-/// Minimal file status, analogous to a subset of POSIX `struct stat`.
+/// Kernel-internal file status, analogous to a subset of POSIX `struct stat`.
+///
+/// All VFS node implementations return this type from their `stat()` method.
+/// The syscall handler converts it into the ABI-stable [`abi::fs::FileStat`]
+/// before copying to userspace.
+///
+/// # Timestamp policy (v1)
+/// - `atime`: updated on meaningful data read access (coarse policy).
+/// - `mtime`: updated when file contents change (write, truncate).
+/// - `ctime`: updated when file content or metadata changes.
+/// - Synthetic/virtual nodes return zero (epoch) timestamps.
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
 pub struct VfsStat {
     /// File type and permissions bitmask (same encoding as POSIX st_mode).
     pub mode: u32,
@@ -77,6 +86,18 @@ pub struct VfsStat {
     pub size: u64,
     /// Inode-like unique identifier within the filesystem.
     pub ino: u64,
+    /// Last access time — seconds since Unix epoch.
+    pub atime_sec: u64,
+    /// Last access time — nanosecond component (0–999_999_999).
+    pub atime_nsec: u32,
+    /// Last modification time — seconds since Unix epoch.
+    pub mtime_sec: u64,
+    /// Last modification time — nanosecond component (0–999_999_999).
+    pub mtime_nsec: u32,
+    /// Last status-change time — seconds since Unix epoch.
+    pub ctime_sec: u64,
+    /// Last status-change time — nanosecond component (0–999_999_999).
+    pub ctime_nsec: u32,
 }
 
 impl VfsStat {
@@ -97,6 +118,20 @@ impl VfsStat {
     }
     pub fn is_fifo(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFIFO
+    }
+
+    /// Convert this kernel-internal stat into the ABI-stable [`abi::fs::FileStat`]
+    /// suitable for copying to userspace.
+    pub fn to_abi_stat(self) -> abi::fs::FileStat {
+        abi::fs::FileStat {
+            mode: self.mode,
+            _mode_pad: 0,
+            size: self.size,
+            ino: self.ino,
+            atime: abi::fs::Timespec::new(self.atime_sec, self.atime_nsec),
+            mtime: abi::fs::Timespec::new(self.mtime_sec, self.mtime_nsec),
+            ctime: abi::fs::Timespec::new(self.ctime_sec, self.ctime_nsec),
+        }
     }
 }
 
@@ -391,6 +426,7 @@ mod tests {
                 mode: self.mode,
                 size: self.data.len() as u64,
                 ino: 1,
+            ..Default::default()
             })
         }
     }
@@ -416,6 +452,7 @@ mod tests {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 1,
+        ..Default::default()
         };
         assert!(dir.is_dir());
         assert!(!dir.is_reg());
@@ -425,6 +462,7 @@ mod tests {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 2,
+        ..Default::default()
         };
         assert!(chr.is_chr());
         assert!(!chr.is_dir());
@@ -433,6 +471,7 @@ mod tests {
             mode: VfsStat::S_IFREG | 0o644,
             size: 42,
             ino: 3,
+        ..Default::default()
         };
         assert!(reg.is_reg());
     }

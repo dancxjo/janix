@@ -581,6 +581,14 @@ pub fn runtime_base() -> &'static dyn BootRuntimeBase {
     *RUNTIME_BASE.get()
 }
 
+/// Returns `true` if the runtime has been initialized.
+///
+/// Safe to call from any context (including early boot and unit tests).
+/// Code that cannot tolerate a panic on `runtime_base()` should guard with this.
+pub fn is_runtime_initialized() -> bool {
+    RUNTIME_BASE.is_initialized()
+}
+
 // Global IO port accessor functions
 // On x86, these use inline asm. On other archs, they are no-ops.
 #[inline]

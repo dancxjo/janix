@@ -28,7 +28,7 @@ struct Font {
 impl Font {
     fn load(path: &str) -> Result<Self, String> {
         let fd = vfs_open(path, O_RDONLY).map_err(|e| format!("failed to open font file: {:?}", e))?;
-        let (_mode, size, _ino) = vfs_stat(fd).map_err(|e| format!("failed to stat font file: {:?}", e))?;
+        let stat = vfs_stat(fd).map_err(|e| format!("failed to stat font file: {:?}", e))?; let size = stat.size;
         
         let mut data = Vec::with_capacity(size as usize);
         data.resize(size as usize, 0);
@@ -234,7 +234,7 @@ impl Terminal {
 
 fn get_active_ui() -> String {
     if let Ok(fd) = vfs_open("/session/active_ui", O_RDONLY) {
-        if let Ok((_, size, _)) = vfs_stat(fd) {
+        if let Ok(stat) = vfs_stat(fd) { let size = stat.size;
             let mut buf = Vec::with_capacity(size as usize);
             buf.resize(size as usize, 0);
             if let Ok(n) = vfs_read(fd, &mut buf) {

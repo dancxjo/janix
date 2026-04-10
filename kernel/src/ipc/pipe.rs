@@ -320,6 +320,7 @@ impl crate::vfs::VfsNode for PipeReadNode {
             mode: crate::vfs::VfsStat::S_IFIFO | 0o400,
             size: 0,
             ino: 0,
+        ..Default::default()
         })
     }
 
@@ -397,6 +398,7 @@ impl crate::vfs::VfsNode for PipeWriteNode {
             mode: crate::vfs::VfsStat::S_IFIFO | 0o200,
             size: 0,
             ino: 0,
+        ..Default::default()
         })
     }
 

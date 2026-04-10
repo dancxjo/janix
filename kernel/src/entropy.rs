@@ -116,6 +116,15 @@ pub fn fill(dst: &mut [u8]) -> Result<(), Errno> {
     Ok(())
 }
 
+/// Fill `dst` with bytes from the pool regardless of seeded state.
+///
+/// Used by `/dev/urandom`: always produces output, but the output may be
+/// deterministic (based on the compile-time initial IV) if no hardware
+/// entropy has been mixed in yet.
+pub fn fill_or_weak(dst: &mut [u8]) {
+    POOL.generate(dst);
+}
+
 /// Seed the pool from the hardware RNG via the BootRuntimeBase trait.
 ///
 /// Call this during early boot. Mixes hardware entropy and marks the pool

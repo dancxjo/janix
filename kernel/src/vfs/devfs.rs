@@ -143,6 +143,8 @@ impl VfsDriver for DevFs {
                 }
             }
             "rtc" => Ok(Arc::new(RtcNode)),
+            "random" => Ok(Arc::new(RandomNode)),
+            "urandom" => Ok(Arc::new(UrandomNode)),
             _ => Err(Errno::ENOENT),
         }
     }
@@ -226,10 +228,15 @@ impl VfsNode for DevDirNode {
         names.push("display".to_string());
         names.push("input".to_string());
         names.push("rtc".to_string());
+        names.push("random".to_string());
+        names.push("urandom".to_string());
         {
             let reg = DEVICE_REGISTRY.lock();
             for name in reg.keys() {
-                if !matches!(name.as_str(), "console" | "null" | "zero" | "fb0" | "rtc") {
+                if !matches!(
+                    name.as_str(),
+                    "console" | "null" | "zero" | "fb0" | "rtc" | "random" | "urandom"
+                ) {
                     names.push(name.clone());
                 }
             }
@@ -524,6 +531,93 @@ impl VfsNode for RtcNode {
     }
 }
 
+// ── /dev/random ──────────────────────────────────────────────────────────────
+
+/// Character device node for `/dev/random`.
+///
+/// Reads fill the buffer with cryptographically random bytes from the kernel
+/// entropy pool.  Returns `EAGAIN` if the pool has not yet been seeded by a
+/// hardware entropy source — callers that need blocking behaviour should
+/// retry after a short sleep or use `/dev/urandom`.
+/// Writes are ignored (Linux-compatible).
+pub struct RandomNode;
+
+impl VfsNode for RandomNode {
+    fn read(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        crate::entropy::fill(buf)?;
+        Ok(buf.len())
+    }
+
+    fn write(&self, _offset: u64, buf: &[u8]) -> SysResult<usize> {
+        // Writes add entropy (Linux-compatible behaviour).
+        crate::entropy::add_sample(buf);
+        Ok(buf.len())
+    }
+
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFCHR | 0o666,
+            size: 0,
+            ino: 6,
+            ..Default::default()
+        })
+    }
+
+    fn poll(&self) -> u16 {
+        // Always ready for read once the pool is seeded.
+        if crate::entropy::is_seeded() {
+            abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
+        } else {
+            abi::syscall::poll_flags::POLLOUT
+        }
+    }
+}
+
+// ── /dev/urandom ─────────────────────────────────────────────────────────────
+
+/// Character device node for `/dev/urandom`.
+///
+/// Reads always return random bytes even before the entropy pool is fully
+/// seeded (non-blocking, like Linux `/dev/urandom`).  When the pool is not
+/// yet seeded the output is deterministic but still mixed from the initial
+/// pool state — suitable for bootstrapping purposes.
+/// Writes are ignored (Linux-compatible).
+pub struct UrandomNode;
+
+impl VfsNode for UrandomNode {
+    fn read(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        // Always generate output regardless of seeded state.
+        crate::entropy::fill_or_weak(buf);
+        Ok(buf.len())
+    }
+
+    fn write(&self, _offset: u64, buf: &[u8]) -> SysResult<usize> {
+        // Writes add entropy (Linux-compatible behaviour).
+        crate::entropy::add_sample(buf);
+        Ok(buf.len())
+    }
+
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFCHR | 0o666,
+            size: 0,
+            ino: 7,
+            ..Default::default()
+        })
+    }
+
+    fn poll(&self) -> u16 {
+        // Always ready for both read and write.
+        abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,5 +756,93 @@ mod tests {
             DevFs::new().lookup("test_unique_dev_99"),
             Err(Errno::ENOENT)
         ));
+    }
+
+    // ── /dev/urandom tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_lookup_urandom_returns_node() {
+        assert!(lookup("urandom").is_ok());
+    }
+
+    #[test]
+    fn test_urandom_stat_is_chr() {
+        let node = lookup("urandom").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.is_chr());
+    }
+
+    #[test]
+    fn test_urandom_read_fills_buffer() {
+        let node = lookup("urandom").unwrap();
+        let mut buf = [0u8; 16];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 16);
+    }
+
+    #[test]
+    fn test_urandom_read_empty_buffer_returns_zero() {
+        let node = lookup("urandom").unwrap();
+        let mut buf = [];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_urandom_write_succeeds() {
+        let node = lookup("urandom").unwrap();
+        let n = node.write(0, b"some entropy").unwrap();
+        assert_eq!(n, 12);
+    }
+
+    #[test]
+    fn test_urandom_poll_always_readable() {
+        let node = lookup("urandom").unwrap();
+        let mask = node.poll();
+        assert!(mask & abi::syscall::poll_flags::POLLIN != 0);
+    }
+
+    // ── /dev/random tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_lookup_random_returns_node() {
+        assert!(lookup("random").is_ok());
+    }
+
+    #[test]
+    fn test_random_stat_is_chr() {
+        let node = lookup("random").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.is_chr());
+    }
+
+    #[test]
+    fn test_random_read_after_seeding() {
+        // Seed the pool so /dev/random becomes readable.
+        crate::entropy::add_sample(b"test_entropy_data_12345678");
+        crate::entropy::mark_seeded();
+
+        let node = lookup("random").unwrap();
+        let mut buf = [0u8; 8];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 8);
+    }
+
+    #[test]
+    fn test_random_write_succeeds() {
+        let node = lookup("random").unwrap();
+        let n = node.write(0, b"more entropy").unwrap();
+        assert_eq!(n, 12);
+    }
+
+    #[test]
+    fn test_readdir_lists_random_nodes() {
+        let node = lookup("").unwrap();
+        let mut buf = [0u8; 128];
+        let n = node.readdir(0, &mut buf).unwrap();
+        assert!(n > 0);
+        let s = core::str::from_utf8(&buf[..n]).unwrap();
+        assert!(s.contains("random"));
+        assert!(s.contains("urandom"));
     }
 }

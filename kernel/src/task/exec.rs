@@ -466,8 +466,8 @@ mod tests {
             "exec_in_progress must be cleared on rollback"
         );
         // thread_ids should be untouched (siblings are still alive in the real
-        // failure path because kill_by_tid is only called for the sibling-kill
-        // phase which happens before any FD/ELF operations).
+        // failure path because kill_by_tid is only called during the sibling-kill
+        // phase which happens before FD resolution and ELF loading).
         assert_eq!(
             pinfo.lock().thread_ids.len(),
             2,

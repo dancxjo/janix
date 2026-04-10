@@ -94,8 +94,11 @@ pub use wait::wait_many;
 /// Block the calling thread until `*addr != expected` or until `timeout_ns`
 /// nanoseconds elapse (pass `0` for an indefinite wait).
 ///
-/// Returns `Ok(0)` on wake, `Err(EAGAIN)` if the value had already changed,
+/// Returns `Ok(())` on wake, `Err(EAGAIN)` if the value had already changed,
 /// or `Err(ETIMEDOUT)` on timeout.
+///
+/// Note: Thing-OS only supports 64-bit targets, so `u64` timeout values
+/// fit safely in a `usize` register argument.
 pub fn futex_wait(addr: &core::sync::atomic::AtomicU32, expected: u32, timeout_ns: u64) -> Result<(), Errno> {
     let ret = unsafe {
         raw_syscall6(

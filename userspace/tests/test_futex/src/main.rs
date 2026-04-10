@@ -47,7 +47,14 @@ impl FutexMutex {
             ) {
                 Ok(_) => return,
                 Err(actual) => {
-                    // Mark that there are waiters and sleep.
+                    // Mark that there are waiters then sleep.
+                    //
+                    // Setting state = 2 here is intentionally relaxed and
+                    // slightly racy: a concurrent unlock might clear the state
+                    // between our read of `actual` and this store.  That is
+                    // benign because futex_wait will re-check the value and
+                    // return EAGAIN immediately if it is no longer 2, so the
+                    // outer loop will retry the CAS and eventually succeed.
                     expected = actual;
                     if actual != 2 {
                         self.state.store(2, Ordering::Relaxed);
@@ -144,7 +151,11 @@ fn test_wake_ordering() {
     let tid2 =
         spawn_thread(waiter_thread_fn as usize, 0, &stack2).expect("spawn thread 2");
 
-    // Brief yield to let both threads reach futex_wait.
+    // Yield a few times so both threads have a chance to reach futex_wait.
+    // This is best-effort: the threads may still be racing toward futex_wait
+    // when we proceed, but that is intentional — futex_wait is designed to
+    // handle the case where the value changes before the thread sleeps (it
+    // returns EAGAIN and the thread re-checks in its own loop).
     for _ in 0..10 {
         stem::syscall::yield_now();
     }

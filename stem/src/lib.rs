@@ -38,6 +38,7 @@ pub mod syscall;
 pub mod task;
 pub mod thread;
 pub mod time;
+pub mod tls;
 pub mod utils;
 pub mod vm;
 pub mod wait_set;

@@ -631,13 +631,16 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         lock.auxv = crate::task::exec::build_auxv(&aux_info, page_size);
     }
 
-    // Store name and process_info on the task struct
+    // Store name, process_info, and initial TLS thread pointer on the task struct.
     if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
         task.name_len = len as u8;
         task.process_info = Some(pinfo);
+        // Apply initial TLS base (FS_BASE on x86_64) for the new process's main thread.
+        // Zero means no PT_TLS segment was found; FS_BASE starts at its default state.
+        task.user_fs_base = aux_info.tls_tp;
     }
 
     // Queue setting the process name (processed after scheduler lock released)
@@ -894,13 +897,15 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         exec_in_progress: false,
     }));
 
-    // Store name and process_info on the task struct
+    // Store name, process_info, and initial TLS thread pointer on the task struct.
     if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
         task.name_len = len as u8;
         task.process_info = Some(pinfo);
+        // Apply initial TLS base (FS_BASE on x86_64) for the new process's main thread.
+        task.user_fs_base = aux_info.tls_tp;
     }
 
     // Queue setting the process name

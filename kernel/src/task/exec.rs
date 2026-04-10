@@ -157,7 +157,7 @@ pub fn task_exec_current<R: BootRuntime>(
     // This is the "Commit Point".
 
     // Copy the context out so we can switch to it after dropping the registry lock
-    let (to_ctx, new_aspace_actual) = {
+    let (to_ctx, new_aspace_actual, tls_tp) = {
         let mut task_mut = crate::task::registry::get_task_mut::<R>(tid).ok_or(Errno::ESRCH)?;
 
         // Replace address space
@@ -184,7 +184,11 @@ pub fn task_exec_current<R: BootRuntime>(
         };
         task_mut.ctx = rt.tasking().init_user_context(spec, task_mut.kstack_top);
 
-        (task_mut.ctx, task_mut.aspace)
+        // Apply the initial TLS thread pointer for the new image.
+        // A zero value means no PT_TLS segment was present; FS_BASE is cleared.
+        task_mut.user_fs_base = aux_info.tls_tp;
+
+        (task_mut.ctx, task_mut.aspace, aux_info.tls_tp)
     }; // registry lock (TaskMut) dropped here
 
     // 8. Perform the actual transition
@@ -192,11 +196,11 @@ pub fn task_exec_current<R: BootRuntime>(
     rt.tasking().activate_address_space(new_aspace_actual);
 
     let mut dummy_ctx = Default::default();
-    // TLS base for the new image starts at 0; the dummy save target is discarded.
+    // Discard the outgoing FS_BASE; switch in with the new image's TLS pointer.
     let mut _discard_tls: u64 = 0;
     unsafe {
         rt.tasking()
-            .switch_with_tls(&mut dummy_ctx, &to_ctx, tid, &mut _discard_tls, 0);
+            .switch_with_tls(&mut dummy_ctx, &to_ctx, tid, &mut _discard_tls, tls_tp);
     }
 
     // switch() should never return to this stack because we didn't save it into any task.ctx
@@ -204,11 +208,17 @@ pub fn task_exec_current<R: BootRuntime>(
 }
 
 // Standard AT_* auxiliary-vector type constants (matches Linux/SysV ABI).
-const AT_PAGESZ: u64 = 6;
-const AT_PHDR: u64 = 3;
-const AT_PHENT: u64 = 4;
-const AT_PHNUM: u64 = 5;
-const AT_ENTRY: u64 = 9;
+const AT_PAGESZ: u64 = abi::auxv::AT_PAGESZ;
+const AT_PHDR: u64 = abi::auxv::AT_PHDR;
+const AT_PHENT: u64 = abi::auxv::AT_PHENT;
+const AT_PHNUM: u64 = abi::auxv::AT_PHNUM;
+const AT_ENTRY: u64 = abi::auxv::AT_ENTRY;
+
+// Janix-specific AT_* entries for ELF TLS — shared constants from abi::auxv.
+const AT_JANIX_TLS_TEMPLATE_VA: u64 = abi::auxv::AT_JANIX_TLS_TEMPLATE_VA;
+const AT_JANIX_TLS_FILESZ: u64 = abi::auxv::AT_JANIX_TLS_FILESZ;
+const AT_JANIX_TLS_MEMSZ: u64 = abi::auxv::AT_JANIX_TLS_MEMSZ;
+const AT_JANIX_TLS_ALIGN: u64 = abi::auxv::AT_JANIX_TLS_ALIGN;
 
 /// Build the standard auxiliary-vector entries for a freshly loaded image.
 ///
@@ -229,6 +239,13 @@ pub fn build_auxv(
     if aux_info.entry_vaddr != 0 {
         v.push((AT_ENTRY, aux_info.entry_vaddr));
     }
+    // Emit TLS auxiliary entries when a PT_TLS segment was found.
+    if aux_info.tls_memsz != 0 {
+        v.push((AT_JANIX_TLS_TEMPLATE_VA, aux_info.tls_template_vaddr));
+        v.push((AT_JANIX_TLS_FILESZ, aux_info.tls_filesz));
+        v.push((AT_JANIX_TLS_MEMSZ, aux_info.tls_memsz));
+        v.push((AT_JANIX_TLS_ALIGN, aux_info.tls_align));
+    }
     v
 }
 
@@ -244,6 +261,7 @@ mod tests {
             phent: 56,
             phnum: 3,
             entry_vaddr: 0x201000,
+            ..Default::default()
         };
         let auxv = build_auxv(&info, 4096);
 
@@ -255,6 +273,8 @@ mod tests {
         assert!(auxv.contains(&(AT_PHNUM, 3)));
         // AT_ENTRY present when entry_vaddr != 0.
         assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
+        // No TLS entries when tls_memsz == 0.
+        assert!(!auxv.iter().any(|&(k, _)| k == AT_JANIX_TLS_MEMSZ));
     }
 
     #[test]
@@ -280,12 +300,38 @@ mod tests {
             phent: 56,
             phnum: 0,
             entry_vaddr: 0x201000,
+            ..Default::default()
         };
         let auxv = build_auxv(&info, 0x1000);
         assert!(auxv.contains(&(AT_PAGESZ, 0x1000)));
         assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
         // phdr_vaddr == 0 → no AT_PHDR/AT_PHENT/AT_PHNUM emitted.
         assert!(!auxv.iter().any(|&(k, _)| k == AT_PHDR));
+    }
+
+    #[test]
+    fn build_auxv_with_tls() {
+        let info = LoaderAuxInfo {
+            phdr_vaddr: 0x200040,
+            phent: 56,
+            phnum: 4,
+            entry_vaddr: 0x201000,
+            tls_template_vaddr: 0x300000,
+            tls_filesz: 64,
+            tls_memsz: 128,
+            tls_align: 16,
+            tls_tp: 0x310080,
+        };
+        let auxv = build_auxv(&info, 4096);
+        // Standard entries still present.
+        assert!(auxv.contains(&(AT_PAGESZ, 4096)));
+        assert!(auxv.contains(&(AT_PHDR, 0x200040)));
+        assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
+        // TLS entries present when tls_memsz != 0.
+        assert!(auxv.contains(&(AT_JANIX_TLS_TEMPLATE_VA, 0x300000)));
+        assert!(auxv.contains(&(AT_JANIX_TLS_FILESZ, 64)));
+        assert!(auxv.contains(&(AT_JANIX_TLS_MEMSZ, 128)));
+        assert!(auxv.contains(&(AT_JANIX_TLS_ALIGN, 16)));
     }
 
     // ── exec_in_progress / thread-group collapse unit tests ──────────────────

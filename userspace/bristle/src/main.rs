@@ -35,7 +35,8 @@ fn update_active_ui(target: &str) {
 fn get_active_ui() -> alloc::string::String {
     use stem::syscall::vfs::{vfs_read, vfs_stat};
     if let Ok(fd) = vfs_open("/session/active_ui", abi::syscall::vfs_flags::O_RDONLY) {
-        if let Ok(stat) = vfs_stat(fd) { let size = stat.size as usize;
+        if let Ok(stat) = vfs_stat(fd) {
+            let size = stat.size as usize;
             let mut buf = alloc::vec::Vec::with_capacity(size as usize);
             buf.resize(size as usize, 0);
             if let Ok(n) = vfs_read(fd, &mut buf) {

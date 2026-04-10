@@ -155,7 +155,8 @@ impl VfsNode for RamfsNode {
                 let avail = &lock.data[off..];
                 let n = avail.len().min(buf.len());
                 buf[..n].copy_from_slice(&avail[..n]);
-                // v1 atime policy: update on any successful read.
+                // atime policy: update atime on every successful non-empty read (eager policy).
+                // This matches the VfsStat contract documented in kernel/src/vfs/mod.rs.
                 if n > 0 {
                     lock.atime = now();
                 }

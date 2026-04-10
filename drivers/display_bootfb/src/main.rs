@@ -9,7 +9,7 @@ mod vfs_provider;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::BootFbDriver;
-use stem::syscall::{channel_create, channel_try_recv, vfs_mount};
+use stem::syscall::{channel_create, channel_recv, channel_try_recv, vfs_mount};
 use stem::{debug, info, warn};
 use vfs_provider::handle_vfs_rpc;
 
@@ -171,40 +171,47 @@ fn main(boot_fd: usize) -> ! {
     let mut wait_buf = [0u8; 512];
     let mut bind_instance_id_confirmed = bind_instance_id;
     loop {
-        // Read from drv_req_read, NOT supervisor_port!
-        if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
-            if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n])
-            {
-                if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
-                    if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
-                        bind_instance_id_confirmed = assigned.bind_instance_id;
-                        let path_len = assigned
-                            .primary_path
-                            .iter()
-                            .position(|&b| b == 0)
-                            .unwrap_or(64);
-                        let path =
-                            core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
-                        debug!(
-                            "display_bootfb: Sovereign registration COMPLETE. Assigned: {}",
-                            path
-                        );
-                        break;
-                    }
-                } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
-                    if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
-                        let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
-                        let reason =
-                            core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
-                        warn!("display_bootfb: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
-                        loop {
-                            stem::syscall::yield_now();
+        // Read from drv_req_read, NOT supervisor_port. This should block rather than
+        // spin so the CPU can schedule unrelated work while the driver waits.
+        match channel_recv(drv_req_read, &mut wait_buf) {
+            Ok(n) => {
+                if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n])
+                {
+                    if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
+                        if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload)
+                        {
+                            bind_instance_id_confirmed = assigned.bind_instance_id;
+                            let path_len = assigned
+                                .primary_path
+                                .iter()
+                                .position(|&b| b == 0)
+                                .unwrap_or(64);
+                            let path =
+                                core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
+                            debug!(
+                                "display_bootfb: Sovereign registration COMPLETE. Assigned: {}",
+                                path
+                            );
+                            break;
+                        }
+                    } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
+                        if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
+                            let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
+                            let reason =
+                                core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
+                            warn!("display_bootfb: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
+                            loop {
+                                stem::syscall::yield_now();
+                            }
                         }
                     }
                 }
             }
+            Err(e) => {
+                warn!("display_bootfb: failed waiting for bind assignment: {:?}", e);
+                stem::time::sleep_ms(1);
+            }
         }
-        stem::syscall::yield_now();
     }
 
     // Notify supervisor that this service is now fully operational.

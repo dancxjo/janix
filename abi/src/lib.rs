@@ -26,6 +26,7 @@ pub mod tree_provider;
 pub mod types;
 pub mod ui_event;
 pub mod ui_paint;
+pub mod memfd;
 pub mod vm;
 pub mod wait;
 

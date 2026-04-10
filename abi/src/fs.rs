@@ -45,13 +45,21 @@ impl Timespec {
 /// - `mtime`: updated when file contents change (write, truncate).
 /// - `ctime`: updated when file content or metadata changes.
 /// - For synthetic/virtual nodes, timestamps are set to zero (epoch).
+///
+/// # Ownership and extended metadata
+/// - `uid`/`gid`: owner user/group IDs (0 = root for synthetic/kernel nodes).
+/// - `nlink`: hard-link count (1 for most files; ≥ 2 for directories).
+/// - `rdev`: device number (encoded as `(major << 8) | minor`) for character/block
+///   devices; 0 for regular files and directories.
+/// - `blksize`: preferred I/O block size (4096 for most nodes).
+/// - `blocks`: number of 512-byte blocks allocated (computed from `size` for files).
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct FileStat {
     /// File type and permissions bitmask (same encoding as POSIX `st_mode`).
     pub mode: u32,
-    /// Reserved padding for alignment.
-    pub _mode_pad: u32,
+    /// Hard-link count (1 for files, ≥ 2 for directories).
+    pub nlink: u32,
     /// File size in bytes (0 for devices/directories).
     pub size: u64,
     /// Inode-like unique identifier within the filesystem.
@@ -62,4 +70,17 @@ pub struct FileStat {
     pub mtime: Timespec,
     /// Last status change time (content or metadata changed).
     pub ctime: Timespec,
+    /// Owner user ID (0 = root for kernel/synthetic nodes).
+    pub uid: u32,
+    /// Owner group ID (0 = root for kernel/synthetic nodes).
+    pub gid: u32,
+    /// Device number for character/block device nodes (`(major << 8) | minor`);
+    /// 0 for regular files and directories.
+    pub rdev: u64,
+    /// Preferred I/O block size in bytes.
+    pub blksize: u32,
+    /// Padding to align `blocks` to an 8-byte boundary.
+    pub _blksize_pad: u32,
+    /// Number of 512-byte blocks allocated for this file.
+    pub blocks: u64,
 }

@@ -139,23 +139,48 @@ fn main(boot_fd: usize) -> ! {
         }
     }
 
-    // Wait for MSG_BIND_ASSIGNED
+    // Wait for MSG_BIND_ASSIGNED or MSG_BIND_FAILED
     let mut wait_buf = [0u8; 512];
+    let mut bind_instance_id_confirmed = bind_instance_id;
     loop {
         // Read from drv_req_read, NOT supervisor_port!
         if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
             if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n]) {
                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        bind_instance_id_confirmed = assigned.bind_instance_id;
                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
                         let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
                         debug!("display_bootfb: Sovereign registration COMPLETE. Assigned: {}", path);
                         break;
                     }
+                } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
+                    if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
+                        let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
+                        let reason = core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
+                        warn!("display_bootfb: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
+                        loop { stem::syscall::yield_now(); }
+                    }
                 }
             }
         }
         stem::syscall::yield_now();
+    }
+
+    // Notify supervisor that this service is now fully operational.
+    {
+        let svc_ready = supervisor_protocol::ServiceReadyPayload {
+            bind_instance_id: bind_instance_id_confirmed,
+            _reserved: 0,
+        };
+        let mut payload_bytes = [0u8; supervisor_protocol::SERVICE_READY_PAYLOAD_SIZE];
+        let mut svc_buf = [0u8; 64];
+        if let Some(p_len) = supervisor_protocol::encode_service_ready_le(&svc_ready, &mut payload_bytes) {
+            if let Some(total_len) = display_driver_protocol::encode_message(&mut svc_buf, supervisor_protocol::MSG_SERVICE_READY, &payload_bytes[..p_len]) {
+                let _ = stem::syscall::channel_send_all(drv_resp_write, &svc_buf[..total_len]);
+                debug!("display_bootfb: Sent MSG_SERVICE_READY.");
+            }
+        }
     }
 
     let mut req_buf = vec![0u8; VFS_RPC_MAX_REQ];

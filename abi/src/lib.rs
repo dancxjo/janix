@@ -43,6 +43,7 @@ pub mod svg_protocol;
 
 pub mod macros;
 pub mod packed;
+pub mod rpc;
 pub mod thing;
 pub mod vfs_rpc;
 pub mod vfs_watch;

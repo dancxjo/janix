@@ -51,6 +51,11 @@ impl VfsDriver for ProcFs {
             "meminfo" => Ok(Arc::new(MemInfoNode)),
             "cpuinfo" => Ok(Arc::new(CpuInfoNode)),
             "uptime" => Ok(Arc::new(UptimeNode)),
+            // /proc/ipc — IPC diagnostics directory
+            "ipc" => Ok(Arc::new(IpcDirNode)),
+            "ipc/channels" => Ok(Arc::new(IpcDiagNode::channels())),
+            "ipc/pipes" => Ok(Arc::new(IpcDiagNode::pipes())),
+            "ipc/vfs_rpc" => Ok(Arc::new(IpcDiagNode::vfs_rpc())),
             _ => {
                 // Try to match /proc/<pid>/... paths.
                 // `path` is already relative to the mount point, so it looks
@@ -144,6 +149,7 @@ impl VfsNode for ProcDirNode {
             String::from("meminfo"),
             String::from("cpuinfo"),
             String::from("uptime"),
+            String::from("ipc"),
         ];
         for snap in crate::sched::list_processes_current() {
             names.push(alloc::format!("{}", snap.pid));
@@ -441,6 +447,98 @@ fn uptime_secs() -> u64 {
     }
 }
 
+// ── /proc/ipc/ directory ──────────────────────────────────────────────────────
+
+/// Directory node for `/proc/ipc`.
+struct IpcDirNode;
+
+impl VfsNode for IpcDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o555,
+            size: 0,
+            ino: 500,
+            ..Default::default()
+        })
+    }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let entries = ["channels", "pipes", "vfs_rpc"];
+        super::write_readdir_entries(entries.into_iter(), offset, buf)
+    }
+}
+
+/// Dynamic text node that renders IPC diagnostic counters on demand.
+struct IpcDiagNode {
+    kind: IpcDiagKind,
+    ino: u64,
+}
+
+enum IpcDiagKind {
+    Channels,
+    Pipes,
+    VfsRpc,
+}
+
+impl IpcDiagNode {
+    fn channels() -> Self {
+        Self {
+            kind: IpcDiagKind::Channels,
+            ino: 501,
+        }
+    }
+    fn pipes() -> Self {
+        Self {
+            kind: IpcDiagKind::Pipes,
+            ino: 502,
+        }
+    }
+    fn vfs_rpc() -> Self {
+        Self {
+            kind: IpcDiagKind::VfsRpc,
+            ino: 503,
+        }
+    }
+
+    fn render(&self) -> alloc::string::String {
+        match self.kind {
+            IpcDiagKind::Channels => crate::ipc::diag::channels_text(),
+            IpcDiagKind::Pipes => crate::ipc::diag::pipes_text(),
+            IpcDiagKind::VfsRpc => crate::ipc::diag::vfs_rpc_text(),
+        }
+    }
+}
+
+impl VfsNode for IpcDiagNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let text = self.render();
+        let data = text.as_bytes();
+        let off = offset as usize;
+        if off >= data.len() {
+            return Ok(0);
+        }
+        let n = (data.len() - off).min(buf.len());
+        buf[..n].copy_from_slice(&data[off..off + n]);
+        Ok(n)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EROFS)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFREG | 0o444,
+            size: 0, // dynamic
+            ino: self.ino,
+            ..Default::default()
+        })
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -494,6 +592,7 @@ mod tests {
         assert!(s.contains("meminfo"));
         assert!(s.contains("cpuinfo"));
         assert!(s.contains("uptime"));
+        assert!(s.contains("ipc"));
     }
 
     #[test]
@@ -532,7 +631,56 @@ mod tests {
     }
 
     #[test]
-    fn test_lookup_non_numeric_pid_returns_enoent() {
-        assert!(matches!(lookup("notapid"), Err(Errno::ENOENT)));
+    fn test_readdir_root_lists_ipc() {
+        let node = lookup("").unwrap();
+        let mut buf = [0u8; 256];
+        let n = node.readdir(0, &mut buf).unwrap();
+        let s = core::str::from_utf8(&buf[..n]).unwrap();
+        assert!(s.contains("ipc"));
+    }
+
+    #[test]
+    fn test_lookup_ipc_dir_is_dir() {
+        let node = lookup("ipc").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.is_dir());
+    }
+
+    #[test]
+    fn test_lookup_ipc_channels() {
+        let node = lookup("ipc/channels").unwrap();
+        let mut buf = [0u8; 256];
+        let n = node.read(0, &mut buf).unwrap();
+        assert!(n > 0);
+        let s = core::str::from_utf8(&buf[..n]).unwrap();
+        assert!(s.contains("sends:"));
+    }
+
+    #[test]
+    fn test_lookup_ipc_pipes() {
+        let node = lookup("ipc/pipes").unwrap();
+        let mut buf = [0u8; 256];
+        let n = node.read(0, &mut buf).unwrap();
+        assert!(n > 0);
+        let s = core::str::from_utf8(&buf[..n]).unwrap();
+        assert!(s.contains("writes:"));
+    }
+
+    #[test]
+    fn test_lookup_ipc_vfs_rpc() {
+        let node = lookup("ipc/vfs_rpc").unwrap();
+        let mut buf = [0u8; 256];
+        let n = node.read(0, &mut buf).unwrap();
+        assert!(n > 0);
+        let s = core::str::from_utf8(&buf[..n]).unwrap();
+        assert!(s.contains("requests:"));
+    }
+
+    #[test]
+    fn test_ipc_diag_nodes_are_readonly() {
+        for path in &["ipc/channels", "ipc/pipes", "ipc/vfs_rpc"] {
+            let node = lookup(path).unwrap();
+            assert!(matches!(node.write(0, b"x"), Err(Errno::EROFS)));
+        }
     }
 }

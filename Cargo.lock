@@ -1824,6 +1824,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipc_helpers"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "spin",
+ "stem",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

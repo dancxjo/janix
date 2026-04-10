@@ -149,6 +149,9 @@ pub fn read(pipe_id: u64, dst: &mut [u8]) -> Result<usize, abi::errors::Errno> {
             if !inner.buf.is_empty() {
                 let n = inner.buf.dequeue(dst);
                 inner.write_waitq.wake_one();
+                crate::ipc::diag::PIPE_READS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                crate::ipc::diag::PIPE_BYTES_READ
+                    .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
                 return Ok(n);
             }
 
@@ -198,6 +201,8 @@ pub fn write(pipe_id: u64, src: &[u8]) -> Result<usize, abi::errors::Errno> {
 
             // No readers => broken pipe
             if inner.readers == 0 {
+                crate::ipc::diag::PIPE_BROKEN_PIPE
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 return Err(abi::errors::Errno::EPIPE);
             }
 
@@ -205,6 +210,9 @@ pub fn write(pipe_id: u64, src: &[u8]) -> Result<usize, abi::errors::Errno> {
             if !inner.buf.is_full() {
                 let n = inner.buf.enqueue(src);
                 inner.read_waitq.wake_one();
+                crate::ipc::diag::PIPE_WRITES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                crate::ipc::diag::PIPE_BYTES_WRITTEN
+                    .fetch_add(n as u64, core::sync::atomic::Ordering::Relaxed);
                 return Ok(n);
             }
 

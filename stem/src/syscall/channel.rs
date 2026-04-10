@@ -137,3 +137,57 @@ pub fn channel_recv_handle(channel: ChannelHandle) -> Result<u32, Errno> {
     };
     abi::errors::errno(ret).map(|_| out_fd)
 }
+
+/// Send a message with zero or more attached handles over a channel.
+///
+/// `data` may be empty (handle-only message).  `handles` is a slice of
+/// fd/handle numbers from the calling process's table; the kernel resolves
+/// each number and attaches the underlying capability to the message.
+///
+/// Transfer semantics: **duplicate** — the caller retains its own fd/handle.
+pub fn channel_send_msg(
+    channel: ChannelHandle,
+    data: &[u8],
+    handles: &[u32],
+) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_CHANNEL_SEND_MSG,
+            channel as usize,
+            data.as_ptr() as usize,
+            data.len(),
+            handles.as_ptr() as usize,
+            handles.len(),
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Receive a message with zero or more attached handles from a channel.
+///
+/// `data_buf` receives the payload bytes (truncated if the buffer is too small).
+/// `handles_buf` receives the new fd numbers assigned in the calling process for
+/// each transferred capability (truncated if the buffer is too small).
+///
+/// Returns `(actual_data_len, actual_handles_count)` on success, or
+/// `Err(Errno::EAGAIN)` when the message queue is empty.
+pub fn channel_recv_msg(
+    channel: ChannelHandle,
+    data_buf: &mut [u8],
+    handles_buf: &mut [u32],
+) -> Result<(usize, usize), Errno> {
+    let mut out_lens = [0usize; 2];
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_CHANNEL_RECV_MSG,
+            channel as usize,
+            data_buf.as_mut_ptr() as usize,
+            data_buf.len(),
+            handles_buf.as_mut_ptr() as usize,
+            handles_buf.len(),
+            out_lens.as_mut_ptr() as usize,
+        )
+    };
+    abi::errors::errno(ret).map(|_| (out_lens[0], out_lens[1]))
+}

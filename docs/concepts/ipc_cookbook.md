@@ -117,10 +117,43 @@ fn call_service(svc_write: u32, svc_read: u32) {
 
 ---
 
-## Recipe 3 — Handle passing
+## Recipe 3 — Handle passing (first-class message API)
 
-**Problem**: transfer a file descriptor (e.g. an open device node) from one
-process to another.
+**Problem**: transfer one or more file descriptors or channel handles from one
+process to another as part of a message.
+
+### New API (preferred): `channel_send_msg` / `channel_recv_msg`
+
+Handles are **first-class properties of a message** — they travel atomically
+alongside the data bytes in the same message unit.
+
+```rust
+use stem::syscall::channel::{channel_send_msg, channel_recv_msg};
+
+// Sender: send data bytes + two fds in one atomic operation.
+fn send_fds(channel: u32, fd1: u32, fd2: u32) {
+    let handles = [fd1, fd2];
+    channel_send_msg(channel, b"two-fds", &handles).expect("send_msg");
+}
+
+// Receiver: receive data + fds together.
+fn recv_fds(channel: u32) -> (u32, u32) {
+    let mut data = [0u8; 16];
+    let mut new_fds = [0u32; 2];
+    let (data_len, handles_count) =
+        channel_recv_msg(channel, &mut data, &mut new_fds).expect("recv_msg");
+    assert_eq!(&data[..data_len], b"two-fds");
+    assert_eq!(handles_count, 2);
+    (new_fds[0], new_fds[1])
+}
+```
+
+The kernel re-numbers each handle in the receiver's fd table.  Duplicate
+semantics: the sender retains its own fd/handle.
+
+### Legacy API (compatibility): `channel_send_handle` / `channel_recv_handle`
+
+The old single-handle API is still supported as a compatibility wrapper:
 
 ```rust
 use stem::syscall::channel::{channel_send_handle, channel_recv_handle, channel_send_all, channel_recv};
@@ -143,6 +176,10 @@ fn recv_fd(channel: u32) -> u32 {
 
 The kernel re-numbers the fd in the receiver's fd table.  The receiver can
 use `new_fd` with any `SYS_FS_*` syscall immediately.
+
+> **Note**: The new `channel_send_msg` / `channel_recv_msg` API is preferred
+> for all new code.  The old `send_handle` / `recv_handle` pair is kept for
+> backward compatibility and is implemented as a thin wrapper.
 
 ---
 

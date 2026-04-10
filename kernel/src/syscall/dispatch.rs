@@ -65,6 +65,12 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_CHANNEL_TRY_RECV => handlers::sys_channel_try_recv(args[0], args[1], args[2]),
         SYS_CHANNEL_SEND_HANDLE => handlers::sys_channel_send_handle(args[0], args[1]),
         SYS_CHANNEL_RECV_HANDLE => handlers::sys_channel_recv_handle(args[0], args[1]),
+        SYS_CHANNEL_SEND_MSG => {
+            handlers::sys_channel_send_msg(args[0], args[1], args[2], args[3], args[4])
+        }
+        SYS_CHANNEL_RECV_MSG => {
+            handlers::sys_channel_recv_msg(args[0], args[1], args[2], args[3], args[4], args[5])
+        }
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),

@@ -91,6 +91,13 @@ pub const SYS_CHANNEL_RECV_HANDLE: u32 = 0x3006;
 pub const SYS_CHANNEL_INFO: u32 = 0x3007;
 pub const SYS_CHANNEL_CLOSE: u32 = 0x3008;
 pub const SYS_CHANNEL_WAIT: u32 = 0x3009;
+/// Send a message with zero or more attached handles over a channel.
+/// Args: (channel, data_ptr, data_len, handles_ptr, handles_count, 0)
+pub const SYS_CHANNEL_SEND_MSG: u32 = 0x300A;
+/// Receive a message with zero or more attached handles from a channel.
+/// Args: (channel, data_ptr, data_cap, handles_ptr, handles_cap, out_lens_ptr)
+/// out_lens_ptr → [usize; 2] = [actual_data_len, actual_handles_count]
+pub const SYS_CHANNEL_RECV_MSG: u32 = 0x300B;
 pub const SYS_PIPE: u32 = 0x3015;
 
 // ============================================================================

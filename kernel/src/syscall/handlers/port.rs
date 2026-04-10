@@ -382,6 +382,7 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     );
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    // Compatibility wrapper: send as a handle-only message (no data bytes).
     port.send_cap(node_to_send);
     crate::ipc::diag::CHANNEL_HANDLES_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     Ok(0)
@@ -400,6 +401,7 @@ pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<us
     };
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    // Compatibility wrapper: receive the first cap from the message queue.
     let cap = port.try_recv_cap().ok_or(Errno::EAGAIN)?;
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
@@ -413,5 +415,210 @@ pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<us
     unsafe { super::copyout(out_fd_ptr, &new_fd_bytes)? };
 
     crate::ipc::diag::CHANNEL_HANDLES_RECV.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    Ok(0)
+}
+
+/// Resolve a userspace handle/fd number to a `VfsNode`.
+///
+/// Tries FD table first, then IPC handle table (as a `PortNode` wrapper).
+fn resolve_handle_to_node(
+    pinfo_arc: &Arc<spin::Mutex<crate::task::ProcessInfo>>,
+    raw: u32,
+) -> SysResult<Arc<dyn crate::vfs::VfsNode>> {
+    // Try VFS fd table
+    {
+        let lock = pinfo_arc.lock();
+        if let Ok(file) = lock.fd_table.get(raw) {
+            return Ok(file.node.clone());
+        }
+    }
+    // Try IPC handle table
+    let h = crate::ipc::Handle(raw);
+    let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+    let entry = table
+        .get(h, crate::ipc::HandleMode::Write)
+        .or_else(|| table.get(h, crate::ipc::HandleMode::Read))
+        .ok_or(Errno::EBADF)?;
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    Ok(Arc::new(crate::vfs::port_node::PortNode::new(
+        port,
+        entry.mode,
+    )))
+}
+
+/// `SYS_CHANNEL_SEND_MSG` — send a message with attached handles over a channel.
+///
+/// Syscall args:
+///   0: channel write handle
+///   1: data pointer (may be null when data_len == 0)
+///   2: data length (capped at 4096)
+///   3: handles pointer — array of u32 fd/handle numbers (may be null when count == 0)
+///   4: handles count (capped at 64)
+///   5: (reserved, must be 0)
+///
+/// Transfer semantics: **duplicate** — the sender retains its own fd/handle;
+/// a clone of the underlying `Arc<dyn VfsNode>` is placed in the message.
+pub fn sys_channel_send_msg(
+    handle: usize,
+    data_ptr: usize,
+    data_len: usize,
+    handles_ptr: usize,
+    handles_count: usize,
+) -> SysResult<usize> {
+    const MAX_MSG_DATA: usize = 4096;
+    const MAX_MSG_HANDLES: usize = 64;
+
+    let data_len = data_len.min(MAX_MSG_DATA);
+    let handles_count = handles_count.min(MAX_MSG_HANDLES);
+
+    // Validate userspace ranges up-front
+    if data_len > 0 {
+        validate_user_range(data_ptr, data_len, false)?;
+    }
+    if handles_count > 0 {
+        validate_user_range(handles_ptr, handles_count * 4, false)?;
+    }
+
+    // Read data bytes
+    let mut data_buf = alloc::vec![0u8; data_len];
+    if data_len > 0 {
+        unsafe {
+            super::copyin(&mut data_buf, data_ptr)?;
+        }
+    }
+
+    // Read handle numbers and resolve to VFS nodes
+    let mut handle_nums = alloc::vec![0u32; handles_count];
+    if handles_count > 0 {
+        unsafe {
+            super::copyin(
+                core::slice::from_raw_parts_mut(handle_nums.as_mut_ptr() as *mut u8, handles_count * 4),
+                handles_ptr,
+            )?;
+        }
+    }
+
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let mut caps = alloc::vec::Vec::with_capacity(handles_count);
+    for &raw in &handle_nums {
+        let node = resolve_handle_to_node(&pinfo_arc, raw)?;
+        caps.push(node);
+    }
+
+    // Look up the destination channel
+    let ch = crate::ipc::Handle(handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(ch, crate::ipc::HandleMode::Write)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    if !port.has_readers() {
+        crate::ipc::diag::CHANNEL_PEER_DEATHS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        return Err(Errno::EPIPE);
+    }
+
+    port.send_msg(data_buf, caps);
+
+    if handles_count > 0 {
+        crate::ipc::diag::CHANNEL_HANDLES_SENT
+            .fetch_add(handles_count as u64, core::sync::atomic::Ordering::Relaxed);
+    }
+    crate::ipc::diag::CHANNEL_SENDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    Ok(0)
+}
+
+/// `SYS_CHANNEL_RECV_MSG` — receive a message with attached handles from a channel.
+///
+/// Syscall args:
+///   0: channel read handle
+///   1: data buffer pointer
+///   2: data buffer capacity (max bytes to copy)
+///   3: handles buffer pointer — array of u32 (output FD numbers written here)
+///   4: handles buffer capacity (max handles to install)
+///   5: out_lens pointer — points to a `[usize; 2]` filled with
+///        `[actual_data_len, actual_handles_count]`
+///
+/// Returns `EAGAIN` if the message queue is empty.
+/// If the message data exceeds `data_cap` the excess is silently truncated.
+/// If the message has more caps than `handles_cap` the excess are dropped.
+pub fn sys_channel_recv_msg(
+    handle: usize,
+    data_ptr: usize,
+    data_cap: usize,
+    handles_ptr: usize,
+    handles_cap: usize,
+    out_lens_ptr: usize,
+) -> SysResult<usize> {
+    validate_user_range(out_lens_ptr, core::mem::size_of::<usize>() * 2, true)?;
+    if data_cap > 0 {
+        validate_user_range(data_ptr, data_cap, true)?;
+    }
+    if handles_cap > 0 {
+        validate_user_range(handles_ptr, handles_cap * 4, true)?;
+    }
+
+    let ch = crate::ipc::Handle(handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(ch, crate::ipc::HandleMode::Read)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    let msg = port.try_recv_msg().ok_or(Errno::EAGAIN)?;
+
+    // Copy data bytes to userspace
+    let copy_len = msg.data.len().min(data_cap);
+    if copy_len > 0 {
+        unsafe {
+            super::copyout(data_ptr, &msg.data[..copy_len])?;
+        }
+    }
+
+    // Install caps as FDs in the receiving process
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let install_count = msg.caps.len().min(handles_cap);
+    let mut out_fds = alloc::vec![0u32; install_count];
+    {
+        let mut pinfo = pinfo_arc.lock();
+        for (i, cap) in msg.caps.into_iter().take(install_count).enumerate() {
+            let fd = pinfo.fd_table.open(cap, crate::vfs::OpenFlags::read_write(), "recv_msg".into())?;
+            out_fds[i] = fd;
+        }
+    }
+
+    // Write the installed FD numbers back to userspace
+    if install_count > 0 {
+        unsafe {
+            super::copyout(
+                handles_ptr,
+                core::slice::from_raw_parts(out_fds.as_ptr() as *const u8, install_count * 4),
+            )?;
+        }
+    }
+
+    // Write [actual_data_len, actual_handles_count] to out_lens_ptr
+    let out_lens: [usize; 2] = [copy_len, install_count];
+    unsafe {
+        super::copyout(
+            out_lens_ptr,
+            core::slice::from_raw_parts(
+                out_lens.as_ptr() as *const u8,
+                core::mem::size_of::<usize>() * 2,
+            ),
+        )?;
+    }
+
+    if install_count > 0 {
+        crate::ipc::diag::CHANNEL_HANDLES_RECV
+            .fetch_add(install_count as u64, core::sync::atomic::Ordering::Relaxed);
+    }
+    crate::ipc::diag::CHANNEL_RECVS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     Ok(0)
 }

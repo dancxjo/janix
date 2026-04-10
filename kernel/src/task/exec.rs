@@ -227,7 +227,7 @@ pub fn task_exec_current<R: BootRuntime>(
         }
     }
 
-
+    // 6. Update ProcessInfo metadata (argv, env, and auxv).
     //    Also close all FD_CLOEXEC-flagged file descriptors and clear
     //    exec_in_progress now that we are about to commit — the caller is the
     //    sole surviving thread from this point forward.

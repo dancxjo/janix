@@ -30,7 +30,8 @@ pub use hooks::{
     handle_user_stack_fault_current, kill_by_tid_current, list_processes_current,
     poll_task_exit_current, process_info_current, process_info_for_tid_current,
     register_task_exit_waiter_current, register_timeout_wake_current, remove_user_mappings_current,
-    set_priority_current, sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
+    set_priority_current, set_current_user_fs_base_current, sleep_ticks_current,
+    spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_status_current, task_wait_current,
     unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
     current_task_name_current, task_exec_current,
@@ -222,7 +223,7 @@ fn try_resched_if_needed<R: BootRuntime>() {
 
                 unsafe {
                     rt.tasking()
-                        .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                        .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
                 }
             }
         }
@@ -289,6 +290,7 @@ pub fn init<R: BootRuntime>() {
             hooks::LIST_PROCESSES_HOOK = Some(list_processes::<R>);
             hooks::CURRENT_TASK_NAME_HOOK = Some(current_task_name_impl::<R>);
             hooks::TASK_EXEC_HOOK = Some(crate::task::exec::task_exec_current::<R>);
+            hooks::SET_CURRENT_USER_FS_BASE_HOOK = Some(set_current_user_fs_base::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -356,6 +358,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         process_info: None,
         enqueued_at_tick: TICK_COUNT.load(Ordering::Relaxed),
         base_priority: TaskPriority::Normal,
+        user_fs_base: 0,
     };
     let sched_fields = crate::sched::state::TaskSchedFields {
         tid: task.id,
@@ -891,6 +894,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 from_aspace: old_task.aspace,
                 from_user: old_task.is_user,
                 to_user: new_task.is_user,
+                from_user_fs_base: &mut old_task.user_fs_base as *mut u64,
+                to_user_fs_base: new_task.user_fs_base,
             })
         }
     }
@@ -1042,6 +1047,18 @@ fn current_task_name_impl<R: BootRuntime>() -> [u8; 32] {
         let mut n = [0u8; 32];
         n[0..7].copy_from_slice(b"unknown");
         n
+    }
+}
+
+/// Update the current task's stored `user_fs_base` field.
+///
+/// Called by the TLS-set syscall handler after writing the hardware register,
+/// so that the value is saved correctly on the next context switch without
+/// needing an extra MSR read.
+fn set_current_user_fs_base<R: BootRuntime>(base: u64) {
+    let tid = crate::runtime::<R>().current_tid();
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        task.user_fs_base = base;
     }
 }
 
@@ -1212,10 +1229,12 @@ pub fn exit<R: BootRuntime>(code: i32) {
     }
 
     unsafe {
-        rt.tasking().switch(
+        rt.tasking().switch_with_tls(
             &mut *(switch.from_ctx as *mut _),
             &*switch.to_ctx,
             switch.to_tid,
+            switch.from_user_fs_base,
+            switch.to_user_fs_base,
         );
     }
 
@@ -1634,6 +1653,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         }
     }
 
@@ -1672,6 +1692,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         // Create a low-priority task enqueued a long time ago
@@ -1701,6 +1722,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -1766,6 +1788,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         // Task 2 is runnable
@@ -1795,6 +1818,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task1));
@@ -1854,6 +1878,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         // Task 2: Realtime priority, sleeping (about to wake)
@@ -1883,6 +1908,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -1967,6 +1993,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         // Insert tasks out of order
@@ -2043,6 +2070,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2137,6 +2165,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         let sleeping_task = crate::task::Task {
@@ -2165,6 +2194,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2227,6 +2257,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         let blocked_task = crate::task::Task {
@@ -2255,6 +2286,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2310,6 +2342,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2358,6 +2391,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2409,6 +2443,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         let waiter_task = crate::task::Task {
@@ -2437,6 +2472,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         let target_task = crate::task::Task {
@@ -2465,6 +2501,7 @@ mod tests {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            user_fs_base: 0,
         };
 
         crate::task::registry::get_registry::<MockRuntime>()

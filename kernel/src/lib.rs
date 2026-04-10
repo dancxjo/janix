@@ -293,6 +293,36 @@ pub trait BootTasking {
     ) -> Self::Context;
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64);
+
+    /// Like [`switch`] but also saves/restores the per-thread user TLS base.
+    ///
+    /// `from_user_fs_base` is a pointer into the outgoing task's `user_fs_base`
+    /// field; on switch-out the arch layer reads the live hardware base and stores
+    /// it there.  `to_user_fs_base` is the value loaded from the incoming task's
+    /// field and written to hardware on switch-in.
+    ///
+    /// The default implementation simply delegates to [`switch`] — architectures
+    /// without a dedicated user TLS register need no changes.
+    unsafe fn switch_with_tls(
+        &self,
+        from: &mut Self::Context,
+        to: &Self::Context,
+        to_tid: u64,
+        _from_user_fs_base: *mut u64,
+        _to_user_fs_base: u64,
+    ) {
+        unsafe { self.switch(from, to, to_tid) }
+    }
+
+    /// Read the current thread's user TLS base from hardware (FS_BASE on x86_64).
+    /// Returns 0 on architectures without a dedicated user TLS register.
+    fn get_user_tls_base(&self) -> u64 {
+        0
+    }
+
+    /// Write a new user TLS base to hardware immediately (FS_BASE on x86_64).
+    /// No-op on architectures without a dedicated user TLS register.
+    fn set_user_tls_base(&self, _base: u64) {}
     unsafe fn enter_user(&self, entry: UserEntry) -> !;
 
     fn make_user_address_space(&self) -> Self::AddressSpace;
@@ -409,6 +439,16 @@ pub trait BootRuntimeBase: 'static {
     }
 
     fn phys_to_virt_offset(&self) -> u64;
+
+    /// Read the current thread's user TLS base from hardware (FS_BASE on x86_64).
+    /// Returns 0 on architectures without a dedicated user TLS register.
+    fn get_user_tls_base_dyn(&self) -> u64 {
+        0
+    }
+
+    /// Write a new user TLS base to hardware immediately (FS_BASE on x86_64).
+    /// No-op on architectures without a dedicated user TLS register.
+    fn set_user_tls_base_dyn(&self, _base: u64) {}
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {

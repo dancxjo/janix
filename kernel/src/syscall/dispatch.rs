@@ -53,6 +53,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
             args[3],
             args[4],
         ),
+        SYS_TASK_SET_TLS_BASE => handlers::sys_task_set_tls_base(args[0]),
+        SYS_TASK_GET_TLS_BASE => handlers::sys_task_get_tls_base(),
 
         SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
         SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),

@@ -59,6 +59,10 @@ pub struct SwitchParams<Ctx, AS> {
     pub to_tid: TaskId,
     pub from_user: bool,
     pub to_user: bool,
+    /// Pointer into the outgoing task's `user_fs_base` field (saved on switch-out).
+    pub from_user_fs_base: *mut u64,
+    /// The incoming task's saved TLS base (restored on switch-in).
+    pub to_user_fs_base: u64,
 }
 
 pub(crate) struct SchedulerMetrics {

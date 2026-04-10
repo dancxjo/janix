@@ -102,6 +102,13 @@ pub struct Task<R: BootRuntime> {
     /// `priority` and `base_priority` are updated. The scheduler temporarily modifies
     /// `priority` for aging, but always restores it to `base_priority` when scheduled.
     pub base_priority: TaskPriority,
+
+    /// Per-thread user-mode TLS base (FS_BASE on x86_64).
+    ///
+    /// Saved on every context switch-out and restored on every context switch-in.
+    /// Userspace sets/reads this via `SYS_TASK_SET_TLS_BASE` / `SYS_TASK_GET_TLS_BASE`.
+    /// Initialized to 0 for all new threads; the runtime may update it later.
+    pub user_fs_base: u64,
 }
 
 pub fn init<R: BootRuntime>() {
@@ -177,7 +184,7 @@ pub fn preempt_enable<R: BootRuntime>() {
 
         unsafe {
             rt.tasking()
-                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
         }
     }
 
@@ -209,7 +216,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
 
         unsafe {
             rt.tasking()
-                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
         }
     }
 

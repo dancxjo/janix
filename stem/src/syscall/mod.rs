@@ -246,6 +246,21 @@ pub fn execve(path: &str, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> R
     res
 }
 
+/// Set the calling thread's user TLS base (FS_BASE on x86_64) to `base`.
+///
+/// The change is applied to hardware immediately and is preserved across
+/// context switches.  Returns an error if `base` is a non-canonical address.
+pub fn task_set_tls_base(base: usize) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_SET_TLS_BASE, base, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Return the calling thread's current user TLS base (FS_BASE on x86_64).
+pub fn task_get_tls_base() -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_GET_TLS_BASE, 0, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as usize)
+}
+
 pub fn spawn_process_ex(
     name: &str,
     argv: &[&[u8]],

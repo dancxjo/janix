@@ -20,6 +20,7 @@ pub mod simd;
 pub mod smp;
 pub mod syscall;
 pub mod task;
+pub mod tls;
 pub mod trap;
 
 pub struct X86_64Runtime {
@@ -485,6 +486,32 @@ impl ArchRuntime for X86_64Runtime {
     }
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64) {
         unsafe { task::switch(from, to, to_tid) }
+    }
+
+    unsafe fn switch_with_tls(
+        &self,
+        from: &mut Self::Context,
+        to: &Self::Context,
+        to_tid: u64,
+        from_user_fs_base: *mut u64,
+        to_user_fs_base: u64,
+    ) {
+        unsafe {
+            // Save the outgoing thread's user FS_BASE into its task record.
+            *from_user_fs_base = tls::read_user_fs_base();
+            // Restore the incoming thread's user FS_BASE.
+            tls::write_user_fs_base(to_user_fs_base);
+            // Perform the actual register/stack context switch.
+            task::switch(from, to, to_tid);
+        }
+    }
+
+    fn get_user_tls_base(&self) -> u64 {
+        tls::read_user_fs_base()
+    }
+
+    fn set_user_tls_base(&self, base: u64) {
+        unsafe { tls::write_user_fs_base(base) }
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {

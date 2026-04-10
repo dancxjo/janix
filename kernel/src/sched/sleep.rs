@@ -41,7 +41,7 @@ pub fn yield_now<R: BootRuntime>() -> bool {
 
         unsafe {
             rt.tasking()
-                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
         }
 
         rt.irq_restore(_irq);
@@ -118,7 +118,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
         unsafe {
             rt.tasking()
-                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
         }
         // crate::ktrace!("SCHED: task woke up on CPU");
     }
@@ -149,7 +149,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
                 rt.tasking().activate_address_space(switch.to_aspace);
 
                 rt.tasking()
-                    .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                    .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
                 rt.irq_restore(_irq);
             }
         } else {

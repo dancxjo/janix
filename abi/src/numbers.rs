@@ -21,6 +21,8 @@ pub const SYS_TASK_POLL: u32 = 0x100A;
 pub const SYS_YIELD: u32 = 0x100B;
 pub const SYS_SET_PRIORITY: u32 = 0x100C;
 pub const SYS_TASK_EXEC: u32 = 0x100D;
+pub const SYS_TASK_SET_TLS_BASE: u32 = 0x100E;
+pub const SYS_TASK_GET_TLS_BASE: u32 = 0x100F;
 
 // ============================================================================
 // Process Environment (0x1100)

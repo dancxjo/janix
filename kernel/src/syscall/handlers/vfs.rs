@@ -602,18 +602,25 @@ pub fn sys_fs_notify(req_handle: usize, node_handle: usize, revents: usize) -> S
 /// POSIX-style poll over VFS file descriptors.
 ///
 /// Examines each entry in the `pollfds` array and sets `revents` on those
-/// that are immediately ready.  `timeout_ms` is currently **ignored** — the
-/// syscall returns immediately (non-blocking poll).  A blocking variant that
-/// parks the calling task will be added once a generic fd-readiness wait
-/// mechanism is in place.
+/// that are ready.  Uses a three-phase no-lost-wakeup algorithm:
+///
+/// 1. **Probe** — call `VfsNode::poll()` on every entry.  If anything is
+///    ready or `timeout_ms == 0`, copy `revents` back and return immediately.
+/// 2. **Register** — call `VfsNode::add_waiter(tid)` on every node, then
+///    optionally arm a scheduler timeout.
+/// 3. **Re-probe** — repeat the probe after registration.  If still nothing
+///    is ready, call `block_current_erased()` to park the calling task until
+///    a node wakes it or the timeout expires.
 ///
 /// # Arguments
 /// - `pollfds_ptr` — pointer to a `[PollFd; nfds]` in user memory (read/write)
-/// - `nfds`         — number of entries in the array
-/// - `_timeout_ms`  — milliseconds to wait (currently unused; returns immediately)
+/// - `nfds`         — number of entries in the array (max 256)
+/// - `timeout_ms`   — `0` = non-blocking; `usize::MAX` = block indefinitely;
+///                    any other value = maximum wait in milliseconds
 ///
 /// # Returns
 /// The number of entries with non-zero `revents`, or an errno on error.
+/// Returns `Ok(0)` when the timeout expires with no events.
 pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysResult<usize> {
     const MAX_POLLFDS: usize = 256;
     if nfds == 0 {
@@ -1043,4 +1050,309 @@ pub fn sys_fs_realpath(
     }
 
     Ok(needed)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sched::hooks::CURRENT_TID_HOOK;
+    use crate::vfs::fd_table::FdTable;
+    use crate::vfs::{OpenFlags, VfsNode, VfsStat};
+    use abi::errors::SysResult;
+    use abi::syscall::{poll_flags, PollFd};
+    use alloc::sync::Arc;
+    use spin::Mutex;
+
+    // ── Test nodes ────────────────────────────────────────────────────────────
+
+    /// A node that is always readable and writable (POLLIN | POLLOUT).
+    struct AlwaysReadyNode;
+    impl VfsNode for AlwaysReadyNode {
+        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+            Ok(buf.len())
+        }
+        fn stat(&self) -> SysResult<VfsStat> {
+            Ok(VfsStat {
+                mode: VfsStat::S_IFCHR | 0o666,
+                ..Default::default()
+            })
+        }
+        // poll() not overridden → returns POLLIN | POLLOUT (default)
+    }
+
+    /// A node whose poll() reports no readiness at all.
+    struct NeverReadyNode;
+    impl VfsNode for NeverReadyNode {
+        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+            Ok(buf.len())
+        }
+        fn stat(&self) -> SysResult<VfsStat> {
+            Ok(VfsStat {
+                mode: VfsStat::S_IFCHR | 0o666,
+                ..Default::default()
+            })
+        }
+        fn poll(&self) -> u16 {
+            0 // never ready
+        }
+    }
+
+    // ── Serialization guard ───────────────────────────────────────────────────
+    //
+    // The kernel hooks (`PROCESS_INFO_HOOK`, `CURRENT_TID_HOOK`) are global
+    // mutable statics.  Tests run concurrently, so we serialize them with a
+    // spin-mutex guard.  The critical sections are short (non-blocking poll)
+    // so spinning is acceptable here.
+
+    static TEST_POLL_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+
+    // Holds the current test's ProcessInfo while inside the critical section.
+    static TEST_PROCESS_INFO: spin::Mutex<
+        Option<Arc<Mutex<crate::task::ProcessInfo>>>,
+    > = spin::Mutex::new(None);
+
+    fn process_info_hook() -> Option<Arc<Mutex<crate::task::ProcessInfo>>> {
+        TEST_PROCESS_INFO.lock().clone()
+    }
+
+    fn test_current_tid() -> u64 {
+        42
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    fn make_process_info_with_nodes(
+        nodes: &[(u32, Arc<dyn VfsNode>)],
+    ) -> Arc<Mutex<crate::task::ProcessInfo>> {
+        let mut fd_table = FdTable::new();
+        for (fd, node) in nodes {
+            fd_table
+                .insert_at(*fd, node.clone(), OpenFlags::read_write(), "/test".into())
+                .expect("insert_at");
+        }
+        Arc::new(Mutex::new(crate::task::ProcessInfo {
+            pid: 1,
+            ppid: 0,
+            argv: alloc::vec![],
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec![],
+            fd_table,
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+        }))
+    }
+
+    /// Run `sys_fs_poll` with `timeout_ms = 0` (non-blocking) over `fds`.
+    ///
+    /// Acquires `TEST_POLL_GUARD` to serialize concurrent tests that share
+    /// the global `PROCESS_INFO_HOOK` and `CURRENT_TID_HOOK`.
+    fn poll_nonblocking(
+        pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
+        fds: &mut [PollFd],
+    ) -> SysResult<usize> {
+        let _guard = TEST_POLL_GUARD.lock();
+
+        // Install hooks while holding the guard so no other test can clobber
+        // them between setup and the actual sys_fs_poll call.
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            crate::sched::hooks::PROCESS_INFO_HOOK = Some(process_info_hook);
+        }
+        TEST_PROCESS_INFO.lock().replace(pinfo);
+
+        // Use the slice's heap address as "user" memory.
+        // validate_user_range only rejects NULL and kernel-high addresses.
+        let ptr = fds.as_mut_ptr() as usize;
+        let nfds = fds.len();
+        let res = sys_fs_poll(ptr, nfds, 0 /* non-blocking */);
+
+        // Clean up before releasing the guard.
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            CURRENT_TID_HOOK = None;
+        }
+        TEST_PROCESS_INFO.lock().take();
+
+        res
+        // _guard released here
+    }
+
+    // ── Tests ─────────────────────────────────────────────────────────────────
+
+    /// Passing nfds=0 must succeed immediately without touching any state.
+    #[test]
+    fn poll_zero_nfds_returns_ok_zero() {
+        let res = sys_fs_poll(0, 0, 0);
+        assert_eq!(res, Ok(0));
+    }
+
+    /// A single fd backed by an always-ready node → returns 1 with POLLIN set.
+    #[test]
+    fn poll_single_ready_fd_returns_one() {
+        let node: Arc<dyn VfsNode> = Arc::new(AlwaysReadyNode);
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+
+        let mut fds = [PollFd {
+            fd: 3,
+            events: poll_flags::POLLIN,
+            revents: 0,
+        }];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(n, 1, "one fd should be ready");
+        assert_ne!(
+            fds[0].revents & poll_flags::POLLIN,
+            0,
+            "POLLIN should be set"
+        );
+    }
+
+    /// Non-blocking poll over a node with poll() == 0 must return 0 immediately.
+    #[test]
+    fn poll_nonblocking_returns_zero_when_no_fd_ready() {
+        let node: Arc<dyn VfsNode> = Arc::new(NeverReadyNode);
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+
+        let mut fds = [PollFd {
+            fd: 3,
+            events: poll_flags::POLLIN,
+            revents: 0,
+        }];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(n, 0, "no fds ready in non-blocking mode");
+        assert_eq!(fds[0].revents, 0, "revents must remain 0");
+    }
+
+    /// Multiple ready fds: the return value is the count of fds with revents != 0.
+    #[test]
+    fn poll_multiple_ready_fds_returns_correct_count() {
+        let ready: Arc<dyn VfsNode> = Arc::new(AlwaysReadyNode);
+        let not_ready: Arc<dyn VfsNode> = Arc::new(NeverReadyNode);
+        let pinfo = make_process_info_with_nodes(&[
+            (3, ready.clone()),
+            (4, not_ready.clone()),
+            (5, ready.clone()),
+        ]);
+
+        let mut fds = [
+            PollFd {
+                fd: 3,
+                events: poll_flags::POLLIN | poll_flags::POLLOUT,
+                revents: 0,
+            },
+            PollFd {
+                fd: 4,
+                events: poll_flags::POLLIN,
+                revents: 0,
+            },
+            PollFd {
+                fd: 5,
+                events: poll_flags::POLLOUT,
+                revents: 0,
+            },
+        ];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(n, 2, "two ready fds (indices 0 and 2)");
+        assert_ne!(fds[0].revents, 0, "fd 3 should be ready");
+        assert_eq!(fds[1].revents, 0, "fd 4 should not be ready");
+        assert_ne!(fds[2].revents, 0, "fd 5 should be ready");
+    }
+
+    /// A fd number that doesn't exist in the fd table must yield POLLNVAL.
+    #[test]
+    fn poll_invalid_fd_reports_pollnval() {
+        let pinfo = make_process_info_with_nodes(&[]);
+
+        let mut fds = [PollFd {
+            fd: 99, // no such fd
+            events: poll_flags::POLLIN,
+            revents: 0,
+        }];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(n, 1, "POLLNVAL counts as a ready entry");
+        assert_ne!(
+            fds[0].revents & poll_flags::POLLNVAL,
+            0,
+            "POLLNVAL should be set for missing fd"
+        );
+    }
+
+    /// A negative fd must be silently skipped (revents stays 0).
+    #[test]
+    fn poll_negative_fd_is_skipped() {
+        let pinfo = make_process_info_with_nodes(&[]);
+
+        let mut fds = [PollFd {
+            fd: -1,
+            events: poll_flags::POLLIN,
+            revents: 0,
+        }];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(n, 0, "negative fd is silently skipped");
+        assert_eq!(fds[0].revents, 0, "revents must stay 0 for negative fd");
+    }
+
+    /// Mixed poll: pipe (ready), channel (not ready), VFS file (ready).
+    /// Exercises the multi-fd path with heterogeneous node types.
+    #[test]
+    fn poll_mixed_pipe_channel_vfsfile() {
+        let (pipe_r, pipe_w) = crate::ipc::pipe::create_fd_pair(0, false);
+        // Write data so the read end is POLLIN-ready.
+        pipe_w.write(0, b"hello").expect("write to pipe");
+
+        let always: Arc<dyn VfsNode> = Arc::new(AlwaysReadyNode);
+        let never: Arc<dyn VfsNode> = Arc::new(NeverReadyNode);
+
+        let pinfo = make_process_info_with_nodes(&[
+            (3, pipe_r.clone()),
+            (4, never.clone()),
+            (5, always.clone()),
+        ]);
+
+        let mut fds = [
+            PollFd {
+                fd: 3,
+                events: poll_flags::POLLIN,
+                revents: 0,
+            },
+            PollFd {
+                fd: 4,
+                events: poll_flags::POLLIN,
+                revents: 0,
+            },
+            PollFd {
+                fd: 5,
+                events: poll_flags::POLLIN | poll_flags::POLLOUT,
+                revents: 0,
+            },
+        ];
+
+        let n = poll_nonblocking(pinfo, &mut fds).expect("poll should succeed");
+        assert_eq!(
+            n, 2,
+            "pipe-read and always-ready should fire; never-ready should not"
+        );
+        assert_ne!(
+            fds[0].revents & poll_flags::POLLIN,
+            0,
+            "pipe read end has data → POLLIN"
+        );
+        assert_eq!(fds[1].revents, 0, "NeverReadyNode → no events");
+        assert_ne!(
+            fds[2].revents & (poll_flags::POLLIN | poll_flags::POLLOUT),
+            0,
+            "AlwaysReadyNode → ready"
+        );
+    }
 }

@@ -510,3 +510,103 @@ pub fn create_fd_pair(
     let (_id, r, w) = create_fd_pair_with_id(capacity, nonblock);
     (r, w)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::VfsNode;
+    use abi::syscall::poll_flags;
+
+    fn make_pair() -> (Arc<dyn VfsNode>, Arc<dyn VfsNode>) {
+        create_fd_pair(0, false)
+    }
+
+    // ── Read-end poll semantics ────────────────────────────────────────────
+
+    #[test]
+    fn read_end_not_ready_when_empty_with_writer() {
+        let (r, _w) = make_pair();
+        // Empty buffer, writer still alive → not readable.
+        assert_eq!(r.poll() & poll_flags::POLLIN, 0);
+    }
+
+    #[test]
+    fn read_end_ready_after_write() {
+        let (r, w) = make_pair();
+        w.write(0, b"hi").expect("write");
+        assert_ne!(r.poll() & poll_flags::POLLIN, 0, "should be POLLIN after write");
+    }
+
+    #[test]
+    fn read_end_reports_pollhup_when_writer_closed() {
+        let (r, w) = make_pair();
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        w.close();
+        // No data, no writer → POLLIN (EOF indicator) + POLLHUP
+        assert_ne!(r.poll() & poll_flags::POLLIN, 0, "POLLIN set on EOF");
+        assert_ne!(r.poll() & poll_flags::POLLHUP, 0, "POLLHUP set on writer closed");
+    }
+
+    #[test]
+    fn read_end_reports_both_pollin_and_pollhup_with_data_and_closed_writer() {
+        let (r, w) = make_pair();
+        w.write(0, b"x").expect("write");
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        w.close();
+        // Data available AND writer closed → both POLLIN and POLLHUP.
+        let flags = r.poll();
+        assert_ne!(flags & poll_flags::POLLIN, 0, "POLLIN set when data present");
+        assert_ne!(flags & poll_flags::POLLHUP, 0, "POLLHUP set when writer gone");
+    }
+
+    // ── Write-end poll semantics ───────────────────────────────────────────
+
+    #[test]
+    fn write_end_ready_when_buffer_has_space() {
+        let (_r, w) = make_pair();
+        assert_ne!(w.poll() & poll_flags::POLLOUT, 0, "POLLOUT when space available");
+    }
+
+    #[test]
+    fn write_end_reports_pollhup_when_reader_closed() {
+        let (r, w) = make_pair();
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        r.close();
+        // Reader gone → POLLHUP | POLLERR on the write end.
+        let flags = w.poll();
+        assert_ne!(flags & poll_flags::POLLHUP, 0, "POLLHUP when reader closed");
+        assert_ne!(flags & poll_flags::POLLERR, 0, "POLLERR when reader closed");
+    }
+
+    #[test]
+    fn write_end_not_pollout_when_buffer_full() {
+        // Use a tiny capacity (1 byte) so we can fill it easily.
+        let (inner, _id) = {
+            let cap = 1usize;
+            let inner = Arc::new(Mutex::new(PipeInner {
+                buf: RingBuf::new(cap),
+                readers: 1,
+                writers: 1,
+                nonblock: true,
+                read_waitq: WaitQueue::new(),
+                write_waitq: WaitQueue::new(),
+            }));
+            let id = NEXT_PIPE_ID.fetch_add(1, Ordering::Relaxed);
+            PIPES.lock().insert(id, inner.clone());
+            (inner, id)
+        };
+        let write_node = Arc::new(PipeWriteNode { inner, pipe_id: _id });
+
+        // Fill the buffer.
+        write_node.write(0, b"X").expect("first write");
+        // Buffer now full → POLLOUT should not be set.
+        assert_eq!(
+            write_node.poll() & poll_flags::POLLOUT,
+            0,
+            "POLLOUT clear when buffer full"
+        );
+    }
+}

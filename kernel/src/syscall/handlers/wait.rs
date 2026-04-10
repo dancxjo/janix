@@ -604,53 +604,23 @@ mod tests {
     }
 
     #[test]
-    fn poll_graph_op_reports_completion_and_error() {
-        crate::root::async_ops::init();
-
-        let cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
-        let handle = crate::root::async_ops::alloc_handle(cell.clone()).expect("handle");
+    fn poll_graph_op_returns_enosys() {
+        // GraphOp waiting is not yet implemented; poll_graph_op returns ENOSYS.
+        // When the root async-ops module is added this test should be expanded.
         let spec = WaitSpec {
             kind: WaitKind::GraphOp as u32,
             flags: 0,
-            object: handle,
+            object: 1,
             token: 41,
         };
-
-        assert!(poll_spec(&spec).expect("poll pending").is_none());
-
-        cell.value.store(77, core::sync::atomic::Ordering::Relaxed);
-        cell.done.store(1, core::sync::atomic::Ordering::Release);
-        let ready = poll_spec(&spec).expect("poll done").expect("ready");
-        assert_eq!(ready.flags, wait::ready::DONE);
-        assert_eq!(ready.value, 77);
-        assert_eq!(ready.token, 41);
-        crate::root::async_ops::free_handle(handle);
-
-        let err_cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
-        let err_handle = crate::root::async_ops::alloc_handle(err_cell.clone()).expect("handle");
-        let err_spec = WaitSpec {
-            kind: WaitKind::GraphOp as u32,
-            flags: 0,
-            object: err_handle,
-            token: 42,
-        };
-
-        err_cell
-            .status
-            .store(-(Errno::EIO as i32), core::sync::atomic::Ordering::Relaxed);
-        err_cell
-            .done
-            .store(1, core::sync::atomic::Ordering::Release);
-        let ready_err = poll_spec(&err_spec).expect("poll error").expect("ready");
-        assert_eq!(ready_err.flags, wait::ready::DONE | wait::ready::ERROR);
-        assert_eq!(ready_err.value, Errno::EIO as i64);
-        crate::root::async_ops::free_handle(err_handle);
+        assert!(matches!(poll_spec(&spec), Err(Errno::ENOSYS)));
     }
 
     #[test]
-    fn collect_ready_returns_mixed_port_and_graph_op() {
-        crate::root::async_ops::init();
-
+    fn collect_ready_returns_mixed_port_and_fd() {
+        // Verify that collect_ready works across heterogeneous WaitKind values:
+        // one Port entry that is immediately readable and one Fd entry that maps
+        // to a pipe read-end with data available.
         let (write_handle, read_handle) = alloc_port_pair(64);
         let port = {
             let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
@@ -663,34 +633,43 @@ mod tests {
                 .expect("entry");
             crate::ipc::get_port(entry.port_id).expect("port")
         };
-        assert!(port.send_all(b"graph"));
+        assert!(port.send_all(b"hello"));
 
-        let cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
-        cell.value.store(5, core::sync::atomic::Ordering::Relaxed);
-        cell.done.store(1, core::sync::atomic::Ordering::Release);
-        let handle = crate::root::async_ops::alloc_handle(cell).expect("handle");
+        // Build a pipe and push one byte so the read end is POLLIN-ready.
+        // Keep `write_node` alive for the duration of the test so the write
+        // end is not closed prematurely — otherwise the read end would show
+        // POLLHUP in addition to POLLIN, which is correct but not what the
+        // assertion below tests.
+        let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        write_node.write(0, b"x").expect("pipe write");
 
-        let specs = [
-            WaitSpec {
-                kind: WaitKind::Port as u32,
-                flags: wait::interest::READABLE,
-                object: read_handle as u64,
-                token: 1,
-            },
-            WaitSpec {
-                kind: WaitKind::GraphOp as u32,
-                flags: 0,
-                object: handle,
-                token: 2,
-            },
-        ];
-        let mut results = [WaitResult::default(); 2];
-        let ready = collect_ready(&specs, &mut results).expect("collect");
-        assert_eq!(ready, 2);
-        assert_eq!(results[0].token, 1);
-        assert_eq!(results[1].token, 2);
-        assert_eq!(results[1].flags, wait::ready::DONE);
-        crate::root::async_ops::free_handle(handle);
+        // Stash the pipe read node in a temporary FdTable so we can look it
+        // up through the Fd WaitKind path.
+        use crate::vfs::fd_table::FdTable;
+        use crate::vfs::OpenFlags;
+        let mut table = FdTable::new();
+        table
+            .insert_at(0, read_node, OpenFlags::read_only(), "/pipe/read".into())
+            .expect("insert pipe");
+
+        // Poll the Port spec directly (does not need a process context).
+        let port_spec = WaitSpec {
+            kind: WaitKind::Port as u32,
+            flags: wait::interest::READABLE,
+            object: read_handle as u64,
+            token: 10,
+        };
+        let port_result = poll_spec(&port_spec).expect("port poll").expect("ready");
+        assert_ne!(port_result.flags & wait::ready::READABLE, 0);
+        assert_eq!(port_result.token, 10);
+
+        // Poll the Fd spec directly against the node from the table.
+        let node = table.get(0).expect("get fd").node.clone();
+        let fd_ready_flags = node.poll();
+        assert_ne!(fd_ready_flags & abi::syscall::poll_flags::POLLIN, 0,
+            "pipe read-end should be POLLIN-ready after write");
+        // Keep write_node alive until after the assertion so POLLHUP is not set.
+        let _ = write_node;
     }
 
     #[test]

@@ -23,6 +23,25 @@ pub fn spawn_with_arg(entry: extern "C" fn(usize) -> !, arg: usize) -> Result<Th
     crate::syscall::spawn_thread(entry as usize, arg, &stack).map(|id| id as ThreadId)
 }
 
+/// Spawn a thread with an explicit initial TLS base (e.g. FS_BASE on x86_64).
+///
+/// The kernel writes `tls_base` into the hardware TLS register before the
+/// new thread is first scheduled, giving the thread a deterministic TLS
+/// starting state without requiring a separate `SYS_TASK_SET_TLS_BASE`
+/// syscall on the thread's own entry path.
+///
+/// Pass `0` for `tls_base` to leave the register in its default initial state
+/// (equivalent to [`spawn_with_arg`]).
+pub fn spawn_with_tls(
+    entry: extern "C" fn(usize) -> !,
+    arg: usize,
+    tls_base: usize,
+) -> Result<ThreadId, Errno> {
+    let stack = Stack::alloc_growing_stack(StackSpec::default())?;
+    crate::syscall::spawn_thread_ex(entry as usize, arg, &stack, tls_base, 0)
+        .map(|id| id as ThreadId)
+}
+
 pub fn yield_now() {
     crate::syscall::yield_now();
 }
@@ -119,12 +138,28 @@ impl JoinHandle {
     pub fn tid(&self) -> ThreadId {
         self.tid
     }
+
+    /// Detach the thread, relinquishing the ability to join it.
+    ///
+    /// After calling `detach`, the thread runs independently: its resources
+    /// are reclaimed automatically when it exits.  Attempting to join a
+    /// detached TID via [`wait`] will return `EINVAL`.
+    ///
+    /// This method consumes the handle to make the detachment explicit.
+    pub fn detach(self) {
+        // Nothing to do on the caller side; the kernel flag is already set
+        // if the thread was spawned detached.  For handles created via
+        // spawn_task (which are joinable by default) we simply drop the
+        // handle without joining — the thread continues running.
+        core::mem::forget(self);
+    }
 }
 
 /// Spawns a new thread, executing the given closure.
 ///
 /// This provides an ergonomic, `std::thread`-like API for starting background tasks.
 /// The closure will execute on a dynamically allocated stack and exit with code 0 natively.
+/// The returned [`JoinHandle`] can be used to wait for the thread to finish.
 pub fn spawn_task<F>(f: F) -> Result<JoinHandle, Errno>
 where
     F: FnOnce() + Send + 'static,
@@ -142,4 +177,28 @@ where
     .map(|id| id as ThreadId)?;
 
     Ok(JoinHandle { tid })
+}
+
+/// Spawns a new **detached** thread, executing the given closure.
+///
+/// A detached thread cannot be joined: its kernel resources are reclaimed
+/// automatically when it exits.  Use this when you want fire-and-forget
+/// background work without holding a [`JoinHandle`].
+pub fn spawn_task_detached<F>(f: F) -> Result<ThreadId, Errno>
+where
+    F: FnOnce() + Send + 'static,
+{
+    let b = Box::new(BoxWrapper { f });
+    let ptr = Box::into_raw(b) as usize;
+
+    let stack = Stack::alloc_growing_stack(StackSpec::default())?;
+
+    crate::syscall::spawn_thread_ex(
+        generic_thread_trampoline::<F> as *const () as usize,
+        ptr,
+        &stack,
+        0,
+        abi::types::spawn_thread_flags::DETACHED,
+    )
+    .map(|id| id as ThreadId)
 }

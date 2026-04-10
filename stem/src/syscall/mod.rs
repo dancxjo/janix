@@ -747,11 +747,31 @@ pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
 }
 
 pub fn spawn_thread(entry: usize, arg: usize, stack: &crate::stack::Stack) -> Result<u64, Errno> {
+    spawn_thread_ex(entry, arg, stack, 0, 0)
+}
+
+/// Extended thread spawn with explicit TLS base and flags.
+///
+/// - `tls_base`: initial value for the thread-local storage base register
+///   (FS_BASE on x86_64).  Pass `0` to leave the register in its default
+///   initial state.
+/// - `flags`: bitmask of [`abi::types::spawn_thread_flags`] constants.
+///   Use `DETACHED` to create a thread that cannot be joined.
+pub fn spawn_thread_ex(
+    entry: usize,
+    arg: usize,
+    stack: &crate::stack::Stack,
+    tls_base: usize,
+    flags: u32,
+) -> Result<u64, Errno> {
     let req = abi::types::SpawnThreadReq {
         entry,
         sp: stack.sp as usize,
         arg,
         stack: stack.info,
+        tls_base,
+        flags,
+        _pad: 0,
     };
     let ret = unsafe {
         raw_syscall6(

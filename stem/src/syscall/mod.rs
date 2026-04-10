@@ -337,47 +337,151 @@ pub fn is_elf_magic(header: &[u8]) -> bool {
     header.len() >= 4 && header[..4] == *b"\x7fELF"
 }
 
+/// Parse a shebang (`#!`) line from a file header.
+///
+/// Returns `Some((interpreter_path, optional_arg))` when `header` begins with
+/// `#!` and contains at least one non-empty interpreter path.  Both returned
+/// string slices are sub-slices of `header`, so their lifetime is tied to it.
+///
+/// The interpreter path is the first whitespace-delimited token after `#!`.
+/// If a second token exists on the same line it is returned as the optional
+/// argument (the entire remainder of the line after the first separator,
+/// trimmed).  This matches the POSIX single-optional-arg convention used by
+/// Linux and BSD kernels.
+///
+/// Returns `None` if the header does not begin with `#!`, the line is not
+/// valid UTF-8, or no non-empty interpreter path can be found.
+pub fn parse_shebang(header: &[u8]) -> Option<(&str, Option<&str>)> {
+    if header.len() < 2 || header[0] != b'#' || header[1] != b'!' {
+        return None;
+    }
+
+    // Find the end of the shebang line (CR or LF).
+    let rest = &header[2..];
+    let line_len = rest
+        .iter()
+        .position(|&b| b == b'\n' || b == b'\r')
+        .unwrap_or(rest.len());
+    let line = core::str::from_utf8(&rest[..line_len]).ok()?.trim();
+
+    if line.is_empty() {
+        return None;
+    }
+
+    // Split interpreter path from optional argument on the first run of
+    // whitespace.  Only two tokens are recognised (POSIX allows exactly one
+    // optional argument).
+    if let Some(sep) = line.find(|c: char| c == ' ' || c == '\t') {
+        let interp = line[..sep].trim();
+        let arg = line[sep..].trim();
+        if interp.is_empty() {
+            return None;
+        }
+        Some((interp, if arg.is_empty() { None } else { Some(arg) }))
+    } else {
+        Some((line, None))
+    }
+}
+
 /// Higher-level POSIX-friendly execve.  Opens the path, optionally verifies
 /// the executable type, and calls [`task_exec`].
 ///
 /// The function:
 /// 1. Opens `path` with `O_RDONLY`.
-/// 2. Reads the first 4 bytes to check for a recognised magic number.
-///    If the file is not an ELF binary and does not begin with `#!` (shebang),
-///    the file descriptor is closed and [`Errno::ENOEXEC`] is returned.
-/// 3. Calls [`task_exec`] with the supplied `argv` and `env`.
-/// 4. On failure the descriptor is closed before returning the error.
+/// 2. Reads up to 256 bytes to check for a recognised magic number.
+///    - ELF binaries are executed directly via [`task_exec`].
+///    - Files starting with `#!` are handled as interpreter scripts: the
+///      shebang line is parsed, the interpreter binary is opened, `argv` is
+///      rewritten to `[interpreter, opt_arg?, script_path, original_argv[1:]…]`,
+///      and [`task_exec`] is called with the interpreter's FD.
+///    - Any other file causes the FD to be closed and [`Errno::ENOEXEC`] to be
+///      returned.
+/// 3. On failure the file descriptor is closed before returning the error.
 pub fn execve(path: &str, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(), Errno> {
     let fd = vfs_open(path, abi::syscall::vfs_flags::O_RDONLY)?;
 
-    // Peek at the magic bytes to give callers a clear error for non-executable
-    // files before handing off to the kernel.
-    let mut magic = [0u8; 4];
-    match vfs_read(fd, &mut magic) {
-        Ok(n) if n >= 2 => {
-            let is_elf = is_elf_magic(&magic);
-            let is_shebang = magic[0] == b'#' && magic[1] == b'!';
-            if !is_elf && !is_shebang {
-                let _ = vfs_close(fd);
-                return Err(Errno::ENOEXEC);
-            }
-        }
-        Ok(_) => {
-            // File is too short to be a valid executable.
-            let _ = vfs_close(fd);
-            return Err(Errno::ENOEXEC);
-        }
+    // Read enough bytes to detect the magic number and, for shebang scripts,
+    // parse the interpreter line.  POSIX shebang lines are at most 255 bytes
+    // after `#!`; reading 256 bytes total covers the common maximum.
+    let mut header_buf = [0u8; 256];
+    let n = match vfs_read(fd, &mut header_buf) {
+        Ok(n) => n,
         Err(e) => {
             let _ = vfs_close(fd);
             return Err(e);
         }
+    };
+
+    if n < 2 {
+        let _ = vfs_close(fd);
+        return Err(Errno::ENOEXEC);
     }
 
-    let res = task_exec(fd, argv, env);
-    if res.is_err() {
-        let _ = vfs_close(fd);
+    let header = &header_buf[..n];
+
+    if is_elf_magic(header) {
+        // ELF binary: the kernel reads the full file from the VFS node, so
+        // the file-offset position does not matter here.
+        let res = task_exec(fd, argv, env);
+        if res.is_err() {
+            let _ = vfs_close(fd);
+        }
+        return res;
     }
-    res
+
+    if header[0] == b'#' && header[1] == b'!' {
+        // Shebang script: the script fd is no longer needed once we have the
+        // interpreter path.
+        let _ = vfs_close(fd);
+
+        let (interp_path, interp_arg) = match parse_shebang(header) {
+            Some(v) => v,
+            None => return Err(Errno::ENOEXEC),
+        };
+
+        // Open the interpreter binary.
+        let interp_fd = vfs_open(interp_path, abi::syscall::vfs_flags::O_RDONLY)?;
+
+        // Verify the interpreter is an ELF so we give a clear error for
+        // misconfigured scripts rather than a confusing kernel-loader error.
+        let mut interp_magic = [0u8; 4];
+        let nm = match vfs_read(interp_fd, &mut interp_magic) {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = vfs_close(interp_fd);
+                return Err(e);
+            }
+        };
+        if nm < 4 || !is_elf_magic(&interp_magic) {
+            let _ = vfs_close(interp_fd);
+            return Err(Errno::ENOEXEC);
+        }
+
+        // Rewrite argv:
+        //   argv[0] = interpreter path
+        //   argv[1] = optional interpreter argument (if present)
+        //   argv[N] = script path  (original argv[0] is replaced)
+        //   argv[N+1..] = original argv[1..]
+        let mut new_argv: Vec<&[u8]> = Vec::new();
+        new_argv.push(interp_path.as_bytes());
+        if let Some(arg) = interp_arg {
+            new_argv.push(arg.as_bytes());
+        }
+        new_argv.push(path.as_bytes());
+        if argv.len() > 1 {
+            new_argv.extend_from_slice(&argv[1..]);
+        }
+
+        let res = task_exec(interp_fd, &new_argv, env);
+        if res.is_err() {
+            let _ = vfs_close(interp_fd);
+        }
+        return res;
+    }
+
+    // Not an ELF and not a shebang script.
+    let _ = vfs_close(fd);
+    Err(Errno::ENOEXEC)
 }
 
 /// POSIX-style execv: replace the current process image with the executable
@@ -458,6 +562,81 @@ mod exec_tests {
         // key len=3, key="KEY", val len=3, val="val"
         let expected_len = 4 + (4 + 3) + (4 + 3);
         assert_eq!(blob.len(), expected_len);
+    }
+
+    // ── parse_shebang ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn shebang_no_arg() {
+        let (interp, arg) = parse_shebang(b"#!/bin/sh\n").unwrap();
+        assert_eq!(interp, "/bin/sh");
+        assert_eq!(arg, None);
+    }
+
+    #[test]
+    fn shebang_with_arg() {
+        let (interp, arg) = parse_shebang(b"#!/usr/bin/env python3\n").unwrap();
+        assert_eq!(interp, "/usr/bin/env");
+        assert_eq!(arg, Some("python3"));
+    }
+
+    #[test]
+    fn shebang_arg_with_leading_spaces() {
+        let (interp, arg) = parse_shebang(b"#!/usr/bin/awk -f\n").unwrap();
+        assert_eq!(interp, "/usr/bin/awk");
+        assert_eq!(arg, Some("-f"));
+    }
+
+    #[test]
+    fn shebang_no_newline() {
+        // No trailing newline: interpret to end of buffer.
+        let (interp, arg) = parse_shebang(b"#!/bin/bash").unwrap();
+        assert_eq!(interp, "/bin/bash");
+        assert_eq!(arg, None);
+    }
+
+    #[test]
+    fn shebang_crlf_line_ending() {
+        let (interp, arg) = parse_shebang(b"#!/bin/sh\r\n").unwrap();
+        assert_eq!(interp, "/bin/sh");
+        assert_eq!(arg, None);
+    }
+
+    #[test]
+    fn shebang_with_spaces_before_interp() {
+        // Leading space after `#!` is unusual but we trim it.
+        let (interp, arg) = parse_shebang(b"#! /bin/sh\n").unwrap();
+        assert_eq!(interp, "/bin/sh");
+        assert_eq!(arg, None);
+    }
+
+    #[test]
+    fn shebang_arg_spaces_trimmed() {
+        // Multiple spaces between tokens: only first whitespace-run is the
+        // separator; everything after it is the single optional arg, trimmed.
+        let (interp, arg) = parse_shebang(b"#!/usr/bin/env  python3\n").unwrap();
+        assert_eq!(interp, "/usr/bin/env");
+        // The remainder " python3" trimmed is "python3".
+        assert_eq!(arg, Some("python3"));
+    }
+
+    #[test]
+    fn shebang_not_present() {
+        assert!(parse_shebang(b"\x7fELF").is_none());
+        assert!(parse_shebang(b"hello world").is_none());
+    }
+
+    #[test]
+    fn shebang_too_short() {
+        assert!(parse_shebang(b"").is_none());
+        assert!(parse_shebang(b"#").is_none());
+    }
+
+    #[test]
+    fn shebang_empty_interpreter() {
+        // `#!` with only whitespace on the line → no valid interpreter.
+        assert!(parse_shebang(b"#!   \n").is_none());
+        assert!(parse_shebang(b"#!\n").is_none());
     }
 }
 

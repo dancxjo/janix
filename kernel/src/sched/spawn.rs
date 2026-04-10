@@ -36,9 +36,24 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
     let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
         alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
     let mut fd_table = crate::vfs::fd_table::FdTable::new();
-    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only(), "/dev/console".into());
-    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only(), "/dev/console".into());
-    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only(), "/dev/console".into());
+    let _ = fd_table.insert_at(
+        0,
+        console_node.clone(),
+        crate::vfs::OpenFlags::read_only(),
+        "/dev/console".into(),
+    );
+    let _ = fd_table.insert_at(
+        1,
+        console_node.clone(),
+        crate::vfs::OpenFlags::write_only(),
+        "/dev/console".into(),
+    );
+    let _ = fd_table.insert_at(
+        2,
+        console_node,
+        crate::vfs::OpenFlags::write_only(),
+        "/dev/console".into(),
+    );
     alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid,
         ppid,
@@ -55,8 +70,8 @@ fn inherit_process_info<R: BootRuntime>(
     ppid: u32,
 ) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
     let tid = crate::runtime::<R>().current_tid();
-    let current_pinfo = crate::task::registry::get_task::<R>(tid)
-        .and_then(|t| t.process_info.clone());
+    let current_pinfo =
+        crate::task::registry::get_task::<R>(tid).and_then(|t| t.process_info.clone());
 
     if let Some(parent_pi) = current_pinfo {
         let parent = parent_pi.lock();
@@ -103,7 +118,6 @@ impl<R: BootRuntime> Scheduler<R> {
                 }
             }
         }
-
     }
     pub fn spawn(
         &mut self,
@@ -187,7 +201,12 @@ impl<R: BootRuntime> Scheduler<R> {
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
             super::DIAG_IPI_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            crate::kdebug!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kdebug!(
+                "SCHED: Sending Resched IPI to CPU {} for task {}",
+                safe_cpu,
+                id
+            );
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
@@ -314,7 +333,12 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
-            crate::kdebug!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kdebug!(
+                "SCHED: Sending Resched IPI to CPU {} for task {}",
+                safe_cpu,
+                id
+            );
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
@@ -416,7 +440,12 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
-            crate::kdebug!("SCHED: Sending Resched IPI to CPU {} for task {}", safe_cpu, id); rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            crate::kdebug!(
+                "SCHED: Sending Resched IPI to CPU {} for task {}",
+                safe_cpu,
+                id
+            );
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
@@ -607,7 +636,7 @@ fn setup_stdio_fds<R: BootRuntime>(
                 lock.fd_table
                     .get(fd)
                     .ok()
-                    .map(|f| (f.node.clone(), f.flags))
+                    .map(|f| (f.node.clone(), *f.status_flags.lock()))
             })
     };
 
@@ -621,7 +650,12 @@ fn setup_stdio_fds<R: BootRuntime>(
             if let Some((node, flags)) = inherited_node(0) {
                 let _ = fd_table.insert_at(0, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(0, console.clone(), OpenFlags::read_only(), "/dev/console".into());
+                let _ = fd_table.insert_at(
+                    0,
+                    console.clone(),
+                    OpenFlags::read_only(),
+                    "/dev/console".into(),
+                );
             }
         }
         StdioSpec::Null => {
@@ -632,7 +666,12 @@ fn setup_stdio_fds<R: BootRuntime>(
             // the read end; the parent retains the write end via stdin_pipe.
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(read_node) = crate::ipc::pipe::read_node_for_id(id) {
-                let _ = fd_table.insert_at(0, read_node, OpenFlags::read_only(), alloc::format!("pipe:{}", id));
+                let _ = fd_table.insert_at(
+                    0,
+                    read_node,
+                    OpenFlags::read_only(),
+                    alloc::format!("pipe:{}", id),
+                );
             }
             stdin_pipe = id;
         }
@@ -644,16 +683,27 @@ fn setup_stdio_fds<R: BootRuntime>(
             if let Some((node, flags)) = inherited_node(1) {
                 let _ = fd_table.insert_at(1, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(1, console.clone(), OpenFlags::write_only(), "/dev/console".into());
+                let _ = fd_table.insert_at(
+                    1,
+                    console.clone(),
+                    OpenFlags::write_only(),
+                    "/dev/console".into(),
+                );
             }
         }
         StdioSpec::Null => {
-            let _ = fd_table.insert_at(1, null.clone(), OpenFlags::write_only(), "/dev/null".into());
+            let _ =
+                fd_table.insert_at(1, null.clone(), OpenFlags::write_only(), "/dev/null".into());
         }
         StdioSpec::Pipe => {
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
-                let _ = fd_table.insert_at(1, write_node, OpenFlags::write_only(), alloc::format!("pipe:{}", id));
+                let _ = fd_table.insert_at(
+                    1,
+                    write_node,
+                    OpenFlags::write_only(),
+                    alloc::format!("pipe:{}", id),
+                );
             }
             stdout_pipe = id;
         }
@@ -665,7 +715,8 @@ fn setup_stdio_fds<R: BootRuntime>(
             if let Some((node, flags)) = inherited_node(2) {
                 let _ = fd_table.insert_at(2, node, flags, "/dev/console".into());
             } else {
-                let _ = fd_table.insert_at(2, console, OpenFlags::write_only(), "/dev/console".into());
+                let _ =
+                    fd_table.insert_at(2, console, OpenFlags::write_only(), "/dev/console".into());
             }
         }
         StdioSpec::Null => {
@@ -674,7 +725,12 @@ fn setup_stdio_fds<R: BootRuntime>(
         StdioSpec::Pipe => {
             let id = crate::ipc::pipe::create(4096, 0);
             if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
-                let _ = fd_table.insert_at(2, write_node, OpenFlags::write_only(), alloc::format!("pipe:{}", id));
+                let _ = fd_table.insert_at(
+                    2,
+                    write_node,
+                    OpenFlags::write_only(),
+                    alloc::format!("pipe:{}", id),
+                );
             }
             stderr_pipe = id;
         }
@@ -760,8 +816,8 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
     // Populate stdio fds in the child's fd_table.
     let tid = crate::runtime::<R>().current_tid();
-    let parent_pinfo = crate::task::registry::get_task::<R>(tid)
-        .and_then(|t| t.process_info.clone());
+    let parent_pinfo =
+        crate::task::registry::get_task::<R>(tid).and_then(|t| t.process_info.clone());
 
     let mut fd_table = if let Some(parent_pi) = &parent_pinfo {
         parent_pi.lock().fd_table.clone()
@@ -934,8 +990,8 @@ mod tests {
         fn protect_page(
             &self,
             _as: Self::AddressSpace,
-            _virt: u64,
-            _perms: MapPerms,
+            _v: u64,
+            _pr: crate::MapPerms,
         ) -> Result<(), ()> {
             Ok(())
         }

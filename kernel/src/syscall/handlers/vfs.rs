@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::{PollFd, poll_flags, vfs_flags};
+use abi::syscall::{PollFd, fcntl_cmd, fd_flags, poll_flags, vfs_flags};
 
 use crate::syscall::validate::{copyin, copyout, validate_user_range};
 use crate::vfs::{self, OpenFlags};
@@ -48,7 +48,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
         );
     }
 
-    let open_flags = OpenFlags(flags as u32);
+    let open_flags = OpenFlags::from_open_call(flags as u32);
     let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
     let want_trunc = (flags as u32) & vfs_flags::O_TRUNC != 0;
 
@@ -136,6 +136,32 @@ pub fn sys_fs_sync(fd: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+/// File-descriptor control.
+pub fn sys_fs_fcntl(fd: usize, cmd: usize, arg: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let mut lock = pinfo_arc.lock();
+
+    match cmd as u32 {
+        fcntl_cmd::F_GETFD => Ok(lock.fd_table.get_fd_flags(fd as u32)? as usize),
+        fcntl_cmd::F_SETFD => {
+            lock.fd_table
+                .set_fd_flags(fd as u32, (arg as u32) & fd_flags::FD_CLOEXEC)?;
+            Ok(0)
+        }
+        fcntl_cmd::F_GETFL => {
+            let file = lock.fd_table.get(fd as u32)?;
+            Ok(file.status_flags.lock().0 as usize)
+        }
+        fcntl_cmd::F_SETFL => {
+            let file = lock.fd_table.get(fd as u32)?;
+            let mut status_flags = file.status_flags.lock();
+            *status_flags = status_flags.with_mutable_status(arg as u32);
+            Ok(0)
+        }
+        _ => Err(Errno::EINVAL),
+    }
+}
+
 // ── read ────────────────────────────────────────────────────────────────────
 
 pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
@@ -146,15 +172,20 @@ pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
 
     // Clone the node Arc and the shared offset so we don't hold the process lock
     // during the read.
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_readable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_readable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
+
+    if status_flags.read_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
 
     let offset = *offset_cell.lock();
     let mut kbuf = vec![0u8; buf_len];
@@ -251,21 +282,26 @@ pub fn sys_fs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     let mut kbuf = vec![0u8; buf_len];
     unsafe { copyin(&mut kbuf, buf_ptr)? };
 
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_writable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_writable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
 
-    let offset = *offset_cell.lock();
-    let n = node.write(offset, &kbuf)?;
+    if status_flags.write_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
+
+    let write_offset = status_flags.effective_write_offset(*offset_cell.lock(), node.stat()?.size);
+    let n = node.write(write_offset, &kbuf)?;
 
     if n > 0 {
-        *offset_cell.lock() = offset.saturating_add(n as u64);
+        *offset_cell.lock() = write_offset.saturating_add(n as u64);
         // Emit MODIFY event
         crate::vfs::watch::emit_event(&*node, abi::vfs_watch::mask::MODIFY, None, 0);
     }

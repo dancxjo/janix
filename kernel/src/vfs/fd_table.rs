@@ -20,6 +20,7 @@ use spin::Mutex;
 use super::{OpenFlags, VfsNode};
 
 pub const MAX_FDS: usize = 256;
+pub const FD_CLOEXEC: u32 = abi::syscall::fd_flags::FD_CLOEXEC;
 
 /// A single open-file entry in the FD table.
 ///
@@ -29,7 +30,8 @@ pub const MAX_FDS: usize = 256;
 #[derive(Clone)]
 pub struct OpenFile {
     pub node: Arc<dyn VfsNode>,
-    pub flags: OpenFlags,
+    pub status_flags: Arc<Mutex<OpenFlags>>,
+    pub fd_flags: u32,
     /// Absolute path of this open file (if known).
     pub path: Arc<String>,
     /// Shared read/write position — cloned (not copied) on dup/dup2.
@@ -66,7 +68,8 @@ impl FdTable {
             if self.entries[i].is_none() {
                 self.entries[i] = Some(OpenFile {
                     node,
-                    flags,
+                    status_flags: Arc::new(Mutex::new(flags)),
+                    fd_flags: 0,
                     path: Arc::new(path),
                     offset: Arc::new(Mutex::new(0)),
                 });
@@ -96,7 +99,8 @@ impl FdTable {
         }
         self.entries[idx] = Some(OpenFile {
             node,
-            flags,
+            status_flags: Arc::new(Mutex::new(flags)),
+            fd_flags: 0,
             path: Arc::new(path),
             offset: Arc::new(Mutex::new(0)),
         });
@@ -115,14 +119,15 @@ impl FdTable {
         }
         let entry = self.entries[idx].as_ref().ok_or(Errno::EBADF)?;
         let new_node = entry.node.clone();
-        let new_flags = entry.flags;
+        let new_status_flags = entry.status_flags.clone();
         let new_path = entry.path.clone();
         let shared_offset = entry.offset.clone(); // share offset with original
         for i in 0..MAX_FDS {
             if self.entries[i].is_none() {
                 self.entries[i] = Some(OpenFile {
                     node: new_node,
-                    flags: new_flags,
+                    status_flags: new_status_flags,
+                    fd_flags: 0,
                     path: new_path,
                     offset: shared_offset,
                 });
@@ -151,7 +156,7 @@ impl FdTable {
         }
         let entry = self.entries[old_idx].as_ref().ok_or(Errno::EBADF)?;
         let new_node = entry.node.clone();
-        let new_flags = entry.flags;
+        let new_status_flags = entry.status_flags.clone();
         let new_path = entry.path.clone();
         let shared_offset = entry.offset.clone(); // share offset with original
         // Close new_fd if open.
@@ -160,7 +165,8 @@ impl FdTable {
         }
         self.entries[new_idx] = Some(OpenFile {
             node: new_node,
-            flags: new_flags,
+            status_flags: new_status_flags,
+            fd_flags: 0,
             path: new_path,
             offset: shared_offset,
         });
@@ -183,6 +189,17 @@ impl FdTable {
             return Err(Errno::EBADF);
         }
         self.entries[idx].as_mut().ok_or(Errno::EBADF)
+    }
+
+    /// Read the descriptor flags (`FD_*`) for `fd`.
+    pub fn get_fd_flags(&self, fd: u32) -> SysResult<u32> {
+        Ok(self.get(fd)?.fd_flags)
+    }
+
+    /// Replace the descriptor flags (`FD_*`) for `fd`.
+    pub fn set_fd_flags(&mut self, fd: u32, flags: u32) -> SysResult<()> {
+        self.get_mut(fd)?.fd_flags = flags & FD_CLOEXEC;
+        Ok(())
     }
 
     /// Close file descriptor `fd`.  Returns `EBADF` if not open.
@@ -458,6 +475,44 @@ mod tests {
         // fd 0 should see the same value.
         let orig_offset = *table.get(0).unwrap().offset.lock();
         assert_eq!(orig_offset, 100, "dup2 should share file offset");
+    }
+
+    #[test]
+    fn test_dup_shares_status_flags() {
+        let mut table = FdTable::new();
+        table
+            .insert_at(
+                0,
+                null_node(),
+                OpenFlags(abi::syscall::vfs_flags::O_RDONLY),
+                "/null".into(),
+            )
+            .unwrap();
+        let new_fd = table.dup(0).unwrap();
+
+        *table.get(0).unwrap().status_flags.lock() =
+            OpenFlags(abi::syscall::vfs_flags::O_RDONLY | abi::syscall::vfs_flags::O_NONBLOCK);
+
+        let dup_flags = *table.get(new_fd).unwrap().status_flags.lock();
+        assert!(dup_flags.is_nonblock(), "dup should share status flags");
+    }
+
+    #[test]
+    fn test_dup_clears_descriptor_flags() {
+        let mut table = FdTable::new();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/null".into())
+            .unwrap();
+        table.set_fd_flags(0, FD_CLOEXEC).unwrap();
+
+        let new_fd = table.dup(0).unwrap();
+
+        assert_eq!(table.get_fd_flags(0).unwrap(), FD_CLOEXEC);
+        assert_eq!(
+            table.get_fd_flags(new_fd).unwrap(),
+            0,
+            "dup should not inherit FD_CLOEXEC"
+        );
     }
 
     #[test]

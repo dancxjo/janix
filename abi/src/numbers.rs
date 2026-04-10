@@ -116,6 +116,7 @@ pub const SYS_FD_FROM_HANDLE: u32 = 0x4014;
 pub const SYS_FS_NOTIFY: u32 = 0x4015;
 pub const SYS_FS_REALPATH: u32 = 0x4016;
 pub const SYS_FS_SYNC: u32 = 0x4017;
+pub const SYS_FS_FCNTL: u32 = 0x4018;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)
@@ -160,6 +161,17 @@ pub mod vfs_flags {
     pub const O_TRUNC: u32 = 0x0200;
     pub const O_APPEND: u32 = 0x0400;
     pub const O_NONBLOCK: u32 = 0x0800;
+}
+
+pub mod fcntl_cmd {
+    pub const F_GETFD: u32 = 1;
+    pub const F_SETFD: u32 = 2;
+    pub const F_GETFL: u32 = 3;
+    pub const F_SETFL: u32 = 4;
+}
+
+pub mod fd_flags {
+    pub const FD_CLOEXEC: u32 = 0x1;
 }
 
 pub mod poll_flags {

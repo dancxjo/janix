@@ -7,12 +7,10 @@
 use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
-    SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
-    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
-    SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
-    SYS_FS_WRITE, SYS_FS_REALPATH, SYS_PIPE,
-    SYS_FS_REALPATH, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
-    SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY,
+    SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_REALPATH, SYS_FS_RENAME,
+    SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD,
+    SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -214,6 +212,24 @@ pub fn dup(old_fd: u32) -> SysResult<u32> {
 /// Returns `new_fd` on success.
 pub fn dup2(old_fd: u32, new_fd: u32) -> SysResult<u32> {
     let ret = unsafe { raw_syscall6(SYS_FS_DUP2, old_fd as usize, new_fd as usize, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// File-descriptor control.
+///
+/// Supports `F_GETFL`, `F_SETFL`, `F_GETFD`, and `F_SETFD`.
+pub fn vfs_fcntl(fd: u32, cmd: u32, arg: u32) -> SysResult<u32> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_FCNTL,
+            fd as usize,
+            cmd as usize,
+            arg as usize,
+            0,
+            0,
+            0,
+        )
+    };
     abi::errors::errno(ret).map(|v| v as u32)
 }
 

@@ -111,10 +111,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_WATCH_PATH => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
         SYS_FD_FROM_HANDLE => handlers::vfs::sys_fd_from_handle(args[0]),
         SYS_FS_NOTIFY => handlers::vfs::sys_fs_notify(args[0], args[1], args[2]),
-        SYS_FS_REALPATH => {
-            handlers::vfs::sys_fs_realpath(args[0], args[1], args[2], args[3])
-        }
+        SYS_FS_REALPATH => handlers::vfs::sys_fs_realpath(args[0], args[1], args[2], args[3]),
         SYS_FS_SYNC => handlers::vfs::sys_fs_sync(args[0]),
+        SYS_FS_FCNTL => handlers::vfs::sys_fs_fcntl(args[0], args[1], args[2]),
 
         _ => Err(abi::errors::Errno::ENOSYS),
     };

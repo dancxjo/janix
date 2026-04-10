@@ -39,6 +39,10 @@ use alloc::sync::Arc;
 pub struct OpenFlags(pub u32);
 
 impl OpenFlags {
+    pub const ACCESS_MODE_MASK: u32 = 0x3;
+    pub const MUTABLE_STATUS_MASK: u32 =
+        abi::syscall::vfs_flags::O_APPEND | abi::syscall::vfs_flags::O_NONBLOCK;
+
     pub fn read_only() -> Self {
         Self(abi::syscall::vfs_flags::O_RDONLY)
     }
@@ -47,6 +51,18 @@ impl OpenFlags {
     }
     pub fn read_write() -> Self {
         Self(abi::syscall::vfs_flags::O_RDWR)
+    }
+
+    pub fn from_open_call(flags: u32) -> Self {
+        Self((flags & Self::ACCESS_MODE_MASK) | (flags & Self::MUTABLE_STATUS_MASK))
+    }
+
+    pub fn access_mode_bits(self) -> u32 {
+        self.0 & Self::ACCESS_MODE_MASK
+    }
+
+    pub fn with_mutable_status(self, requested: u32) -> Self {
+        Self((self.0 & !Self::MUTABLE_STATUS_MASK) | (requested & Self::MUTABLE_STATUS_MASK))
     }
 
     pub fn is_readable(self) -> bool {
@@ -62,6 +78,32 @@ impl OpenFlags {
     }
     pub fn is_append(self) -> bool {
         self.0 & abi::syscall::vfs_flags::O_APPEND != 0
+    }
+
+    pub fn read_would_block(self, readiness: u16) -> bool {
+        self.is_nonblock()
+            && readiness
+                & (abi::syscall::poll_flags::POLLIN
+                    | abi::syscall::poll_flags::POLLHUP
+                    | abi::syscall::poll_flags::POLLERR)
+                == 0
+    }
+
+    pub fn write_would_block(self, readiness: u16) -> bool {
+        self.is_nonblock()
+            && readiness
+                & (abi::syscall::poll_flags::POLLOUT
+                    | abi::syscall::poll_flags::POLLHUP
+                    | abi::syscall::poll_flags::POLLERR)
+                == 0
+    }
+
+    pub fn effective_write_offset(self, current_offset: u64, file_size: u64) -> u64 {
+        if self.is_append() {
+            file_size
+        } else {
+            current_offset
+        }
     }
 }
 
@@ -453,6 +495,52 @@ mod tests {
         let rw = OpenFlags::read_write();
         assert!(rw.is_readable());
         assert!(rw.is_writable());
+    }
+
+    #[test]
+    fn test_from_open_call_discards_creation_flags() {
+        let flags = OpenFlags::from_open_call(
+            abi::syscall::vfs_flags::O_WRONLY
+                | abi::syscall::vfs_flags::O_CREAT
+                | abi::syscall::vfs_flags::O_TRUNC
+                | abi::syscall::vfs_flags::O_NONBLOCK,
+        );
+        assert_eq!(flags.access_mode_bits(), abi::syscall::vfs_flags::O_WRONLY);
+        assert!(flags.is_nonblock());
+        assert_eq!(
+            flags.0 & (abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_TRUNC),
+            0
+        );
+    }
+
+    #[test]
+    fn test_setfl_only_updates_mutable_status_bits() {
+        let base = OpenFlags::from_open_call(
+            abi::syscall::vfs_flags::O_RDWR | abi::syscall::vfs_flags::O_APPEND,
+        );
+        let updated = base.with_mutable_status(abi::syscall::vfs_flags::O_NONBLOCK);
+        assert_eq!(updated.access_mode_bits(), abi::syscall::vfs_flags::O_RDWR);
+        assert!(updated.is_nonblock());
+        assert!(!updated.is_append());
+    }
+
+    #[test]
+    fn test_nonblock_readiness_checks() {
+        let nonblock = OpenFlags::from_open_call(
+            abi::syscall::vfs_flags::O_RDONLY | abi::syscall::vfs_flags::O_NONBLOCK,
+        );
+        assert!(nonblock.read_would_block(0));
+        assert!(!nonblock.read_would_block(abi::syscall::poll_flags::POLLIN));
+        assert!(!OpenFlags::read_only().read_would_block(0));
+    }
+
+    #[test]
+    fn test_effective_write_offset_uses_file_end_for_append() {
+        let append = OpenFlags::from_open_call(
+            abi::syscall::vfs_flags::O_WRONLY | abi::syscall::vfs_flags::O_APPEND,
+        );
+        assert_eq!(append.effective_write_offset(3, 12), 12);
+        assert_eq!(OpenFlags::write_only().effective_write_offset(3, 12), 3);
     }
 
     #[test]

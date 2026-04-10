@@ -137,4 +137,34 @@ mod tests {
         assert_eq!(normalise("/a/b/c/../../d").unwrap(), "/a/d");
         assert_eq!(normalise("/a/./b/./c").unwrap(), "/a/b/c");
     }
+
+    // ── Tests for realpath requirements ──────────────────────────────────────
+
+    /// The canonical form of an already-absolute path must be stable (idempotent).
+    #[test]
+    fn test_realpath_idempotent() {
+        let once = normalise("/usr/local/bin").unwrap();
+        let twice = normalise(&once).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    /// Deeply nested `../` chains must collapse correctly.
+    #[test]
+    fn test_realpath_deep_dotdot_chain() {
+        assert_eq!(normalise("/a/b/c/d/../../../../e").unwrap(), "/e");
+        assert_eq!(normalise("/a/b/c/../../../d/../e").unwrap(), "/e");
+    }
+
+    /// Mixed `.` and `..` with redundant separators must yield a clean path.
+    #[test]
+    fn test_realpath_mixed_dot_components() {
+        assert_eq!(normalise("/a/./b//../c").unwrap(), "/a/c");
+    }
+
+    /// Output must not contain trailing slashes (except for root).
+    #[test]
+    fn test_realpath_no_trailing_slash() {
+        let result = normalise("/a/b/c/").unwrap();
+        assert!(!result.ends_with('/') || result == "/");
+    }
 }

@@ -180,6 +180,11 @@ pub trait VfsNode: Send + Sync {
         Err(Errno::ENOSYS)
     }
 
+    /// Returns true if the node is a terminal/TTY device.
+    fn is_tty(&self) -> bool {
+        false
+    }
+
     /// Poll this node for readiness.
     /// Returns the current readiness mask (using [`abi::syscall::poll_flags`]).
     fn poll(&self) -> u16 {

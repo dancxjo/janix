@@ -177,6 +177,16 @@ pub fn sys_fs_stat(fd: usize, stat_ptr: usize, _a2: usize, _a3: usize) -> SysRes
     Ok(0)
 }
 
+pub fn sys_fs_isatty(fd: usize) -> SysResult<usize> {
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        file.node.clone()
+    };
+    Ok(if node.is_tty() { 1 } else { 0 })
+}
+
 pub fn sys_fs_readdir(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     validate_user_range(buf_ptr, buf_len, true)?;
     if buf_len == 0 {

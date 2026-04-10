@@ -8,7 +8,7 @@ use abi::errors::{Errno, SysResult};
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
-    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
+    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_ISATTY,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
@@ -130,6 +130,12 @@ pub fn vfs_stat(fd: u32) -> SysResult<abi::fs::FileStat> {
         )
     };
     abi::errors::errno(ret).map(|_| stat)
+}
+
+/// Check if an open file descriptor refers to a terminal/TTY device.
+pub fn vfs_isatty(fd: u32) -> SysResult<bool> {
+    let ret = unsafe { raw_syscall6(SYS_FS_ISATTY, fd as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v != 0)
 }
 
 /// Remove a file or empty directory at `path`.

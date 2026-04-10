@@ -43,6 +43,7 @@ members = [
     "userspace/sh",
     "userspace/smallsh",
     "userspace/ls",
+    "userspace/ps",
     "userspace/cat",
     "userspace/clear",
 

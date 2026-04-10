@@ -65,6 +65,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "ps",
+            is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "cat",
             is_init: true,
             boot_module: true,

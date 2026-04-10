@@ -2491,6 +2491,13 @@ name = "proto_driver_wasm"
 version = "0.1.0"
 
 [[package]]
+name = "ps"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "ps2_kbd"
 version = "0.1.0"
 dependencies = [

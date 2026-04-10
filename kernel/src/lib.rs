@@ -1021,10 +1021,11 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     // CRITICAL: First, load the kernel's GDT/IDT and set GS_BASE on this secondary CPU
     // This must happen before ANY kernel code that might fault or use logging (which uses GS).
     let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
+    crate::kdebug!("SMP: CPU {} starting bring-up phase 1 (init_secondary)...", cpu_index);
     base.init_secondary_cpu(cpu_index);
     // Verification done via base properties later if needed
 
-    crate::kdebug!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
+    crate::kdebug!("SMP: CPU {} bring-up phase 2 (simd_init)...", cpu_index);
 
     // Per-CPU init
     base.mono_ticks(); // ok for logging
@@ -1032,11 +1033,14 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     base.simd_init_cpu();
 
     // Then:
+    crate::kdebug!("SMP: CPU {} bring-up phase 3 (scheduler online)...", cpu_index);
     unsafe {
         crate::sched::cpu_online::<R>(cpu_index);
+        crate::kdebug!("SMP: CPU {} bring-up phase 4 (enter_secondary)...", cpu_index);
         crate::sched::enter_secondary(cpu_index);
     }
 }
+
 
 pub fn scan_pci() {
     let rt = runtime_base();

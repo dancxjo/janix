@@ -350,7 +350,7 @@ mod tests {
     fn test_dup_clones_to_next_free() {
         let mut table = FdTable::new();
         table
-            .insert_at(0, null_node(), OpenFlags::read_only())
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/null".into())
             .unwrap();
         let new_fd = table.dup(0).unwrap();
         assert_eq!(new_fd, 1, "dup should use first free slot after 0");
@@ -367,7 +367,7 @@ mod tests {
     fn test_dup2_creates_alias() {
         let mut table = FdTable::new();
         table
-            .insert_at(0, null_node(), OpenFlags::read_only())
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/null".into())
             .unwrap();
         let result = table.dup2(0, 5).unwrap();
         assert_eq!(result, 5);
@@ -411,7 +411,7 @@ mod tests {
     fn test_dup_shares_offset() {
         let mut table = FdTable::new();
         table
-            .insert_at(0, null_node(), OpenFlags::read_only())
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/null".into())
             .unwrap();
         let new_fd = table.dup(0).unwrap();
         // Advance the original fd's offset.

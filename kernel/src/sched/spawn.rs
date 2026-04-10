@@ -157,6 +157,7 @@ impl<R: BootRuntime> Scheduler<R> {
             process_info: None,
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
+            user_fs_base: 0,
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -283,6 +284,7 @@ impl<R: BootRuntime> Scheduler<R> {
             process_info: parent_pinfo,
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
+            user_fs_base: 0,
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -383,6 +385,7 @@ impl<R: BootRuntime> Scheduler<R> {
             process_info: Some(pinfo),
             enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
+            user_fs_base: 0,
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {

@@ -140,8 +140,10 @@ pub fn task_exec_current<R: BootRuntime>(
     rt.tasking().activate_address_space(new_aspace_actual);
     
     let mut dummy_ctx = Default::default();
+    // TLS base for the new image starts at 0; the dummy save target is discarded.
+    let mut _discard_tls: u64 = 0;
     unsafe {
-        rt.tasking().switch(&mut dummy_ctx, &to_ctx, tid);
+        rt.tasking().switch_with_tls(&mut dummy_ctx, &to_ctx, tid, &mut _discard_tls, 0);
     }
 
     // switch() should never return to this stack because we didn't save it into any task.ctx

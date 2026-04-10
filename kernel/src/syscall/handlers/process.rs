@@ -478,6 +478,46 @@ fn deserialize_env(blob: &[u8]) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, Errno> {
     Ok(result)
 }
 
+/// `SYS_TASK_SET_TLS_BASE`: Set the calling thread's user TLS base (FS_BASE on x86_64).
+///
+/// The new base takes effect immediately in hardware and is preserved across
+/// context switches.  On architectures without a dedicated user TLS register
+/// this call succeeds silently (no-op).
+///
+/// Returns `EINVAL` if `base` is a non-canonical address on x86_64 (bits
+/// 63:48 must sign-extend bit 47).
+pub fn sys_task_set_tls_base(base: usize) -> SysResult<usize> {
+    let base = base as u64;
+
+    // Validate canonical address: bits 63:47 must all be the same value.
+    // Non-canonical addresses would cause a #GP on the first FS-relative
+    // access from user mode; reject them here to give a clean error.
+    let sign_bits = base >> 47;
+    if sign_bits != 0 && sign_bits != (1u64 << 17) - 1 {
+        return Err(abi::errors::Errno::EINVAL);
+    }
+
+    // Update the hardware register immediately.
+    crate::runtime_base().set_user_tls_base_dyn(base);
+
+    // Also persist into the current task's record so context-switch save/restore
+    // starts with the correct value even if the task has never been switched out.
+    unsafe {
+        crate::sched::set_current_user_fs_base_current(base);
+    }
+
+    Ok(0)
+}
+
+/// `SYS_TASK_GET_TLS_BASE`: Return the calling thread's user TLS base.
+///
+/// Reads the live hardware register so the value is always current,
+/// regardless of whether `task_set_tls_base` was used.
+pub fn sys_task_get_tls_base() -> SysResult<usize> {
+    let base = crate::runtime_base().get_user_tls_base_dyn();
+    Ok(base as usize)
+}
+
 pub fn sys_task_exec(
     fd: u32,
     argv_ptr: usize,

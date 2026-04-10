@@ -113,6 +113,20 @@ pub trait ArchRuntime {
     unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context, _to_tid: u64) {
         // No-op
     }
+    unsafe fn switch_with_tls(
+        &self,
+        from: &mut Self::Context,
+        to: &Self::Context,
+        to_tid: u64,
+        _from_user_fs_base: *mut u64,
+        _to_user_fs_base: u64,
+    ) {
+        unsafe { self.switch(from, to, to_tid) }
+    }
+    fn get_user_tls_base(&self) -> u64 {
+        0
+    }
+    fn set_user_tls_base(&self, _base: u64) {}
     unsafe fn enter_user(&self, _entry: UserEntry) -> ! {
         panic!("enter_user not implemented for this architecture");
     }
@@ -367,6 +381,14 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn phys_to_virt_offset(&self) -> u64 {
         self.limine.phys_to_virt_offset()
     }
+
+    fn get_user_tls_base_dyn(&self) -> u64 {
+        self.arch.get_user_tls_base()
+    }
+
+    fn set_user_tls_base_dyn(&self, base: u64) {
+        self.arch.set_user_tls_base(base)
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -502,6 +524,28 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64) {
         unsafe { self.arch.switch(from, to, to_tid) }
+    }
+
+    unsafe fn switch_with_tls(
+        &self,
+        from: &mut Self::Context,
+        to: &Self::Context,
+        to_tid: u64,
+        from_user_fs_base: *mut u64,
+        to_user_fs_base: u64,
+    ) {
+        unsafe {
+            self.arch
+                .switch_with_tls(from, to, to_tid, from_user_fs_base, to_user_fs_base)
+        }
+    }
+
+    fn get_user_tls_base(&self) -> u64 {
+        self.arch.get_user_tls_base()
+    }
+
+    fn set_user_tls_base(&self, base: u64) {
+        self.arch.set_user_tls_base(base)
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {

@@ -76,6 +76,8 @@ pub(crate) static mut CURRENT_TASK_NAME_HOOK: Option<fn() -> [u8; 32]> = None;
 pub(crate) static mut TASK_EXEC_HOOK: Option<
     fn(u32, Vec<Vec<u8>>, BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(), Errno>,
 > = None;
+/// Updates the current task's stored `user_fs_base` field without touching hardware.
+pub(crate) static mut SET_CURRENT_USER_FS_BASE_HOOK: Option<fn(u64)> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -347,5 +349,15 @@ pub unsafe fn task_exec_current(
         hook(fd, argv, env)
     } else {
         Err(Errno::ENOSYS)
+    }
+}
+
+/// Update the current task's stored `user_fs_base` field (without touching hardware).
+///
+/// This should be called alongside a hardware write whenever the TLS base changes
+/// via syscall, so that the value is preserved correctly on the next context switch.
+pub unsafe fn set_current_user_fs_base_current(base: u64) {
+    if let Some(hook) = unsafe { SET_CURRENT_USER_FS_BASE_HOOK } {
+        hook(base)
     }
 }

@@ -67,7 +67,7 @@ pub fn block_current<R: BootRuntime>() {
 
         unsafe {
             rt.tasking()
-                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
         }
     }
 

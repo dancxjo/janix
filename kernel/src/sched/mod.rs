@@ -2933,6 +2933,7 @@ mod tests {
                     ppid,
                     argv: alloc::vec::Vec::new(),
                     env: alloc::collections::BTreeMap::new(),
+                    auxv: alloc::vec::Vec::new(),
                     fd_table: crate::vfs::fd_table::FdTable::new(),
                     namespace: crate::vfs::NamespaceRef::global(),
                     cwd: alloc::string::String::from("/"),

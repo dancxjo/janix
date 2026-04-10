@@ -72,7 +72,8 @@ fn main() {
     assert!(fds[1].revents & poll_flags::POLLIN != 0, "Expected POLLIN on channel");
 
     // 8. Mixed poll: channel + pipe + VFS file all at once.
-    //    Pipe and channel still have data; VFS file is always ready.
+    //    Pipe (index 0) and channel (index 1) still have unread data;
+    //    VFS file (index 2) is always ready.  All three should fire.
     stem::println!("Mixed poll: pipe + channel + VFS file...");
     let mut mixed = [
         PollFd { fd: pr as i32,          events: poll_flags::POLLIN, revents: 0 },
@@ -81,8 +82,9 @@ fn main() {
     ];
     let n = vfs_poll(&mut mixed, 0).expect("mixed poll failed");
     stem::println!("Mixed poll returned {} entries", n);
-    assert!(n >= 2, "Expected at least pipe + VFS file ready, got {}", n);
+    assert!(n == 3, "Expected all 3 fds ready (pipe + channel + VFS file), got {}", n);
     assert!(mixed[0].revents & poll_flags::POLLIN != 0, "Expected POLLIN on pipe in mixed");
+    assert!(mixed[1].revents & poll_flags::POLLIN != 0, "Expected POLLIN on channel in mixed");
     assert!(mixed[2].revents & (poll_flags::POLLIN | poll_flags::POLLOUT) != 0,
         "Expected readiness on VFS file in mixed");
 

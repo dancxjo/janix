@@ -636,6 +636,10 @@ mod tests {
         assert!(port.send_all(b"hello"));
 
         // Build a pipe and push one byte so the read end is POLLIN-ready.
+        // Keep `write_node` alive for the duration of the test so the write
+        // end is not closed prematurely — otherwise the read end would show
+        // POLLHUP in addition to POLLIN, which is correct but not what the
+        // assertion below tests.
         let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
         write_node.write(0, b"x").expect("pipe write");
 
@@ -664,6 +668,8 @@ mod tests {
         let fd_ready_flags = node.poll();
         assert_ne!(fd_ready_flags & abi::syscall::poll_flags::POLLIN, 0,
             "pipe read-end should be POLLIN-ready after write");
+        // Keep write_node alive until after the assertion so POLLHUP is not set.
+        let _ = write_node;
     }
 
     #[test]

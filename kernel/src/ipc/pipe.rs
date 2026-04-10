@@ -540,7 +540,9 @@ mod tests {
     #[test]
     fn read_end_reports_pollhup_when_writer_closed() {
         let (r, w) = make_pair();
-        w.close(); // Explicit close decrements writers
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        w.close();
         // No data, no writer → POLLIN (EOF indicator) + POLLHUP
         assert_ne!(r.poll() & poll_flags::POLLIN, 0, "POLLIN set on EOF");
         assert_ne!(r.poll() & poll_flags::POLLHUP, 0, "POLLHUP set on writer closed");
@@ -550,7 +552,9 @@ mod tests {
     fn read_end_reports_both_pollin_and_pollhup_with_data_and_closed_writer() {
         let (r, w) = make_pair();
         w.write(0, b"x").expect("write");
-        w.close(); // Explicit close decrements writers
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        w.close();
         // Data available AND writer closed → both POLLIN and POLLHUP.
         let flags = r.poll();
         assert_ne!(flags & poll_flags::POLLIN, 0, "POLLIN set when data present");
@@ -568,7 +572,9 @@ mod tests {
     #[test]
     fn write_end_reports_pollhup_when_reader_closed() {
         let (r, w) = make_pair();
-        r.close(); // Explicit close decrements readers
+        // `VfsNode::close()` is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        r.close();
         // Reader gone → POLLHUP | POLLERR on the write end.
         let flags = w.poll();
         assert_ne!(flags & poll_flags::POLLHUP, 0, "POLLHUP when reader closed");

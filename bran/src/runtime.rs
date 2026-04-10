@@ -363,6 +363,10 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn fill_entropy(&self, dst: &mut [u8]) -> usize {
         self.arch.fill_entropy(dst)
     }
+
+    fn phys_to_virt_offset(&self) -> u64 {
+        self.limine.phys_to_virt_offset()
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -401,9 +405,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
 
     fn phys_memory_map(&self) -> &'static [PhysRange] {
         self.limine.phys_memory_map()
-    }
-    fn phys_to_virt_offset(&self) -> u64 {
-        self.limine.phys_to_virt_offset()
     }
     fn modules(&self) -> &'static [BootModuleDesc] {
         self.limine.modules()

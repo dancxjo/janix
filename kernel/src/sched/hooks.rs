@@ -72,6 +72,7 @@ pub(crate) static mut REGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId, u64)> = None
 pub(crate) static mut UNREGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId)> = None;
 /// Return a snapshot of all live processes (those that have process_info set).
 pub(crate) static mut LIST_PROCESSES_HOOK: Option<fn() -> Vec<ProcessSnapshot>> = None;
+pub(crate) static mut CURRENT_TASK_NAME_HOOK: Option<fn() -> [u8; 32]> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -321,5 +322,15 @@ pub fn list_processes_current() -> Vec<ProcessSnapshot> {
         hook()
     } else {
         Vec::new()
+    }
+}
+
+pub unsafe fn current_task_name_current() -> [u8; 32] {
+    if let Some(hook) = unsafe { CURRENT_TASK_NAME_HOOK } {
+        hook()
+    } else {
+        let mut n = [0u8; 32];
+        n[0..7].copy_from_slice(b"unknown");
+        n
     }
 }

@@ -33,6 +33,7 @@ pub use hooks::{
     set_priority_current, sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_status_current, task_wait_current,
     unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
+    current_task_name_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -286,6 +287,7 @@ pub fn init<R: BootRuntime>() {
             hooks::REGISTER_TIMEOUT_WAKE_HOOK = Some(register_timeout_wake::<R>);
             hooks::UNREGISTER_TIMEOUT_WAKE_HOOK = Some(unregister_timeout_wake::<R>);
             hooks::LIST_PROCESSES_HOOK = Some(list_processes::<R>);
+            hooks::CURRENT_TASK_NAME_HOOK = Some(current_task_name_impl::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -1027,6 +1029,17 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
 
 pub fn current_tid<R: BootRuntime>() -> u64 {
     crate::runtime::<R>().current_tid()
+}
+
+fn current_task_name_impl<R: BootRuntime>() -> [u8; 32] {
+    let tid = current_tid::<R>();
+    if let Some(task) = crate::task::registry::get_task::<R>(tid) {
+        task.name
+    } else {
+        let mut n = [0u8; 32];
+        n[0..7].copy_from_slice(b"unknown");
+        n
+    }
 }
 
 /// Get the current task's ProcessInfo Arc, if any.

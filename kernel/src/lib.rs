@@ -41,11 +41,18 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
         return;
     }
 
+    let tid = unsafe { crate::sched::current_tid_current() };
+    let name_bytes = unsafe { crate::sched::current_task_name_current() };
+    let name_len = name_bytes.iter().position(|&b| b == 0).unwrap_or(32);
+    let task_name = core::str::from_utf8(&name_bytes[..name_len]).unwrap_or("unknown");
+
     // Structured page fault logging with decoded error bits
     crate::log_event!(
         crate::logging::LogLevel::Error,
         "kernel::trap",
-        "user_page_fault va=0x{:016x} rip=0x{:016x} err=0x{:04x} present={} user={} write={} instr_fetch={}",
+        "user_page_fault tid={} task='{}' va=0x{:016x} rip=0x{:016x} err=0x{:04x} p={} u={} w={} i={}",
+        tid,
+        task_name,
         addr,
         rip,
         err,
@@ -56,7 +63,7 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     );
 
     if stack_result == crate::sched::StackFaultResult::Overflow {
-        crate::kprintln!("STACK: overflow at va=0x{:x}", addr);
+        crate::kprintln!("STACK: overflow at va=0x{:x} (task {})", addr, task_name);
     }
 
     unsafe {
@@ -66,24 +73,82 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64) {
-    let name = match kind {
-        0 => "user_divide_by_zero",
-        6 => "user_invalid_opcode",
-        13 => "user_gpf",
-        _ => "user_exception",
+    let exception_name = match kind {
+        0 => "Divide-by-zero",
+        1 => "Debug",
+        2 => "NMI",
+        3 => "Breakpoint",
+        4 => "Overflow",
+        5 => "Bound Range",
+        6 => "Invalid Opcode (UD2)",
+        7 => "Device Not Available",
+        8 => "Double Fault",
+        10 => "Invalid TSS",
+        11 => "Segment Not Present",
+        12 => "Stack-Segment Fault",
+        13 => "General Protection Fault",
+        14 => "Page Fault",
+        16 => "FPU Exception",
+        17 => "Alignment Check",
+        18 => "Machine Check",
+        19 => "SIMD Exception",
+        20 => "Virtualization",
+        21 => "Control Protection",
+        30 => "Security Exception",
+        _ => "Unknown Exception",
     };
 
-    crate::log_event!(
-        crate::logging::LogLevel::Error,
-        "kernel::trap",
-        "{} rip=0x{:016x} err=0x{:04x} rsp=0x{:016x} cs=0x{:x} kind={}",
-        name,
-        rip,
-        error_code,
-        rsp,
-        cs,
-        kind
-    );
+    let tid = unsafe { crate::sched::current_tid_current() };
+    let name_bytes = unsafe { crate::sched::current_task_name_current() };
+    let name_len = name_bytes.iter().position(|&b| b == 0).unwrap_or(32);
+    let task_name = core::str::from_utf8(&name_bytes[..name_len]).unwrap_or("unknown");
+
+    // Peeking at instruction bytes for Invalid Opcode
+    let mut instr_bytes = [0u8; 8];
+    let mut peek_ok = false;
+    if kind == 6 {
+        for i in 0..8 {
+            if let Some(phys) = crate::memory::translate_user_page(rip + i as u64) {
+                let off = crate::runtime_base().phys_to_virt_offset();
+                let ptr = (phys + off) as *const u8;
+                unsafe {
+                    instr_bytes[i] = *ptr;
+                }
+                peek_ok = true;
+            } else {
+                break;
+            }
+        }
+    }
+
+    if peek_ok {
+        crate::log_event!(
+            crate::logging::LogLevel::Error,
+            "kernel::trap",
+            "{} tid={} task='{}' rip=0x{:016x} rsp=0x{:016x} err=0x{:04x} instr={:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            exception_name,
+            tid,
+            task_name,
+            rip,
+            rsp,
+            error_code,
+            instr_bytes[0], instr_bytes[1], instr_bytes[2], instr_bytes[3],
+            instr_bytes[4], instr_bytes[5], instr_bytes[6], instr_bytes[7]
+        );
+    } else {
+        crate::log_event!(
+            crate::logging::LogLevel::Error,
+            "kernel::trap",
+            "{} tid={} task='{}' rip=0x{:016x} rsp=0x{:016x} err=0x{:04x} kind={}",
+            exception_name,
+            tid,
+            task_name,
+            rip,
+            rsp,
+            error_code,
+            kind
+        );
+    }
 
     unsafe {
         crate::sched::exit_current(-1);
@@ -342,6 +407,8 @@ pub trait BootRuntimeBase: 'static {
     fn fill_entropy(&self, _dst: &mut [u8]) -> usize {
         0
     }
+
+    fn phys_to_virt_offset(&self) -> u64;
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -369,9 +436,9 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn icache_invalidate(&self) {}
 
     // wait_for_interrupt moved to BootRuntimeBase
+    // phys_to_virt_offset moved to BootRuntimeBase
 
     fn phys_memory_map(&self) -> &'static [PhysRange];
-    fn phys_to_virt_offset(&self) -> u64;
     fn modules(&self) -> &'static [BootModuleDesc];
     fn framebuffer(&self) -> Option<FramebufferInfo>;
 

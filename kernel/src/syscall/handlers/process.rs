@@ -10,9 +10,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
-    if code != 0 {
-        crate::kprintln!("SYSCALL EXIT: code={}", code);
-    }
+    crate::kprintln!("SYSCALL EXIT: TID={} code={}", unsafe { crate::sched::current_tid_current() }, code);
     unsafe {
         crate::sched::exit_current(code);
     }
@@ -124,7 +122,12 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 }
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
-    unsafe { crate::sched::task_wait_current(tid as u64) }.map(|code| code as usize)
+    crate::kprintln!("SYSCALL TASK_WAIT: TID={} waiting for TargetTID={}", unsafe { crate::sched::current_tid_current() }, tid);
+    let code = unsafe {
+        crate::sched::task_wait_current(tid as u64)?
+    };
+    crate::kprintln!("SYSCALL TASK_WAIT: TID={} wake up, TargetTID={} exited with {}", unsafe { crate::sched::current_tid_current() }, tid, code);
+    Ok(code as usize)
 }
 
 /// `SYS_WAITPID`: Wait for a child process to exit and retrieve its exit status.
@@ -146,14 +149,16 @@ pub fn sys_waitpid(pid: usize, status_ptr: usize, flags: usize) -> SysResult<usi
         validate_user_range(status_ptr, core::mem::size_of::<i32>(), true)?;
     }
 
-    let (child_pid, exit_code) = unsafe { crate::sched::waitpid_current(pid, flags) }?;
-
+    crate::kprintln!("SYSCALL WAITPID: TID={} waiting for TargetPID={} flags={:x}", unsafe { crate::sched::current_tid_current() }, pid, flags);
+    let (child_pid, code) = unsafe {
+        crate::sched::waitpid_current(pid, flags)?
+    };
+    crate::kprintln!("SYSCALL WAITPID: TID={} wake up, TargetPID={} ChildPID={} exited with {}", unsafe { crate::sched::current_tid_current() }, pid, child_pid, code);
     if status_ptr != 0 {
         unsafe {
-            super::copyout(status_ptr, &exit_code.to_le_bytes())?;
+            super::copyout(status_ptr, &code.to_le_bytes())?;
         }
     }
-
     Ok(child_pid as usize)
 }
 
@@ -499,11 +504,15 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
     unsafe {
         *(resp_ptr as *mut SpawnProcessExResp) = SpawnProcessExResp {
             child_tid: result.child_tid as u64,
+            child_pid: result.child_pid,
             stdin_pipe: result.stdin_pipe,
             stdout_pipe: result.stdout_pipe,
             stderr_pipe: result.stderr_pipe,
+            ..Default::default()
         };
     }
+
+    crate::kprintln!("SYSCALL SPAWN_PROCESS_EX: name='{}' TID={} PID={}", name, result.child_tid, result.child_pid);
 
     Ok(result.child_tid as usize)
 }

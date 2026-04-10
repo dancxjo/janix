@@ -337,13 +337,6 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
         self.state.enqueue_task(safe_cpu, priority as usize, id);
 
-        // Register this new thread TID in the shared ProcessInfo thread list.
-        if let Some(pinfo) = crate::task::registry::get_task::<R>(id)
-            .and_then(|t| t.process_info.clone())
-        {
-            pinfo.lock().thread_ids.push(id);
-        }
-
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
             crate::kdebug!(
@@ -394,12 +387,6 @@ impl<R: BootRuntime> Scheduler<R> {
         let pinfo = default_process_info(id as u32, ppid);
 
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
-        crate::kdebug!(
-            "SCHED: Task {} (user task/process) assigned to CPU {}",
-            id,
-            target_cpu
-        );
-
         // Push to target CPU's run queue
         let cpu_count = self.state.per_cpu.len();
         let safe_cpu = if target_cpu < cpu_count {
@@ -753,11 +740,11 @@ fn setup_stdio_fds<R: BootRuntime>(
 
     (stdin_pipe, stdout_pipe, stderr_pipe)
 }
-
 /// Result of an enhanced spawn: child tid + pipe IDs for piped stdio.
 #[derive(Debug, Clone)]
 pub struct SpawnExResult {
     pub child_tid: TaskId,
+    pub child_pid: u32,
     /// Pipe ID for stdin (parent writes). 0 if not piped.
     pub stdin_pipe: u64,
     /// Pipe ID for stdout (parent reads). 0 if not piped.
@@ -869,12 +856,6 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         task.name[..len].copy_from_slice(&bytes[..len]);
         task.name_len = len as u8;
         task.process_info = Some(pinfo);
-
-        // NOTE: In v0 HandleTable is global, so all handles are technically inherited.
-        // We preserve this parameter for ABI symmetry and future per-task handle tables.
-        for h in inherited_handles {
-            crate::ktrace!("spawn_process_ex: inheriting handle {} for task {}", h, id);
-        }
     }
 
     // Queue setting the process name
@@ -883,14 +864,14 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
     Ok(SpawnExResult {
         child_tid: id,
-        stdin_pipe: 0,
-        stdout_pipe: 0,
-        stderr_pipe: 0,
+        child_pid: id as u32,
+        stdin_pipe,
+        stdout_pipe,
+        stderr_pipe,
     })
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
-    crate::kdebug!("Trampoline entered. Arg: 0x{:x}", arg);
     let rt = crate::runtime::<R>();
     let entry_ptr = arg as *mut UserEntry;
     let entry = unsafe { *alloc::boxed::Box::from_raw(entry_ptr) };

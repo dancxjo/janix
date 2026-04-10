@@ -262,6 +262,9 @@ pub struct SpawnProcessExReq {
 pub struct SpawnProcessExResp {
     /// Child task/process ID.
     pub child_tid: u64,
+    /// Child process ID (for waitpid).
+    pub child_pid: u32,
+    pub _pad: u32,
     /// Pipe IDs for piped stdio (0 = not piped).
     /// stdin_pipe: parent's WRITE end.
     pub stdin_pipe: u64,

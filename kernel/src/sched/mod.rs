@@ -100,7 +100,14 @@ static PROF_SCHED_LOCK_WAKE_SLEEPERS_US_MAX: AtomicU64 = AtomicU64::new(0);
 
 /// Lock-skip self-healing: when try_resched_if_needed() fails to acquire
 /// the scheduler lock, set this flag so the next safe-point yields.
-static GLOBAL_NEED_RESCHED: AtomicBool = AtomicBool::new(false);
+///
+/// This is per-CPU to prevent one CPU from accidentally consuming another's
+/// reschedule request.
+static GLOBAL_NEED_RESCHED: [AtomicBool; types::MAX_CPUS] = {
+    #[allow(clippy::declare_interior_mutable_const)]
+    const ATOMIC_FALSE: AtomicBool = AtomicBool::new(false);
+    [ATOMIC_FALSE; types::MAX_CPUS]
+};
 
 /// If trylock misses exceed this count in a 2-second window, emit a warning.
 pub const TRYLOCK_MISS_WARN_THRESHOLD: u64 = 50;
@@ -190,18 +197,11 @@ pub fn on_tick<R: BootRuntime>() {
 
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
 
-    // Periodically log on CPU 0 to show time is passing
-    if ticks % 1000 == 0 && cpu_idx == 0 {
-        crate::kdebug!("SCHED: Tick {} on CPU 0", ticks);
-    }
-
     try_resched_if_needed::<R>();
 }
 
 /// Called from IPI handler - triggers reschedule without advancing time
 pub fn on_resched_ipi<R: BootRuntime>() {
-    let cpu = crate::runtime::<R>().current_cpu_id().0;
-    crate::kdebug!("SCHED: Received Resched IPI on CPU {}", cpu);
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
     try_resched_if_needed::<R>();
 }
@@ -235,8 +235,9 @@ fn try_resched_if_needed<R: BootRuntime>() {
         }
     } else {
         PROF_RESCHED_TRYLOCK_MISS.fetch_add(1, Ordering::Relaxed);
+        let cpu_idx = rt.current_cpu_index();
         // Self-healing: tell the next safe point to reschedule
-        GLOBAL_NEED_RESCHED.store(true, Ordering::Release);
+        GLOBAL_NEED_RESCHED[cpu_idx].store(true, Ordering::Release);
     }
     // If try_lock failed, skip rescheduling this tick - not a problem, next tick will try again
 
@@ -437,34 +438,32 @@ impl<R: BootRuntime> types::Scheduler<R> {
             <R::Tasking as BootTasking>::AddressSpace,
         >,
     > {
+        let cpu_idx = current_cpu_index::<R>();
+        let global_requested = GLOBAL_NEED_RESCHED[cpu_idx].swap(false, Ordering::Acquire);
+
+        if self.preempt_disable_depth > 0 {
+            if global_requested {
+                self.state.per_cpu[cpu_idx].need_resched = true;
+            }
+            return None;
+        }
+
         match reason {
             ScheduleReason::PreemptTick => {
                 // Wake any sleeping tasks whose time has expired (Timekeeper only)
-                if current_cpu_index::<R>() == 0 {
+                if cpu_idx == 0 {
                     self.wake_sleepers();
                 }
 
                 // Check preemption watchdog
                 self.check_preempt_watchdog();
 
-                if self.preempt_disable_depth > 0 {
-                    self.state.per_cpu[current_cpu_index::<R>()].need_resched = true;
-                    return None;
-                }
+                let mut should_yield = global_requested || self.state.per_cpu[cpu_idx].need_resched;
+                self.state.per_cpu[cpu_idx].need_resched = false;
 
-                let cpu_idx = current_cpu_index::<R>();
 
-                // If a higher-priority task became runnable (e.g. via wake_task),
-                // preempt immediately rather than waiting for timeslice expiry.
-                if self.state.per_cpu[current_cpu_index::<R>()].need_resched {
-                    self.state.per_cpu[current_cpu_index::<R>()].need_resched = false;
-                    return self.prepare_yield();
-                }
-
-                // Decrement current task's time slice
-                let mut should_yield = false;
-                if let Some(current_id) = self.state.per_cpu.get(cpu_idx).and_then(|pc| pc.current)
-                {
+                // Tick bookkeeping: only decrement if this was a timer tick
+                if let Some(current_id) = self.state.per_cpu[cpu_idx].current {
                     if let Some(mut task) = crate::task::registry::get_task_mut::<R>(current_id) {
                         if task.timeslice_remaining > 0 {
                             task.timeslice_remaining -= 1;
@@ -483,25 +482,20 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
                 return None; // Not expired yet
             }
-            ScheduleReason::SafePoint | ScheduleReason::ReschedIfNeeded => {
+            ScheduleReason::SafePoint | ScheduleReason::ReschedIfNeeded | ScheduleReason::SleepWait => {
                 // No tick bookkeeping, no timeslice decrement.
                 // Simply yield if a reschedule was requested.
-                if self.preempt_disable_depth > 0 {
-                    self.state.per_cpu[current_cpu_index::<R>()].need_resched = true;
-                    return None;
-                }
-                // Also drain the global atomic flag (set by trylock-miss fallback)
-                let global = GLOBAL_NEED_RESCHED.swap(false, Ordering::Acquire);
-                if self.state.per_cpu[current_cpu_index::<R>()].need_resched || global {
-                    self.state.per_cpu[current_cpu_index::<R>()].need_resched = false;
+                if self.state.per_cpu[cpu_idx].need_resched || global_requested || reason == ScheduleReason::SleepWait {
+                    self.state.per_cpu[cpu_idx].need_resched = false;
                     return self.prepare_yield();
                 }
                 return None;
             }
-            _ => {}
+            _ => {
+                // For other reasons (Unblock, etc), always attempt yield
+                return self.prepare_yield();
+            }
         }
-
-        self.prepare_yield()
     }
 
     /// Check if preemption has been disabled too long
@@ -509,11 +503,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if self.preempt_disable_depth > 0 && !self.watchdog_warned {
             let now = TICK_COUNT.load(Ordering::Relaxed);
             if now.saturating_sub(self.preempt_disable_since) > 500 {
-                // WARNING: Cannot log here! This is called from timer interrupt via
-                // on_tick() while GLOBAL_LOGGER may be held, causing deadlock.
-                // crate::kinfo!(
-                //     "WATCHDOG: preemption disabled for >500 ticks! depth={}",
-                //     self.preempt_disable_depth
                 // );
                 self.watchdog_warned = true;
             }
@@ -1231,7 +1220,7 @@ fn mark_task_exited<R: BootRuntime>(
     code: i32,
 ) -> alloc::vec::Vec<u64> {
     // Collect exit waiters and mark the task dead.
-    let waiters = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+    let mut waiters = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
         task.state = TaskState::Dead;
         task.exit_code = Some(code);
         task.exit_waiters.drain()
@@ -1273,9 +1262,9 @@ fn mark_task_exited<R: BootRuntime>(
                 task.state = TaskState::Dead;
                 task.exit_code = Some(code);
                 let sibling_waiters = task.exit_waiters.drain();
+                waiters.extend(sibling_waiters);
                 drop(task);
-                // Wake anyone waiting on these siblings.
-                wake_waiters(&sibling_waiters);
+
                 if let Some(sf) = sched.state.get_task_mut(sibling) {
                     sf.state = TaskState::Dead;
                     sf.runq_location = None;

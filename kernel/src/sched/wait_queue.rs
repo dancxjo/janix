@@ -50,8 +50,12 @@ impl WaitQueue {
 
     /// Wake all tasks in the queue
     pub fn wake_all(&self) {
-        let mut waiters = self.waiters.lock();
-        while let Some(tid) = waiters.pop_front() {
+        let waiters = {
+            let mut waiters = self.waiters.lock();
+            waiters.drain(..).collect::<Vec<u64>>()
+        };
+
+        for tid in waiters {
             unsafe {
                 crate::kdebug!("WaitQueue::wake_all: waking task {}", tid);
                 crate::sched::wake_task_erased(tid);

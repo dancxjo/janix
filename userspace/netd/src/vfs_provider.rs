@@ -30,20 +30,20 @@
 //!         └── status    ← read:  state text
 //! ```
 
-use abi::vfs_rpc::{DirentWire, VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
+use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
-use smoltcp::iface::{Interface, SocketHandle, SocketSet};
-use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer, State as TcpState};
-use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address};
+use smoltcp::iface::{Interface, SocketSet};
+use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer};
+use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
 use stem::syscall::channel::{
-    channel_create, channel_recv, channel_send, channel_try_recv, ChannelHandle,
+    channel_create, channel_send, channel_try_recv, ChannelHandle,
 };
 use stem::syscall::vfs::vfs_mount;
 use stem::{info, warn};
 
-use crate::socket_api::{SocketApi, CONN_RX, CONN_TX, RESP_CLOSED, RESP_DATA, RESP_EMPTY};
+use crate::socket_api::{SocketApi, CONN_RX, CONN_TX};
 
 // ── errno shorthands ─────────────────────────────────────────────────────────
 
@@ -62,6 +62,7 @@ const S_IFREG: u32 = 0o100_000;
 // ── poll interest bits ───────────────────────────────────────────────────────
 
 const POLLIN: u32 = 0x0001;
+#[allow(dead_code)]
 const POLLOUT: u32 = 0x0004;
 
 // ── static handle constants ──────────────────────────────────────────────────

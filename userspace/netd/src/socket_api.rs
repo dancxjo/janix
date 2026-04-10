@@ -21,8 +21,10 @@ pub static mut CONN_TX: [[u8; 32768]; 256] = [[0; 32768]; 256];
 // Response types
 pub const RESP_OK: u16 = 0x0000;
 pub const RESP_ERROR: u16 = 0x0001;
+#[allow(dead_code)]
 pub const RESP_HANDLE: u16 = 0x0002;
 pub const RESP_DATA: u16 = 0x0003;
+#[allow(dead_code)]
 pub const RESP_ACCEPT: u16 = 0x0004;
 pub const RESP_EMPTY: u16 = 0x0005;
 pub const RESP_CLOSED: u16 = 0x0006;
@@ -43,9 +45,11 @@ struct EndpointV4 {
 struct ManagedSocket {
     handle: SocketHandle,
     kind: SocketType,
+    #[allow(dead_code)]
     is_listener: bool,
     local: Option<EndpointV4>,
     remote: Option<EndpointV4>,
+    #[allow(dead_code)]
     owner_tid: u64,
     bytes_tx: u64,
     bytes_rx: u64,
@@ -60,6 +64,7 @@ struct ManagedSocket {
 }
 
 impl ManagedSocket {
+    #[allow(dead_code)]
     fn proto_str(&self) -> &'static str {
         match self.kind {
             SocketType::Tcp => "tcp",
@@ -118,6 +123,7 @@ impl SocketApi {
     }
 
     /// Public handle allocator — used by the VFS provider to pre-register socket ids.
+    #[allow(dead_code)]
     pub fn alloc_handle_pub(&mut self) -> u32 {
         self.alloc_handle()
     }
@@ -126,6 +132,7 @@ impl SocketApi {
         stem::time::now().as_millis() as u64
     }
 
+    #[allow(dead_code)]
     fn endpoint_ip_string(ep: EndpointV4) -> alloc::string::String {
         let b = ep.ip.as_bytes();
         format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
@@ -147,6 +154,7 @@ impl SocketApi {
         }
     }
 
+    #[allow(dead_code)]
     fn socket_state_label(managed: &ManagedSocket, tcp_state: Option<TcpState>) -> &'static str {
         if managed.is_listener {
             return "listening";
@@ -216,12 +224,16 @@ impl SocketApi {
         }
     }
 
+    #[allow(dead_code)]
     fn sync_local_edge(_managed: &ManagedSocket) {}
 
+    #[allow(dead_code)]
     fn sync_remote_edge(_managed: &ManagedSocket) {}
 
+    #[allow(dead_code)]
     fn ensure_tcp_connection(_managed: &mut ManagedSocket, _now_ms: u64, _initial_state: &str) {}
 
+    #[allow(dead_code)]
     fn flush_managed_socket_tcp<'a>(
         _managed: &mut ManagedSocket,
         _socket_set: &mut SocketSet<'a>,
@@ -229,8 +241,10 @@ impl SocketApi {
     ) {
     }
 
+    #[allow(dead_code)]
     fn flush_managed_socket_udp(_managed: &ManagedSocket, _now_ms: u64) {}
 
+    #[allow(dead_code)]
     pub fn flush_graph<'a>(&mut self, _socket_set: &mut SocketSet<'a>, _now_ms: u64) {}
 
     // ── VFS provider helpers ─────────────────────────────────────────────────
@@ -527,6 +541,7 @@ impl SocketApi {
     }
 
     /// Handle a TCP_LISTEN request
+    #[allow(dead_code)]
     pub fn handle_listen<'a>(
         &mut self,
         socket_set: &mut SocketSet<'a>,
@@ -595,6 +610,7 @@ impl SocketApi {
     }
 
     /// Handle a TCP_CONNECT request
+    #[allow(dead_code)]
     pub fn handle_connect<'a, D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
@@ -675,11 +691,12 @@ impl SocketApi {
     }
 
     /// Handle a TCP_ACCEPT request (non-blocking)
+    #[allow(dead_code)]
     pub fn handle_accept<'a>(
         &mut self,
         socket_set: &mut SocketSet<'a>,
         listen_handle: u32,
-        owner_tid: u64,
+        _owner_tid: u64,
         buf_idx: usize,
     ) -> Vec<u8> {
         // Check if we have a pending accepted connection
@@ -695,33 +712,30 @@ impl SocketApi {
 
         // No pending connections - check if listener socket has a connection ready
         let mut connected_slot: Option<(SocketHandle, usize, bool, usize)> = None;
-        let mut listen_port = 0;
-        let mut owner_tid = 0;
+        let (listen_port, socket_owner) = {
+            let s = match self.sockets.get(&listen_handle) {
+                Some(s) if s.is_listener && s.kind == SocketType::Tcp => s,
+                Some(_) => return encode_error(),
+                None => return encode_error(),
+            };
+            let lp = s.local.map(|e| e.port).unwrap_or(80);
+            let ot = s.owner_tid;
 
-        if let Some(s) = self.sockets.get(&listen_handle) {
-            if s.is_listener && s.kind == SocketType::Tcp {
-                listen_port = s.local.map(|e| e.port).unwrap_or(80);
-                owner_tid = s.owner_tid;
-
-                let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
-                if state == TcpState::Established {
-                    connected_slot = Some((s.handle, s.buf_idx.unwrap_or(0), true, 0));
-                } else {
-                    for (i, &(pool_handle, pool_bidx)) in s.listen_pool.iter().enumerate() {
-                        if socket_set.get_mut::<TcpSocket>(pool_handle).state()
-                            == TcpState::Established
-                        {
-                            connected_slot = Some((pool_handle, pool_bidx, false, i));
-                            break;
-                        }
+            let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
+            if state == TcpState::Established {
+                connected_slot = Some((s.handle, s.buf_idx.unwrap_or(0), true, 0));
+            } else {
+                for (i, &(pool_handle, pool_bidx)) in s.listen_pool.iter().enumerate() {
+                    if socket_set.get_mut::<TcpSocket>(pool_handle).state()
+                        == TcpState::Established
+                    {
+                        connected_slot = Some((pool_handle, pool_bidx, false, i));
+                        break;
                     }
                 }
-            } else {
-                return encode_error();
             }
-        } else {
-            return encode_error();
-        }
+            (lp, ot)
+        };
 
         let (listener_socket_handle, bidx_connected, is_main, pool_idx) = match connected_slot {
             Some(slot) => slot,
@@ -763,7 +777,7 @@ impl SocketApi {
                         ip: Ipv4Address::new(0, 0, 0, 0),
                         port: listen_port,
                     }),
-                    owner_tid,
+                    socket_owner,
                     conn_handle,
                     now_ms,
                     Some(bidx_connected),
@@ -807,6 +821,7 @@ impl SocketApi {
     }
 
     /// Handle a UDP_BIND request
+    #[allow(dead_code)]
     pub fn handle_udp_bind<'a>(
         &mut self,
         socket_set: &mut SocketSet<'a>,
@@ -1125,7 +1140,7 @@ impl SocketApi {
         }
 
         let all_handles: Vec<SocketHandle> = socket_set.iter().map(|(h, _)| h).collect();
-        let mut to_remove = Vec::new();
+        let to_remove = Vec::new();
         for handle in all_handles {
             if tracked_handles.contains(&handle) {
                 continue;
@@ -1158,6 +1173,7 @@ fn encode_error() -> Vec<u8> {
     RESP_ERROR.to_le_bytes().to_vec()
 }
 
+#[allow(dead_code)]
 fn encode_handle(handle: u32) -> Vec<u8> {
     let mut v = Vec::with_capacity(6);
     v.extend_from_slice(&RESP_HANDLE.to_le_bytes());
@@ -1188,6 +1204,7 @@ fn encode_udp_data(remote_ip: Ipv4Address, remote_port: u16, data: &[u8]) -> Vec
     v
 }
 
+#[allow(dead_code)]
 fn encode_accept(conn_handle: u32, remote_ip: Ipv4Address, remote_port: u16) -> Vec<u8> {
     let mut v = Vec::with_capacity(12);
     v.extend_from_slice(&RESP_ACCEPT.to_le_bytes());
@@ -1207,6 +1224,7 @@ fn encode_closed() -> Vec<u8> {
 }
 
 /// Helper to split a large buffer into packet metadata and payload
+#[allow(dead_code)]
 unsafe fn split_packet_buffer(
     buf: &mut [u8],
 ) -> (&mut [smoltcp::socket::udp::PacketMetadata], &mut [u8]) {
@@ -1224,4 +1242,80 @@ unsafe fn split_packet_buffer(
     }
 
     (meta, payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smoltcp::wire::Ipv4Address;
+
+    #[test]
+    fn test_encode_ok() {
+        let v = encode_ok();
+        assert_eq!(v.len(), 2);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_OK);
+    }
+
+    #[test]
+    fn test_encode_error() {
+        let v = encode_error();
+        assert_eq!(v.len(), 2);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_ERROR);
+    }
+
+    #[test]
+    fn test_encode_empty() {
+        let v = encode_empty();
+        assert_eq!(v.len(), 2);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_EMPTY);
+    }
+
+    #[test]
+    fn test_encode_closed() {
+        let v = encode_closed();
+        assert_eq!(v.len(), 2);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_CLOSED);
+    }
+
+    #[test]
+    fn test_encode_data() {
+        let payload = b"hello";
+        let v = encode_data(payload);
+        // 2 bytes type + 5 bytes payload
+        assert_eq!(v.len(), 7);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_DATA);
+        assert_eq!(&v[2..], b"hello");
+    }
+
+    #[test]
+    fn test_encode_data_empty_payload() {
+        let v = encode_data(b"");
+        assert_eq!(v.len(), 2);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_DATA);
+    }
+
+    #[test]
+    fn test_encode_udp_data() {
+        let ip = Ipv4Address::new(192, 168, 1, 1);
+        let port = 8080u16;
+        let data = b"test";
+        let v = encode_udp_data(ip, port, data);
+        // 2 type + 4 ip + 2 port + 4 data
+        assert_eq!(v.len(), 12);
+        assert_eq!(u16::from_le_bytes([v[0], v[1]]), RESP_DATA);
+        assert_eq!(&v[2..6], ip.as_bytes());
+        assert_eq!(u16::from_le_bytes([v[6], v[7]]), port);
+        assert_eq!(&v[8..], data);
+    }
+
+    #[test]
+    fn test_resp_constants_distinct() {
+        // Verify all response type constants are distinct
+        let constants = [RESP_OK, RESP_ERROR, RESP_HANDLE, RESP_DATA, RESP_ACCEPT, RESP_EMPTY, RESP_CLOSED];
+        for i in 0..constants.len() {
+            for j in (i + 1)..constants.len() {
+                assert_ne!(constants[i], constants[j], "constants[{}] == constants[{}]", i, j);
+            }
+        }
+    }
 }

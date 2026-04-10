@@ -19,6 +19,7 @@ pub struct VfsNicDevice {
     rx_fd: u32,
     tx_fd: u32,
     events_fd: u32,
+    #[allow(dead_code)]
     mac: [u8; 6],
     mtu: usize,
     link_up: bool,
@@ -29,6 +30,7 @@ pub struct VfsNicDevice {
 
 impl VfsNicDevice {
     /// Open the virtio-net VFS tree, retrying until it is present.
+    #[allow(dead_code)]
     pub fn open() -> Self {
         loop {
             if let Some(dev) = Self::try_open() {
@@ -121,10 +123,12 @@ impl VfsNicDevice {
         Instant::from_millis(stem::time::now().as_millis() as i64)
     }
 
+    #[allow(dead_code)]
     pub fn mac(&self) -> [u8; 6] {
         self.mac
     }
 
+    #[allow(dead_code)]
     pub fn mtu(&self) -> usize {
         self.mtu
     }

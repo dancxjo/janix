@@ -19,9 +19,8 @@ mod vfs_provider;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::VirtioNetDriver;
-use stem::syscall::vfs_mount;
 use stem::syscall::{channel_create, channel_try_recv};
-use stem::{debug, error, info, warn};
+use stem::{error, warn};
 use vfs_provider::{handle_vfs_rpc, NetVfsState};
 
 #[stem::main]
@@ -31,7 +30,7 @@ fn main(arg: usize) -> ! {
     // 1. Map bootstrap memfd
     let mut drv_req_read = 0;
     let mut drv_resp_write = 0;
-    let mut supervisor_port = 0;
+    let mut _supervisor_port = 0;
     let mut bind_instance_id = 0u64;
     let mut claimed_path = String::new();
 
@@ -52,7 +51,7 @@ fn main(arg: usize) -> ! {
 
             drv_req_read = slice[0];
             drv_resp_write = slice[1];
-            supervisor_port = slice[2];
+            _supervisor_port = slice[2];
 
             let id_low = slice[3] as u64;
             let id_high = slice[4] as u64;
@@ -66,8 +65,8 @@ fn main(arg: usize) -> ! {
                 .unwrap_or("")
                 .to_string();
 
-            stem::debug!("VIRTIO_NETD: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}, path={}", 
-                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id, claimed_path);
+            stem::debug!("VIRTIO_NETD: Bootstrap handles: req_read={}, resp_write={}, id={}, path={}", 
+                drv_req_read, drv_resp_write, bind_instance_id, claimed_path);
         } else {
             warn!("VIRTIO_NETD: Failed to map bootstrap memfd!");
         }
@@ -158,14 +157,12 @@ fn main(arg: usize) -> ! {
 
     // Wait for MSG_BIND_ASSIGNED or MSG_BIND_FAILED
     let mut wait_buf = [0u8; 512];
-    let mut assigned_bind_id = bind_instance_id;
-    loop {
+    let assigned_bind_id = loop {
         if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
             if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n])
             {
                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
-                        assigned_bind_id = assigned.bind_instance_id;
                         let path_len = assigned
                             .primary_path
                             .iter()
@@ -177,7 +174,7 @@ fn main(arg: usize) -> ! {
                             "VIRTIO_NETD: Sovereign registration COMPLETE. Assigned: {}",
                             path
                         );
-                        break;
+                        break assigned.bind_instance_id;
                     }
                 } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
                     if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
@@ -193,7 +190,7 @@ fn main(arg: usize) -> ! {
             }
         }
         stem::syscall::yield_now();
-    }
+    };
 
     // Notify supervisor that this service is fully operational.
     {

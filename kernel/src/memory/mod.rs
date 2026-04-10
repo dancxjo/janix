@@ -78,6 +78,7 @@ static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), MapError
 static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>> =
     None;
 static mut UNMAP_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Result<(), MapError>> = None;
+static mut PROTECT_USER_PAGE_HOOK: Option<unsafe fn(u64, MapPerms) -> Result<(), MapError>> = None;
 
 /// Error from user page mapping operations.
 ///
@@ -124,6 +125,11 @@ pub unsafe fn set_map_user_page_perms_hook(
 /// Initialize the user page unmapping hook.
 pub unsafe fn set_unmap_user_page_hook(hook: unsafe fn(u64) -> Result<(), MapError>) {
     unsafe { UNMAP_USER_PAGE_HOOK = Some(hook) };
+}
+
+/// Initialize the user page protection hook.
+pub unsafe fn set_protect_user_page_hook(hook: unsafe fn(u64, MapPerms) -> Result<(), MapError>) {
+    unsafe { PROTECT_USER_PAGE_HOOK = Some(hook) };
 }
 
 /// Map a physical page into the current process's userspace at the given virtual address.
@@ -181,6 +187,19 @@ pub unsafe fn map_user_page_with_perms(
     } else {
         kinfo!(
             "WARN: map_user_page_with_perms called before hook installed (virt=0x{:x})",
+            virt
+        );
+        Err(abi::errors::Errno::EIO)
+    }
+}
+
+/// Change protection for a user page.
+pub unsafe fn protect_user_page(virt: u64, perms: MapPerms) -> Result<(), abi::errors::Errno> {
+    if let Some(hook) = unsafe { PROTECT_USER_PAGE_HOOK } {
+        unsafe { hook(virt, perms) }.map_err(|e| e.to_errno())
+    } else {
+        kinfo!(
+            "WARN: protect_user_page called before hook installed (virt=0x{:x})",
             virt
         );
         Err(abi::errors::Errno::EIO)

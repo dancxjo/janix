@@ -146,6 +146,62 @@ impl MappingList {
         removed_ranges
     }
 
+    /// Split any region that contains `addr` at that address.
+    pub fn split_at(&mut self, addr: usize) {
+        let mut i = 0;
+        while i < self.regions.len() {
+            let r = self.regions[i];
+            if addr > r.start && addr < r.end {
+                // Split r into [r.start, addr) and [addr, r.end)
+                self.regions[i].end = addr;
+                let new_region = VmRegionInfo {
+                    start: addr,
+                    end: r.end,
+                    prot: r.prot,
+                    flags: r.flags,
+                    backing_kind: r.backing_kind,
+                    _reserved: [0; 7],
+                };
+                self.regions.insert(i + 1, new_region);
+                break; // A single address can only split one region in a disjoint list
+            }
+            i += 1;
+        }
+    }
+
+    /// Update protection for a range of addresses.
+    /// This assumes the range is fully covered by mappings.
+    pub fn protect(&mut self, start: usize, len: usize, new_prot: VmProt) {
+        let end = start + len;
+
+        // 1. Split at boundaries
+        self.split_at(start);
+        self.split_at(end);
+
+        // 2. Update prot for regions within [start, end)
+        for r in &mut self.regions {
+            if r.start >= start && r.end <= end {
+                r.prot = new_prot;
+            }
+        }
+
+        // 3. Merge identical neighbors
+        self.merge_all();
+    }
+
+    /// Merge all adjacent regions that have identical properties.
+    pub fn merge_all(&mut self) {
+        let mut i = 0;
+        while i + 1 < self.regions.len() {
+            if self.can_merge(&self.regions[i], &self.regions[i + 1]) {
+                self.regions[i].end = self.regions[i + 1].end;
+                self.regions.remove(i + 1);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
     pub fn find_at(&self, addr: usize) -> Option<VmRegionInfo> {
         // Binary search or linear scan? Linear is fine for now.
         for region in &self.regions {
@@ -272,5 +328,40 @@ mod tests {
         assert!(!list.check(0x1500, 0x1000, true)); // Spans both, first part not writable
         assert!(!list.check(0x0500, 0x1000, false)); // Start before
         assert!(!list.check(0x2500, 0x1000, false)); // End after
+    }
+
+    #[test]
+    fn test_protect() {
+        let mut list = MappingList::new();
+        let r1 = VmRegionInfo {
+            start: 0x1000,
+            end: 0x4000,
+            prot: VmProt::READ | VmProt::WRITE,
+            ..Default::default()
+        };
+        list.insert(r1);
+
+        // Protect middle page
+        list.protect(0x2000, 0x1000, VmProt::READ);
+
+        assert_eq!(list.regions.len(), 3);
+        assert_eq!(list.regions[0].start, 0x1000);
+        assert_eq!(list.regions[0].end, 0x2000);
+        assert_eq!(list.regions[0].prot, VmProt::READ | VmProt::WRITE);
+
+        assert_eq!(list.regions[1].start, 0x2000);
+        assert_eq!(list.regions[1].end, 0x3000);
+        assert_eq!(list.regions[1].prot, VmProt::READ);
+
+        assert_eq!(list.regions[2].start, 0x3000);
+        assert_eq!(list.regions[2].end, 0x4000);
+        assert_eq!(list.regions[2].prot, VmProt::READ | VmProt::WRITE);
+
+        // Protect entire range back to RW
+        list.protect(0x1000, 0x3000, VmProt::READ | VmProt::WRITE);
+        assert_eq!(list.regions.len(), 1);
+        assert_eq!(list.regions[0].start, 0x1000);
+        assert_eq!(list.regions[0].end, 0x4000);
+        assert_eq!(list.regions[0].prot, VmProt::READ | VmProt::WRITE);
     }
 }

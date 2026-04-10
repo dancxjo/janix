@@ -4,7 +4,7 @@ use super::types::StackFaultResult;
 use crate::sched::spawn::{SpawnExResult, StdioSpec};
 use crate::task::{ProcessInfo, TaskId, TaskState};
 use abi::errors::Errno;
-use abi::vm::VmRegionInfo;
+use abi::vm::{VmRegionInfo, VmProt};
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -53,6 +53,7 @@ pub(crate) static mut REMOVE_USER_MAPPINGS_HOOK: Option<
 > = None;
 pub(crate) static mut CHECK_USER_MAPPING_HOOK: Option<fn(usize, usize, bool) -> bool> = None;
 pub(crate) static mut GET_USER_MAPPING_AT_HOOK: Option<fn(usize) -> Option<VmRegionInfo>> = None;
+pub(crate) static mut PROTECT_USER_RANGE_HOOK: Option<unsafe fn(u64, usize, VmProt) -> Result<(), Errno>> = None;
 pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 pub(crate) static mut KILL_BY_TID_HOOK: Option<fn(u64) -> bool> = None;
 pub(crate) static mut DUMP_STATS_HOOK: Option<fn()> = None;
@@ -179,6 +180,14 @@ pub unsafe fn get_user_mapping_at_current(addr: usize) -> Option<VmRegionInfo> {
         hook(addr)
     } else {
         None
+    }
+}
+
+pub fn protect_user_range_current(addr: u64, len: usize, prot: VmProt) -> Result<(), Errno> {
+    if let Some(hook) = unsafe { PROTECT_USER_RANGE_HOOK } {
+        unsafe { hook(addr, len, prot) }
+    } else {
+        Err(Errno::ENOSYS)
     }
 }
 

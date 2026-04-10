@@ -340,6 +340,7 @@ pub trait BootTasking {
     ) -> Result<(), ()>;
 
     fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()>;
+    fn protect_page(&self, aspace: Self::AddressSpace, virt: u64, perms: MapPerms) -> Result<(), ()>;
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64>;
     fn tlb_flush_page(&self, virt: u64);
 }

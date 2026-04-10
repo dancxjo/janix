@@ -284,10 +284,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn apply_init(programs: &mut [ProgramConfig], init: Option<String>) {
     if let Some(init_name) = init {
-        for prog in programs {
-            if prog.name == init_name {
-                prog.is_init = true;
-            }
+        for prog in programs.iter_mut() {
+            prog.is_init = prog.name == init_name;
         }
     }
 }

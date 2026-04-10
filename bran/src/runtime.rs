@@ -158,6 +158,14 @@ pub trait ArchRuntime {
     fn translate(&self, _aspace: Self::AddressSpace, _virt: u64) -> Option<u64> {
         None
     }
+    fn protect_page(
+        &self,
+        _aspace: Self::AddressSpace,
+        _virt: u64,
+        _perms: MapPerms,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
     fn tlb_flush_page(&self, _virt: u64) {}
 
     // IO Port primitives (x86-only, stubs for other archs)
@@ -583,6 +591,10 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
 
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> {
         self.arch.translate(aspace, virt)
+    }
+
+    fn protect_page(&self, aspace: Self::AddressSpace, virt: u64, perms: MapPerms) -> Result<(), ()> {
+        self.arch.protect_page(aspace, virt, perms)
     }
 
     fn tlb_flush_page(&self, virt: u64) {

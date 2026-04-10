@@ -243,8 +243,25 @@ pub fn sys_vm_unmap(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
 }
 
 pub fn sys_vm_protect(req_ptr: usize) -> SysResult<usize> {
-    let _ = req_ptr;
-    Err(Errno::ENOSYS)
+    use crate::syscall::validate::copyin;
+    use abi::vm::VmProtectReq;
+
+    let mut req: VmProtectReq = unsafe { core::mem::zeroed() };
+    let req_slice = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut req as *mut VmProtectReq as *mut u8,
+            core::mem::size_of::<VmProtectReq>(),
+        )
+    };
+    unsafe { copyin(req_slice, req_ptr)? };
+
+    // Page-align address and length
+    let addr = req.addr as u64 & !0xFFF;
+    let len = (req.len + 0xFFF) & !0xFFF;
+
+    crate::sched::hooks::protect_user_range_current(addr, len, req.prot)?;
+
+    Ok(0)
 }
 
 pub fn sys_vm_advise(_req_ptr: usize) -> SysResult<usize> {

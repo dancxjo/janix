@@ -122,6 +122,21 @@ pub unsafe fn unmap_user_page<R: BootRuntime>(virt: u64) -> Result<(), MapError>
     Ok(())
 }
 
+/// Protect a user page with explicit permissions in the current address space.
+pub unsafe fn protect_user_page<R: BootRuntime>(
+    virt: u64,
+    perms: MapPerms,
+) -> Result<(), MapError> {
+    let rt = crate::runtime::<R>();
+    let aspace = rt.tasking().active_address_space();
+
+    rt.tasking()
+        .protect_page(aspace, virt, perms)
+        .map_err(|()| MapError::PageTableFault)?;
+    rt.tasking().tlb_flush_page(virt);
+    Ok(())
+}
+
 pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult {
     let rt = crate::runtime::<R>();
     let page_size = rt.page_size() as u64;

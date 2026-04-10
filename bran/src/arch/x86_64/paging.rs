@@ -142,6 +142,70 @@ pub fn unmap_page(aspace: X86_64AddressSpace, virt: u64) -> Result<Option<u64>, 
     Ok(Some(phys))
 }
 
+pub fn protect_page(
+    aspace: X86_64AddressSpace,
+    virt: u64,
+    perms: MapPerms,
+) -> Result<(), ()> {
+    let pml4 = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
+
+    let pml4_idx = (virt >> 39) & 0x1ff;
+    let pml4_entry = unsafe { *pml4.add(pml4_idx as usize) };
+    if pml4_entry & 1 == 0 {
+        return Err(());
+    }
+
+    let pdpt = ((pml4_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pdpt_idx = (virt >> 30) & 0x1ff;
+    let pdpt_entry = unsafe { *pdpt.add(pdpt_idx as usize) };
+    if pdpt_entry & 1 == 0 {
+        return Err(());
+    }
+    if pdpt_entry & 0x80 != 0 {
+        return Err(()); // 1GB page
+    }
+
+    let pd = ((pdpt_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pd_idx = (virt >> 21) & 0x1ff;
+    let pd_entry = unsafe { *pd.add(pd_idx as usize) };
+    if pd_entry & 1 == 0 {
+        return Err(());
+    }
+    if pd_entry & 0x80 != 0 {
+        return Err(()); // 2MB page
+    }
+
+    let pt = ((pd_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pt_idx = (virt >> 12) & 0x1ff;
+
+    unsafe {
+        let entry_ptr = pt.add(pt_idx as usize);
+        let old_entry = *entry_ptr;
+        if old_entry & 1 == 0 {
+            return Err(());
+        }
+
+        // Perms are bits:
+        // 1: Writable
+        // 2: User
+        // 8: Global
+        let mut new_entry = old_entry & !((1 << 1) | (1 << 2) | (1 << 8));
+
+        if perms.write {
+            new_entry |= 1 << 1;
+        }
+        if perms.user {
+            new_entry |= 1 << 2;
+        } else {
+            new_entry |= 1 << 8; // Global for kernel pages
+        }
+
+        *entry_ptr = new_entry;
+    }
+
+    Ok(())
+}
+
 /// Silent translation probe - returns None without logging if page is not mapped.
 /// Use this when checking whether a page needs to be mapped (expected to fail).
 pub fn try_translate(aspace: X86_64AddressSpace, virt: u64) -> Option<u64> {

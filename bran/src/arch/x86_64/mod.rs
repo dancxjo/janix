@@ -605,6 +605,14 @@ impl ArchRuntime for X86_64Runtime {
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> {
         paging::translate(aspace, virt)
     }
+    fn protect_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        perms: MapPerms,
+    ) -> Result<(), ()> {
+        paging::protect_page(aspace, virt, perms)
+    }
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }

@@ -10,7 +10,8 @@
 //! - `events`: Lock-free scheduler event types
 
 pub(crate) mod blocking;
-mod hooks;
+pub mod hooks;
+pub use hooks::protect_user_range_current;
 mod sleep;
 mod spawn;
 mod stack;
@@ -272,12 +273,14 @@ pub fn init<R: BootRuntime>() {
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
             crate::memory::set_unmap_user_page_hook(stack::unmap_user_page::<R>);
+            crate::memory::set_protect_user_page_hook(stack::protect_user_page::<R>);
             hooks::STACK_FAULT_HOOK = Some(stack::handle_stack_fault::<R>);
             hooks::SLEEP_TICKS_HOOK = Some(sleep::sleep_ticks::<R>);
             hooks::ADD_USER_MAPPING_HOOK = Some(vm::add_user_mapping::<R>);
             hooks::REMOVE_USER_MAPPINGS_HOOK = Some(vm::remove_user_mappings::<R>);
             hooks::CHECK_USER_MAPPING_HOOK = Some(vm::check_user_mapping::<R>);
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
+            hooks::PROTECT_USER_RANGE_HOOK = Some(vm::protect_user_range::<R>);
             hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
             hooks::PROCESS_INFO_FOR_TID_HOOK = Some(process_info_for_tid::<R>);
             hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);

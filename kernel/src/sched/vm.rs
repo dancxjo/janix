@@ -1,9 +1,9 @@
 use super::SCHEDULER;
 use super::types::Scheduler;
 use crate::memory::mappings::MappingList;
-use crate::{BootRuntime, BootTasking};
+use crate::{BootRuntime, BootTasking, MapPerms, MapKind};
 use abi::errors::Errno;
-use abi::vm::VmRegionInfo;
+use abi::vm::{VmRegionInfo, VmProt};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -115,6 +115,57 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
     } else {
         None
     };
+    rt.irq_restore(_irq);
+    res
+}
+
+pub fn protect_user_range<R: BootRuntime>(addr: u64, len: usize, prot: VmProt) -> Result<(), Errno> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    let res = (|| {
+        let ptr = match *lock {
+            Some(ptr) => ptr,
+            None => return Err(Errno::ENOSYS),
+        };
+        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
+            Some(id) => id,
+            None => return Err(Errno::ESRCH),
+        };
+
+        if let Some(task) = crate::task::registry::get_task::<R>(current_id) {
+            let mut mappings = task.mappings.lock();
+
+            // 1. Validate range
+            if !mappings.check(addr as usize, len, false) {
+                return Err(Errno::EINVAL);
+            }
+
+            // 2. Perform metadata update
+            mappings.protect(addr as usize, len, prot);
+
+            // 3. Hardware update
+            let perms = MapPerms {
+                user: true,
+                read: prot.contains(VmProt::READ),
+                write: prot.contains(VmProt::WRITE),
+                exec: prot.contains(VmProt::EXEC),
+                kind: MapKind::Normal,
+            };
+
+            for page_addr in (addr..addr + len as u64).step_by(4096) {
+                unsafe {
+                    crate::memory::protect_user_page(page_addr, perms)?;
+                }
+            }
+
+            Ok(())
+        } else {
+            Err(Errno::ESRCH)
+        }
+    })();
     rt.irq_restore(_irq);
     res
 }

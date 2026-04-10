@@ -190,6 +190,26 @@ pub fn unlink(path: &str) -> SysResult<()> {
     driver.unlink(&rel)
 }
 
+/// Create a symbolic link at `link_path` pointing to `target`.
+///
+/// `link_path` must be absolute.
+pub fn symlink(target: &str, link_path: &str) -> SysResult<()> {
+    if !link_path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let (rel, driver): (String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(link_path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?
+    };
+    driver.symlink(target, &rel)
+}
+
 /// Rename a file or directory from `old_path` to `new_path`.
 ///
 /// Both paths must be absolute and within the same mount point.

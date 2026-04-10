@@ -12,6 +12,7 @@ members = [
     "tools/display_proto_tests",
     "bulb",
     "libs/fb_common",
+    "libs/ipc_helpers",
     "libs/llm",
     "libs/llm_stub",
     "libs/ollama",

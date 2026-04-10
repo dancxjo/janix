@@ -56,8 +56,14 @@ impl ProviderChannel {
 
         let written = self.req.send(&msg);
         if written < msg.len() {
+            crate::ipc::diag::VFS_RPC_ERRORS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::ipc::diag::VFS_RPC_DEAD_PROVIDER
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return Err(Errno::EIO);
         }
+
+        crate::ipc::diag::VFS_RPC_REQUESTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
         let mut resp_buf = vec![0u8; VFS_RPC_MAX_RESP];
         let n = self.recv_response(&mut resp_buf)?;

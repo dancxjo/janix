@@ -42,6 +42,7 @@ pub fn sys_channel_send(handle: usize, ptr: usize, len: usize) -> SysResult<usiz
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
     if !port.has_readers() {
+        crate::ipc::diag::CHANNEL_PEER_DEATHS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         return Err(Errno::EPIPE);
     }
 
@@ -51,6 +52,11 @@ pub fn sys_channel_send(handle: usize, ptr: usize, len: usize) -> SysResult<usiz
     }
 
     let written = port.send(&buf[..len]);
+    if written > 0 {
+        crate::ipc::diag::CHANNEL_SENDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        crate::ipc::diag::CHANNEL_BYTES_SENT
+            .fetch_add(written as u64, core::sync::atomic::Ordering::Relaxed);
+    }
     Ok(written)
 }
 
@@ -73,6 +79,7 @@ pub fn sys_channel_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
     if !port.has_readers() {
+        crate::ipc::diag::CHANNEL_PEER_DEATHS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         return Err(Errno::EPIPE);
     }
 
@@ -87,12 +94,16 @@ pub fn sys_channel_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<
             len,
             entry.port_id.0
         );
+        crate::ipc::diag::CHANNEL_SENDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        crate::ipc::diag::CHANNEL_BYTES_SENT
+            .fetch_add(len as u64, core::sync::atomic::Ordering::Relaxed);
         Ok(len)
     } else {
         crate::ktrace!(
             "sys_channel_send_all: port {} FULL, returning EAGAIN",
             entry.port_id.0
         );
+        crate::ipc::diag::CHANNEL_FULL_EVENTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         Err(Errno::EAGAIN)
     }
 }
@@ -134,10 +145,15 @@ fn sys_channel_recv_impl(
                 read,
                 entry.port_id.0
             );
+            crate::ipc::diag::CHANNEL_RECVS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::ipc::diag::CHANNEL_BYTES_RECV
+                .fetch_add(read as u64, core::sync::atomic::Ordering::Relaxed);
             return Ok(read);
         }
 
         if !port.has_writers() {
+            crate::ipc::diag::CHANNEL_PEER_DEATHS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return Err(Errno::EPIPE);
         }
 
@@ -158,11 +174,16 @@ fn sys_channel_recv_impl(
                 read,
                 entry.port_id.0
             );
+            crate::ipc::diag::CHANNEL_RECVS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::ipc::diag::CHANNEL_BYTES_RECV
+                .fetch_add(read as u64, core::sync::atomic::Ordering::Relaxed);
             return Ok(read);
         }
 
         if !port.has_writers() {
             port.remove_waiter_read(tid);
+            crate::ipc::diag::CHANNEL_PEER_DEATHS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return Err(Errno::EPIPE);
         }
 
@@ -362,6 +383,7 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
     port.send_cap(node_to_send);
+    crate::ipc::diag::CHANNEL_HANDLES_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     Ok(0)
 }
 
@@ -390,5 +412,6 @@ pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<us
     let new_fd_bytes = new_fd.to_ne_bytes();
     unsafe { super::copyout(out_fd_ptr, &new_fd_bytes)? };
 
+    crate::ipc::diag::CHANNEL_HANDLES_RECV.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     Ok(0)
 }

@@ -2,6 +2,7 @@
 //!
 //! Provides capability-gated byte pipes for userspace communication.
 
+pub mod diag;
 mod handles;
 pub mod pipe;
 mod port;

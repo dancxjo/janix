@@ -599,7 +599,7 @@ mod tests {
         assert!(table.get(1).is_ok(), "fd 1 should survive");
     }
 
-    /// An empty table handled gracefully.
+    /// An empty table is handled gracefully.
     #[test]
     fn test_close_on_exec_empty_table() {
         let mut table = FdTable::new();

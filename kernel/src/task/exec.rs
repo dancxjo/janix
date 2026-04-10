@@ -556,8 +556,8 @@ mod tests {
         assert!(!pi.exec_in_progress, "exec_in_progress cleared after commit");
     }
 
-    /// When no fds have FD_CLOEXEC, close_on_exec during exec is a no-op and
-    /// all fds survive.
+    /// When no FDs have FD_CLOEXEC, close_on_exec during exec is a no-op and
+    /// all FDs survive.
     #[test]
     fn exec_commit_preserves_all_fds_without_cloexec() {
         let pinfo = Arc::new(Mutex::new(ProcessInfo {

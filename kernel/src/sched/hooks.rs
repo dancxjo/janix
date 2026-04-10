@@ -39,6 +39,8 @@ pub(crate) static mut SPAWN_PROCESS_HOOK: Option<
     unsafe fn(&str, crate::task::StartupArg) -> Option<TaskId>,
 > = None;
 pub(crate) static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
+pub(crate) static mut INTERRUPT_TASK_HOOK: Option<fn(TaskId) -> Result<(), Errno>> = None;
+pub(crate) static mut TAKE_PENDING_INTERRUPT_HOOK: Option<fn() -> bool> = None;
 pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> =
     None;
 pub(crate) static mut TASK_WAIT_HOOK: Option<fn(TaskId) -> Result<i32, Errno>> = None;
@@ -102,6 +104,22 @@ pub unsafe fn current_tid_current() -> u64 {
         hook()
     } else {
         0
+    }
+}
+
+pub fn interrupt_task_current(id: TaskId) -> Result<(), Errno> {
+    if let Some(hook) = unsafe { INTERRUPT_TASK_HOOK } {
+        hook(id)
+    } else {
+        Err(Errno::ENOSYS)
+    }
+}
+
+pub fn take_pending_interrupt_current() -> bool {
+    if let Some(hook) = unsafe { TAKE_PENDING_INTERRUPT_HOOK } {
+        hook()
+    } else {
+        false
     }
 }
 

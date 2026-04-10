@@ -135,6 +135,10 @@ pub fn read(pipe_id: u64, dst: &mut [u8]) -> Result<usize, abi::errors::Errno> {
     let pipe = get_pipe(pipe_id)?;
 
     loop {
+        if crate::sched::take_pending_interrupt_current() {
+            return Err(abi::errors::Errno::EINTR);
+        }
+
         // Get current TID for wait queue registration
         let tid = unsafe { crate::sched::current_tid_current() };
 
@@ -165,6 +169,10 @@ pub fn read(pipe_id: u64, dst: &mut [u8]) -> Result<usize, abi::errors::Errno> {
         unsafe {
             crate::task::block_current_erased();
         }
+        pipe.lock().read_waitq.remove(tid as u64);
+        if crate::sched::take_pending_interrupt_current() {
+            return Err(abi::errors::Errno::EINTR);
+        }
         // Woken up — retry loop
     }
 }
@@ -179,6 +187,10 @@ pub fn write(pipe_id: u64, src: &[u8]) -> Result<usize, abi::errors::Errno> {
     let pipe = get_pipe(pipe_id)?;
 
     loop {
+        if crate::sched::take_pending_interrupt_current() {
+            return Err(abi::errors::Errno::EINTR);
+        }
+
         let tid = unsafe { crate::sched::current_tid_current() };
 
         {
@@ -205,6 +217,10 @@ pub fn write(pipe_id: u64, src: &[u8]) -> Result<usize, abi::errors::Errno> {
         }
         unsafe {
             crate::task::block_current_erased();
+        }
+        pipe.lock().write_waitq.remove(tid as u64);
+        if crate::sched::take_pending_interrupt_current() {
+            return Err(abi::errors::Errno::EINTR);
         }
     }
 }
@@ -291,6 +307,9 @@ impl crate::vfs::VfsNode for PipeReadNode {
             return Ok(0);
         }
         loop {
+            if crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
             let tid = unsafe { crate::sched::current_tid_current() };
             {
                 let mut inner = self.inner.lock();
@@ -308,6 +327,10 @@ impl crate::vfs::VfsNode for PipeReadNode {
                 inner.read_waitq.push_back(tid as u64);
             }
             unsafe { crate::task::block_current_erased() };
+            self.inner.lock().read_waitq.remove(tid as u64);
+            if crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
         }
     }
 
@@ -373,6 +396,9 @@ impl crate::vfs::VfsNode for PipeWriteNode {
             return Ok(0);
         }
         loop {
+            if crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
             let tid = unsafe { crate::sched::current_tid_current() };
             {
                 let mut inner = self.inner.lock();
@@ -390,6 +416,10 @@ impl crate::vfs::VfsNode for PipeWriteNode {
                 inner.write_waitq.push_back(tid as u64);
             }
             unsafe { crate::task::block_current_erased() };
+            self.inner.lock().write_waitq.remove(tid as u64);
+            if crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
         }
     }
 
@@ -516,8 +546,25 @@ pub fn create_fd_pair(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sched::blocking::BLOCK_CURRENT_HOOK;
+    use crate::sched::hooks::{CURRENT_TID_HOOK, TAKE_PENDING_INTERRUPT_HOOK};
     use crate::vfs::VfsNode;
     use abi::syscall::poll_flags;
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    static TEST_INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
+
+    fn test_current_tid() -> u64 {
+        99
+    }
+
+    fn test_take_interrupt() -> bool {
+        TEST_INTERRUPT_PENDING.swap(false, Ordering::SeqCst)
+    }
+
+    fn interrupt_on_block() {
+        TEST_INTERRUPT_PENDING.store(true, Ordering::SeqCst);
+    }
 
     fn make_pair() -> (Arc<dyn VfsNode>, Arc<dyn VfsNode>) {
         create_fd_pair(0, false)
@@ -633,5 +680,62 @@ mod tests {
             0,
             "POLLOUT clear when buffer full"
         );
+    }
+
+    #[test]
+    fn read_returns_eintr_and_unregisters_waiter_when_interrupted() {
+        let inner = Arc::new(Mutex::new(PipeInner {
+            buf: RingBuf::new(8),
+            readers: 1,
+            writers: 1,
+            nonblock: false,
+            read_waitq: WaitQueue::new(),
+            write_waitq: WaitQueue::new(),
+        }));
+        let read_node = PipeReadNode {
+            inner: inner.clone(),
+            pipe_id: 1,
+        };
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            TAKE_PENDING_INTERRUPT_HOOK = Some(test_take_interrupt);
+        }
+        BLOCK_CURRENT_HOOK.store(interrupt_on_block as *mut (), Ordering::SeqCst);
+        TEST_INTERRUPT_PENDING.store(false, Ordering::SeqCst);
+
+        let mut buf = [0u8; 4];
+        let err = read_node.read(0, &mut buf).unwrap_err();
+
+        assert_eq!(err, abi::errors::Errno::EINTR);
+        assert!(inner.lock().read_waitq.is_empty());
+    }
+
+    #[test]
+    fn write_returns_eintr_and_unregisters_waiter_when_interrupted() {
+        let inner = Arc::new(Mutex::new(PipeInner {
+            buf: RingBuf::new(1),
+            readers: 1,
+            writers: 1,
+            nonblock: false,
+            read_waitq: WaitQueue::new(),
+            write_waitq: WaitQueue::new(),
+        }));
+        let write_node = PipeWriteNode {
+            inner: inner.clone(),
+            pipe_id: 2,
+        };
+        write_node.write(0, b"x").expect("fill pipe");
+
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            TAKE_PENDING_INTERRUPT_HOOK = Some(test_take_interrupt);
+        }
+        BLOCK_CURRENT_HOOK.store(interrupt_on_block as *mut (), Ordering::SeqCst);
+        TEST_INTERRUPT_PENDING.store(false, Ordering::SeqCst);
+
+        let err = write_node.write(0, b"y").unwrap_err();
+
+        assert_eq!(err, abi::errors::Errno::EINTR);
+        assert!(inner.lock().write_waitq.is_empty());
     }
 }

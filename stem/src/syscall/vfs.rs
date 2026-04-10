@@ -4,13 +4,15 @@
 //! janix de-graphing migration (Act III – Birth of the VFS, Act IV – Kernel
 //! Filesystems).
 
-use abi::errors::{Errno, SysResult};
+use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
     SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
     SYS_FS_WRITE, SYS_FS_REALPATH, SYS_PIPE,
+    SYS_FS_REALPATH, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
+    SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -228,8 +230,7 @@ pub fn pipe(pipefd: &mut [u32; 2]) -> SysResult<()> {
 ///
 /// Fills in `pollfds[i].revents` for each entry and returns the number of
 /// entries with non-zero `revents`.  `timeout_ms` is the maximum number of
-/// milliseconds to wait; pass `-1i64 as u64` to wait indefinitely (note:
-/// blocking is not yet implemented — the call returns immediately).
+/// milliseconds to wait; pass `-1i64 as u64` to wait indefinitely.
 ///
 /// # Example
 /// ```no_run

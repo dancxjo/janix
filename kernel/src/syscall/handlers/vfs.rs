@@ -627,6 +627,16 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysRes
     };
 
     loop {
+        if crate::sched::take_pending_interrupt_current() {
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Err(Errno::EINTR);
+        }
+
         // Pass 1: Probe current state
         let mut ready_count = 0;
         for (i, entry) in entries.iter().enumerate() {
@@ -723,6 +733,16 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysRes
             if let Some(ref node) = entry.node {
                 node.remove_waiter(tid);
             }
+        }
+
+        if crate::sched::take_pending_interrupt_current() {
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Err(Errno::EINTR);
         }
     }
 }

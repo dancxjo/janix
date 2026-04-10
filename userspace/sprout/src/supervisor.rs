@@ -241,29 +241,29 @@ impl Supervisor {
                 if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
                     stem::debug!("SPROUT: Received message type {} from {}", header.msg_type, task.name);
                     if header.msg_type == MSG_BIND_READY {
+                        // Helper: send MSG_BIND_FAILED back to the driver.
+                        let send_bind_failed = |req_write: u32, id: u64, code: u32, msg: &[u8]| {
+                            let mut reason = [0u8; 64];
+                            let len = msg.len().min(64);
+                            reason[..len].copy_from_slice(&msg[..len]);
+                            let failed = supervisor_protocol::BindFailedPayload {
+                                bind_instance_id: id,
+                                error_code: code,
+                                _reserved: 0,
+                                reason,
+                            };
+                            let mut payload_bytes = [0u8; supervisor_protocol::BIND_FAILED_PAYLOAD_SIZE];
+                            let mut reply_buf = [0u8; 256];
+                            if let Some(p_len) = supervisor_protocol::encode_bind_failed_le(&failed, &mut payload_bytes) {
+                                if let Some(total_len) = display_driver_protocol::encode_message(&mut reply_buf, MSG_BIND_FAILED, &payload_bytes[..p_len]) {
+                                    let _ = channel_send_all(req_write, &reply_buf[..total_len]);
+                                }
+                            }
+                        };
+
                         if let Some(ready) = supervisor_protocol::decode_bind_ready_le(payload) {
                             let task_name = task.name.clone();
                             stem::debug!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
-
-                            // Helper: send MSG_BIND_FAILED back to the driver.
-                            let send_bind_failed = |req_write: u32, id: u64, code: u32, msg: &[u8]| {
-                                let mut reason = [0u8; 64];
-                                let len = msg.len().min(64);
-                                reason[..len].copy_from_slice(&msg[..len]);
-                                let failed = supervisor_protocol::BindFailedPayload {
-                                    bind_instance_id: id,
-                                    error_code: code,
-                                    _reserved: 0,
-                                    reason,
-                                };
-                                let mut payload_bytes = [0u8; supervisor_protocol::BIND_FAILED_PAYLOAD_SIZE];
-                                let mut reply_buf = [0u8; 256];
-                                if let Some(p_len) = supervisor_protocol::encode_bind_failed_le(&failed, &mut payload_bytes) {
-                                    if let Some(total_len) = display_driver_protocol::encode_message(&mut reply_buf, MSG_BIND_FAILED, &payload_bytes[..p_len]) {
-                                        let _ = channel_send_all(req_write, &reply_buf[..total_len]);
-                                    }
-                                }
-                            };
 
                             // 1. Extract provider port
                             // Drivers send the vfs handle BEFORE the BIND_READY message
@@ -293,8 +293,6 @@ impl Supervisor {
                                     Some(("net", "/dev/net/virtio"))
                                 } else if ready.class_mask & classes::SOUND_CARD != 0 {
                                     Some(("sound", "/dev/sound/card"))
-                                } else if ready.class_mask != 0 {
-                                    Some(("misc", "/dev/misc/device"))
                                 } else {
                                     None
                                 };
@@ -302,10 +300,10 @@ impl Supervisor {
                                 let (class_name, root) = match class_alloc {
                                     Some(pair) => pair,
                                     None => {
-                                        warn!("SPROUT: BIND_READY from {} has zero class_mask — rejecting", task_name);
+                                        warn!("SPROUT: BIND_READY from {} has unrecognised class_mask 0x{:x} — rejecting", task_name, ready.class_mask);
                                         send_bind_failed(task.drv_req_write, ready.bind_instance_id,
                                             supervisor_protocol::errors::ERR_UNKNOWN_CLASS,
-                                            b"class_mask is zero");
+                                            b"class_mask is zero or unrecognised");
                                         continue;
                                     }
                                 };
@@ -348,7 +346,10 @@ impl Supervisor {
                                 }
                             }
                         } else {
-                            warn!("SPROUT: Received malformed BIND_READY from {} — ignoring", task.name);
+                            warn!("SPROUT: Received malformed BIND_READY from {} — rejecting", task.name);
+                            send_bind_failed(task.drv_req_write, 0,
+                                supervisor_protocol::errors::ERR_INVALID_MESSAGE,
+                                b"BIND_READY payload is malformed");
                         }
                     } else if header.msg_type == MSG_SERVICE_READY {
                         if let Some(svc) = supervisor_protocol::decode_service_ready_le(payload) {

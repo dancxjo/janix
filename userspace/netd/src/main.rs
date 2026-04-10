@@ -1,5 +1,5 @@
-#![no_std]
-#![no_main]
+#![feature(restricted_std)]
+#![cfg_attr(not(test), no_main)]
 
 //! # Network Service (netd) — Phase 3: /net/ VFS provider
 //!
@@ -210,4 +210,54 @@ fn read_file_bytes(path: &str, buf: &mut [u8]) -> Option<usize> {
     let result = vfs_read(fd, buf).ok();
     let _ = vfs_close(fd);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_mac_valid() {
+        let mac = parse_mac("52:54:00:12:34:56").unwrap();
+        assert_eq!(mac, [0x52, 0x54, 0x00, 0x12, 0x34, 0x56]);
+    }
+
+    #[test]
+    fn test_parse_mac_zeros() {
+        let mac = parse_mac("00:00:00:00:00:00").unwrap();
+        assert_eq!(mac, [0u8; 6]);
+    }
+
+    #[test]
+    fn test_parse_mac_broadcast() {
+        let mac = parse_mac("ff:ff:ff:ff:ff:ff").unwrap();
+        assert_eq!(mac, [0xff; 6]);
+    }
+
+    #[test]
+    fn test_parse_mac_too_short() {
+        assert!(parse_mac("52:54:00:12:34").is_none());
+    }
+
+    #[test]
+    fn test_parse_mac_too_long() {
+        assert!(parse_mac("52:54:00:12:34:56:78").is_none());
+    }
+
+    #[test]
+    fn test_parse_mac_invalid_hex() {
+        assert!(parse_mac("52:54:00:12:ZZ:56").is_none());
+    }
+
+    #[test]
+    fn test_parse_mac_empty() {
+        assert!(parse_mac("").is_none());
+    }
+
+    #[test]
+    fn test_parse_mac_with_whitespace() {
+        // Trimming whitespace around each octet should work
+        let mac = parse_mac("52:54: 00:12:34:56").unwrap();
+        assert_eq!(mac, [0x52, 0x54, 0x00, 0x12, 0x34, 0x56]);
+    }
 }

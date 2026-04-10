@@ -4,7 +4,7 @@
 
 use abi::errors::Errno;
 use stem::syscall::{device_alloc_dma, device_dma_phys};
-use stem::{info, warn};
+use stem::{warn};
 use virtio::VirtioDevice;
 
 /// VirtIO network device header (prepended to each frame)

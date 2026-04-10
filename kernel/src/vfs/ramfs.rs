@@ -551,6 +551,31 @@ mod tests {
         assert_eq!(stat.size, 8);
     }
 
+    #[test]
+    fn test_sync_succeeds_on_file() {
+        let fs = RamFs::new();
+        let node = fs.create("sync.txt").unwrap();
+        node.write(0, b"data").unwrap();
+        assert_eq!(node.sync(), Ok(()));
+    }
+
+    #[test]
+    fn test_sync_succeeds_on_directory() {
+        let fs = RamFs::new();
+        fs.mkdir("syncdir").unwrap();
+        let node = fs.lookup("syncdir").unwrap();
+        assert_eq!(node.sync(), Ok(()));
+    }
+
+    #[test]
+    fn test_sync_is_safe_to_repeat() {
+        let fs = RamFs::new();
+        let node = fs.create("repeat-sync.txt").unwrap();
+        assert_eq!(node.sync(), Ok(()));
+        assert_eq!(node.sync(), Ok(()));
+        assert_eq!(node.sync(), Ok(()));
+    }
+
     // ── VfsDriver trait methods ──────────────────────────────────────────────
 
     #[test]

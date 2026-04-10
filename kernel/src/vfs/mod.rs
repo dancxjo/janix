@@ -196,6 +196,15 @@ pub trait VfsNode: Send + Sync {
         Err(abi::errors::Errno::ENOSYS)
     }
 
+    /// Flush any pending writes to the backing store.
+    ///
+    /// For RAM-backed filesystems this is a no-op that always succeeds.
+    /// Drivers with real backing storage should override this to drain their
+    /// write buffers and ensure durability.
+    fn sync(&self) -> SysResult<()> {
+        Ok(())
+    }
+
     /// Add a task to the wait queue for this node.
     fn add_waiter(&self, _tid: u64) {}
 
@@ -509,5 +518,23 @@ mod tests {
         let mut buf = [0u8; 4];
         let n = node.read(0, &mut buf).unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_vfs_node_sync_default_is_ok_for_file_like_nodes() {
+        let node = MemNode {
+            data: vec![1, 2, 3],
+            mode: VfsStat::S_IFREG | 0o644,
+        };
+        assert_eq!(node.sync(), Ok(()));
+    }
+
+    #[test]
+    fn test_vfs_node_sync_default_is_ok_for_dir_like_nodes() {
+        let node = MemNode {
+            data: vec![],
+            mode: VfsStat::S_IFDIR | 0o755,
+        };
+        assert_eq!(node.sync(), Ok(()));
     }
 }

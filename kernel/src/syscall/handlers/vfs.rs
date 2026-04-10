@@ -120,6 +120,22 @@ pub fn sys_fs_close(fd: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+// ── sync (fsync) ─────────────────────────────────────────────────────────────
+
+/// Flush the VFS node associated with `fd` to its backing store.
+///
+/// For RAM-backed filesystems this is a no-op that always succeeds.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_sync(fd: usize) -> SysResult<usize> {
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        lock.fd_table.get(fd as u32)?.node.clone()
+    };
+    node.sync()?;
+    Ok(0)
+}
+
 // ── read ────────────────────────────────────────────────────────────────────
 
 pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {

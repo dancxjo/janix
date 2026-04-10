@@ -832,6 +832,9 @@ mod tests {
             1
         }
         fn init_secondary_cpu(&self, _cpu_index: usize) {}
+        fn phys_to_virt_offset(&self) -> u64 {
+            0
+        }
     }
     impl BootRuntime for MockRuntime {
         type Tasking = MockRuntime;
@@ -847,9 +850,6 @@ mod tests {
         fn irq_restore(&self, _state: crate::IrqState) {}
         fn phys_memory_map(&self) -> &'static [crate::PhysRange] {
             &[]
-        }
-        fn phys_to_virt_offset(&self) -> u64 {
-            0
         }
         fn modules(&self) -> &'static [crate::BootModuleDesc] {
             &[]

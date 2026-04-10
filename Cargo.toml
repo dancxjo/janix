@@ -64,6 +64,7 @@ members = [
     "userspace/poll_mux",
     "userspace/test_exec",
     "userspace/tests/test_vm_protect",
+    "userspace/tests/test_futex",
 ]
 
 # Exclude wasm32 theme crates (different target)

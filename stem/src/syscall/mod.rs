@@ -81,14 +81,56 @@ pub use channel::{
     channel_wait, ChannelHandle,
 };
 pub use vfs::{
-    dup, dup2, pipe, vfs_chdir, vfs_close, vfs_getcwd, vfs_mkdir, vfs_mount, vfs_open, vfs_poll,
-    vfs_read, vfs_readdir, vfs_rename, vfs_seek, vfs_stat, vfs_isatty, vfs_umount, vfs_unlink, vfs_watch_fd,
-    vfs_watch_path, vfs_write,
-    dup, dup2, pipe, vfs_chdir, vfs_close, vfs_fcntl, vfs_fsync, vfs_getcwd, vfs_mkdir, vfs_mount,
-    vfs_open, vfs_poll, vfs_read, vfs_readdir, vfs_realpath, vfs_rename, vfs_seek, vfs_stat,
-    vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path, vfs_write,
+    dup, dup2, pipe, vfs_chdir, vfs_close, vfs_fcntl, vfs_fsync, vfs_getcwd, vfs_isatty,
+    vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir, vfs_realpath, vfs_rename,
+    vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path, vfs_write,
 };
 pub use wait::wait_many;
+
+// ============================================================================
+// Futex (fast userspace mutex) syscall wrappers
+// ============================================================================
+
+/// Block the calling thread until `*addr != expected` or until `timeout_ns`
+/// nanoseconds elapse (pass `0` for an indefinite wait).
+///
+/// Returns `Ok(())` on wake, `Err(EAGAIN)` if the value had already changed,
+/// or `Err(ETIMEDOUT)` on timeout.
+///
+/// Note: Thing-OS only supports 64-bit targets, so `u64` timeout values
+/// fit safely in a `usize` register argument.
+pub fn futex_wait(addr: &core::sync::atomic::AtomicU32, expected: u32, timeout_ns: u64) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FUTEX_WAIT,
+            addr as *const core::sync::atomic::AtomicU32 as usize,
+            expected as usize,
+            timeout_ns as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Wake up to `count` threads waiting on `addr`.
+///
+/// Returns the number of threads actually woken.
+pub fn futex_wake(addr: &core::sync::atomic::AtomicU32, count: u32) -> Result<u32, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FUTEX_WAKE,
+            addr as *const core::sync::atomic::AtomicU32 as usize,
+            count as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
 
 pub fn yield_now() {
     unsafe {

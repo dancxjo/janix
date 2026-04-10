@@ -221,6 +221,24 @@ impl FdTable {
             }
         }
     }
+
+    /// Close all file descriptors that have the `FD_CLOEXEC` flag set.
+    ///
+    /// Called during `exec` to implement close-on-exec semantics.  File
+    /// descriptors without `FD_CLOEXEC` are preserved across the exec.
+    pub fn close_on_exec(&mut self) {
+        for slot in self.entries.iter_mut() {
+            let should_close = slot
+                .as_ref()
+                .map(|e| e.fd_flags & FD_CLOEXEC != 0)
+                .unwrap_or(false);
+            if should_close {
+                if let Some(entry) = slot.take() {
+                    entry.node.close();
+                }
+            }
+        }
+    }
 }
 
 impl Default for FdTable {
@@ -528,5 +546,82 @@ mod tests {
             }
         }
         assert_eq!(count, MAX_FDS);
+    }
+
+    // ── close_on_exec tests ───────────────────────────────────────────────────
+
+    /// FDs with FD_CLOEXEC set should be closed; others should survive.
+    #[test]
+    fn test_close_on_exec_closes_flagged_fds() {
+        let mut table = FdTable::new();
+        // fd 0: no flag → should survive exec
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/in".into())
+            .unwrap();
+        // fd 1: FD_CLOEXEC → should be closed on exec
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only(), "/out".into())
+            .unwrap();
+        table.set_fd_flags(1, FD_CLOEXEC).unwrap();
+        // fd 3: FD_CLOEXEC → should be closed on exec
+        table
+            .insert_at(3, null_node(), OpenFlags::read_only(), "/extra".into())
+            .unwrap();
+        table.set_fd_flags(3, FD_CLOEXEC).unwrap();
+
+        table.close_on_exec();
+
+        assert!(table.get(0).is_ok(), "fd 0 (no FD_CLOEXEC) should survive");
+        assert!(
+            matches!(table.get(1), Err(Errno::EBADF)),
+            "fd 1 (FD_CLOEXEC) should be closed"
+        );
+        assert!(
+            matches!(table.get(3), Err(Errno::EBADF)),
+            "fd 3 (FD_CLOEXEC) should be closed"
+        );
+    }
+
+    /// If no FDs are flagged, close_on_exec is a no-op.
+    #[test]
+    fn test_close_on_exec_preserves_unflagged_fds() {
+        let mut table = FdTable::new();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/in".into())
+            .unwrap();
+        table
+            .insert_at(1, null_node(), OpenFlags::write_only(), "/out".into())
+            .unwrap();
+
+        table.close_on_exec();
+
+        assert!(table.get(0).is_ok(), "fd 0 should survive");
+        assert!(table.get(1).is_ok(), "fd 1 should survive");
+    }
+
+    /// An empty table is handled gracefully.
+    #[test]
+    fn test_close_on_exec_empty_table() {
+        let mut table = FdTable::new();
+        // Should not panic.
+        table.close_on_exec();
+    }
+
+    /// After close_on_exec the closed slot can be reused.
+    #[test]
+    fn test_close_on_exec_slot_reuse() {
+        let mut table = FdTable::new();
+        table
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/f".into())
+            .unwrap();
+        table.set_fd_flags(0, FD_CLOEXEC).unwrap();
+
+        table.close_on_exec();
+
+        // Slot 0 is now free; the next open() should reuse it.
+        let new_fd = table
+            .open(null_node(), OpenFlags::read_only(), "/new".into())
+            .unwrap();
+        assert_eq!(new_fd, 0, "freed cloexec slot should be reusable");
     }
 }

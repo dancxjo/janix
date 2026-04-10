@@ -484,6 +484,31 @@ pub fn task_wait(tid: u64) -> Result<i32, Errno> {
     abi::errors::errno(ret).map(|v| v as i32)
 }
 
+/// Wait for a child process to exit, analogous to POSIX `waitpid`.
+///
+/// - `pid > 0`: wait for the specific child with that PID.
+/// - `pid == -1` or `pid == 0`: wait for any child.
+/// - `flags`: pass `abi::types::waitpid_flags::WNOHANG` for non-blocking poll.
+///
+/// On success returns `(child_pid, exit_code)`.  With `WNOHANG` and no child
+/// exited yet, returns `Ok((0, 0))`.  Returns `Err(ECHILD)` when no matching
+/// children exist.
+pub fn waitpid(pid: i64, flags: u32) -> Result<(i64, i32), Errno> {
+    let mut status: i32 = 0;
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_WAITPID,
+            pid as usize,
+            &mut status as *mut i32 as usize,
+            flags as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| (v as i64, status))
+}
+
 /// Kill a task by TID. Returns Ok(()) if the task was killed, Err(ESRCH) if not found.
 pub fn task_kill(tid: u64) -> Result<(), Errno> {
     let ret = unsafe { raw_syscall6(SYS_TASK_KILL, tid as usize, 0, 0, 0, 0, 0) };

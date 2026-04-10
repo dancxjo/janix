@@ -84,6 +84,9 @@ pub(crate) static mut TASK_EXEC_HOOK: Option<
 /// Updates the current task's stored `user_fs_base` field without touching hardware.
 pub(crate) static mut SET_CURRENT_USER_FS_BASE_HOOK: Option<fn(u64)> = None;
 
+/// Wait for a child process to exit, returning (child_pid, exit_code).
+pub(crate) static mut WAITPID_HOOK: Option<fn(i64, u32) -> Result<(u64, i32), Errno>> = None;
+
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
         let _ = hook();
@@ -397,5 +400,19 @@ pub unsafe fn task_exec_current(
 pub unsafe fn set_current_user_fs_base_current(base: u64) {
     if let Some(hook) = unsafe { SET_CURRENT_USER_FS_BASE_HOOK } {
         hook(base)
+    }
+}
+
+/// Wait for a child process to exit, returning `(child_pid, exit_code)`.
+///
+/// `pid > 0`: wait for the specific child with that PID.
+/// `pid <= 0`: wait for any child.
+/// `flags & WNOHANG`: return `Ok((0, 0))` immediately if no child has exited.
+/// Returns `Err(ECHILD)` when no matching children exist at all.
+pub unsafe fn waitpid_current(pid: i64, flags: u32) -> Result<(u64, i32), Errno> {
+    if let Some(hook) = unsafe { WAITPID_HOOK } {
+        hook(pid, flags)
+    } else {
+        Err(Errno::ENOSYS)
     }
 }

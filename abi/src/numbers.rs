@@ -24,6 +24,9 @@ pub const SYS_TASK_EXEC: u32 = 0x100D;
 pub const SYS_TASK_SET_TLS_BASE: u32 = 0x100E;
 pub const SYS_TASK_GET_TLS_BASE: u32 = 0x100F;
 pub const SYS_TASK_INTERRUPT: u32 = 0x1010;
+/// Wait for a child process to exit and retrieve its exit status.
+/// Supports `WNOHANG` for non-blocking polling.  Analogous to POSIX `waitpid`.
+pub const SYS_WAITPID: u32 = 0x1011;
 
 // ============================================================================
 // Process Environment (0x1100)

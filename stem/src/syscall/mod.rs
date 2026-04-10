@@ -326,14 +326,139 @@ pub fn task_exec(fd: u32, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> R
     abi::errors::errno(ret).map(|_| ())
 }
 
-/// Higher-level POSIX-friendly execve. Opens the path and calls task_exec.
+/// Returns `true` if the first 4 bytes of `header` match the ELF magic
+/// `\x7fELF`.
+///
+/// Callers may use this to quickly validate a file before calling
+/// [`execve`] or [`task_exec`], though validation is also performed by the
+/// kernel loader.
+#[inline]
+pub fn is_elf_magic(header: &[u8]) -> bool {
+    header.len() >= 4 && header[..4] == *b"\x7fELF"
+}
+
+/// Higher-level POSIX-friendly execve.  Opens the path, optionally verifies
+/// the executable type, and calls [`task_exec`].
+///
+/// The function:
+/// 1. Opens `path` with `O_RDONLY`.
+/// 2. Reads the first 4 bytes to check for a recognised magic number.
+///    If the file is not an ELF binary and does not begin with `#!` (shebang),
+///    the file descriptor is closed and [`Errno::ENOEXEC`] is returned.
+/// 3. Calls [`task_exec`] with the supplied `argv` and `env`.
+/// 4. On failure the descriptor is closed before returning the error.
 pub fn execve(path: &str, argv: &[&[u8]], env: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(), Errno> {
     let fd = vfs_open(path, abi::syscall::vfs_flags::O_RDONLY)?;
+
+    // Peek at the magic bytes to give callers a clear error for non-executable
+    // files before handing off to the kernel.
+    let mut magic = [0u8; 4];
+    match vfs_read(fd, &mut magic) {
+        Ok(n) if n >= 2 => {
+            let is_elf = is_elf_magic(&magic);
+            let is_shebang = magic[0] == b'#' && magic[1] == b'!';
+            if !is_elf && !is_shebang {
+                let _ = vfs_close(fd);
+                return Err(Errno::ENOEXEC);
+            }
+        }
+        Ok(_) => {
+            // File is too short to be a valid executable.
+            let _ = vfs_close(fd);
+            return Err(Errno::ENOEXEC);
+        }
+        Err(e) => {
+            let _ = vfs_close(fd);
+            return Err(e);
+        }
+    }
+
     let res = task_exec(fd, argv, env);
     if res.is_err() {
         let _ = vfs_close(fd);
     }
     res
+}
+
+/// POSIX-style execv: replace the current process image with the executable
+/// at `path`, passing `argv` and an **empty** environment.
+///
+/// This is a convenience wrapper around [`execve`].  If you need to pass an
+/// explicit environment, use [`execve`] directly.
+pub fn execv(path: &str, argv: &[&[u8]]) -> Result<(), Errno> {
+    execve(path, argv, &BTreeMap::new())
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::*;
+
+    // ── is_elf_magic ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn elf_magic_valid() {
+        assert!(is_elf_magic(b"\x7fELF\x02\x01\x01\x00"));
+    }
+
+    #[test]
+    fn elf_magic_too_short() {
+        assert!(!is_elf_magic(b"\x7fEL"));
+        assert!(!is_elf_magic(b""));
+    }
+
+    #[test]
+    fn elf_magic_wrong_bytes() {
+        assert!(!is_elf_magic(b"#!/bin/sh\n"));
+        assert!(!is_elf_magic(b"\x00\x00\x00\x00"));
+    }
+
+    // ── serialize_argv / serialize_env round-trip ─────────────────────────────
+
+    #[test]
+    fn serialize_argv_empty() {
+        let blob = serialize_argv(&[]);
+        // count field only
+        assert_eq!(blob, &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn serialize_argv_single_arg() {
+        let blob = serialize_argv(&[b"hello"]);
+        // count=1, len=5, "hello"
+        let mut expected: Vec<u8> = Vec::new();
+        expected.extend_from_slice(&1u32.to_le_bytes());
+        expected.extend_from_slice(&5u32.to_le_bytes());
+        expected.extend_from_slice(b"hello");
+        assert_eq!(blob, expected);
+    }
+
+    #[test]
+    fn serialize_argv_multiple_args() {
+        let args: &[&[u8]] = &[b"foo", b"bar", b"baz"];
+        let blob = serialize_argv(args);
+        // count=3
+        assert_eq!(&blob[..4], &3u32.to_le_bytes());
+        // total length: 4 (count) + 3*(4+3) = 4 + 21 = 25
+        assert_eq!(blob.len(), 4 + 3 * (4 + 3));
+    }
+
+    #[test]
+    fn serialize_env_empty() {
+        let blob = serialize_env(&BTreeMap::new());
+        assert_eq!(blob, &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn serialize_env_single_entry() {
+        let mut env = BTreeMap::new();
+        env.insert(b"KEY".to_vec(), b"val".to_vec());
+        let blob = serialize_env(&env);
+        // count=1
+        assert_eq!(&blob[..4], &1u32.to_le_bytes());
+        // key len=3, key="KEY", val len=3, val="val"
+        let expected_len = 4 + (4 + 3) + (4 + 3);
+        assert_eq!(blob.len(), expected_len);
+    }
 }
 
 /// Set the calling thread's user TLS base (FS_BASE on x86_64) to `base`.

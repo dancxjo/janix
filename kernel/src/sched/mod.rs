@@ -832,7 +832,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 );
                 panic!("failed to find current_id {} in get_task_index", current_id)
             });
-            crate::task::registry::get_registry::<R>().tasks[idx].state = TaskState::Running;
+            let mut reg = crate::task::registry::get_registry::<R>();
+            reg.tasks[idx].state = TaskState::Running;
             return None;
         }
 
@@ -861,48 +862,49 @@ impl<R: BootRuntime> types::Scheduler<R> {
             panic!("failed to find next_id {} in get_task_index", next_id)
         });
 
-        let tasks_ptr = crate::task::registry::get_registry::<R>()
-            .tasks
-            .as_mut_ptr();
-        unsafe {
-            let old_task = &mut **tasks_ptr.add(old_idx);
-            let new_task = &mut **tasks_ptr.add(new_idx);
+        let mut reg = crate::task::registry::get_registry::<R>();
+        let (old_task, new_task) = if old_idx < new_idx {
+            let (left, right) = reg.tasks.split_at_mut(new_idx);
+            (&mut left[old_idx], &mut right[0])
+        } else {
+            let (left, right) = reg.tasks.split_at_mut(old_idx);
+            (&mut right[0], &mut left[new_idx])
+        };
 
-            if old_task.state == TaskState::Running {
-                old_task.state = TaskState::Runnable;
-                old_task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
-            }
-            new_task.state = TaskState::Running;
-            new_task.last_cpu = Some(cpu_idx);
-
-            // Update the lock-free mapping cache for this CPU so check_user_mapping is fast
-            crate::sched::vm::CURRENT_MAPPINGS[cpu_idx].store(
-                alloc::sync::Arc::as_ptr(&new_task.mappings) as *mut _,
-                core::sync::atomic::Ordering::Release,
-            );
-
-            old_task.simd.save(crate::runtime::<R>());
-            new_task.simd.restore(crate::runtime::<R>());
-
-            crate::trace::irq_ring::push(abi::trace::TraceEvent::ContextSwitch {
-                from: old_task.id,
-                to: new_task.id,
-                timestamp: crate::trace::now(),
-            });
-
-            Some(SwitchParams {
-                from_ctx: &mut old_task.ctx as *mut _,
-                to_ctx: &new_task.ctx as *const _,
-                to_aspace: new_task.aspace,
-                from_tid: old_task.id,
-                to_tid: new_task.id,
-                from_aspace: old_task.aspace,
-                from_user: old_task.is_user,
-                to_user: new_task.is_user,
-                from_user_fs_base: &mut old_task.user_fs_base as *mut u64,
-                to_user_fs_base: new_task.user_fs_base,
-            })
+        if old_task.state == TaskState::Running {
+            old_task.state = TaskState::Runnable;
+            old_task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
         }
+        new_task.state = TaskState::Running;
+        new_task.last_cpu = Some(cpu_idx);
+
+        // Update the lock-free mapping cache for this CPU so check_user_mapping is fast
+        crate::sched::vm::CURRENT_MAPPINGS[cpu_idx].store(
+            alloc::sync::Arc::as_ptr(&new_task.mappings) as *mut _,
+            core::sync::atomic::Ordering::Release,
+        );
+
+        old_task.simd.save(crate::runtime::<R>());
+        new_task.simd.restore(crate::runtime::<R>());
+
+        crate::trace::irq_ring::push(abi::trace::TraceEvent::ContextSwitch {
+            from: old_task.id,
+            to: new_task.id,
+            timestamp: crate::trace::now(),
+        });
+
+        Some(SwitchParams {
+            from_ctx: &mut old_task.ctx as *mut _,
+            to_ctx: &new_task.ctx as *const _,
+            to_aspace: new_task.aspace,
+            from_tid: old_task.id,
+            to_tid: new_task.id,
+            from_aspace: old_task.aspace,
+            from_user: old_task.is_user,
+            to_user: new_task.is_user,
+            from_user_fs_base: &mut old_task.user_fs_base as *mut u64,
+            to_user_fs_base: new_task.user_fs_base,
+        })
     }
 
     pub fn terminate_current(

@@ -904,7 +904,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         let _hook = GlobalAllocHook;
 
         // Load Sprout
-        let (user_entry, stack_info, mut regions) =
+        let (user_entry, stack_info, mut regions, _aux_info) =
             crate::task::loader::load_module(runtime, aspace, mod_desc)
                 .expect("Failed to load sprout");
 

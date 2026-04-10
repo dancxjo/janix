@@ -13,11 +13,27 @@ impl FrameAllocatorHook for LoaderAllocHook {
     }
 }
 
+/// Information derived from the ELF image needed to build the auxiliary vector.
+///
+/// Populated by [`load_module`] when the image is a valid ELF64 binary; all
+/// fields are zero for the flat binary fall-back path.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LoaderAuxInfo {
+    /// Virtual address (in the loaded address space) of the program-header table.
+    pub phdr_vaddr: u64,
+    /// Size of one ELF program-header entry (always 56 for ELF64).
+    pub phent: u64,
+    /// Number of program-header entries.
+    pub phnum: u64,
+    /// Actual entry-point virtual address (mirrors [`UserEntry::entry_pc`]).
+    pub entry_vaddr: u64,
+}
+
 pub fn load_module<R: BootRuntime>(
     rt: &R,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
-) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>)> {
+) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>, LoaderAuxInfo)> {
     crate::kdebug!(
         "LOADER: Loading module '{}' (len={})",
         module.name,
@@ -46,6 +62,7 @@ pub fn load_module<R: BootRuntime>(
     let page_size = rt.page_size() as u64;
     let mut entry_pc = load_addr;
     let mut regions = alloc::vec::Vec::new();
+    let mut aux_info = LoaderAuxInfo::default();
 
     // 1. Map ELF segments when available; otherwise fall back to a simple RWX layout.
     if let Some(mut elf) = parse_elf64(module.bytes) {
@@ -54,6 +71,14 @@ pub fn load_module<R: BootRuntime>(
 
         let load_bias = load_addr.saturating_sub(elf.min_vaddr);
         entry_pc = elf.entry.saturating_add(load_bias);
+
+        // Build auxv metadata from ELF header fields.
+        aux_info = LoaderAuxInfo {
+            phdr_vaddr: elf.phoff.saturating_add(load_bias),
+            phent: elf.phentsize as u64,
+            phnum: elf.phnum as u64,
+            entry_vaddr: entry_pc,
+        };
 
         crate::kinfo!(
             "LOADER: ELF info: entry={:x}, min_vaddr={:x}, bias={:x}, entry_pc={:x}",
@@ -300,6 +325,7 @@ pub fn load_module<R: BootRuntime>(
         },
         stack_info,
         regions,
+        aux_info,
     ))
 }
 
@@ -330,6 +356,12 @@ struct ElfLoadSegment {
 struct ElfInfo {
     entry: u64,
     min_vaddr: u64,
+    /// File offset of the program-header table (used for AT_PHDR via load bias).
+    phoff: u64,
+    /// Size of one program-header entry in bytes (AT_PHENT).
+    phentsize: u16,
+    /// Number of program-header entries (AT_PHNUM).
+    phnum: u64,
     load_segments: alloc::vec::Vec<ElfLoadSegment>,
 }
 
@@ -345,7 +377,7 @@ fn parse_elf64(bytes: &[u8]) -> Option<ElfInfo> {
     }
     let e_entry = read_u64(bytes, 24)?;
     let e_phoff = read_u64(bytes, 32)?;
-    let e_phentsize = read_u16(bytes, 54)? as u64;
+    let e_phentsize = read_u16(bytes, 54)?;
     let e_phnum = read_u16(bytes, 56)? as u64;
     if e_phoff == 0 || e_phentsize == 0 || e_phnum == 0 {
         return None;
@@ -354,7 +386,7 @@ fn parse_elf64(bytes: &[u8]) -> Option<ElfInfo> {
     let mut min_vaddr = u64::MAX;
     let mut load_segments = alloc::vec::Vec::new();
     for i in 0..e_phnum {
-        let off = e_phoff.saturating_add(i.saturating_mul(e_phentsize)) as usize;
+        let off = e_phoff.saturating_add(i.saturating_mul(e_phentsize as u64)) as usize;
         let p_type = read_u32(bytes, off)?;
         if p_type != 1 {
             continue;
@@ -384,6 +416,9 @@ fn parse_elf64(bytes: &[u8]) -> Option<ElfInfo> {
     Some(ElfInfo {
         entry: e_entry,
         min_vaddr,
+        phoff: e_phoff,
+        phentsize: e_phentsize,
+        phnum: e_phnum,
         load_segments,
     })
 }

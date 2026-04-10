@@ -46,23 +46,39 @@ pub struct LoaderAuxInfo {
     /// Block (TCB) which contains a self-pointer at offset 0 and the per-thread
     /// TLS data at negative offsets (i.e. immediately before the TCB in memory).
     pub tls_tp: u64,
+
+    // ── Dynamic linking (PT_INTERP) ─────────────────────────────────────────
+    /// Base load address of the dynamic interpreter (AT_BASE).
+    ///
+    /// Non-zero only when the main executable has a `PT_INTERP` segment and the
+    /// interpreter was successfully loaded into the address space by
+    /// [`task_exec_current`].  The interpreter is mapped at this address.
+    ///
+    /// [`task_exec_current`]: crate::task::exec::task_exec_current
+    pub interp_base: u64,
 }
 
-pub fn load_module<R: BootRuntime>(
+/// Load an ELF module or flat binary into `aspace` starting at `load_base`.
+///
+/// This is the implementation underlying both [`load_module`] (which uses the
+/// default base `0x200000`) and the interpreter load path in exec.
+pub fn load_module_at<R: BootRuntime>(
     rt: &R,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
+    load_base: u64,
 ) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>, LoaderAuxInfo)> {
     crate::kdebug!(
-        "LOADER: Loading module '{}' (len={})",
+        "LOADER: Loading module '{}' (len={}, base=0x{:x})",
         module.name,
-        module.bytes.len()
+        module.bytes.len(),
+        load_base,
     );
     if module.bytes.len() >= 16 {
         crate::ktrace!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
-    let load_addr: u64 = 0x200000;
+    let load_addr: u64 = load_base;
     let stack_top = 0x0080_0000;
     let reserve_bytes = 2 * 1024 * 1024;
     let guard_pages = 1usize;
@@ -387,6 +403,59 @@ pub fn load_module<R: BootRuntime>(
         regions,
         aux_info,
     ))
+}
+
+/// Load an ELF module or flat binary into `aspace` at the default base address
+/// (`0x200000`).  This is the standard entry point used by boot-time loaders
+/// and `spawn_process*`.
+pub fn load_module<R: BootRuntime>(
+    rt: &R,
+    aspace: <R::Tasking as BootTasking>::AddressSpace,
+    module: &BootModuleDesc,
+) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>, LoaderAuxInfo)> {
+    load_module_at::<R>(rt, aspace, module, 0x200000)
+}
+
+/// Extract the dynamic interpreter path from a PT_INTERP segment, if present.
+///
+/// Returns `None` when the binary does not have a PT_INTERP segment or when
+/// the ELF cannot be parsed.  The returned slice is a null-terminated path
+/// string copied from the file (trailing NUL stripped).
+pub fn extract_interp_path(bytes: &[u8]) -> Option<alloc::vec::Vec<u8>> {
+    if bytes.len() < 64 {
+        return None;
+    }
+    if &bytes[0..4] != b"\x7fELF" {
+        return None;
+    }
+    if bytes[4] != 2 || bytes[5] != 1 {
+        return None; // not ELF64 LE
+    }
+    let e_phoff = read_u64(bytes, 32)?;
+    let e_phentsize = read_u16(bytes, 54)? as u64;
+    let e_phnum = read_u16(bytes, 56)? as u64;
+    if e_phoff == 0 || e_phentsize == 0 || e_phnum == 0 {
+        return None;
+    }
+    for i in 0..e_phnum {
+        let off = e_phoff.saturating_add(i.saturating_mul(e_phentsize)) as usize;
+        let p_type = read_u32(bytes, off)?;
+        if p_type == 3 {
+            // PT_INTERP
+            let p_offset = read_u64(bytes, off + 8)? as usize;
+            let p_filesz = read_u64(bytes, off + 32)? as usize;
+            if p_filesz == 0 || p_offset + p_filesz > bytes.len() {
+                return None;
+            }
+            let mut path = bytes[p_offset..p_offset + p_filesz].to_vec();
+            // Strip trailing NUL bytes.
+            while path.last() == Some(&0) {
+                path.pop();
+            }
+            return Some(path);
+        }
+    }
+    None
 }
 
 fn align_up_u64(value: u64, align: u64) -> u64 {
@@ -879,5 +948,95 @@ mod tests {
         hhdm_write_u64(&hhdms, 0, tp, page_size);
         let written = u64::from_le_bytes(page[0..8].try_into().unwrap());
         assert_eq!(written, tp);
+    }
+
+    // ── extract_interp_path tests ─────────────────────────────────────────────
+
+    /// Build a minimal ELF64 with a PT_INTERP segment containing `interp`.
+    fn build_elf64_with_interp(interp: &[u8]) -> alloc::vec::Vec<u8> {
+        // Layout:
+        //   [0..64)   ELF header
+        //   [64..120) PT_LOAD program header (56 bytes)
+        //   [120..176) PT_INTERP program header (56 bytes)
+        //   [176..176+interp.len()+1) interpreter path (NUL-terminated)
+        let interp_offset: usize = 176;
+        let total = interp_offset + interp.len() + 1; // +1 for NUL
+        let mut bytes = alloc::vec![0u8; total.max(512)];
+
+        bytes[0..4].copy_from_slice(b"\x7fELF");
+        bytes[4] = 2; // ELFCLASS64
+        bytes[5] = 1; // ELFDATA2LSB
+        bytes[6] = 1; // EV_CURRENT
+
+        let e_phoff: u64 = 64;
+        let e_phentsize: u16 = 56;
+        let e_phnum: u16 = 2; // PT_LOAD + PT_INTERP
+
+        bytes[24..32].copy_from_slice(&0x200100u64.to_le_bytes()); // e_entry
+        bytes[32..40].copy_from_slice(&e_phoff.to_le_bytes());     // e_phoff
+        bytes[54..56].copy_from_slice(&e_phentsize.to_le_bytes()); // e_phentsize
+        bytes[56..58].copy_from_slice(&e_phnum.to_le_bytes());     // e_phnum
+
+        // PT_LOAD at [64..120)
+        let p0 = 64usize;
+        bytes[p0..p0 + 4].copy_from_slice(&1u32.to_le_bytes()); // p_type=PT_LOAD
+        bytes[p0 + 4..p0 + 8].copy_from_slice(&5u32.to_le_bytes()); // p_flags=R|X
+        bytes[p0 + 16..p0 + 24].copy_from_slice(&0x200000u64.to_le_bytes()); // p_vaddr
+        bytes[p0 + 32..p0 + 40].copy_from_slice(&100u64.to_le_bytes()); // p_filesz
+        bytes[p0 + 40..p0 + 48].copy_from_slice(&100u64.to_le_bytes()); // p_memsz
+        bytes[p0 + 48..p0 + 56].copy_from_slice(&0x1000u64.to_le_bytes()); // p_align
+
+        // PT_INTERP at [120..176)
+        let p1 = 120usize;
+        bytes[p1..p1 + 4].copy_from_slice(&3u32.to_le_bytes()); // p_type=PT_INTERP
+        bytes[p1 + 8..p1 + 16].copy_from_slice(&(interp_offset as u64).to_le_bytes()); // p_offset
+        let filesz = interp.len() as u64 + 1; // include NUL
+        bytes[p1 + 32..p1 + 40].copy_from_slice(&filesz.to_le_bytes()); // p_filesz
+        bytes[p1 + 40..p1 + 48].copy_from_slice(&filesz.to_le_bytes()); // p_memsz
+
+        // Interpreter path (NUL-terminated)
+        bytes[interp_offset..interp_offset + interp.len()].copy_from_slice(interp);
+        bytes[interp_offset + interp.len()] = 0;
+
+        bytes
+    }
+
+    #[test]
+    fn test_extract_interp_path_present() {
+        let interp = b"/lib/ld.so.1";
+        let bytes = build_elf64_with_interp(interp);
+        let path = extract_interp_path(&bytes).expect("should extract interp path");
+        assert_eq!(path, interp, "interp path mismatch");
+    }
+
+    #[test]
+    fn test_extract_interp_path_absent() {
+        // An ELF with only PT_LOAD — no PT_INTERP.
+        let bytes = build_elf64_with_tls(
+            0x200100, 0x200000, 100, 100, 256, 0x201000, 8, 16, 8,
+        );
+        assert!(
+            extract_interp_path(&bytes).is_none(),
+            "should return None when PT_INTERP absent"
+        );
+    }
+
+    #[test]
+    fn test_extract_interp_path_nul_stripped() {
+        // Ensure trailing NUL bytes are stripped from the returned path.
+        let interp = b"/lib/ld-janix.so";
+        let bytes = build_elf64_with_interp(interp);
+        let path = extract_interp_path(&bytes).expect("should extract");
+        assert!(
+            !path.contains(&0u8),
+            "returned path should not contain NUL bytes"
+        );
+        assert_eq!(path, interp);
+    }
+
+    #[test]
+    fn test_extract_interp_path_invalid_elf() {
+        let garbage = alloc::vec![0xFFu8; 512];
+        assert!(extract_interp_path(&garbage).is_none());
     }
 }

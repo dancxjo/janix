@@ -1959,6 +1959,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ld_so"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "lebe"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3385,6 +3393,14 @@ checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
 dependencies = [
  "rustix",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "test_dyn_loader"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
 ]
 
 [[package]]

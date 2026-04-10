@@ -292,6 +292,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "ld_so",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "test_dyn_loader",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

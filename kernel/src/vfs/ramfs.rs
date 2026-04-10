@@ -92,6 +92,8 @@ impl RamfsDirInner {
 enum RamfsEntry {
     File(Mutex<RamfsFileInner>, u64 /* ino */),
     Dir(Mutex<RamfsDirInner>, u64 /* ino */),
+    /// Symbolic link: stores the target path string and an inode number.
+    Symlink(String, u64 /* ino */),
 }
 
 impl RamfsEntry {
@@ -109,10 +111,15 @@ impl RamfsEntry {
         ))
     }
 
+    fn new_symlink(target: String) -> Arc<Self> {
+        Arc::new(RamfsEntry::Symlink(target, alloc_ino()))
+    }
+
     fn ino(&self) -> u64 {
         match self {
             RamfsEntry::File(_, ino) => *ino,
             RamfsEntry::Dir(_, ino) => *ino,
+            RamfsEntry::Symlink(_, ino) => *ino,
         }
     }
 
@@ -169,6 +176,7 @@ impl VfsNode for RamfsNode {
                 Ok(n)
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
+            RamfsEntry::Symlink(_, _) => Err(Errno::EINVAL),
         }
     }
 
@@ -188,6 +196,7 @@ impl VfsNode for RamfsNode {
                 Ok(buf.len())
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
+            RamfsEntry::Symlink(_, _) => Err(Errno::EINVAL),
         }
     }
 
@@ -221,6 +230,12 @@ impl VfsNode for RamfsNode {
                     ctime_nsec: lock.ctime.1,
                 })
             }
+            RamfsEntry::Symlink(target, ino) => Ok(VfsStat {
+                mode: VfsStat::S_IFLNK | 0o777,
+                size: target.len() as u64,
+                ino: *ino,
+                ..Default::default()
+            }),
         }
     }
 
@@ -235,6 +250,7 @@ impl VfsNode for RamfsNode {
                 Ok(())
             }
             RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
+            RamfsEntry::Symlink(_, _) => Err(Errno::EINVAL),
         }
     }
 
@@ -244,6 +260,7 @@ impl VfsNode for RamfsNode {
                 let lock = inner.lock();
                 super::write_readdir_entries(lock.children.keys().map(|s| s.as_str()), offset, buf)
             }
+            RamfsEntry::Symlink(_, _) => Err(Errno::ENOTDIR),
             _ => Err(Errno::ENOTDIR),
         }
     }
@@ -253,6 +270,14 @@ impl VfsNode for RamfsNode {
         match &*self.0 {
             RamfsEntry::File(_, _) => POLLIN | POLLOUT,
             RamfsEntry::Dir(_, _) => POLLIN | POLLOUT,
+            RamfsEntry::Symlink(_, _) => POLLIN | POLLOUT,
+        }
+    }
+
+    fn readlink(&self) -> SysResult<alloc::string::String> {
+        match &*self.0 {
+            RamfsEntry::Symlink(target, _) => Ok(target.clone()),
+            _ => Err(Errno::EINVAL),
         }
     }
 }
@@ -303,6 +328,14 @@ impl RamFs {
         let dir = self.resolve_entry(dir_path)?;
         let file_entry = RamfsEntry::new_file(data);
         dir.insert_child(file_name, file_entry)
+    }
+
+    /// Create a symbolic link at `link_path` pointing to `target`.
+    pub fn create_symlink(&self, target: &str, link_path: &str) -> SysResult<()> {
+        let (dir_path, link_name) = split_last(link_path).ok_or(Errno::EINVAL)?;
+        let dir = self.resolve_entry(dir_path)?;
+        let symlink_entry = RamfsEntry::new_symlink(target.into());
+        dir.insert_child(link_name, symlink_entry)
     }
 
     /// Resolve `path` to its `RamfsEntry`, walking the tree.
@@ -435,6 +468,11 @@ impl VfsDriver for RamFs {
         }
 
         Ok(())
+    }
+
+    /// Create a symbolic link at `link_path` pointing to `target`.
+    fn symlink(&self, target: &str, link_path: &str) -> SysResult<()> {
+        self.create_symlink(target, link_path)
     }
 }
 
@@ -781,5 +819,79 @@ mod tests {
         let dir_after = dir_node.stat().unwrap();
         assert!(dir_after.mtime_sec >= dir_before.mtime_sec);
         assert!(dir_after.ctime_sec >= dir_before.ctime_sec);
+    }
+
+    // ── symlink ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_symlink_stat_is_iflnk() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target/path", "mylink").unwrap();
+        let node = fs.lookup("mylink").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.is_symlink(), "mode=0o{:o}", stat.mode);
+        assert_eq!(stat.size, "/target/path".len() as u64);
+    }
+
+    #[test]
+    fn test_symlink_readlink_returns_target() {
+        let fs = RamFs::new();
+        fs.create_symlink("/some/target", "link").unwrap();
+        let node = fs.lookup("link").unwrap();
+        let target = node.readlink().unwrap();
+        assert_eq!(target, "/some/target");
+    }
+
+    #[test]
+    fn test_regular_file_readlink_returns_einval() {
+        let fs = RamFs::new();
+        fs.create_file("regular.txt", b"data".to_vec()).unwrap();
+        let node = fs.lookup("regular.txt").unwrap();
+        assert!(matches!(node.readlink(), Err(Errno::EINVAL)));
+    }
+
+    #[test]
+    fn test_symlink_read_returns_einval() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target", "lnk").unwrap();
+        let node = fs.lookup("lnk").unwrap();
+        let mut buf = [0u8; 8];
+        assert!(matches!(node.read(0, &mut buf), Err(Errno::EINVAL)));
+    }
+
+    #[test]
+    fn test_symlink_write_returns_einval() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target", "lnk2").unwrap();
+        let node = fs.lookup("lnk2").unwrap();
+        assert!(matches!(node.write(0, b"data"), Err(Errno::EINVAL)));
+    }
+
+    #[test]
+    fn test_driver_symlink_creates_entry() {
+        let fs = RamFs::new();
+        fs.symlink("/real/path", "sl").unwrap();
+        let node = fs.lookup("sl").unwrap();
+        assert!(node.stat().unwrap().is_symlink());
+        assert_eq!(node.readlink().unwrap(), "/real/path");
+    }
+
+    #[test]
+    fn test_symlink_unlink_removes_link() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target", "rm_link").unwrap();
+        assert!(fs.lookup("rm_link").is_ok());
+        fs.unlink("rm_link").unwrap();
+        assert!(matches!(fs.lookup("rm_link"), Err(Errno::ENOENT)));
+    }
+
+    #[test]
+    fn test_symlink_in_subdir() {
+        let fs = RamFs::new();
+        fs.mkdir("sub").unwrap();
+        fs.create_symlink("/other", "sub/link_in_sub").unwrap();
+        let node = fs.lookup("sub/link_in_sub").unwrap();
+        assert!(node.stat().unwrap().is_symlink());
+        assert_eq!(node.readlink().unwrap(), "/other");
     }
 }

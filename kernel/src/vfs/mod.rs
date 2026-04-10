@@ -148,6 +148,8 @@ impl VfsStat {
     pub const S_IFDIR: u32 = 0o040000;
     pub const S_IFCHR: u32 = 0o020000;
     pub const S_IFIFO: u32 = 0o010000;
+    /// Symbolic link.
+    pub const S_IFLNK: u32 = 0o120000;
 
     pub fn is_dir(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFDIR
@@ -160,6 +162,9 @@ impl VfsStat {
     }
     pub fn is_fifo(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFIFO
+    }
+    pub fn is_symlink(self) -> bool {
+        self.mode & Self::S_IFMT == Self::S_IFLNK
     }
 
     /// Convert this kernel-internal stat into the ABI-stable [`abi::fs::FileStat`]
@@ -257,6 +262,14 @@ pub trait VfsNode: Send + Sync {
 
     /// Remove a task from the wait queue for this node.
     fn remove_waiter(&self, _tid: u64) {}
+
+    /// Read the symlink target for symlink nodes.
+    ///
+    /// Returns the target path string for `S_IFLNK` nodes.
+    /// All other node types return `Err(EINVAL)`.
+    fn readlink(&self) -> SysResult<alloc::string::String> {
+        Err(abi::errors::Errno::EINVAL)
+    }
 }
 
 // ── VfsDriver ───────────────────────────────────────────────────────────────
@@ -296,6 +309,13 @@ pub trait VfsDriver: Send + Sync {
     ///
     /// The default implementation returns `EROFS`.
     fn rename(&self, _old_path: &str, _new_path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::EROFS)
+    }
+
+    /// Create a symbolic link at `link_path` pointing to `target`.
+    ///
+    /// The default implementation returns `EROFS`.
+    fn symlink(&self, _target: &str, _link_path: &str) -> SysResult<()> {
         Err(abi::errors::Errno::EROFS)
     }
 }

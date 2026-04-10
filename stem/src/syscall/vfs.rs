@@ -8,9 +8,9 @@ use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_MKDIR, SYS_FS_MOUNT,
-    SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_REALPATH,
-    SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK,
-    SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK,
+    SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK, SYS_FS_SYNC,
+    SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -452,4 +452,50 @@ pub fn vfs_realpath(path: &str, buf: &mut [u8]) -> SysResult<usize> {
 pub fn vfs_fsync(fd: u32) -> SysResult<()> {
     let ret = unsafe { raw_syscall6(SYS_FS_SYNC, fd as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
+}
+
+/// Create a symbolic link at `link_path` that points to `target`.
+///
+/// `target` is the content of the symlink (not validated for existence).
+/// `link_path` is the absolute path at which the symlink entry is created.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_symlink(target: &str, link_path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_SYMLINK,
+            target.as_ptr() as usize,
+            target.len(),
+            link_path.as_ptr() as usize,
+            link_path.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Read the target of the symbolic link at `path`.
+///
+/// Writes the symlink target bytes (without a NUL terminator) into `buf`
+/// and returns the number of bytes in the target.  If the return value is
+/// greater than `buf.len()`, the buffer was too small; the caller should
+/// retry with a larger buffer.
+///
+/// # Errors
+/// - [`Errno::EINVAL`] — `path` does not refer to a symlink.
+/// - [`Errno::ENOENT`] — `path` does not exist.
+pub fn vfs_readlink(path: &str, buf: &mut [u8]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_READLINK,
+            path.as_ptr() as usize,
+            path.len(),
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as usize)
 }

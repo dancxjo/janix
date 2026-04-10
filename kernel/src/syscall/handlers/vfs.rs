@@ -1052,6 +1052,93 @@ pub fn sys_fs_realpath(
     Ok(needed)
 }
 
+// ── symlink ──────────────────────────────────────────────────────────────────
+
+/// Create a symbolic link at `link_path` pointing to `target`.
+///
+/// Signature: `SYS_FS_SYMLINK(target_ptr, target_len, link_ptr, link_len) → 0`
+///
+/// - `target` is the path the symlink will point to (not validated for existence).
+/// - `link_path` is the path at which the symlink entry is created.
+/// - Returns `Ok(0)` on success.
+/// - Returns `ENOENT` if the parent directory of `link_path` does not exist.
+/// - Returns `EEXIST` if an entry already exists at `link_path`.
+/// - Returns `EROFS` if the underlying filesystem is read-only.
+pub fn sys_fs_symlink(
+    target_ptr: usize,
+    target_len: usize,
+    link_ptr: usize,
+    link_len: usize,
+) -> SysResult<usize> {
+    if target_len == 0 || target_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    if link_len == 0 || link_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(target_ptr, target_len, false)?;
+    validate_user_range(link_ptr, link_len, false)?;
+
+    let mut target_buf = vec![0u8; target_len];
+    let mut link_buf = vec![0u8; link_len];
+    unsafe {
+        copyin(&mut target_buf, target_ptr)?;
+        copyin(&mut link_buf, link_ptr)?;
+    }
+    let target = core::str::from_utf8(&target_buf).map_err(|_| Errno::EINVAL)?;
+    let link_path = core::str::from_utf8(&link_buf).map_err(|_| Errno::EINVAL)?;
+
+    let abs_link = resolve_path(link_path)?;
+
+    vfs::mount::symlink(target, &abs_link)?;
+    Ok(0)
+}
+
+// ── readlink ─────────────────────────────────────────────────────────────────
+
+/// Read the target of the symbolic link at `path`.
+///
+/// Signature: `SYS_FS_READLINK(path_ptr, path_len, buf_ptr, buf_len) → len`
+///
+/// - Writes the symlink target (without a NUL terminator) into the caller
+///   buffer.  The actual target bytes written is `min(target_len, buf_len)`.
+/// - Returns the number of bytes in the symlink target (which may be larger
+///   than `buf_len` if the buffer was too small).
+/// - Returns `EINVAL` if the path does not refer to a symlink.
+/// - Returns `ENOENT` if the path does not exist.
+pub fn sys_fs_readlink(
+    path_ptr: usize,
+    path_len: usize,
+    buf_ptr: usize,
+    buf_len: usize,
+) -> SysResult<usize> {
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(path_ptr, path_len, false)?;
+
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let abs_path = resolve_path(path)?;
+
+    // Use no-follow lookup so we get the symlink node itself.
+    let node = vfs::path::resolve_no_follow(&abs_path)?;
+    let target = node.readlink()?;
+
+    let target_bytes = target.as_bytes();
+    let needed = target_bytes.len();
+
+    if buf_ptr != 0 && buf_len > 0 {
+        let copy_len = buf_len.min(needed);
+        validate_user_range(buf_ptr, copy_len, true)?;
+        unsafe { copyout(buf_ptr, &target_bytes[..copy_len])? };
+    }
+
+    Ok(needed)
+}
+
 
 #[cfg(test)]
 mod tests {

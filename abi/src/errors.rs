@@ -50,6 +50,8 @@ pub enum Errno {
     ERANGE = 34,
     ENAMETOOLONG = 36,
     ENOSYS = 38,
+    /// Too many levels of symbolic links.
+    ELOOP = 40,
     EOVERFLOW = 75,
     ENOBUFS = 105,
     EMSGSIZE = 90,
@@ -131,6 +133,7 @@ pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
             34 => Err(Errno::ERANGE),
             36 => Err(Errno::ENAMETOOLONG),
             38 => Err(Errno::ENOSYS),
+            40 => Err(Errno::ELOOP),
             75 => Err(Errno::EOVERFLOW),
             90 => Err(Errno::EMSGSIZE),
             105 => Err(Errno::ENOBUFS),

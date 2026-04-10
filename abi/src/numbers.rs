@@ -122,6 +122,8 @@ pub const SYS_FS_ISATTY: u32 = 0x4020;
 pub const SYS_FS_REALPATH: u32 = 0x4016;
 pub const SYS_FS_SYNC: u32 = 0x4017;
 pub const SYS_FS_FCNTL: u32 = 0x4018;
+pub const SYS_FS_SYMLINK: u32 = 0x4019;
+pub const SYS_FS_READLINK: u32 = 0x401A;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

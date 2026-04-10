@@ -128,13 +128,106 @@ pub fn task_exec_current<R: BootRuntime>(
         kind: crate::BootModuleKind::Elf,
     };
 
-    let (entry, stack_info, mappings, aux_info) =
+    let (mut entry, stack_info, mut mappings, mut aux_info) =
         match crate::task::loader::load_module::<R>(rt, new_aspace, &module_desc) {
             Some(r) => r,
             None => abort_exec!(Errno::ENOEXEC),
         };
 
-    // 6. Update ProcessInfo metadata (argv, env, and auxv).
+    // 5b. Dynamic-interpreter (PT_INTERP) support.
+    //     When the executable requests a dynamic loader we load the interpreter
+    //     into the same address space at a high base, then hand control to it.
+    //     The interpreter is responsible for processing DT_NEEDED libraries,
+    //     relocating symbols, and jumping to the real entry point (AT_ENTRY).
+    if let Some(interp_path_bytes) =
+        crate::task::loader::extract_interp_path(static_bytes)
+    {
+        crate::kinfo!(
+            "EXEC: PT_INTERP found: {:?}",
+            core::str::from_utf8(&interp_path_bytes).unwrap_or("<invalid>")
+        );
+
+        // Build a NUL-terminated path string for vfs_open.
+        let mut path_buf = interp_path_bytes.clone();
+        path_buf.push(0);
+        let path_str =
+            core::str::from_utf8(&path_buf[..path_buf.len() - 1]).unwrap_or("/lib/ld.so");
+
+        // Open the interpreter file from the VFS.
+        let interp_node = match crate::vfs::mount::lookup(path_str) {
+            Ok(n) => n,
+            Err(e) => {
+                crate::kwarn!(
+                    "EXEC: Failed to open interpreter '{}': {:?}",
+                    path_str,
+                    e
+                );
+                abort_exec!(e);
+            }
+        };
+
+        // Read the interpreter into kernel memory.
+        let interp_stat = match interp_node.stat() {
+            Ok(s) => s,
+            Err(e) => abort_exec!(e),
+        };
+        let interp_size = interp_stat.size as usize;
+        if interp_size > 32 * 1024 * 1024 {
+            abort_exec!(Errno::EFBIG);
+        }
+        let mut interp_buf = alloc::vec![0u8; interp_size];
+        let mut pos = 0;
+        while pos < interp_size {
+            let n = match interp_node.read(pos as u64, &mut interp_buf[pos..]) {
+                Ok(n) => n,
+                Err(e) => abort_exec!(e),
+            };
+            if n == 0 {
+                break;
+            }
+            pos += n;
+        }
+        if pos < interp_size {
+            abort_exec!(Errno::EIO);
+        }
+
+        // The interpreter base: place it well above the main executable (0x200000).
+        // Use 0x7F00_0000 for x86_64 — well within the 47-bit user VA range.
+        const INTERP_LOAD_BASE: u64 = 0x7F00_0000;
+
+        let static_interp: &'static [u8] =
+            unsafe { core::mem::transmute(&interp_buf as &[u8]) };
+        let interp_module = crate::BootModuleDesc {
+            name: "ld.so",
+            cmdline: "",
+            bytes: static_interp,
+            phys_start: 0,
+            phys_end: 0,
+            kind: crate::BootModuleKind::Elf,
+        };
+
+        match crate::task::loader::load_module_at::<R>(
+            rt,
+            new_aspace,
+            &interp_module,
+            INTERP_LOAD_BASE,
+        ) {
+            Some((interp_entry, _interp_stack, interp_regions, _interp_aux)) => {
+                // Record where the interpreter was loaded (AT_BASE).
+                aux_info.interp_base = INTERP_LOAD_BASE;
+                // Extend the mapping list with the interpreter's regions.
+                mappings.extend(interp_regions);
+                // Hand control to the interpreter; it will jump to AT_ENTRY.
+                entry.entry_pc = interp_entry.entry_pc;
+            }
+            None => {
+                crate::kwarn!("EXEC: Failed to load interpreter '{}'", path_str);
+                abort_exec!(Errno::ENOEXEC);
+            }
+        }
+    }
+
+
     //    Also close all FD_CLOEXEC-flagged file descriptors and clear
     //    exec_in_progress now that we are about to commit — the caller is the
     //    sole surviving thread from this point forward.
@@ -209,6 +302,7 @@ pub fn task_exec_current<R: BootRuntime>(
 
 // Standard AT_* auxiliary-vector type constants (matches Linux/SysV ABI).
 const AT_PAGESZ: u64 = abi::auxv::AT_PAGESZ;
+const AT_BASE: u64 = abi::auxv::AT_BASE;
 const AT_PHDR: u64 = abi::auxv::AT_PHDR;
 const AT_PHENT: u64 = abi::auxv::AT_PHENT;
 const AT_PHNUM: u64 = abi::auxv::AT_PHNUM;
@@ -238,6 +332,10 @@ pub fn build_auxv(
     }
     if aux_info.entry_vaddr != 0 {
         v.push((AT_ENTRY, aux_info.entry_vaddr));
+    }
+    // Emit AT_BASE when the main executable used a dynamic interpreter.
+    if aux_info.interp_base != 0 {
+        v.push((AT_BASE, aux_info.interp_base));
     }
     // Emit TLS auxiliary entries when a PT_TLS segment was found.
     if aux_info.tls_memsz != 0 {
@@ -321,6 +419,7 @@ mod tests {
             tls_memsz: 128,
             tls_align: 16,
             tls_tp: 0x310080,
+            interp_base: 0,
         };
         let auxv = build_auxv(&info, 4096);
         // Standard entries still present.
@@ -334,7 +433,40 @@ mod tests {
         assert!(auxv.contains(&(AT_JANIX_TLS_ALIGN, 16)));
     }
 
-    // ── exec_in_progress / thread-group collapse unit tests ──────────────────
+    #[test]
+    fn build_auxv_with_interp_base() {
+        // When the executable has PT_INTERP and the interpreter was loaded,
+        // AT_BASE must be emitted with the interpreter's load base.
+        let info = LoaderAuxInfo {
+            phdr_vaddr: 0x200040,
+            phent: 56,
+            phnum: 3,
+            entry_vaddr: 0x201000,
+            interp_base: 0x7F00_0000,
+            ..Default::default()
+        };
+        let auxv = build_auxv(&info, 4096);
+        assert!(auxv.contains(&(AT_BASE, 0x7F00_0000)));
+        assert!(auxv.contains(&(AT_ENTRY, 0x201000)));
+        // Standard entries still present.
+        assert!(auxv.contains(&(AT_PAGESZ, 4096)));
+    }
+
+    #[test]
+    fn build_auxv_no_interp_no_at_base() {
+        // Statically-linked binary: no AT_BASE should be emitted.
+        let info = LoaderAuxInfo {
+            phdr_vaddr: 0x200040,
+            phent: 56,
+            phnum: 3,
+            entry_vaddr: 0x201000,
+            ..Default::default()
+        };
+        let auxv = build_auxv(&info, 4096);
+        assert!(!auxv.iter().any(|&(k, _)| k == AT_BASE));
+    }
+
+
 
     /// Helper: build a minimal ProcessInfo with two threads.
     fn make_two_thread_pinfo(

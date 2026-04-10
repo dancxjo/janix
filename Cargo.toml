@@ -79,6 +79,8 @@ members = [
     "userspace/tests/test_futex",
     "userspace/tests/test_exec_env",
     "userspace/tests/test_threads",
+    "userspace/ld_so",
+    "userspace/tests/test_dyn_loader",
 ]
 
 # Exclude wasm32 theme crates (different target)

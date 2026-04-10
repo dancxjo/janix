@@ -109,7 +109,11 @@ impl Supervisor {
             if step % 20 == 0 {
                 stem::debug!("SPROUT: Still waiting for display (step {})...", step);
             }
+            if step % 100 == 0 {
+                stem::debug!("SPROUT: Health check: Loop still running, tasks={}", self.tasks.len());
+            }
             step += 1;
+            
             if let Ok(fd) = stem::syscall::vfs::vfs_open("/dev/display/card0", stem::abi::syscall::vfs_flags::O_RDONLY) {
                 let _ = stem::syscall::vfs::vfs_close(fd);
                 stem::info!("SPROUT: Display card0 detected. Proceeding.");
@@ -121,8 +125,7 @@ impl Supervisor {
                 break;
             }
 
-            stem::syscall::yield_now();
-            stem::sleep_ms(50);
+            stem::sleep_ms(100);
         }
     }
 
@@ -231,8 +234,14 @@ impl Supervisor {
 
             // stem::debug!("SPROUT: Polling task {} on port {}...", task.name, task.drv_resp_read);
 
-            while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
-                stem::debug!("SPROUT: Received {} bytes from task {}", n, task.name);
+            let res = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf);
+            if let Err(e) = &res {
+                if *e != abi::errors::Errno::EAGAIN {
+                    stem::debug!("SPROUT: channel_try_recv(tid={}, h={}) error: {:?}", task.pid.unwrap_or(0), task.drv_resp_read, e);
+                }
+            }
+            while let Ok(n) = res {
+                stem::debug!("SPROUT: Received {} bytes from task {} (tid={})", n, task.name, task.pid.unwrap_or(0));
                 if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
                     stem::debug!("SPROUT: Received message type {} from {}", header.msg_type, task.name);
                     if header.msg_type == MSG_BIND_READY {

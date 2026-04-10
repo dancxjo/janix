@@ -131,6 +131,9 @@ impl Port {
         // One queued message should wake one receiver.
         self.waiters_read.wake_one();
 
+        let tid = unsafe { crate::sched::current_tid_current() };
+        crate::ktrace!("PORT: Port written {} bytes from TID {}", to_write, tid);
+
         to_write
     }
 
@@ -169,8 +172,10 @@ impl Port {
 
     /// Send a capability (VFS Node) via the port
     pub fn send_cap(&self, node: Arc<dyn crate::vfs::VfsNode>) {
+        let tid = unsafe { crate::sched::current_tid_current() };
         self.caps.lock().push_back(node);
         self.waiters_read.wake_one();
+        crate::ktrace!("PORT: Port capability sent from TID {}", tid);
     }
 
     /// Receive a capability (VFS Node) from the port
@@ -227,6 +232,9 @@ impl Port {
 
         // Wake up one writer (pacing/flow control)
         self.waiters_write.wake_one();
+
+        let tid = unsafe { crate::sched::current_tid_current() };
+        crate::ktrace!("PORT: Port read {} bytes from TID {}", to_read, tid);
 
         to_read
     }

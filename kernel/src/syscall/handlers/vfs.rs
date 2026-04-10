@@ -35,6 +35,10 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    
+    let tid = unsafe { crate::sched::current_tid_current() };
+    crate::ktrace!("VFS: sys_fs_open path='{}' tid={}", path, tid);
+
     if path == "/dev/fb0" {
         crate::kdebug!(
             "sys_fs_open: path='{}' len={} flags=0x{:x}",
@@ -401,15 +405,41 @@ pub fn sys_fs_mount(
     let abs_path = resolve_path(path)?;
 
     // Resolve the provider's write handle to a port Arc.
-    let prov_handle = crate::ipc::Handle(provider_write_handle as u32);
-    let prov_entry = {
-        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
-        table
-            .get(prov_handle, crate::ipc::HandleMode::Write)
-            .copied()
-            .ok_or(Errno::EBADF)?
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    
+    // Attempt 1: Check if it's a VFS FD pointing to a PortNode
+    let req_port = {
+        let lock = pinfo_arc.lock();
+        if let Ok(file) = lock.fd_table.get(provider_write_handle as u32) {
+             // Try to downcast or check if it's a PortNode
+             // Since we don't have easy downcasting for traits in no_std without more machinery,
+             // we'll use a hack or update the trait. 
+             // Actually, we can check the mode and if it's S_IFIFO (set in PortNode)
+             // But the best way is to try to call a method.
+             // For now, let's assume if it came from recv_handle and it's a PortNode, we can get it.
+             // We'll add a helper to PortNode or use a well-known trick.
+             
+             // I'll add a method `as_port()` to VfsNode with default None.
+             file.node.as_port()
+        } else {
+            None
+        }
     };
-    let req_port = crate::ipc::get_port(prov_entry.port_id).ok_or(Errno::EBADF)?;
+
+    let req_port = if let Some(p) = req_port {
+        p
+    } else {
+        // Attempt 2: IPC handle table
+        let prov_handle = crate::ipc::Handle(provider_write_handle as u32);
+        let prov_entry = {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            table
+                .get(prov_handle, crate::ipc::HandleMode::Write)
+                .copied()
+                .ok_or(Errno::EBADF)?
+        };
+        crate::ipc::get_port(prov_entry.port_id).ok_or(Errno::EBADF)?
+    };
 
     // Create the kernel response port.
     // Large capacity to hold multiple concurrent responses (though we serialise

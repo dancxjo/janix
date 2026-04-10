@@ -21,6 +21,7 @@ pub mod fd_table;
 pub mod memfd;
 pub mod mount;
 pub mod path;
+pub mod port_node;
 pub mod procfs;
 pub mod provider;
 pub mod ramfs;
@@ -148,6 +149,11 @@ pub trait VfsNode: Send + Sync {
     /// Returns the current readiness mask (using [`abi::syscall::poll_flags`]).
     fn poll(&self) -> u16 {
         abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
+    }
+
+    /// If this node is a port, returns the underlying port.
+    fn as_port(&self) -> Option<Arc<crate::ipc::Port>> {
+        None
     }
 
     /// Device-specific control call (ioctl).

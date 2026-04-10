@@ -1,6 +1,7 @@
 //! Port IPC syscalls
 
 use super::{copyin, copyout};
+use alloc::sync::Arc;
 use crate::syscall::validate::validate_user_range;
 use abi::errors::{Errno, SysResult};
 
@@ -317,10 +318,30 @@ pub fn sys_channel_info(handle: usize) -> SysResult<usize> {
 
 pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    
+    // First, try to get it as a VFS FD
     let vfs_node = {
         let lock = pinfo_arc.lock();
-        let file = lock.fd_table.get(fd as u32)?;
-        file.node.clone()
+        if let Ok(file) = lock.fd_table.get(fd as u32) {
+            Some(file.node.clone())
+        } else {
+            None
+        }
+    };
+
+    let node_to_send = if let Some(node) = vfs_node {
+        node
+    } else {
+        // Not a VFS FD, try to get it as an IPC handle
+        let h = crate::ipc::Handle(fd as u32);
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        // We look for either Read or Write mode
+        let entry = table.get(h, crate::ipc::HandleMode::Write)
+            .or_else(|| table.get(h, crate::ipc::HandleMode::Read))
+            .ok_or(Errno::EBADF)?; // If not in either table, it's a bad handle
+        
+        let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+        Arc::new(crate::vfs::port_node::PortNode::new(port))
     };
 
     let handle = crate::ipc::Handle(handle as u32);
@@ -335,7 +356,7 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     crate::kinfo!("kernel: sys_channel_send_handle handle={} port_id={:?}", handle.0, entry.port_id);
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
-    port.send_cap(vfs_node);
+    port.send_cap(node_to_send);
     Ok(0)
 }
 
@@ -358,7 +379,7 @@ pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<us
     let new_fd = pinfo_arc
         .lock()
         .fd_table
-        .open(cap, crate::vfs::OpenFlags::read_write(), "port".into())?;
+        .open(cap, crate::vfs::OpenFlags::read_write(), "recv_handle".into())?;
 
     let new_fd_bytes = new_fd.to_ne_bytes();
     unsafe { super::copyout(out_fd_ptr, &new_fd_bytes)? };

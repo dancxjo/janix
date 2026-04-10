@@ -338,7 +338,7 @@ pub fn setup_display_pipeline(
                 
                 slice[0] = drv_req.1 as u32;  // Read end of req channel
                 slice[1] = drv_resp.0 as u32; // Write end of resp channel
-                slice[2] = drv_resp.0 as u32; // supervisor_port (PRIVATE!)
+                slice[2] = if supervisor_port != 0 { supervisor_port } else { drv_resp.0 as u32 };
                 
                 let id_low = (bind_instance_id & 0xFFFF_FFFF) as u32;
                 let id_high = (bind_instance_id >> 32) as u32;

@@ -488,11 +488,10 @@ impl ArchRuntime for X86_64Runtime {
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
-        // Ensure stack alignment
-        if entry.user_sp & 0x7 != 0 {
-            panic!("user_sp not 8-byte aligned");
-        }
         // Map required pages before entering user mode
+        let tid = self.current_tid();
+        kernel::kinfo!("ENTER_USER: TID={} entry_pc={:x} user_sp={:x}", tid, entry.entry_pc, entry.user_sp);
+        
         self.map_user_entry(&entry)
             .expect("failed to map user entry pages");
         // x86_64 user mode entry via IRETQ

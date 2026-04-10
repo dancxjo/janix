@@ -377,6 +377,40 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+/// Explicitly bridge an IPC handle into the VFS world as a file descriptor.
+///
+/// This allows standard `poll()` to be used across both files and channels.
+pub fn sys_fd_from_handle(handle_val: usize) -> SysResult<usize> {
+    let handle = crate::ipc::Handle(handle_val as u32);
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+
+    // Resolve handle through current process's handle table
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table.get_any(handle).copied().ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+
+    // Create a PortNode wrapper
+    let node = Arc::new(crate::vfs::port_node::PortNode::new(port, entry.mode));
+
+    // Insert into FD table
+    let fd = {
+        let mut lock = pinfo_arc.lock();
+        lock.fd_table.open(
+            node,
+            match entry.mode {
+                crate::ipc::HandleMode::Read => crate::vfs::OpenFlags::read_only(),
+                crate::ipc::HandleMode::Write => crate::vfs::OpenFlags::write_only(),
+            },
+            alloc::format!("handle:{}", handle_val),
+        )?
+    };
+
+    Ok(fd as usize)
+}
+
 // ── mount ───────────────────────────────────────────────────────────────────
 
 /// Mount a userland VFS provider at the given path prefix.
@@ -456,12 +490,15 @@ pub fn sys_fs_mount(
             .ok_or(Errno::ENOMEM)?
     };
 
+    let req_port_id = crate::ipc::find_port_id(&req_port).ok_or(Errno::EBADF)?;
+
     // Build and mount the provider filesystem.
-    let provider_fs = alloc::sync::Arc::new(vfs::provider::ProviderFs::new(
+    let provider_fs = vfs::provider::ProviderFs::new(
         req_port,
         resp_port,
         resp_write_handle.0,
-    ));
+        req_port_id.0,
+    );
     vfs::mount::mount(&abs_path, provider_fs);
 
     crate::kinfo!("vfs: mounted userland provider at {}", abs_path);
@@ -485,6 +522,22 @@ pub fn sys_fs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+// ── notify ──────────────────────────────────────────────────────────────────
+
+/// Notify the kernel that a provider-backed node is ready.
+///
+/// `req_handle` is the handle to the request port of the provider.
+pub fn sys_fs_notify(req_handle: usize, node_handle: usize, revents: usize) -> SysResult<usize> {
+    let handle = crate::ipc::Handle(req_handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table.get_any(handle).copied().ok_or(Errno::EBADF)?
+    };
+
+    vfs::provider::notify_by_port(entry.port_id.0, node_handle as u64, revents as u16)?;
+    Ok(0)
+}
+
 // ── poll ────────────────────────────────────────────────────────────────────
 
 /// POSIX-style poll over VFS file descriptors.
@@ -502,7 +555,7 @@ pub fn sys_fs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
 ///
 /// # Returns
 /// The number of entries with non-zero `revents`, or an errno on error.
-pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysResult<usize> {
+pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysResult<usize> {
     const MAX_POLLFDS: usize = 256;
     if nfds == 0 {
         return Ok(0);
@@ -524,90 +577,131 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, _timeout_ms: usize) -> SysRe
     };
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    let mut ready_count = 0usize;
+    let tid = unsafe { crate::sched::current_tid_current() };
 
-    for kfd in kfds.iter_mut() {
-        kfd.revents = 0;
-
-        if kfd.fd < 0 {
-            // Negative fd → skip (POSIX says ignore these).
-            continue;
-        }
-
-        let fd = kfd.fd as u32;
-
-        // Try to get the node; POLLNVAL if the fd is not open.
-        let node_opt = {
-            let lock = pinfo_arc.lock();
-            lock.fd_table.get(fd).ok().map(|f| f.node.clone())
-        };
-
-        let node = match node_opt {
-            Some(n) => n,
-            None => {
-                kfd.revents |= poll_flags::POLLNVAL;
-                ready_count += 1;
-                continue;
+    // Resolve all entries once to avoid repeated FD table locking in the loop.
+    #[derive(Clone)]
+    struct Entry {
+        node: Option<Arc<dyn vfs::VfsNode>>,
+        events: u16,
+    }
+    let mut entries = vec![Entry { node: None, events: 0 }; nfds];
+    {
+        let lock = pinfo_arc.lock();
+        for (i, kfd) in kfds.iter().enumerate() {
+            if kfd.fd >= 0 {
+                entries[i].node = lock.fd_table.get(kfd.fd as u32).ok().map(|f| f.node.clone());
+                entries[i].events = kfd.events;
             }
-        };
-
-        // Determine readiness by checking the node's stat.  For now we use a
-        // simple heuristic: regular files and character devices are always
-        // ready; pipes report readiness based on whether any data is available.
-        let stat = node.stat().unwrap_or_default();
-        let is_pipe = stat.is_fifo();
-        let is_chr = stat.is_chr();
-        let is_reg = stat.is_reg();
-        let is_dir = stat.is_dir();
-
-        let mut revents: u16 = 0;
-
-        if (kfd.events & poll_flags::POLLIN) != 0 {
-            // Regular files and char devices are always readable.
-            if is_reg || is_dir {
-                revents |= poll_flags::POLLIN;
-            } else if is_chr {
-                // Character device (e.g. /dev/console): probe by attempting a
-                // non-blocking zero-byte-sized read — the node signals
-                // readiness by succeeding rather than returning EAGAIN.
-                let mut probe = [0u8; 0];
-                match node.read(0, &mut probe) {
-                    Err(Errno::EAGAIN) => {} // not ready
-                    _ => revents |= poll_flags::POLLIN,
-                }
-            } else if is_pipe {
-                // Attempt a zero-byte read; EAGAIN means no data available.
-                let mut probe = [0u8; 0];
-                match node.read(0, &mut probe) {
-                    Err(Errno::EAGAIN) => {}
-                    _ => revents |= poll_flags::POLLIN,
-                }
-            }
-        }
-
-        if (kfd.events & poll_flags::POLLOUT) != 0 {
-            // Files and character devices (including pipes write end) are
-            // assumed always writable for this initial implementation.
-            if is_reg || is_chr || is_pipe {
-                revents |= poll_flags::POLLOUT;
-            }
-        }
-
-        kfd.revents = revents;
-        if revents != 0 {
-            ready_count += 1;
         }
     }
 
-    // Write the updated PollFd array back to userspace.
-    unsafe {
-        copyout(
-            pollfds_ptr,
-            core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
-        )?
+    let deadline = if timeout_ms == usize::MAX {
+        None
+    } else {
+        let ticks = (timeout_ms as u64).saturating_add(9) / 10;
+        Some(crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks)
     };
 
-    Ok(ready_count)
+    loop {
+        // Pass 1: Probe current state
+        let mut ready_count = 0;
+        for (i, entry) in entries.iter().enumerate() {
+            let revents = if let Some(ref node) = entry.node {
+                node.poll() & (entry.events | poll_flags::POLLERR | poll_flags::POLLHUP)
+            } else if kfds[i].fd >= 0 {
+                poll_flags::POLLNVAL
+            } else {
+                0
+            };
+
+            kfds[i].revents = revents;
+            if revents != 0 {
+                ready_count += 1;
+            }
+        }
+
+        // Immediate return if something is ready or if it's a non-blocking poll.
+        if ready_count > 0 || timeout_ms == 0 {
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Ok(ready_count);
+        }
+
+        // Check for timeout.
+        if let Some(d) = deadline {
+            if crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) >= d {
+                unsafe {
+                    copyout(
+                        pollfds_ptr,
+                        core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                    )?
+                };
+                return Ok(0);
+            }
+        }
+
+        // Pass 2: Register as waiter on all nodes.
+        for entry in entries.iter() {
+            if let Some(ref node) = entry.node {
+                node.add_waiter(tid);
+            }
+        }
+
+        if let Some(d) = deadline {
+            crate::sched::register_timeout_wake_current(tid, d);
+        }
+
+        // Pass 3: Re-probe after registration to avoid the missed-wakeup race.
+        let mut ready_count = 0;
+        for (i, entry) in entries.iter().enumerate() {
+            let revents = if let Some(ref node) = entry.node {
+                node.poll() & (entry.events | poll_flags::POLLERR | poll_flags::POLLHUP)
+            } else if kfds[i].fd >= 0 {
+                poll_flags::POLLNVAL
+            } else {
+                0
+            };
+
+            kfds[i].revents = revents;
+            if revents != 0 {
+                ready_count += 1;
+            }
+        }
+
+        if ready_count > 0
+            || (deadline.is_some()
+                && crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+                    >= deadline.unwrap())
+        {
+            for entry in entries.iter() {
+                if let Some(ref node) = entry.node {
+                    node.remove_waiter(tid);
+                }
+            }
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Ok(ready_count);
+        }
+
+        // Wait for an event.
+        unsafe { crate::sched::block_current_erased() };
+
+        // Pass 4: Unregister waiters and repeat.
+        for entry in entries.iter() {
+            if let Some(ref node) = entry.node {
+                node.remove_waiter(tid);
+            }
+        }
+    }
 }
 
 // ── seek ────────────────────────────────────────────────────────────────────

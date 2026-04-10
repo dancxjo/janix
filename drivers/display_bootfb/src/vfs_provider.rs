@@ -68,6 +68,10 @@ pub fn handle_vfs_rpc(driver: &mut BootFbDriver, buf: &[u8]) {
         VfsRpcOp::Stat => handle_stat(resp_port, payload),
         VfsRpcOp::Close => send_resp(resp_port, &[E_OK]),
         VfsRpcOp::DeviceCall => handle_device_call(driver, resp_port, payload),
+        VfsRpcOp::Rename => send_err(resp_port, E_NOTSUP),
+        VfsRpcOp::SubscribeReady => send_resp(resp_port, &[E_OK]),
+        VfsRpcOp::UnsubscribeReady => send_resp(resp_port, &[E_OK]),
+        _ => send_err(resp_port, E_NOTSUP),
         _ => send_err(resp_port, E_NOTSUP),
     }
 }

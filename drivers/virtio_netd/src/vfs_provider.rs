@@ -171,6 +171,9 @@ pub fn handle_vfs_rpc(state: &mut NetVfsState, driver: &mut VirtioNetDriver, buf
         VfsRpcOp::Close => send_resp(resp_port, &[E_OK]),
         VfsRpcOp::Poll => handle_poll(state, resp_port, payload),
         VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
+        VfsRpcOp::Rename => send_err(resp_port, E_NOTSUP),
+        VfsRpcOp::SubscribeReady => send_resp(resp_port, &[E_OK]),
+        VfsRpcOp::UnsubscribeReady => send_resp(resp_port, &[E_OK]),
     }
 }
 

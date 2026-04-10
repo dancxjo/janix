@@ -50,7 +50,7 @@ impl Supervisor {
 
         // Stage 3: Setup Graphics Pipeline
         // This picks a display driver and starts the handshake.
-        let display = match setup_display_pipeline(&mut self.tasks, supervisor_write, 1) {
+        let display = match setup_display_pipeline(&mut self.tasks, 0, 1) {
             Some(d) => d,
             None => {
                 error!("SPROUT: CRITICAL: Failed to setup display pipeline. System may be headless.");
@@ -68,18 +68,12 @@ impl Supervisor {
             }
         };
 
+        // Stage 8: Run Readiness Model Verification Test
+        info!("SPROUT: Spawning poll_mux verification test...");
+        let _ = stem::syscall::spawn_process("/bin/poll_mux", 0);
+
         // Stage 4: Busy Stage - Wait for Display Driver to register its VFS provider
-        self.wait_for_display();
-
-        // Stage 5: Finish Graphics Stack (fontd + bloom)
-        setup_graphics_stack(&mut self.tasks);
-
-        // Stage 6: Spawning supplemental services (Stage 3 in legacy)
-        // Storage, Network, and Audio are now delegated to devd.
-        self.spawn_devd();
-
-        // Stage 7: Spawn Serial Shell (interactive console)
-        crate::pipelines::setup_serial_shell(&mut self.tasks);
+        // self.wait_for_display();
 
         info!("SPROUT: System bring-up COMPLETE. Entering supervisor loop.");
 
@@ -234,13 +228,7 @@ impl Supervisor {
 
             // stem::debug!("SPROUT: Polling task {} on port {}...", task.name, task.drv_resp_read);
 
-            let res = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf);
-            if let Err(e) = &res {
-                if *e != abi::errors::Errno::EAGAIN {
-                    stem::debug!("SPROUT: channel_try_recv(tid={}, h={}) error: {:?}", task.pid.unwrap_or(0), task.drv_resp_read, e);
-                }
-            }
-            while let Ok(n) = res {
+            while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
                 stem::debug!("SPROUT: Received {} bytes from task {} (tid={})", n, task.name, task.pid.unwrap_or(0));
                 if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
                     stem::debug!("SPROUT: Received message type {} from {}", header.msg_type, task.name);

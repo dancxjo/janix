@@ -563,6 +563,15 @@ fn main(boot_fd: usize) -> ! {
                                         let _ = channel_send(resp_port, &[22]); // E_INVAL
                                     }
                                 }
+                                Some(VfsRpcOp::SubscribeReady) => {
+                                    let _ = channel_send(resp_port, &[0]); // E_OK
+                                }
+                                Some(VfsRpcOp::UnsubscribeReady) => {
+                                    let _ = channel_send(resp_port, &[0]); // E_OK
+                                }
+                                Some(VfsRpcOp::Rename) => {
+                                    let _ = channel_send(resp_port, &[38]); // E_NOTSUP
+                                }
                                 _ => {
                                     let _ = channel_send(resp_port, &[38]); // E_NOTSUP
                                 }

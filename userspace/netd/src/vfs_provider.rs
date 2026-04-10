@@ -246,6 +246,9 @@ impl NetVfsProvider {
             VfsRpcOp::Close => self.op_close(resp_port, payload, socket_set, socket_api),
             VfsRpcOp::Poll => self.op_poll(resp_port, payload, socket_set, socket_api),
             VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
+            VfsRpcOp::Rename => send_err(resp_port, E_NOTSUP),
+            VfsRpcOp::SubscribeReady => send_resp(resp_port, &[E_OK]),
+            VfsRpcOp::UnsubscribeReady => send_resp(resp_port, &[E_OK]),
         }
     }
 

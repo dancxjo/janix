@@ -103,6 +103,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_WATCH_FD => handlers::vfs::sys_watch_fd(args[0], args[1], args[2]),
         SYS_FS_DEVICE_CALL => handlers::vfs::sys_fs_device_call(args[0], args[1]),
         SYS_FS_WATCH_PATH => handlers::vfs::sys_watch_path(args[0], args[1], args[2], args[3]),
+        SYS_FD_FROM_HANDLE => handlers::vfs::sys_fd_from_handle(args[0]),
+        SYS_FS_NOTIFY => handlers::vfs::sys_fs_notify(args[0], args[1], args[2]),
 
         _ => Err(abi::errors::Errno::ENOSYS),
     };

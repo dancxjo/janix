@@ -67,6 +67,21 @@ pub enum VfsRpcOp {
     /// Payload: `[handle: u64][DeviceCall struct]`
     /// Response payload (on OK): `[u32 return value]`
     DeviceCall = 8,
+    /// Subscribe to readiness notifications for an open handle.
+    ///
+    /// Payload: `[handle: u64][events: u32]`
+    /// Response payload (on OK): (empty)
+    SubscribeReady = 9,
+    /// Unsubscribe from readiness notifications for an open handle.
+    ///
+    /// Payload: `[handle: u64]`
+    /// Response payload (on OK): (empty)
+    UnsubscribeReady = 10,
+    /// Rename a path.
+    ///
+    /// Payload: `[old_path_len: u32][old_path bytes][new_path_len: u32][new_path bytes]`
+    /// Response payload (on OK): (empty)
+    Rename = 11,
 }
 
 impl VfsRpcOp {
@@ -81,6 +96,9 @@ impl VfsRpcOp {
             6 => Some(Self::Close),
             7 => Some(Self::Poll),
             8 => Some(Self::DeviceCall),
+            9 => Some(Self::SubscribeReady),
+            10 => Some(Self::UnsubscribeReady),
+            11 => Some(Self::Rename),
             _ => None,
         }
     }

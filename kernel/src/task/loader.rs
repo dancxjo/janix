@@ -55,6 +55,9 @@ pub fn load_module<R: BootRuntime>(
         let load_bias = load_addr.saturating_sub(elf.min_vaddr);
         entry_pc = elf.entry.saturating_add(load_bias);
 
+        crate::kinfo!("LOADER: ELF info: entry={:x}, min_vaddr={:x}, bias={:x}, entry_pc={:x}", 
+            elf.entry, elf.min_vaddr, load_bias, entry_pc);
+
         let mut last_virt_page = u64::MAX;
         let mut last_phys_page = 0;
         let mut last_perms = MapPerms {

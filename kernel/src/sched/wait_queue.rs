@@ -17,6 +17,11 @@ impl WaitQueue {
         }
     }
 
+    /// Returns true if there are no waiters.
+    pub fn is_empty(&self) -> bool {
+        self.waiters.lock().is_empty()
+    }
+
     /// Add a task to the wait queue
     pub fn push_back(&self, tid: u64) {
         let mut waiters = self.waiters.lock();

@@ -339,6 +339,27 @@ impl crate::vfs::VfsNode for PipeReadNode {
             PIPES.lock().remove(&self.pipe_id);
         }
     }
+
+    fn poll(&self) -> u16 {
+        use abi::syscall::poll_flags::{POLLIN, POLLHUP};
+        let inner = self.inner.lock();
+        let mut revents = 0;
+        if !inner.buf.is_empty() || inner.writers == 0 {
+            revents |= POLLIN;
+        }
+        if inner.writers == 0 {
+            revents |= POLLHUP;
+        }
+        revents
+    }
+
+    fn add_waiter(&self, tid: u64) {
+        self.inner.lock().read_waitq.push_back(tid);
+    }
+
+    fn remove_waiter(&self, tid: u64) {
+        self.inner.lock().read_waitq.remove(tid);
+    }
 }
 
 impl crate::vfs::VfsNode for PipeWriteNode {
@@ -394,6 +415,26 @@ impl crate::vfs::VfsNode for PipeWriteNode {
         if should_remove {
             PIPES.lock().remove(&self.pipe_id);
         }
+    }
+
+    fn poll(&self) -> u16 {
+        use abi::syscall::poll_flags::{POLLOUT, POLLHUP, POLLERR};
+        let inner = self.inner.lock();
+        let mut revents = 0;
+        if inner.readers == 0 {
+            revents |= POLLHUP | POLLERR;
+        } else if !inner.buf.is_full() {
+            revents |= POLLOUT;
+        }
+        revents
+    }
+
+    fn add_waiter(&self, tid: u64) {
+        self.inner.lock().write_waitq.push_back(tid);
+    }
+
+    fn remove_waiter(&self, tid: u64) {
+        self.inner.lock().write_waitq.remove(tid);
     }
 }
 

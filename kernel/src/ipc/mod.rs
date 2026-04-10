@@ -52,6 +52,19 @@ pub fn close_port(id: PortId) {
     }
 }
 
+/// Find the ID of a port by its Arc pointer
+pub fn find_port_id(port: &Arc<Port>) -> Option<PortId> {
+    let ports = PORTS.lock();
+    for (i, slot) in ports.iter().enumerate() {
+        if let Some(p) = slot {
+            if Arc::ptr_eq(p, port) {
+                return Some(PortId(i as u32));
+            }
+        }
+    }
+    None
+}
+
 /// Get statistics about the port registry (for debugging)
 pub fn port_count() -> usize {
     let ports = PORTS.lock();

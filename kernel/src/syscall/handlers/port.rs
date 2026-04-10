@@ -341,7 +341,7 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
             .ok_or(Errno::EBADF)?; // If not in either table, it's a bad handle
         
         let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
-        Arc::new(crate::vfs::port_node::PortNode::new(port))
+        Arc::new(crate::vfs::port_node::PortNode::new(port, entry.mode))
     };
 
     let handle = crate::ipc::Handle(handle as u32);

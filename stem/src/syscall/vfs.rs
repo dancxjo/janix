@@ -9,7 +9,7 @@ use abi::syscall::{
     PollFd, SYS_FS_CLOSE, SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
-    SYS_FS_DEVICE_CALL, SYS_FS_CHDIR, SYS_FS_GETCWD,
+    SYS_FS_DEVICE_CALL, SYS_FS_CHDIR, SYS_FS_GETCWD, SYS_FD_FROM_HANDLE, SYS_FS_NOTIFY,
 };
 
 use super::arch::raw_syscall6;
@@ -375,4 +375,30 @@ pub fn vfs_getcwd(buf: &mut [u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret)
+}
+
+/// Bridge an IPC handle into the VFS as a file descriptor.
+pub fn vfs_fd_from_handle(handle: u32) -> SysResult<u32> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FD_FROM_HANDLE,
+            handle as usize,
+            0, 0, 0, 0, 0
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Notify the kernel that a provider-backed node is ready.
+pub fn vfs_notify(req_handle: u32, node_handle: u64, revents: u16) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_NOTIFY,
+            req_handle as usize,
+            node_handle as usize,
+            revents as usize,
+            0, 0, 0
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
 }

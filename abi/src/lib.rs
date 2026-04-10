@@ -2,6 +2,7 @@
 extern crate alloc;
 extern crate self as abi;
 
+pub mod auxv;
 pub mod block_device_protocol;
 pub mod debug;
 pub mod device;

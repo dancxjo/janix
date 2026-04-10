@@ -13,27 +13,29 @@ extern crate alloc;
 
 // Modules are now declared in main.rs
 use crate::ledger::DeviceLedger;
-use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack};
+use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack, setup_input_broker, setup_serial_shell};
 use crate::task::{ManagedTask, TaskKind};
 use abi::supervisor_protocol::{self, classes, MSG_BIND_READY, MSG_BIND_ASSIGNED};
 use abi::display_driver_protocol;
 use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use alloc::sync::Arc;
+use spin::Mutex;
 use stem::syscall::{channel_create, channel_send_all, vfs_mount, ChannelHandle};
 use stem::{error, info, warn};
 
 pub struct Supervisor {
-    pub tasks: Vec<ManagedTask>,
-    pub ledger: DeviceLedger,
+    pub tasks: Arc<Mutex<Vec<ManagedTask>>>,
+    pub ledger: Arc<Mutex<DeviceLedger>>,
     pub registry_ptr: usize,
 }
 
 impl Supervisor {
     pub fn new(registry_ptr: usize) -> Self {
         Self {
-            tasks: Vec::new(),
-            ledger: DeviceLedger::new(),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            ledger: Arc::new(Mutex::new(DeviceLedger::new())),
             registry_ptr,
         }
     }
@@ -48,25 +50,30 @@ impl Supervisor {
         let (supervisor_write, supervisor_read) =
             channel_create(4096).expect("Failed to create supervisor registrar channel");
 
-        // Stage 3: Setup Graphics Pipeline
-        // This picks a display driver and starts the handshake.
-        let display = match setup_display_pipeline(&mut self.tasks, 0, 1) {
-            Some(d) => d,
-            None => {
-                error!("SPROUT: CRITICAL: Failed to setup display pipeline. System may be headless.");
-                // We proceed anyway, maybe serial log is enough
-                DisplayHandles {
-                    drv_req_write: 0,
-                    drv_resp_read: 0,
-                    bs_id: 0,
-                    backend_name: "none",
-                    width: 0,
-                    height: 0,
-                    stride: 0,
-                    format: 0,
-                }
-            }
-        };
+        // Stage 3: Launch Serial Shell EARLY on its own processor
+        info!("SPROUT: Launching early serial shell...");
+        let tasks_cloned = self.tasks.clone();
+        let _ = stem::thread::spawn_task(move || {
+            setup_serial_shell(tasks_cloned);
+        });
+
+        // Stage 4: Fan-out Setup Pipelines in parallel
+        info!("SPROUT: Fanning out setup pipelines...");
+        
+        let tasks_for_display = self.tasks.clone();
+        let _ = stem::thread::spawn_task(move || {
+            let _ = setup_display_pipeline(tasks_for_display, 0, 1);
+        });
+
+        let tasks_for_graphics = self.tasks.clone();
+        let _ = stem::thread::spawn_task(move || {
+            setup_graphics_stack(tasks_for_graphics);
+        });
+
+        let tasks_for_input = self.tasks.clone();
+        let _ = stem::thread::spawn_task(move || {
+            setup_input_broker(tasks_for_input);
+        });
 
         // Stage 8: Run Readiness Model Verification Test
         info!("SPROUT: Spawning poll_mux verification test...");
@@ -104,7 +111,7 @@ impl Supervisor {
                 stem::debug!("SPROUT: Still waiting for display (step {})...", step);
             }
             if step % 100 == 0 {
-                stem::debug!("SPROUT: Health check: Loop still running, tasks={}", self.tasks.len());
+                stem::debug!("SPROUT: Health check: Loop still running, tasks={}", self.tasks.lock().len());
             }
             step += 1;
             
@@ -139,7 +146,8 @@ impl Supervisor {
         match stem::syscall::spawn_process("/bin/devd", 0) {
             Ok(pid) => {
                 info!("SPROUT: Spawned devd (PID={})", pid);
-                self.tasks.push(ManagedTask {
+                let mut tasks = self.tasks.lock();
+                tasks.push(ManagedTask {
                     name: "devd".to_string(),
                     kind: TaskKind::Service("svc.devd".to_string()),
                     module_path: "/bin/devd".to_string(),
@@ -159,7 +167,8 @@ impl Supervisor {
 
 
     fn monitor(&mut self) {
-        for task in self.tasks.iter_mut() {
+        let mut tasks = self.tasks.lock();
+        for task in tasks.iter_mut() {
             if let Some(pid) = task.pid {
                 match stem::syscall::task_poll(pid) {
                     Ok((status, code)) => {
@@ -216,12 +225,13 @@ impl Supervisor {
 
         let mut buf = [0u8; 1024];
 
-        if self.tasks.is_empty() {
+        let mut tasks_vec = self.tasks.lock();
+        if tasks_vec.is_empty() {
              // stem::debug!("SPROUT: No tasks to process registrations for.");
         }
 
         // We check EACH task's private response channel
-        for task in self.tasks.iter_mut() {
+        for task in tasks_vec.iter_mut() {
             if task.drv_resp_read == 0 || task.pid.is_none() {
                 continue;
             }
@@ -266,8 +276,9 @@ impl Supervisor {
                                     ("misc", "/dev/misc/device")
                                 };
 
-                                let unit = self.ledger.get(class_name).cloned().unwrap_or(0);
-                                self.ledger.insert(class_name.to_string(), unit + 1);
+                                let mut ledger = self.ledger.lock();
+                                let unit = ledger.get(class_name).cloned().unwrap_or(0);
+                                ledger.insert(class_name.to_string(), unit + 1);
                                 let path = format!("{}{}", root, unit);
 
                                 // 3. Mount

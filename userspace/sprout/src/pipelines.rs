@@ -9,6 +9,8 @@ use stem::abi::driver_ctx::DriverCtx;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::syscall::{channel_create, ChannelHandle};
 use stem::{debug, info, warn};
+use alloc::sync::Arc;
+use spin::Mutex;
 
 fn ensure_session_roots() {
     use stem::syscall::vfs::vfs_mkdir;
@@ -224,7 +226,7 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
 // Storage, Network, and Audio are now handled by devd
 
 pub fn setup_display_pipeline(
-    tasks: &mut Vec<ManagedTask>,
+    shared_tasks: Arc<Mutex<Vec<ManagedTask>>>,
     supervisor_port: stem::syscall::ChannelHandle,
     bind_instance_id: u64,
 ) -> Option<DisplayHandles> {
@@ -374,6 +376,7 @@ pub fn setup_display_pipeline(
                 driver_name, pid
             );
             let _ = stem::thread::set_priority(pid, 3);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: driver_name.to_string(),
                 kind: TaskKind::Driver("dev.display".to_string()),
@@ -405,7 +408,7 @@ pub fn setup_display_pipeline(
 }
 
 pub fn setup_terminal(
-    tasks: &mut Vec<ManagedTask>,
+    shared_tasks: Arc<Mutex<Vec<ManagedTask>>>,
     display: Option<DisplayHandles>,
     _input: InputHandles,
 ) {
@@ -449,6 +452,7 @@ pub fn setup_terminal(
         Ok(pid) => {
             debug!("SPROUT: Spawned terminal (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "terminal".to_string(),
                 kind: TaskKind::App,
@@ -471,7 +475,7 @@ pub struct InputHandles {
     pub evt_input_echo_read: ChannelHandle,
 }
 
-pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
+pub fn setup_input_broker(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) -> InputHandles {
     debug!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
 
     // Create kbd_raw port (ps2_kbd -> bristle)
@@ -535,6 +539,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         Ok(pid) => {
             debug!("SPROUT: Spawned ps2_kbd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "/ps2_kbd".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.kbd".to_string()),
@@ -555,6 +560,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         Ok(pid) => {
             debug!("SPROUT: Spawned ps2_mouse (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "ps2_mouse".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.mouse".to_string()),
@@ -580,6 +586,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         Ok(pid) => {
             debug!("SPROUT: Spawned bristle (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "bristle".to_string(),
                 kind: TaskKind::App,
@@ -607,12 +614,13 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 // Network and Audio are now handled by devd
 
-fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
+fn spawn_netd(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: spawn_netd start");
     match stem::syscall::spawn_process("/bin/netd", 0) {
         Ok(pid) => {
             debug!("SPROUT: Spawned netd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "netd".to_string(),
                 kind: TaskKind::Service("svc.net".to_string()),
@@ -629,13 +637,14 @@ fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
+pub fn setup_network_apps(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up network apps...");
 
     match stem::syscall::spawn_process("/bin/nectar", 0) {
         Ok(pid) => {
             debug!("SPROUT: Spawned nectar (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "nectar".to_string(),
                 kind: TaskKind::Service("svc.nectar".to_string()),
@@ -655,6 +664,7 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
         Ok(pid) => {
             debug!("SPROUT: Spawned fetchd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "fetchd".to_string(),
                 kind: TaskKind::App,
@@ -671,36 +681,40 @@ pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_taskman_service(_tasks: &mut Vec<ManagedTask>) {
+pub fn setup_taskman_service(_shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     // Taskman removed
 }
 
-pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/bin/flytrap", "svc.flytrap", 2);
-    spawn_ui_service(tasks, "/bin/blossom", "svc.blossom", 2);
+pub fn setup_ui_services(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
+    spawn_ui_service(shared_tasks.clone(), "/bin/flytrap", "svc.flytrap", 2);
+    spawn_ui_service(shared_tasks, "/bin/blossom", "svc.blossom", 2);
 }
 
-pub fn setup_blossom_service(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/bin/blossom", "svc.blossom", 2);
+pub fn setup_blossom_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
+    spawn_ui_service(shared_tasks, "/bin/blossom", "svc.blossom", 2);
 }
 
-pub fn setup_font_service(_tasks: &mut Vec<ManagedTask>) {
+pub fn setup_font_service(_shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     // Font handling is integrated into Bloom directly
 }
 
-pub fn setup_flytrap_service(tasks: &mut Vec<ManagedTask>) {
-    spawn_ui_service(tasks, "/bin/flytrap", "svc.flytrap", 2);
+pub fn setup_flytrap_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
+    spawn_ui_service(shared_tasks, "/bin/flytrap", "svc.flytrap", 2);
 }
 
-fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, priority: usize) {
-    if tasks.iter().any(|t| t.name == name && t.pid.is_some()) {
-        return;
+fn spawn_ui_service(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>, name: &str, service: &str, priority: usize) {
+    {
+        let tasks = shared_tasks.lock();
+        if tasks.iter().any(|t| t.name == name && t.pid.is_some()) {
+            return;
+        }
     }
 
     match stem::syscall::spawn_process(name, 0) {
         Ok(pid) => {
             debug!("SPROUT: Spawned {} (PID={})", &name[1..], pid);
             let _ = stem::thread::set_priority(pid, priority);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: name.to_string(),
                 kind: TaskKind::Service(service.to_string()),
@@ -719,7 +733,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
 
 // Audio and beeper are now handled by devd or disabled
 
-pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
+pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");
 
     // 1. Setup fontd
@@ -730,6 +744,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
         Ok(pid) => {
             debug!("SPROUT: Spawned fontd (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "fontd".to_string(),
                 kind: TaskKind::Service("svc.font".to_string()),
@@ -750,6 +765,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
         Ok(pid) => {
             debug!("SPROUT: Spawned bloom (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 3); // High priority for compositor
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "bloom".to_string(),
                 kind: TaskKind::App,
@@ -766,7 +782,7 @@ pub fn setup_graphics_stack(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_serial_shell(tasks: &mut Vec<ManagedTask>) {
+pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up serial shell on /dev/console...");
 
     let console_fd = match stem::syscall::vfs::vfs_open("/dev/console", abi::syscall::vfs_flags::O_RDWR) {
@@ -789,6 +805,7 @@ pub fn setup_serial_shell(tasks: &mut Vec<ManagedTask>) {
     ) {
         Ok(resp) => {
             debug!("SPROUT: Spawned serial shell (PID={})", resp.child_tid);
+            let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "sh".to_string(),
                 kind: TaskKind::App,

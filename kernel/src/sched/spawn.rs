@@ -514,6 +514,12 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         } else {
             crate::task::Affinity::Any
         }
+    } else if name.contains("/sh") {
+        if rt.cpu_total_count() > 1 {
+            crate::task::Affinity::Pinned(rt.cpu_total_count() - 1)
+        } else {
+            crate::task::Affinity::Any
+        }
     } else {
         crate::task::Affinity::Any
     };

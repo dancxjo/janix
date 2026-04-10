@@ -84,6 +84,9 @@ pub use vfs::{
     dup, dup2, pipe, vfs_chdir, vfs_close, vfs_getcwd, vfs_mkdir, vfs_mount, vfs_open, vfs_poll,
     vfs_read, vfs_readdir, vfs_rename, vfs_seek, vfs_stat, vfs_isatty, vfs_umount, vfs_unlink, vfs_watch_fd,
     vfs_watch_path, vfs_write,
+    dup, dup2, pipe, vfs_chdir, vfs_close, vfs_fcntl, vfs_fsync, vfs_getcwd, vfs_mkdir, vfs_mount,
+    vfs_open, vfs_poll, vfs_read, vfs_readdir, vfs_realpath, vfs_rename, vfs_seek, vfs_stat,
+    vfs_umount, vfs_unlink, vfs_watch_fd, vfs_watch_path, vfs_write,
 };
 pub use wait::wait_many;
 
@@ -279,6 +282,11 @@ pub fn task_set_tls_base(base: usize) -> Result<(), Errno> {
 pub fn task_get_tls_base() -> Result<usize, Errno> {
     let ret = unsafe { raw_syscall6(SYS_TASK_GET_TLS_BASE, 0, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as usize)
+}
+
+pub fn task_interrupt(tid: u64) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_INTERRUPT, tid as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
 }
 
 pub fn spawn_process_ex(

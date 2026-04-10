@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::{PollFd, poll_flags, vfs_flags};
+use abi::syscall::{PollFd, fcntl_cmd, fd_flags, poll_flags, vfs_flags};
 
 use crate::syscall::validate::{copyin, copyout, validate_user_range};
 use crate::vfs::{self, OpenFlags};
@@ -48,7 +48,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
         );
     }
 
-    let open_flags = OpenFlags(flags as u32);
+    let open_flags = OpenFlags::from_open_call(flags as u32);
     let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
     let want_trunc = (flags as u32) & vfs_flags::O_TRUNC != 0;
 
@@ -120,6 +120,48 @@ pub fn sys_fs_close(fd: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+// ── sync (fsync) ─────────────────────────────────────────────────────────────
+
+/// Flush the VFS node associated with `fd` to its backing store.
+///
+/// For RAM-backed filesystems this is a no-op that always succeeds.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_sync(fd: usize) -> SysResult<usize> {
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        lock.fd_table.get(fd as u32)?.node.clone()
+    };
+    node.sync()?;
+    Ok(0)
+}
+
+/// File-descriptor control.
+pub fn sys_fs_fcntl(fd: usize, cmd: usize, arg: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let mut lock = pinfo_arc.lock();
+
+    match cmd as u32 {
+        fcntl_cmd::F_GETFD => Ok(lock.fd_table.get_fd_flags(fd as u32)? as usize),
+        fcntl_cmd::F_SETFD => {
+            lock.fd_table
+                .set_fd_flags(fd as u32, (arg as u32) & fd_flags::FD_CLOEXEC)?;
+            Ok(0)
+        }
+        fcntl_cmd::F_GETFL => {
+            let file = lock.fd_table.get(fd as u32)?;
+            Ok(file.status_flags.lock().0 as usize)
+        }
+        fcntl_cmd::F_SETFL => {
+            let file = lock.fd_table.get(fd as u32)?;
+            let mut status_flags = file.status_flags.lock();
+            *status_flags = status_flags.with_mutable_status(arg as u32);
+            Ok(0)
+        }
+        _ => Err(Errno::EINVAL),
+    }
+}
+
 // ── read ────────────────────────────────────────────────────────────────────
 
 pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
@@ -130,15 +172,20 @@ pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
 
     // Clone the node Arc and the shared offset so we don't hold the process lock
     // during the read.
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_readable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_readable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
+
+    if status_flags.read_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
 
     let offset = *offset_cell.lock();
     let mut kbuf = vec![0u8; buf_len];
@@ -245,21 +292,26 @@ pub fn sys_fs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     let mut kbuf = vec![0u8; buf_len];
     unsafe { copyin(&mut kbuf, buf_ptr)? };
 
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_writable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_writable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
 
-    let offset = *offset_cell.lock();
-    let n = node.write(offset, &kbuf)?;
+    if status_flags.write_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
+
+    let write_offset = status_flags.effective_write_offset(*offset_cell.lock(), node.stat()?.size);
+    let n = node.write(write_offset, &kbuf)?;
 
     if n > 0 {
-        *offset_cell.lock() = offset.saturating_add(n as u64);
+        *offset_cell.lock() = write_offset.saturating_add(n as u64);
         // Emit MODIFY event
         crate::vfs::watch::emit_event(&*node, abi::vfs_watch::mask::MODIFY, None, 0);
     }
@@ -621,6 +673,16 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysRes
     };
 
     loop {
+        if crate::sched::take_pending_interrupt_current() {
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Err(Errno::EINTR);
+        }
+
         // Pass 1: Probe current state
         let mut ready_count = 0;
         for (i, entry) in entries.iter().enumerate() {
@@ -717,6 +779,16 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysRes
             if let Some(ref node) = entry.node {
                 node.remove_waiter(tid);
             }
+        }
+
+        if crate::sched::take_pending_interrupt_current() {
+            unsafe {
+                copyout(
+                    pollfds_ptr,
+                    core::slice::from_raw_parts(kfds.as_ptr() as *const u8, byte_len),
+                )?
+            };
+            return Err(Errno::EINTR);
         }
     }
 }
@@ -930,5 +1002,45 @@ pub fn sys_fs_getcwd(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
         validate_user_range(buf_ptr, copy_len, true)?;
         unsafe { copyout(buf_ptr, &cwd.as_bytes()[..copy_len])? };
     }
+    Ok(needed)
+}
+
+/// Resolve `path` (relative or absolute) to its canonical absolute form,
+/// writing the result into the caller-supplied buffer.
+///
+/// Signature: `SYS_FS_REALPATH(path_ptr, path_len, buf_ptr, buf_len) → len`
+///
+/// - On success returns the length of the canonical path (excluding NUL).
+/// - If `buf_len` is smaller than the canonical path length, the output
+///   buffer is not written; the needed length is still returned so the
+///   caller can retry with a suitably sized buffer.
+/// - `buf_ptr` may be `0` (null) to query the required size without
+///   writing any output; `buf_len` is ignored in that case.
+/// - Returns `EINVAL` if `path` is empty or too long.
+/// - Returns `ENOENT` if no process context is available (relative path + no cwd).
+pub fn sys_fs_realpath(
+    path_ptr: usize,
+    path_len: usize,
+    buf_ptr: usize,
+    buf_len: usize,
+) -> SysResult<usize> {
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(path_ptr, path_len, false)?;
+
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let canonical = resolve_path(path)?;
+    let canonical_bytes = canonical.as_bytes();
+    let needed = canonical_bytes.len();
+
+    if buf_ptr != 0 && buf_len >= needed {
+        validate_user_range(buf_ptr, needed, true)?;
+        unsafe { copyout(buf_ptr, canonical_bytes)? };
+    }
+
     Ok(needed)
 }

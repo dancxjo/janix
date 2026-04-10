@@ -50,10 +50,11 @@ pub fn map_page(
     if perms.user {
         flags |= 1 << 2;
     } // U/S
-    
+
     /*if !perms.exec {
         flags |= 1 << 63;
-    }*/ // NX
+    }*/
+    // NX
 
     if kind == MapKind::Device || kind == MapKind::Framebuffer {
         flags |= 1 << 4;

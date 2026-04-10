@@ -51,6 +51,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         }
         SYS_TASK_SET_TLS_BASE => handlers::sys_task_set_tls_base(args[0]),
         SYS_TASK_GET_TLS_BASE => handlers::sys_task_get_tls_base(),
+        SYS_TASK_INTERRUPT => handlers::sys_task_interrupt(args[0]),
 
         SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
         SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),
@@ -111,6 +112,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FD_FROM_HANDLE => handlers::vfs::sys_fd_from_handle(args[0]),
         SYS_FS_NOTIFY => handlers::vfs::sys_fs_notify(args[0], args[1], args[2]),
         SYS_FS_ISATTY => handlers::vfs::sys_fs_isatty(args[0]),
+        SYS_FS_REALPATH => handlers::vfs::sys_fs_realpath(args[0], args[1], args[2], args[3]),
+        SYS_FS_SYNC => handlers::vfs::sys_fs_sync(args[0]),
+        SYS_FS_FCNTL => handlers::vfs::sys_fs_fcntl(args[0], args[1], args[2]),
 
         _ => Err(abi::errors::Errno::ENOSYS),
     };

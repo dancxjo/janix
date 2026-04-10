@@ -4,12 +4,16 @@
 //! janix de-graphing migration (Act III – Birth of the VFS, Act IV – Kernel
 //! Filesystems).
 
-use abi::errors::{Errno, SysResult};
+use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_ISATTY,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY,
+    SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_REALPATH, SYS_FS_RENAME,
+    SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD,
+    SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -220,6 +224,24 @@ pub fn dup2(old_fd: u32, new_fd: u32) -> SysResult<u32> {
     abi::errors::errno(ret).map(|v| v as u32)
 }
 
+/// File-descriptor control.
+///
+/// Supports `F_GETFL`, `F_SETFL`, `F_GETFD`, and `F_SETFD`.
+pub fn vfs_fcntl(fd: u32, cmd: u32, arg: u32) -> SysResult<u32> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_FCNTL,
+            fd as usize,
+            cmd as usize,
+            arg as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
 /// Create an anonymous VFS pipe, writing the read and write file descriptors
 /// into `pipefd[0]` and `pipefd[1]` respectively.
 ///
@@ -233,8 +255,7 @@ pub fn pipe(pipefd: &mut [u32; 2]) -> SysResult<()> {
 ///
 /// Fills in `pollfds[i].revents` for each entry and returns the number of
 /// entries with non-zero `revents`.  `timeout_ms` is the maximum number of
-/// milliseconds to wait; pass `-1i64 as u64` to wait indefinitely (note:
-/// blocking is not yet implemented — the call returns immediately).
+/// milliseconds to wait; pass `-1i64 as u64` to wait indefinitely.
 ///
 /// # Example
 /// ```no_run
@@ -395,5 +416,43 @@ pub fn vfs_notify(req_handle: u32, node_handle: u64, revents: u16) -> SysResult<
             0,
         )
     };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Resolve `path` (relative or absolute) to its canonical absolute form.
+///
+/// The kernel normalises `.` and `..` components and prepends the process
+/// working directory when `path` is relative.  The result is written into
+/// `buf` as raw UTF-8 bytes **without** a NUL terminator; callers that need
+/// a C-style string must append `\0` themselves.
+///
+/// Returns the number of bytes of the canonical path.  If the return value
+/// is greater than `buf.len()`, the buffer was too small and nothing was
+/// written; the caller should retry with a larger buffer.
+///
+/// # Errors
+/// - [`Errno::EINVAL`]  — `path` is empty or not valid UTF-8.
+/// - [`Errno::ENOENT`]  — no process context (relative path with missing cwd).
+pub fn vfs_realpath(path: &str, buf: &mut [u8]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_REALPATH,
+            path.as_ptr() as usize,
+            path.len(),
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as usize)
+}
+
+/// Flush all pending writes on `fd` to the backing store (fsync).
+///
+/// For RAM-backed filesystems this is a no-op that always succeeds.
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_fsync(fd: u32) -> SysResult<()> {
+    let ret = unsafe { raw_syscall6(SYS_FS_SYNC, fd as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }

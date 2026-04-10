@@ -15,15 +15,20 @@ pub fn sys_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 
     // Clone the node Arc and shared offset so we don't hold the process lock
     // during the (potentially blocking) read.
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_readable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_readable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
+
+    if status_flags.read_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
 
     let offset = *offset_cell.lock();
     let mut kbuf = vec![0u8; buf_len];
@@ -49,21 +54,26 @@ pub fn sys_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> 
     let mut kbuf = vec![0u8; buf_len];
     unsafe { copyin(&mut kbuf, buf_ptr)? };
 
-    let (node, offset_cell) = {
+    let (node, offset_cell, status_flags) = {
         let pinfo_arc = sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
-        if !file.flags.is_writable() {
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_writable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset.clone())
+        (file.node.clone(), file.offset.clone(), status_flags)
     };
 
-    let offset = *offset_cell.lock();
-    let n = node.write(offset, &kbuf)?;
+    if status_flags.write_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
+
+    let write_offset = status_flags.effective_write_offset(*offset_cell.lock(), node.stat()?.size);
+    let n = node.write(write_offset, &kbuf)?;
 
     if n > 0 {
-        *offset_cell.lock() = offset.saturating_add(n as u64);
+        *offset_cell.lock() = write_offset.saturating_add(n as u64);
     }
 
     Ok(n)

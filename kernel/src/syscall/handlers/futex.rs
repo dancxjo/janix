@@ -71,10 +71,8 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
             crate::sched::block_current_erased();
         }
     } else {
-        // Timed wait — use sleep, which blocks for up to the given duration.
-        // The wake side will unblock us early if needed.
-        // Convert ns to ticks (100Hz = 10ms per tick), rounding up.
-        let ticks = (timeout_ns + 9_999_999) / 10_000_000;
+        // Timed wait — use scheduler sleep with the same coarse rounding as SYS_SLEEP.
+        let ticks = crate::time::duration_to_sleep_ticks(timeout_ns);
         if ticks == 0 {
             unsafe {
                 crate::sched::yield_now_current();

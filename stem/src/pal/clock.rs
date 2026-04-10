@@ -4,6 +4,7 @@
 //! All time values are in nanoseconds.
 
 use crate::syscall;
+use abi::time::ClockId;
 
 /// Returns raw monotonic nanoseconds since boot.
 ///
@@ -26,10 +27,8 @@ pub fn sleep_ns(ns: u64) {
 ///
 /// Returns 0 if the system clock is not yet anchored to real time.
 pub fn unix_time_ns() -> u64 {
-    unsafe {
-        match syscall::syscall6(super::SYS_TIME_NOW, 0, 0, 0, 0, 0, 0) {
-            x if x >= 0 => x as u64,
-            _ => 0, // Error fallback (e.g., EAGAIN before anchoring)
-        }
-    }
+    syscall::time_now(ClockId::Realtime)
+        .ok()
+        .and_then(|spec| spec.as_nanos())
+        .unwrap_or(0)
 }

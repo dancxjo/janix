@@ -51,7 +51,7 @@ pub fn sys_wait_many(
     let timeout_tick = if timeout_ns == u64::MAX {
         None
     } else {
-        let ticks = timeout_ns.saturating_add(9_999_999) / 10_000_000;
+        let ticks = crate::time::duration_to_sleep_ticks(timeout_ns);
         Some(crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks)
     };
 

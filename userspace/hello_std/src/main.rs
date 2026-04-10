@@ -242,6 +242,20 @@ fn test_alloc() -> Result<(), String> {
 // ── C: time ──────────────────────────────────────────────────────────
 
 fn test_time() -> Result<(), String> {
+    let mono0 = stem::syscall::time_now(abi::time::ClockId::Monotonic)
+        .map_err(|e| format!("monotonic clock read failed: {:?}", e))?;
+    let mono0_ns = mono0
+        .as_nanos()
+        .ok_or_else(|| "monotonic timespec was invalid".to_string())?;
+
+    if let Err(e) = stem::syscall::time_now_raw(0) {
+        if e != abi::errors::Errno::EINVAL {
+            return Err(format!("invalid clock id returned {:?}, expected EINVAL", e));
+        }
+    } else {
+        return Err("invalid clock id unexpectedly succeeded".into());
+    }
+
     // Instant monotonicity
     let t0 = Instant::now();
     std::thread::sleep(Duration::from_millis(10));
@@ -252,6 +266,31 @@ fn test_time() -> Result<(), String> {
         return Err(format!(
             "Instant elapsed {:?} < 1ms after 10ms sleep",
             elapsed
+        ));
+    }
+
+    let mono1 = stem::syscall::time_now(abi::time::ClockId::Monotonic)
+        .map_err(|e| format!("second monotonic clock read failed: {:?}", e))?;
+    let mono1_ns = mono1
+        .as_nanos()
+        .ok_or_else(|| "second monotonic timespec was invalid".to_string())?;
+    if mono1_ns < mono0_ns {
+        return Err(format!("monotonic clock moved backwards: {} -> {}", mono0_ns, mono1_ns));
+    }
+
+    let sleep_start = Instant::now();
+    stem::syscall::sleep_ns(15_000_000);
+    let sleep_elapsed = sleep_start.elapsed();
+    if sleep_elapsed < Duration::from_millis(5) {
+        return Err(format!(
+            "sleep_ns woke too early: {:?} after 15ms request",
+            sleep_elapsed
+        ));
+    }
+    if sleep_elapsed > Duration::from_millis(250) {
+        return Err(format!(
+            "sleep_ns overslept too much: {:?} after 15ms request",
+            sleep_elapsed
         ));
     }
 
@@ -268,6 +307,16 @@ fn test_time() -> Result<(), String> {
         Err(_) => {
             return Err("SystemTime is before UNIX_EPOCH".into());
         }
+    }
+
+    match stem::syscall::time_now(abi::time::ClockId::Realtime) {
+        Ok(spec) => {
+            if spec.as_nanos().is_none() {
+                return Err("realtime clock returned invalid timespec".into());
+            }
+        }
+        Err(abi::errors::Errno::EAGAIN) => {}
+        Err(e) => return Err(format!("realtime clock read failed: {:?}", e)),
     }
 
     Ok(())

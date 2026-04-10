@@ -7,6 +7,7 @@ use crate::pal;
 
 // Re-export the ABI types for convenience
 pub use abi::types::instant::{Duration, Instant};
+pub use abi::time::{ClockId, TimeSpec};
 
 /// Returns the current monotonic instant.
 ///
@@ -22,6 +23,11 @@ pub fn now() -> Instant {
 /// Returns 0 if the system clock is not yet anchored.
 pub fn now_unix_nanos() -> u64 {
     pal::clock::unix_time_ns()
+}
+
+/// Returns the current clock value for the requested clock domain.
+pub fn clock_now(clock_id: ClockId) -> Option<TimeSpec> {
+    crate::syscall::time_now(clock_id).ok()
 }
 
 /// Returns the current Unix time in seconds.

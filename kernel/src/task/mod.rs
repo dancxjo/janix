@@ -319,7 +319,7 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
             idle_count += 1;
             if idle_count % 1000 == 0 {
                 let cpu = crate::sched::current_cpu_index::<R>();
-                crate::kdebug!("SCHED: CPU {} idle pulse", cpu);
+                crate::ktrace!("SCHED: CPU {} idle pulse", cpu);
             }
         }
     }

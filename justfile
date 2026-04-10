@@ -47,7 +47,7 @@ run *args:
         # Shift the array
         ARGS_ARRAY=("${ARGS_ARRAY[@]:1}")
     fi
-    RUSTFLAGS="-Awarnings" cargo xtask run --env "$ARCH" --profile "{{rust_profile}}" "${ARGS_ARRAY[@]}" --qemu-flags "{{qemuflags}} -device intel-hda -device hda-duplex,audiodev=snd0 -device virtio-sound-pci,audiodev=snd0 -audiodev none,id=snd0"
+    RUSTFLAGS="-Awarnings" cargo xtask run --env "$ARCH" --profile "{{rust_profile}}" "${ARGS_ARRAY[@]}" --qemu-flags "{{qemuflags}}"
 
 # Start HTTPS proxy for guest (runs on port 8081)
 # Guest accesses via: http://10.0.2.2:8081/?url=https://example.com/
@@ -138,7 +138,7 @@ sprout arch=karch: fetch-rust
     fi
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
-    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p sprout
+    RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p sprout
 
 # Build rtc_cmos user app
 rtc_cmos arch=karch: fetch-rust
@@ -151,7 +151,7 @@ rtc_cmos arch=karch: fetch-rust
     fi
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building rtc_cmos for $TARGET_ARCH using $TARGET_JSON..."
-    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p rtc_cmos
+    RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p rtc_cmos
 
 # Build clock user app
 clock arch=karch: fetch-rust
@@ -164,7 +164,7 @@ clock arch=karch: fetch-rust
     fi
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
-    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p clock
+    RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p clock
 
 # Build bristle user app
 bristle arch=karch: fetch-rust
@@ -177,7 +177,7 @@ bristle arch=karch: fetch-rust
     fi
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
-    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p bristle
+    RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p bristle
 
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
@@ -202,7 +202,7 @@ test *args:
 # Check everything (compilation + UI split)
 check: check-ui-split fetch-rust
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
-    cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p sprout
+    cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p sprout
 
 # Run smoke tests (quick boot validation)
 smoke:

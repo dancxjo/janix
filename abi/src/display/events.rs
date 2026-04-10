@@ -5,10 +5,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayEvent {
     /// Vertical Blanking interval started.
-    VBlank {
-        sequence: u64,
-        timestamp_ns: u64,
-    },
+    VBlank { sequence: u64, timestamp_ns: u64 },
     /// A commit has completed and the buffer is now visible.
     PageFlipComplete {
         buffer_id: super::types::BufferId,

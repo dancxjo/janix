@@ -156,7 +156,9 @@ struct DevSubDirNode {
 
 impl DevSubDirNode {
     fn new(prefix: &str) -> Self {
-        Self { prefix: prefix.to_string() }
+        Self {
+            prefix: prefix.to_string(),
+        }
     }
 }
 
@@ -209,11 +211,15 @@ impl VfsNode for DevDirNode {
             mode: VfsStat::S_IFDIR | 0o755,
             size: 0,
             ino: 100,
-        ..Default::default()
+            ..Default::default()
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        let mut names = alloc::vec!["console".to_string(), "null".to_string(), "zero".to_string()];
+        let mut names = alloc::vec![
+            "console".to_string(),
+            "null".to_string(),
+            "zero".to_string()
+        ];
         if BOOT_FB_INFO.lock().is_some() {
             names.push("fb0".to_string());
         }
@@ -322,7 +328,7 @@ impl VfsNode for ConsoleNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 1,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -347,7 +353,7 @@ impl VfsNode for NullNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 2,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -373,7 +379,7 @@ impl VfsNode for ZeroNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: 0,
             ino: 3,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -412,13 +418,23 @@ impl VfsNode for FbNode {
 
         let off = offset as usize;
         if off >= slice.len() {
-            crate::kwarn!("FbNode::read: EOF (offset={} >= slice.len={})", off, slice.len());
+            crate::kwarn!(
+                "FbNode::read: EOF (offset={} >= slice.len={})",
+                off,
+                slice.len()
+            );
             return Ok(0);
         }
 
         let avail = &slice[off..];
         let n = avail.len().min(buf.len());
-        crate::kdebug!("FbNode::read: off={} n={} buf_len={} total={}", off, n, buf.len(), slice.len());
+        crate::kdebug!(
+            "FbNode::read: off={} n={} buf_len={} total={}",
+            off,
+            n,
+            buf.len(),
+            slice.len()
+        );
         buf[..n].copy_from_slice(&avail[..n]);
         Ok(n)
     }
@@ -429,7 +445,9 @@ impl VfsNode for FbNode {
             return Ok(0);
         }
 
-        let n = buf.len().min((self.fb.byte_len.saturating_sub(off as u64)) as usize);
+        let n = buf
+            .len()
+            .min((self.fb.byte_len.saturating_sub(off as u64)) as usize);
         if n == 0 {
             return Ok(0);
         }
@@ -450,7 +468,7 @@ impl VfsNode for FbNode {
             mode: VfsStat::S_IFCHR | 0o666,
             size: FB_INFO_PAYLOAD_SIZE as u64,
             ino: 4,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -497,7 +515,7 @@ impl VfsNode for RtcNode {
             mode: VfsStat::S_IFCHR | 0o444,
             size: 0,
             ino: 5,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -600,7 +618,7 @@ mod tests {
                     mode: VfsStat::S_IFCHR | 0o666,
                     size: 0,
                     ino: 999,
-                ..Default::default()
+                    ..Default::default()
                 })
             }
         }
@@ -627,7 +645,7 @@ mod tests {
                     mode: VfsStat::S_IFCHR | 0o666,
                     size: 0,
                     ino: 998,
-                ..Default::default()
+                    ..Default::default()
                 })
             }
         }

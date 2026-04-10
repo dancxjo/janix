@@ -7,15 +7,15 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::format;
 use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
     KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
-use stem::{debug, info};
+use abi::syscall::vfs_flags::{O_CREAT, O_RDWR, O_TRUNC};
+use alloc::format;
+use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
 use stem::syscall::{ChannelHandle, channel_recv, channel_send_all};
-use stem::syscall::vfs::{vfs_open, vfs_write, vfs_close, vfs_mkdir};
-use abi::syscall::vfs_flags::{O_RDWR, O_CREAT, O_TRUNC};
+use stem::{debug, info};
 
 fn ensure_session_roots() {
     let _ = vfs_mkdir("/session");
@@ -42,7 +42,9 @@ fn get_active_ui() -> alloc::string::String {
             if let Ok(n) = vfs_read(fd, &mut buf) {
                 buf.truncate(n);
                 let _ = vfs_close(fd);
-                return alloc::string::String::from_utf8_lossy(&buf).trim().to_string();
+                return alloc::string::String::from_utf8_lossy(&buf)
+                    .trim()
+                    .to_string();
             }
         }
         let _ = vfs_close(fd);
@@ -58,8 +60,12 @@ fn main(packed_handles: usize) -> ! {
     let bloom_evt_write = ((packed >> 16) & 0xFFFF) as ChannelHandle;
     let evt_input_echo_write = (packed & 0xFFFF) as ChannelHandle;
 
-    stem::debug!("bristle: online (kbd={}, mouse={}, bloom_evt={}, input_echo={})",
-        kbd_read, mouse_read, bloom_evt_write, evt_input_echo_write
+    stem::debug!(
+        "bristle: online (kbd={}, mouse={}, bloom_evt={}, input_echo={})",
+        kbd_read,
+        mouse_read,
+        bloom_evt_write,
+        evt_input_echo_write
     );
 
     ensure_session_roots();
@@ -91,7 +97,9 @@ fn main(packed_handles: usize) -> ! {
         };
 
         for ev in events {
-            if !ev.is_readable() { continue; }
+            if !ev.is_readable() {
+                continue;
+            }
 
             let ready_handle = if Some(ev.token()) == kbd_tok {
                 kbd_read
@@ -116,12 +124,15 @@ fn main(packed_handles: usize) -> ! {
                             header_bytes.copy_from_slice(&event_accum[..BristleEventHeader::SIZE]);
 
                             if let Ok(header) = BristleEventHeader::from_bytes(&header_bytes) {
-                                let total_len = BristleEventHeader::SIZE + header.payload_len as usize;
+                                let total_len =
+                                    BristleEventHeader::SIZE + header.payload_len as usize;
                                 if accum_len >= total_len {
                                     let event_bytes = &event_accum[..total_len];
 
                                     // Hotkey handling
-                                    if header.event_type == EventType::KeyDown as u16 && header.payload_len >= 4 {
+                                    if header.event_type == EventType::KeyDown as u16
+                                        && header.payload_len >= 4
+                                    {
                                         let mut p = [0u8; 4];
                                         p.copy_from_slice(&event_bytes[20..24]);
                                         let payload = KeyEventPayload::from_bytes(&p);
@@ -131,7 +142,10 @@ fn main(packed_handles: usize) -> ! {
                                                 info!("bristle: F2 pressed - dumping tasks...");
                                                 stem::syscall::task_dump();
                                             }
-                                            Key::Delete if payload.mods().has_ctrl() && payload.mods().has_alt() => {
+                                            Key::Delete
+                                                if payload.mods().has_ctrl()
+                                                    && payload.mods().has_alt() =>
+                                            {
                                                 info!("bristle: Ctrl+Alt+Del - rebooting...");
                                                 stem::syscall::reboot();
                                             }
@@ -150,16 +164,22 @@ fn main(packed_handles: usize) -> ! {
                                         drop_counter += 1;
                                     }
 
-                                    if evt_input_echo_write != 0 && channel_send_all(evt_input_echo_write, event_bytes).is_err() {
+                                    if evt_input_echo_write != 0
+                                        && channel_send_all(evt_input_echo_write, event_bytes)
+                                            .is_err()
+                                    {
                                         drop_counter += 1;
                                     }
 
                                     // Shift remaining
                                     accum_len -= total_len;
                                     if accum_len > 0 {
-                                        event_accum.copy_within(total_len..total_len + accum_len, 0);
+                                        event_accum
+                                            .copy_within(total_len..total_len + accum_len, 0);
                                     }
-                                } else { break; }
+                                } else {
+                                    break;
+                                }
                             } else {
                                 // Invalid header, resync
                                 accum_len -= 1;

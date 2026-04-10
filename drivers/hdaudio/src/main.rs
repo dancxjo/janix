@@ -114,9 +114,11 @@ fn main(boot_fd: usize) -> ! {
     } else {
         0
     };
-    
+
     let path_str = if path_len > 0 {
-        core::str::from_utf8(&path_buf[..path_len]).unwrap_or("").trim_matches(char::from(0))
+        core::str::from_utf8(&path_buf[..path_len])
+            .unwrap_or("")
+            .trim_matches(char::from(0))
     } else {
         ""
     };
@@ -136,7 +138,9 @@ fn main(boot_fd: usize) -> ! {
 
     if dev == 0 {
         error!("HDAUDIO: no HDA PCI device found");
-        loop { stem::time::sleep_ms(1000); }
+        loop {
+            stem::time::sleep_ms(1000);
+        }
     }
 
     debug!("HDAUDIO: claiming PCI device handle {}...", dev);
@@ -160,10 +164,7 @@ fn main(boot_fd: usize) -> ! {
         }
     };
 
-    debug!(
-        "HDAUDIO: claimed device handle {} mmio=0x{:x}",
-        dev, mmio
-    );
+    debug!("HDAUDIO: claimed device handle {} mmio=0x{:x}", dev, mmio);
 
     let mut hda = match HdaController::new(mmio, claim) {
         Ok(h) => h,
@@ -228,15 +229,15 @@ fn main(boot_fd: usize) -> ! {
     };
 
     // Publish service to VFS
+    use abi::sound::AudioInfoPayload;
     use abi::syscall::vfs_flags::{O_CREAT, O_RDWR};
     use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
-    use abi::sound::AudioInfoPayload;
 
     let payload = AudioInfoPayload {
         magic: AudioInfoPayload::MAGIC,
         write_handle: write_handle as u32,
         read_handle: read_handle as u32,
-        sample_rate: 48000, 
+        sample_rate: 48000,
         channels: 2,
         bits_per_sample: 16,
     };
@@ -244,7 +245,10 @@ fn main(boot_fd: usize) -> ! {
     let _ = vfs_mkdir("/services/sound");
     if let Ok(fd) = vfs_open("/services/sound/main", O_CREAT | O_RDWR) {
         let slice = unsafe {
-            core::slice::from_raw_parts(&payload as *const _ as *const u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+            core::slice::from_raw_parts(
+                &payload as *const _ as *const u8,
+                abi::sound::AUDIO_INFO_PAYLOAD_SIZE,
+            )
         };
         let _ = vfs_write(fd, slice);
         let _ = vfs_close(fd);
@@ -276,9 +280,9 @@ fn main(boot_fd: usize) -> ! {
             Ok(_) => stem::yield_now(),
             Err(_) => {
                 let timeout_ms = if hda.buffered_bytes() == 0 {
-                    None 
+                    None
                 } else {
-                    Some(stem::time::Duration::from_millis(10)) 
+                    Some(stem::time::Duration::from_millis(10))
                 };
 
                 let mut ws = stem::wait_set::WaitSet::new();
@@ -368,7 +372,8 @@ impl HdaController {
         let root_count = (root_nc & 0x7f) as u8;
         stem::debug!(
             "HDAUDIO: root nodes: start={} count={}",
-            root_start, root_count
+            root_start,
+            root_count
         );
 
         let mut afg = None;
@@ -413,7 +418,10 @@ impl HdaController {
             };
             stem::debug!(
                 "HDAUDIO:   widget nid={} type={}({}) awcap=0x{:08x}",
-                nid, wtype, wtype_name, awcap
+                nid,
+                wtype,
+                wtype_name,
+                awcap
             );
             if wtype == WIDGET_AUDIO_OUT && out_nid.is_none() {
                 out_nid = Some(nid);
@@ -561,18 +569,20 @@ impl HdaController {
         self.write_u16(REG_CORBWP, self.corb_wp);
 
         let start = stem::time::monotonic_ns();
-        let timeout_ns = 500_000_000; 
+        let timeout_ns = 500_000_000;
 
         loop {
             let wp = self.read_u16(REG_RIRBWP) & 0x00ff;
             if wp != self.rirb_rp {
                 let prev_rp = self.rirb_rp;
                 self.rirb_rp = wp;
-                
+
                 let mut last_resp = 0;
                 for i in (prev_rp + 1)..=wp {
                     let idx = (i as usize) % RIRB_ENTRIES;
-                    last_resp = unsafe { core::ptr::read_volatile((self.rirb_virt as *const u32).add(idx * 2)) };
+                    last_resp = unsafe {
+                        core::ptr::read_volatile((self.rirb_virt as *const u32).add(idx * 2))
+                    };
                 }
                 return Ok(last_resp);
             }
@@ -593,9 +603,9 @@ impl HdaController {
         self.write_u8(REG_RIRBSTS, 0xff);
 
         let csz = self.read_u8(REG_CORBSIZE) & 0xf0;
-        self.write_u8(REG_CORBSIZE, csz | 0x02); 
+        self.write_u8(REG_CORBSIZE, csz | 0x02);
         let rsz = self.read_u8(REG_RIRBSIZE) & 0xf0;
-        self.write_u8(REG_RIRBSIZE, rsz | 0x02); 
+        self.write_u8(REG_RIRBSIZE, rsz | 0x02);
 
         self.write_u32(REG_CORBLBASE, self.corb_phys as u32);
         self.write_u32(REG_CORBUBASE, (self.corb_phys >> 32) as u32);
@@ -610,8 +620,8 @@ impl HdaController {
         self.write_u16(REG_RINTCNT, 1);
         self.rirb_rp = self.read_u16(REG_RIRBWP) & 0x00ff;
 
-        self.write_u8(REG_CORBCTL, 0x02); 
-        self.write_u8(REG_RIRBCTL, 0x03); 
+        self.write_u8(REG_CORBCTL, 0x02);
+        self.write_u8(REG_RIRBCTL, 0x03);
     }
 
     fn reset_controller(&self) {
@@ -671,8 +681,8 @@ impl HdaController {
 }
 
 fn find_hda_device() -> Option<u64> {
-    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
     use abi::syscall::vfs_flags;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 
     stem::debug!("HDAUDIO: Searching for HDA controller in /sys/devices...");
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
@@ -697,19 +707,33 @@ fn find_hda_device() -> Option<u64> {
     let mut pos = 0;
     while pos < n {
         let entry_buf = &buf[pos..n];
-        let name = core::str::from_utf8(entry_buf).unwrap_or("").split('\0').next().unwrap_or("");
-        if name.is_empty() { break; }
-        
+        let name = core::str::from_utf8(entry_buf)
+            .unwrap_or("")
+            .split('\0')
+            .next()
+            .unwrap_or("");
+        if name.is_empty() {
+            break;
+        }
+
         if name.starts_with("pci-") {
             let class_path = alloc::format!("/sys/devices/{}/class", name);
             let class_str = read_sys_string(&class_path).unwrap_or("".to_string());
-            
-            stem::debug!("HDAUDIO: Checking device {} class={}", name, class_str.trim());
-            
+
+            stem::debug!(
+                "HDAUDIO: Checking device {} class={}",
+                name,
+                class_str.trim()
+            );
+
             if class_str.trim().starts_with("0x0403") {
                 let handle_path = alloc::format!("/sys/devices/{}/handle", name);
                 if let Some(graph_id) = read_sys_u64(&handle_path) {
-                    stem::debug!("HDAUDIO: Found device via scan: {} (graph_id={})", name, graph_id);
+                    stem::debug!(
+                        "HDAUDIO: Found device via scan: {} (graph_id={})",
+                        name,
+                        graph_id
+                    );
                     return Some(graph_id);
                 }
             }
@@ -729,7 +753,11 @@ fn read_sys_string(path: &str) -> Option<alloc::string::String> {
     let n = vfs_read(fd, &mut buf).ok()?;
     let _ = vfs_close(fd);
 
-    Some(alloc::string::String::from_utf8_lossy(&buf[..n]).trim().to_string())
+    Some(
+        alloc::string::String::from_utf8_lossy(&buf[..n])
+            .trim()
+            .to_string(),
+    )
 }
 
 fn read_sys_u64(path: &str) -> Option<u64> {

@@ -295,9 +295,11 @@ pub fn sys_memfd_create(name_ptr: usize, name_len: usize, size: usize) -> SysRes
     // Install in FD table
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
     let mut pinfo = pinfo_arc.lock();
-    let fd = pinfo
-        .fd_table
-        .open(node_arc, crate::vfs::OpenFlags::read_write(), "memfd".into())?;
+    let fd = pinfo.fd_table.open(
+        node_arc,
+        crate::vfs::OpenFlags::read_write(),
+        "memfd".into(),
+    )?;
     Ok(fd as usize)
 }
 

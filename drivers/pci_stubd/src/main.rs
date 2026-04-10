@@ -197,10 +197,7 @@ fn publish_binding(_id: ThingId, _rule: PciRule, _claim: usize) {
     // Future: report bindings via /sys or /run.
 }
 
-fn scan_once(
-    tracked: &mut [ClaimedDevice; MAX_TRACKED],
-    tracked_len: &mut usize,
-) {
+fn scan_once(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize) {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
@@ -261,10 +258,7 @@ fn process_device(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut 
             push_claim(tracked, tracked_len, id);
         }
         Err(e) => {
-            warn!(
-                "pci_stubd: failed bind {} at {}: {:?}",
-                rule.name, path, e
-            );
+            warn!("pci_stubd: failed bind {} at {}: {:?}", rule.name, path, e);
         }
     }
 }
@@ -292,7 +286,7 @@ fn main(_arg: usize) -> ! {
     info!("pci_stubd: starting pci-id matcher");
     let mut tracked = [ClaimedDevice::default(); MAX_TRACKED];
     let mut tracked_len = 0usize;
- 
+
     loop {
         scan_once(&mut tracked, &mut tracked_len);
         stem::time::sleep_ms(1000);

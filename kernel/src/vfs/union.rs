@@ -21,10 +21,10 @@
 //! [`VfsDriver`]: super::VfsDriver
 
 use abi::errors::{Errno, SysResult};
+use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use alloc::string::String;
-use alloc::collections::BTreeSet;
 
 use super::{VfsDriver, VfsNode};
 
@@ -95,7 +95,7 @@ impl VfsDriver for UnionFs {
                 Ok(node) => {
                     let stat = node.stat()?;
                     let is_dir = (stat.mode & crate::vfs::VfsStat::S_IFDIR) != 0;
-                    
+
                     found_nodes.push(node);
 
                     // If it's a file, it always shadows everything below.
@@ -117,7 +117,9 @@ impl VfsDriver for UnionFs {
         }
 
         // Multiple nodes found (must all be directories because of the !is_dir break above).
-        Ok(Arc::new(UnionDirNode { layers: found_nodes }))
+        Ok(Arc::new(UnionDirNode {
+            layers: found_nodes,
+        }))
     }
 }
 
@@ -250,7 +252,7 @@ mod tests {
                 mode: VfsStat::S_IFREG | 0o444,
                 size: self.content.len() as u64,
                 ino: self.ino,
-            ..Default::default()
+                ..Default::default()
             })
         }
     }

@@ -90,7 +90,11 @@ impl MemFdRef {
     /// Create a new descriptor.
     #[inline]
     pub const fn new(fd: u32, length: u64) -> Self {
-        Self { fd, _pad: 0, length }
+        Self {
+            fd,
+            _pad: 0,
+            length,
+        }
     }
 
     /// Encode to little-endian bytes.  Returns the number of bytes written, or

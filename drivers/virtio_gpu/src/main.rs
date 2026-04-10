@@ -1,5 +1,8 @@
 #![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
+#![cfg_attr(
+    any(target_os = "thingos", target_env = "thingos"),
+    feature(restricted_std)
+)]
 #![no_main]
 
 extern crate alloc;
@@ -36,17 +39,22 @@ fn main(boot_fd: usize) -> ! {
     // 1. Get device path from bootstrap memfd
     let mut path_buf = [0u8; 128];
     let path = if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
             prot: VmProt::READ | VmProt::USER,
             flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            backing: VmBacking::File {
+                fd: boot_fd as u32,
+                offset: 0,
+            },
         };
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let ptr = resp.addr as *const u8;
-            let len = (0..128).find(|&i| unsafe { *ptr.add(i) == 0 }).unwrap_or(128);
+            let len = (0..128)
+                .find(|&i| unsafe { *ptr.add(i) == 0 })
+                .unwrap_or(128);
             unsafe { core::slice::from_raw_parts(ptr, len) }
         } else {
             b"/sys/devices/pci-00:02.0" // Fallback
@@ -57,20 +65,23 @@ fn main(boot_fd: usize) -> ! {
     let path_str = core::str::from_utf8(path).unwrap_or("");
 
     info!("VIRTIO_GPU: Using path={}", path_str);
- 
+
     let mut drv_req_read = 0;
     let mut drv_resp_write = 0;
     let mut supervisor_port = 0;
     let mut bind_instance_id = 0u64;
 
     if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
             prot: VmProt::READ | VmProt::USER,
             flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            backing: VmBacking::File {
+                fd: boot_fd as u32,
+                offset: 0,
+            },
         };
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let slice = unsafe { core::slice::from_raw_parts(resp.addr as *const u32, 1024) };
@@ -80,8 +91,10 @@ fn main(boot_fd: usize) -> ! {
             let id_low = slice[3] as u64;
             let id_high = slice[4] as u64;
             bind_instance_id = id_low | (id_high << 32);
-            info!("VIRTIO_GPU: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}", 
-                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
+            info!(
+                "VIRTIO_GPU: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}",
+                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id
+            );
         }
     }
 
@@ -128,10 +141,11 @@ fn main(boot_fd: usize) -> ! {
 
     // 3. Register as VFS Provider via Sovereign Handshake
     use abi::vfs_rpc::VFS_RPC_MAX_REQ;
-    let (vfs_write, vfs_read) = stem::syscall::channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS channel");
-    
-    use abi::supervisor_protocol::{self, classes};
+    let (vfs_write, vfs_read) =
+        stem::syscall::channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS channel");
+
     use abi::display_driver_protocol;
+    use abi::supervisor_protocol::{self, classes};
     let ready = supervisor_protocol::BindReadyPayload {
         bind_instance_id,
         class_mask: classes::DISPLAY_CARD | classes::FRAMEBUFFER,
@@ -140,8 +154,15 @@ fn main(boot_fd: usize) -> ! {
     let mut ready_bytes = [0u8; supervisor_protocol::BIND_READY_PAYLOAD_SIZE];
     if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
         let mut buf = [0u8; 256];
-        if let Some(total_len) = display_driver_protocol::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
-            info!("VIRTIO_GPU: Sending MSG_BIND_READY handshake (ID: {})...", bind_instance_id);
+        if let Some(total_len) = display_driver_protocol::encode_message(
+            &mut buf,
+            supervisor_protocol::MSG_BIND_READY,
+            &ready_bytes[..len],
+        ) {
+            info!(
+                "VIRTIO_GPU: Sending MSG_BIND_READY handshake (ID: {})...",
+                bind_instance_id
+            );
             // Send to our private response channel
             let _ = stem::syscall::channel_send_handle(drv_resp_write, vfs_write);
             let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
@@ -152,16 +173,25 @@ fn main(boot_fd: usize) -> ! {
     let mut wait_buf = [0u8; 512];
     loop {
         if let Ok(n) = stem::syscall::channel_try_recv(drv_req_read, &mut wait_buf) {
-             if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n]) {
-                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
-                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
-                         let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
-                         let path = core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
-                         info!("VIRTIO_GPU: Sovereign registration COMPLETE. Assigned: {}", path);
-                         break;
-                     }
-                 }
-             }
+            if let Some((header, payload)) = display_driver_protocol::parse_message(&wait_buf[..n])
+            {
+                if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
+                    if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
+                        let path_len = assigned
+                            .primary_path
+                            .iter()
+                            .position(|&b| b == 0)
+                            .unwrap_or(64);
+                        let path =
+                            core::str::from_utf8(&assigned.primary_path[..path_len]).unwrap_or("?");
+                        info!(
+                            "VIRTIO_GPU: Sovereign registration COMPLETE. Assigned: {}",
+                            path
+                        );
+                        break;
+                    }
+                }
+            }
         }
         stem::syscall::yield_now();
     }
@@ -274,4 +304,3 @@ extern "C" fn irq_thread() -> ! {
         }
     }
 }
-

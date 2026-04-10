@@ -12,8 +12,8 @@ use abi::errors::Errno;
 use abi::ids::HandleId;
 use abi::schema::keys;
 use core::ptr::{read_volatile, write_volatile};
-use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
 use stem::info;
+use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
 
 use crate::constants::*;
 use crate::virtqueue::Virtqueue;
@@ -74,7 +74,8 @@ impl VirtioDevice {
 
         // Device config is optional (0xFF if not present)
         let device_bar = read_sys_u32(&format!("{}/virtio/device_bar", sys_path)).unwrap_or(0xFF);
-        let device_offset = read_sys_u32(&format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
+        let device_offset =
+            read_sys_u32(&format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
 
         // Map the BAR containing common config
         stem::debug!("VirtIO: mapping common BAR{}...", common_bar);
@@ -135,14 +136,16 @@ impl VirtioDevice {
     }
 }
 
-
 fn read_sys_u32(path: &str) -> Result<u32, Errno> {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 
     let fd = vfs_open(path, O_RDONLY)?;
     let mut buf = [0u8; 32];
-    let n = vfs_read(fd, &mut buf).map_err(|e| { stem::info!("READ_SYS: {} read failed: {:?}", path, e); e })?;
+    let n = vfs_read(fd, &mut buf).map_err(|e| {
+        stem::info!("READ_SYS: {} read failed: {:?}", path, e);
+        e
+    })?;
     let _ = vfs_close(fd);
 
     let s = core::str::from_utf8(&buf[..n]).map_err(|_| Errno::EIO)?;

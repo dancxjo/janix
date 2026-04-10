@@ -1,5 +1,8 @@
 #![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(any(target_os = "thingos", target_env = "thingos"), feature(restricted_std))]
+#![cfg_attr(
+    any(target_os = "thingos", target_env = "thingos"),
+    feature(restricted_std)
+)]
 #![no_main]
 
 extern crate alloc;
@@ -10,10 +13,10 @@ use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
-use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
-use stem::{info, warn};
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
-use stem::syscall::{channel_create, channel_recv, channel_send, ChannelHandle, vfs_mount};
+use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
+use stem::syscall::{channel_create, channel_recv, channel_send, vfs_mount, ChannelHandle};
+use stem::{info, warn};
 use virtio_gpu::{Rect, VirtioGpu};
 
 // ============================================================================
@@ -182,9 +185,11 @@ fn find_gpu() -> Option<alloc::string::String> {
                 let device = read_sys_u32(&format!("{}/device", path)).unwrap_or(0);
                 let class = read_sys_u32(&format!("{}/class", path)).unwrap_or(0);
 
-                // VirtIO Vendor = 0x1af4, Display Class = 0x0300xx, 
+                // VirtIO Vendor = 0x1af4, Display Class = 0x0300xx,
                 // or specifically device 0x1050 or 0x1011
-                if vendor == 0x1af4 && ((class >> 8) == 0x0300 || device == 0x1050 || device == 0x1011) {
+                if vendor == 0x1af4
+                    && ((class >> 8) == 0x0300 || device == 0x1050 || device == 0x1011)
+                {
                     return Some(path);
                 }
             }
@@ -246,7 +251,7 @@ fn get_display_dimensions() -> (u32, u32, u32, u32) {
         }
         return (width, height, stride, format);
     }
-    
+
     // Fallback defaults
     (1024, 768, 1024 * 4, 1)
 }
@@ -260,33 +265,41 @@ fn main(boot_fd: usize) -> ! {
     let mut bind_instance_id = 0u64;
 
     if boot_fd != 0 {
-        use abi::vm::{VmBacking, VmMapReq, VmProt, VmMapFlags};
+        use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
         let req = VmMapReq {
             addr_hint: 0,
             len: 4096,
             prot: VmProt::READ | VmProt::USER,
             flags: VmMapFlags::empty(),
-            backing: VmBacking::File { fd: boot_fd as u32, offset: 0 },
+            backing: VmBacking::File {
+                fd: boot_fd as u32,
+                offset: 0,
+            },
         };
         if let Ok(resp) = stem::syscall::vm_map(&req) {
             let slice = unsafe { core::slice::from_raw_parts(resp.addr as *const u32, 1024) };
-            
+
             // Layout from sprout/src/pipelines.rs:
             // slice[0]: drv_req_read
             // slice[1]: drv_resp_write
             // slice[2]: supervisor_port
             // slice[3..5]: bind_instance_id (u64)
-            
+
             drv_req_read = slice[0];
             drv_resp_write = slice[1];
             supervisor_port = slice[2];
-            
+
             let id_low = slice[3] as u64;
             let id_high = slice[4] as u64;
             bind_instance_id = id_low | (id_high << 32);
 
-            stem::info!("DISP: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}", 
-                drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
+            stem::info!(
+                "DISP: Bootstrap handles: req_read={}, resp_write={}, svc={}, id={}",
+                drv_req_read,
+                drv_resp_write,
+                supervisor_port,
+                bind_instance_id
+            );
         } else {
             stem::info!("DISP: ERROR: Failed to vm_map bootstrap memfd {}", boot_fd);
         }
@@ -295,9 +308,16 @@ fn main(boot_fd: usize) -> ! {
     }
 
     if drv_req_read == 0 || drv_resp_write == 0 || supervisor_port == 0 || bind_instance_id == 0 {
-        stem::info!("DISP: ERROR: Invalid/Missing bootstrap components (req={}, resp={}, svc={}, id={})", 
-            drv_req_read, drv_resp_write, supervisor_port, bind_instance_id);
-        loop { stem::yield_now(); }
+        stem::info!(
+            "DISP: ERROR: Invalid/Missing bootstrap components (req={}, resp={}, svc={}, id={})",
+            drv_req_read,
+            drv_resp_write,
+            supervisor_port,
+            bind_instance_id
+        );
+        loop {
+            stem::yield_now();
+        }
     }
 
     info!(
@@ -427,7 +447,8 @@ fn main(boot_fd: usize) -> ! {
     use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 
     // Create VFS provider port
-    let (vfs_write, vfs_read) = channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS port");
+    let (vfs_write, vfs_read) =
+        channel_create(VFS_RPC_MAX_REQ * 8).expect("Failed to create VFS port");
 
     // Send MSG_BIND_READY to supervisor instead of legacy MSG_REGISTER
     let ready = supervisor_protocol::BindReadyPayload {
@@ -439,11 +460,18 @@ fn main(boot_fd: usize) -> ! {
     if let Some(len) = supervisor_protocol::encode_bind_ready_le(&ready, &mut ready_bytes) {
         // Wrap in common driver header
         let mut buf = [0u8; 256];
-        if let Some(total_len) = drvproto::encode_message(&mut buf, supervisor_protocol::MSG_BIND_READY, &ready_bytes[..len]) {
+        if let Some(total_len) = drvproto::encode_message(
+            &mut buf,
+            supervisor_protocol::MSG_BIND_READY,
+            &ready_bytes[..len],
+        ) {
             // Send handle FIRST, then notify
             let _ = stem::syscall::channel_send_handle(supervisor_port, vfs_write);
             let _ = stem::syscall::channel_send_all(supervisor_port, &buf[..total_len]);
-            info!("display_virtio_gpu: Sent MSG_BIND_READY (ID: {})", bind_instance_id);
+            info!(
+                "display_virtio_gpu: Sent MSG_BIND_READY (ID: {})",
+                bind_instance_id
+            );
         }
     }
 
@@ -474,17 +502,30 @@ fn main(boot_fd: usize) -> ! {
                 if header.msg_type == supervisor_protocol::MSG_BIND_ASSIGNED {
                     if let Some(assigned) = supervisor_protocol::decode_bind_assigned_le(payload) {
                         assigned_bind_id = assigned.bind_instance_id;
-                        let path_len = assigned.primary_path.iter().position(|&b| b == 0).unwrap_or(64);
-                        assigned_path = alloc::string::String::from_utf8_lossy(&assigned.primary_path[..path_len]).to_string();
-                        info!("display_virtio_gpu: Sovereign registration COMPLETE. Assigned: {}", assigned_path);
+                        let path_len = assigned
+                            .primary_path
+                            .iter()
+                            .position(|&b| b == 0)
+                            .unwrap_or(64);
+                        assigned_path = alloc::string::String::from_utf8_lossy(
+                            &assigned.primary_path[..path_len],
+                        )
+                        .to_string();
+                        info!(
+                            "display_virtio_gpu: Sovereign registration COMPLETE. Assigned: {}",
+                            assigned_path
+                        );
                         break;
                     }
                 } else if header.msg_type == supervisor_protocol::MSG_BIND_FAILED {
                     if let Some(failed) = supervisor_protocol::decode_bind_failed_le(payload) {
                         let reason_len = failed.reason.iter().position(|&b| b == 0).unwrap_or(64);
-                        let reason = core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
+                        let reason =
+                            core::str::from_utf8(&failed.reason[..reason_len]).unwrap_or("?");
                         warn!("display_virtio_gpu: Registration REJECTED by supervisor (code={}, reason={}). Halting.", failed.error_code, reason);
-                        loop { stem::yield_now(); }
+                        loop {
+                            stem::yield_now();
+                        }
                     }
                 }
             }
@@ -500,8 +541,14 @@ fn main(boot_fd: usize) -> ! {
         };
         let mut payload_bytes = [0u8; supervisor_protocol::SERVICE_READY_PAYLOAD_SIZE];
         let mut svc_buf = [0u8; 64];
-        if let Some(p_len) = supervisor_protocol::encode_service_ready_le(&svc_ready, &mut payload_bytes) {
-            if let Some(total_len) = drvproto::encode_message(&mut svc_buf, supervisor_protocol::MSG_SERVICE_READY, &payload_bytes[..p_len]) {
+        if let Some(p_len) =
+            supervisor_protocol::encode_service_ready_le(&svc_ready, &mut payload_bytes)
+        {
+            if let Some(total_len) = drvproto::encode_message(
+                &mut svc_buf,
+                supervisor_protocol::MSG_SERVICE_READY,
+                &payload_bytes[..p_len],
+            ) {
                 let _ = stem::syscall::channel_send_all(supervisor_port, &svc_buf[..total_len]);
                 info!("display_virtio_gpu: Sent MSG_SERVICE_READY.");
             }
@@ -531,7 +578,9 @@ fn main(boot_fd: usize) -> ! {
                     let mut vfs_buf = [0u8; VFS_RPC_MAX_REQ];
                     while let Ok(n) = stem::syscall::channel_try_recv(vfs_read, &mut vfs_buf) {
                         if n >= 5 {
-                            let resp_port = u32::from_le_bytes([vfs_buf[0], vfs_buf[1], vfs_buf[2], vfs_buf[3]]) as ChannelHandle;
+                            let resp_port = u32::from_le_bytes([
+                                vfs_buf[0], vfs_buf[1], vfs_buf[2], vfs_buf[3],
+                            ]) as ChannelHandle;
                             let op = VfsRpcOp::from_u8(vfs_buf[4]);
                             match op {
                                 Some(VfsRpcOp::Lookup) => {
@@ -554,10 +603,20 @@ fn main(boot_fd: usize) -> ! {
                                     let _ = channel_send(resp_port, &resp);
                                 }
                                 Some(VfsRpcOp::DeviceCall) => {
-                                    let payload = &vfs_buf[core::mem::size_of::<VfsRpcReqHeader>()..n];
-                                    if payload.len() >= 8 + core::mem::size_of::<abi::device::DeviceCall>() {
+                                    let payload =
+                                        &vfs_buf[core::mem::size_of::<VfsRpcReqHeader>()..n];
+                                    if payload.len()
+                                        >= 8 + core::mem::size_of::<abi::device::DeviceCall>()
+                                    {
                                         let call: abi::device::DeviceCall = unsafe {
-                                            core::ptr::read_unaligned(payload[8..8 + core::mem::size_of::<abi::device::DeviceCall>()].as_ptr() as *const _)
+                                            core::ptr::read_unaligned(
+                                                payload[8..8 + core::mem::size_of::<
+                                                    abi::device::DeviceCall,
+                                                >(
+                                                )]
+                                                    .as_ptr()
+                                                    as *const _,
+                                            )
                                         };
                                         if call.op == abi::display::DISPLAY_OP_GET_INFO {
                                             let info = abi::display::DisplayInfo {
@@ -573,16 +632,24 @@ fn main(boot_fd: usize) -> ! {
                                                 caps: abi::display::DisplayCaps::empty(),
                                             };
                                             let out_bytes = unsafe {
-                                                core::slice::from_raw_parts(&info as *const _ as *const u8, core::mem::size_of::<abi::display::DisplayInfo>())
+                                                core::slice::from_raw_parts(
+                                                    &info as *const _ as *const u8,
+                                                    core::mem::size_of::<abi::display::DisplayInfo>(
+                                                    ),
+                                                )
                                             };
-                                            let mut resp = alloc::vec::Vec::with_capacity(9 + out_bytes.len());
+                                            let mut resp =
+                                                alloc::vec::Vec::with_capacity(9 + out_bytes.len());
                                             resp.push(0); // E_OK
                                             resp.extend_from_slice(&0u32.to_le_bytes()); // ret_val
-                                            resp.extend_from_slice(&(out_bytes.len() as u32).to_le_bytes());
+                                            resp.extend_from_slice(
+                                                &(out_bytes.len() as u32).to_le_bytes(),
+                                            );
                                             resp.extend_from_slice(out_bytes);
                                             let _ = channel_send(resp_port, &resp);
                                         } else {
-                                            let _ = channel_send(resp_port, &[38]); // E_NOTSUP
+                                            let _ = channel_send(resp_port, &[38]);
+                                            // E_NOTSUP
                                         }
                                     } else {
                                         let _ = channel_send(resp_port, &[22]); // E_INVAL
@@ -716,12 +783,16 @@ fn main(boot_fd: usize) -> ! {
                         drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes)
                     {
                         send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
-                        let _ = stem::syscall::channel_send_handle(drv_resp_write, frame_pool_buffers[idx].fd);
+                        let _ = stem::syscall::channel_send_handle(
+                            drv_resp_write,
+                            frame_pool_buffers[idx].fd,
+                        );
                     }
                 }
                 drvproto::MSG_BIND => {
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
-                        let fd = stem::syscall::channel_recv_handle(drv_req_read).unwrap_or(bind.fb_fd);
+                        let fd =
+                            stem::syscall::channel_recv_handle(drv_req_read).unwrap_or(bind.fb_fd);
                         current_fd = Some(fd);
                         // In legacy mode, we just stay on the first buffer's resource
                         current_res_id = frame_pool_buffers[0].res_id;

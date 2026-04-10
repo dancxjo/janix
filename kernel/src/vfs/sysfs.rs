@@ -31,13 +31,15 @@ impl VfsDriver for SysFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
         crate::ktrace!("sysfs: lookup path='{}'", path);
         match SysPath::parse(path)? {
-            SysPath::Root => {
-                Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"])))
-            }
+            SysPath::Root => Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"]))),
             SysPath::Devices => Ok(Arc::new(DevicesDirNode)),
             SysPath::DeviceDir(name) => {
                 let (_, entry) = find_device_by_slot(name)?;
-                crate::ktrace!("sysfs: matched device dir '{}' to graph_id={}", name, entry.graph_id);
+                crate::ktrace!(
+                    "sysfs: matched device dir '{}' to graph_id={}",
+                    name,
+                    entry.graph_id
+                );
                 Ok(Arc::new(DeviceDirNode::new(entry)))
             }
             SysPath::DeviceFile(name, file) => {
@@ -61,9 +63,10 @@ impl VfsDriver for SysFs {
                 let node = lookup_virtio_file(entry, file)?;
                 Ok(Arc::new(node))
             }
-            SysPath::Firmware => {
-                Ok(Arc::new(StaticDirNode::new(302, &["acpi", "dtb", "hhdm", "framebuffer"])))
-            }
+            SysPath::Firmware => Ok(Arc::new(StaticDirNode::new(
+                302,
+                &["acpi", "dtb", "hhdm", "framebuffer"],
+            ))),
             SysPath::FirmwareFile("acpi") => {
                 if let Some(rsdp) = crate::boot_info::get().and_then(|i| i.acpi_rsdp) {
                     let text = format!("0x{:016x}\n", rsdp);
@@ -90,8 +93,10 @@ impl VfsDriver for SysFs {
             }
             SysPath::FirmwareFile("framebuffer") => {
                 if let Some(fb) = crate::boot_info::get().and_then(|i| i.framebuffer) {
-                    let text = format!("width={}\nheight={}\nstride={}\nformat={:?}\naddr=0x{:x}\n",
-                        fb.width, fb.height, fb.pitch, fb.format, fb.addr);
+                    let text = format!(
+                        "width={}\nheight={}\nstride={}\nformat={:?}\naddr=0x{:x}\n",
+                        fb.width, fb.height, fb.pitch, fb.format, fb.addr
+                    );
                     Ok(Arc::new(StaticTextNode::new(text.into_bytes(), 306)))
                 } else {
                     Err(Errno::ENOENT)
@@ -160,7 +165,7 @@ impl VfsNode for StaticDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -185,7 +190,7 @@ impl VfsNode for DevicesDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: 301,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -224,14 +229,14 @@ impl VfsNode for DeviceDirNode {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let mut entries = vec![
-            "vendor", "device", "class", "status", "handle", "bar0", "bar1", "bar2", "bar3", "bar4",
-            "bar5",
+            "vendor", "device", "class", "status", "handle", "bar0", "bar1", "bar2", "bar3",
+            "bar4", "bar5",
         ];
 
         // Find device in registry to check if it's VirtIO
@@ -288,7 +293,7 @@ impl VfsNode for StaticTextNode {
             mode: VfsStat::S_IFREG | 0o444,
             size: self.data.len() as u64,
             ino: self.ino,
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -346,11 +351,11 @@ fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
     };
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))
 }
- 
+
 struct VirtioDirNode {
     ino: u64,
 }
- 
+
 impl VirtioDirNode {
     fn new(entry: DeviceEntry) -> Self {
         Self {
@@ -358,25 +363,25 @@ impl VirtioDirNode {
         }
     }
 }
- 
+
 impl VfsNode for VirtioDirNode {
     fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
         Err(Errno::EISDIR)
     }
- 
+
     fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
         Err(Errno::EISDIR)
     }
- 
+
     fn stat(&self) -> SysResult<VfsStat> {
         Ok(VfsStat {
             mode: VfsStat::S_IFDIR | 0o555,
             size: 0,
             ino: self.ino,
-        ..Default::default()
+            ..Default::default()
         })
     }
- 
+
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         super::write_readdir_entries(
             [
@@ -396,14 +401,14 @@ impl VfsNode for VirtioDirNode {
         )
     }
 }
- 
+
 fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
     use crate::virtio::pci::{VirtioCapabilityType, VirtioPciDevice};
- 
+
     let loc = entry.pci_location.ok_or(Errno::ENODEV)?;
     let runtime = crate::runtime_base();
     let mut virtio_caps = Vec::new();
- 
+
     // Scan capabilities to find VirtIO ones
     let cap_ptr_initial = {
         let status = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, 0x04)? >> 16;
@@ -425,16 +430,16 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
             let cap_type = ((cap_header >> 24) & 0xFF) as u8;
             let cap_info = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 4)?;
             let bar = (cap_info & 0xFF) as u8;
- 
+
             let mut notify_off_multiplier = 0u32;
             let offset = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 8)?;
             let length = runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 12)?;
- 
+
             if cap_type == VirtioCapabilityType::NotifyCfg as u8 && len >= 20 {
                 notify_off_multiplier =
                     runtime.pci_cfg_read32(loc.bus, loc.dev, loc.func, cap_ptr + 16)?;
             }
- 
+
             virtio_caps.push(crate::virtio::pci::VirtioCapability {
                 cap_type,
                 bar,
@@ -445,9 +450,9 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
         }
         cap_ptr = next_ptr;
     }
- 
+
     let find_cap = |t: VirtioCapabilityType| virtio_caps.iter().find(|c| c.cap_type == t as u8);
- 
+
     let text = match file {
         "common_bar" => format!(
             "{}\n",
@@ -505,9 +510,7 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
         ),
         _ => return Err(Errno::ENOENT),
     };
- 
+
     let ino_base = 0x4000 + entry.graph_id * 32;
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))
 }
-
-

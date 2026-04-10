@@ -1,9 +1,9 @@
 use super::SCHEDULER;
 use super::types::Scheduler;
 use crate::memory::mappings::MappingList;
-use crate::{BootRuntime, BootTasking, MapPerms, MapKind};
+use crate::{BootRuntime, BootTasking, MapKind, MapPerms};
 use abi::errors::Errno;
-use abi::vm::{VmRegionInfo, VmProt};
+use abi::vm::{VmProt, VmRegionInfo};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -119,7 +119,11 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
     res
 }
 
-pub fn protect_user_range<R: BootRuntime>(addr: u64, len: usize, prot: VmProt) -> Result<(), Errno> {
+pub fn protect_user_range<R: BootRuntime>(
+    addr: u64,
+    len: usize,
+    prot: VmProt,
+) -> Result<(), Errno> {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();

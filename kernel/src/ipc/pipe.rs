@@ -320,7 +320,7 @@ impl crate::vfs::VfsNode for PipeReadNode {
             mode: crate::vfs::VfsStat::S_IFIFO | 0o400,
             size: 0,
             ino: 0,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -342,7 +342,7 @@ impl crate::vfs::VfsNode for PipeReadNode {
     }
 
     fn poll(&self) -> u16 {
-        use abi::syscall::poll_flags::{POLLIN, POLLHUP};
+        use abi::syscall::poll_flags::{POLLHUP, POLLIN};
         let inner = self.inner.lock();
         let mut revents = 0;
         if !inner.buf.is_empty() || inner.writers == 0 {
@@ -398,7 +398,7 @@ impl crate::vfs::VfsNode for PipeWriteNode {
             mode: crate::vfs::VfsStat::S_IFIFO | 0o200,
             size: 0,
             ino: 0,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -420,7 +420,7 @@ impl crate::vfs::VfsNode for PipeWriteNode {
     }
 
     fn poll(&self) -> u16 {
-        use abi::syscall::poll_flags::{POLLOUT, POLLHUP, POLLERR};
+        use abi::syscall::poll_flags::{POLLERR, POLLHUP, POLLOUT};
         let inner = self.inner.lock();
         let mut revents = 0;
         if inner.readers == 0 {
@@ -536,7 +536,11 @@ mod tests {
     fn read_end_ready_after_write() {
         let (r, w) = make_pair();
         w.write(0, b"hi").expect("write");
-        assert_ne!(r.poll() & poll_flags::POLLIN, 0, "should be POLLIN after write");
+        assert_ne!(
+            r.poll() & poll_flags::POLLIN,
+            0,
+            "should be POLLIN after write"
+        );
     }
 
     #[test]
@@ -547,7 +551,11 @@ mod tests {
         w.close();
         // No data, no writer → POLLIN (EOF indicator) + POLLHUP
         assert_ne!(r.poll() & poll_flags::POLLIN, 0, "POLLIN set on EOF");
-        assert_ne!(r.poll() & poll_flags::POLLHUP, 0, "POLLHUP set on writer closed");
+        assert_ne!(
+            r.poll() & poll_flags::POLLHUP,
+            0,
+            "POLLHUP set on writer closed"
+        );
     }
 
     #[test]
@@ -559,8 +567,16 @@ mod tests {
         w.close();
         // Data available AND writer closed → both POLLIN and POLLHUP.
         let flags = r.poll();
-        assert_ne!(flags & poll_flags::POLLIN, 0, "POLLIN set when data present");
-        assert_ne!(flags & poll_flags::POLLHUP, 0, "POLLHUP set when writer gone");
+        assert_ne!(
+            flags & poll_flags::POLLIN,
+            0,
+            "POLLIN set when data present"
+        );
+        assert_ne!(
+            flags & poll_flags::POLLHUP,
+            0,
+            "POLLHUP set when writer gone"
+        );
     }
 
     // ── Write-end poll semantics ───────────────────────────────────────────
@@ -568,7 +584,11 @@ mod tests {
     #[test]
     fn write_end_ready_when_buffer_has_space() {
         let (_r, w) = make_pair();
-        assert_ne!(w.poll() & poll_flags::POLLOUT, 0, "POLLOUT when space available");
+        assert_ne!(
+            w.poll() & poll_flags::POLLOUT,
+            0,
+            "POLLOUT when space available"
+        );
     }
 
     #[test]
@@ -600,7 +620,10 @@ mod tests {
             PIPES.lock().insert(id, inner.clone());
             (inner, id)
         };
-        let write_node = Arc::new(PipeWriteNode { inner, pipe_id: _id });
+        let write_node = Arc::new(PipeWriteNode {
+            inner,
+            pipe_id: _id,
+        });
 
         // Fill the buffer.
         write_node.write(0, b"X").expect("first write");

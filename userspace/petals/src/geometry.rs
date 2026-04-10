@@ -38,10 +38,18 @@ impl Rect {
         }
     }
 
-    pub fn x(&self) -> i32 { self.origin.x }
-    pub fn y(&self) -> i32 { self.origin.y }
-    pub fn width(&self) -> i32 { self.size.width }
-    pub fn height(&self) -> i32 { self.size.height }
+    pub fn x(&self) -> i32 {
+        self.origin.x
+    }
+    pub fn y(&self) -> i32 {
+        self.origin.y
+    }
+    pub fn width(&self) -> i32 {
+        self.size.width
+    }
+    pub fn height(&self) -> i32 {
+        self.size.height
+    }
 
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let x0 = self.x().max(other.x());
@@ -147,9 +155,12 @@ impl Default for Transform2D {
 impl Transform2D {
     pub const fn identity() -> Self {
         Self {
-            a: 1.0, b: 0.0,
-            c: 0.0, d: 1.0,
-            tx: 0.0, ty: 0.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
         }
     }
 

@@ -132,8 +132,14 @@ pub extern "C" fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, c
             rip,
             rsp,
             error_code,
-            instr_bytes[0], instr_bytes[1], instr_bytes[2], instr_bytes[3],
-            instr_bytes[4], instr_bytes[5], instr_bytes[6], instr_bytes[7]
+            instr_bytes[0],
+            instr_bytes[1],
+            instr_bytes[2],
+            instr_bytes[3],
+            instr_bytes[4],
+            instr_bytes[5],
+            instr_bytes[6],
+            instr_bytes[7]
         );
     } else {
         crate::log_event!(
@@ -340,7 +346,12 @@ pub trait BootTasking {
     ) -> Result<(), ()>;
 
     fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()>;
-    fn protect_page(&self, aspace: Self::AddressSpace, virt: u64, perms: MapPerms) -> Result<(), ()>;
+    fn protect_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        perms: MapPerms,
+    ) -> Result<(), ()>;
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64>;
     fn tlb_flush_page(&self, virt: u64);
 }
@@ -726,7 +737,10 @@ fn paint_bootfb_probe(fb: FramebufferInfo) {
         let k_y = 10;
         if width > k_x + 60 && rows > k_y + 80 {
             for dy in 0..80 {
-                let row = core::slice::from_raw_parts_mut(ptr.add((k_y + dy) * stride_px), width.min(stride_px));
+                let row = core::slice::from_raw_parts_mut(
+                    ptr.add((k_y + dy) * stride_px),
+                    width.min(stride_px),
+                );
                 // Vertical stem
                 for dx in 0..12 {
                     if k_x + dx < row.len() {
@@ -864,7 +878,13 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     let modules = runtime.modules();
     kdebug!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {
-        crate::ktrace!("  Module[{}]: name='{}' cmdline='{}' size={} bytes", i, m.name, m.cmdline, m.bytes.len());
+        crate::ktrace!(
+            "  Module[{}]: name='{}' cmdline='{}' size={} bytes",
+            i,
+            m.name,
+            m.cmdline,
+            m.bytes.len()
+        );
     }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
@@ -1087,13 +1107,12 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     }
 }
 
-
-
 pub fn scan_pci() {
     let rt = runtime_base();
     let mut reg = crate::device_registry::REGISTRY.lock();
 
-    for bus in 0..16 { // Bus range restricted for speed in QEMU
+    for bus in 0..16 {
+        // Bus range restricted for speed in QEMU
         for dev in 0..32 {
             for func in 0..8 {
                 let vendor_device = match rt.pci_cfg_read32(bus, dev, func, 0x00) {
@@ -1104,7 +1123,9 @@ pub fn scan_pci() {
                 let device_id = (vendor_device >> 16) as u16;
 
                 if vendor_id == 0xFFFF {
-                    if func == 0 { break; } // Next device
+                    if func == 0 {
+                        break;
+                    } // Next device
                     continue; // Next function
                 }
 
@@ -1117,7 +1138,8 @@ pub fn scan_pci() {
                 let subclass = (class_rev >> 16) as u8;
                 let prog_if = (class_rev >> 8) as u8;
 
-                let header_type = (rt.pci_cfg_read32(bus, dev, func, 0x0C).unwrap_or(0) >> 16) as u8;
+                let header_type =
+                    (rt.pci_cfg_read32(bus, dev, func, 0x0C).unwrap_or(0) >> 16) as u8;
 
                 let mut bars = [0u64; 6];
                 let mut sizes = [0u64; 6];
@@ -1134,14 +1156,18 @@ pub fn scan_pci() {
                             let size_mask = rt.pci_cfg_read32(bus, dev, func, offset).unwrap_or(0);
                             let _ = rt.pci_cfg_write32(bus, dev, func, offset, bar);
 
-                            if bar & 1 == 0 { // Memory space
+                            if bar & 1 == 0 {
+                                // Memory space
                                 let is_64 = (bar & 0x4) != 0;
                                 let mut final_bar = (bar & 0xFFFFFFF0) as u64;
                                 let mut final_size_mask = if is_64 && i < 5 {
                                     let next_offset = offset + 4;
-                                    let bar_hi = rt.pci_cfg_read32(bus, dev, func, next_offset).unwrap_or(0);
-                                    let _ = rt.pci_cfg_write32(bus, dev, func, next_offset, 0xFFFFFFFF);
-                                    let size_mask_hi = rt.pci_cfg_read32(bus, dev, func, next_offset).unwrap_or(0);
+                                    let bar_hi =
+                                        rt.pci_cfg_read32(bus, dev, func, next_offset).unwrap_or(0);
+                                    let _ =
+                                        rt.pci_cfg_write32(bus, dev, func, next_offset, 0xFFFFFFFF);
+                                    let size_mask_hi =
+                                        rt.pci_cfg_read32(bus, dev, func, next_offset).unwrap_or(0);
                                     let _ = rt.pci_cfg_write32(bus, dev, func, next_offset, bar_hi);
 
                                     final_bar |= (bar_hi as u64) << 32;
@@ -1154,7 +1180,13 @@ pub fn scan_pci() {
                                 bars[i as usize] = final_bar;
                                 sizes[i as usize] = size;
 
-                                crate::ktrace!("  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})", i, if is_64 {"64"} else {"32"}, final_bar, size);
+                                crate::ktrace!(
+                                    "  BAR{} (MEM{}): 0x{:08x} (size 0x{:x})",
+                                    i,
+                                    if is_64 { "64" } else { "32" },
+                                    final_bar,
+                                    size
+                                );
 
                                 if is_64 {
                                     i += 1; // Skip next slot
@@ -1164,15 +1196,21 @@ pub fn scan_pci() {
                                 let size = (!(size_mask & 0xFFFFFFFC)).wrapping_add(1) as u64;
                                 bars[i as usize] = (bar & 0xFFFFFFFC) as u64;
                                 sizes[i as usize] = size;
-                                crate::ktrace!("  BAR{} (I/O):  0x{:04x} (size 0x{:x})", i, bars[i as usize], size);
+                                crate::ktrace!(
+                                    "  BAR{} (I/O):  0x{:04x} (size 0x{:x})",
+                                    i,
+                                    bars[i as usize],
+                                    size
+                                );
                             }
                         }
                         i += 1;
                     }
                 }
 
-                let graph_id = 0x2000_0000 | ((bus as u64) << 16) | ((dev as u64) << 8) | (func as u64);
-                
+                let graph_id =
+                    0x2000_0000 | ((bus as u64) << 16) | ((dev as u64) << 8) | (func as u64);
+
                 let entry = crate::device_registry::DeviceEntry {
                     kind: "pci_device",
                     ioport_ranges: &[],
@@ -1192,8 +1230,18 @@ pub fn scan_pci() {
                 };
 
                 if let Some(idx) = reg.register(entry) {
-                    crate::kdebug!("PCI: Discovered 0x{:04x}:0x{:04x} at {:02x}:{:02x}.{} class={:02x}{:02x}{:02x} id={}", 
-                        vendor_id, device_id, bus, dev, func, class_code, subclass, prog_if, idx);
+                    crate::kdebug!(
+                        "PCI: Discovered 0x{:04x}:0x{:04x} at {:02x}:{:02x}.{} class={:02x}{:02x}{:02x} id={}",
+                        vendor_id,
+                        device_id,
+                        bus,
+                        dev,
+                        func,
+                        class_code,
+                        subclass,
+                        prog_if,
+                        idx
+                    );
                 }
 
                 if func == 0 && (header_type & 0x80) == 0 {

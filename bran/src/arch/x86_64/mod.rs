@@ -142,7 +142,7 @@ impl X86_64Runtime {
             core::arch::asm!("out dx, al", in("dx") port + 2, in("al") 0x07u8);
 
             // 7. IRQs enabled, RTS/DTR set
-            // Bit 3 = OUT2. Bit 1 = RTS. Bit 0 = DTR. 
+            // Bit 3 = OUT2. Bit 1 = RTS. Bit 0 = DTR.
             // 0x0B = 1011b (OUT2, RTS, DTR)
             // CRITICAL: OUT2 must be set to route interrupts to the PIC/IOAPIC!
             core::arch::asm!("out dx, al", in("dx") port + 4, in("al") 0x0Bu8);
@@ -517,8 +517,13 @@ impl ArchRuntime for X86_64Runtime {
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
         // Map required pages before entering user mode
         let tid = self.current_tid();
-        kernel::kinfo!("ENTER_USER: TID={} entry_pc={:x} user_sp={:x}", tid, entry.entry_pc, entry.user_sp);
-        
+        kernel::kinfo!(
+            "ENTER_USER: TID={} entry_pc={:x} user_sp={:x}",
+            tid,
+            entry.entry_pc,
+            entry.user_sp
+        );
+
         self.map_user_entry(&entry)
             .expect("failed to map user entry pages");
         // x86_64 user mode entry via IRETQ
@@ -798,8 +803,6 @@ impl ArchRuntime for X86_64Runtime {
             ioapic::set_lapic_timer_periodic(vector as u8, init_cnt as u32);
         }
     }
-
-
 
     fn send_ipi(&self, cpu_index: usize, vector: u8) {
         // Read CPU_IDS/CPU_COUNT directly — don't use self.cpu_ids OnceCell

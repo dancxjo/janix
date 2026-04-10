@@ -3,10 +3,10 @@
 //! This allows IPC ports to be treated as VFS nodes, enabling them to be
 //! passed across channels using the standard handle-passing mechanism.
 
-use alloc::sync::Arc;
-use abi::errors::SysResult;
-use crate::ipc::{Port, HandleMode};
 use super::{VfsNode, VfsStat};
+use crate::ipc::{HandleMode, Port};
+use abi::errors::SysResult;
+use alloc::sync::Arc;
 
 /// A VFS node that wraps an IPC port.
 pub struct PortNode {
@@ -49,12 +49,12 @@ impl VfsNode for PortNode {
             mode: VfsStat::S_IFIFO | r | w,
             size: self.port.len() as u64,
             ino: 0,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
     fn poll(&self) -> u16 {
-        use abi::syscall::poll_flags::{POLLIN, POLLOUT, POLLHUP, POLLERR};
+        use abi::syscall::poll_flags::{POLLERR, POLLHUP, POLLIN, POLLOUT};
         let mut revents = 0;
         match self.mode {
             HandleMode::Read => {
@@ -78,8 +78,12 @@ impl VfsNode for PortNode {
 
     fn close(&self) {
         match self.mode {
-            HandleMode::Read => { self.port.close_reader(); }
-            HandleMode::Write => { self.port.close_writer(); }
+            HandleMode::Read => {
+                self.port.close_reader();
+            }
+            HandleMode::Write => {
+                self.port.close_writer();
+            }
         }
     }
 
@@ -136,7 +140,11 @@ mod tests {
         // Closing the write handle signals hangup on the read handle.
         w.close();
         assert_ne!(r.poll() & poll_flags::POLLIN, 0, "POLLIN set on EOF");
-        assert_ne!(r.poll() & poll_flags::POLLHUP, 0, "POLLHUP set when writer closed");
+        assert_ne!(
+            r.poll() & poll_flags::POLLHUP,
+            0,
+            "POLLHUP set when writer closed"
+        );
     }
 
     #[test]
@@ -145,8 +153,16 @@ mod tests {
         w.write(0, b"x").expect("write");
         w.close();
         let flags = r.poll();
-        assert_ne!(flags & poll_flags::POLLIN, 0, "POLLIN set when data present");
-        assert_ne!(flags & poll_flags::POLLHUP, 0, "POLLHUP set when writer gone");
+        assert_ne!(
+            flags & poll_flags::POLLIN,
+            0,
+            "POLLIN set when data present"
+        );
+        assert_ne!(
+            flags & poll_flags::POLLHUP,
+            0,
+            "POLLHUP set when writer gone"
+        );
     }
 
     // ── Write-handle poll semantics ────────────────────────────────────────
@@ -154,7 +170,11 @@ mod tests {
     #[test]
     fn write_handle_ready_when_queue_has_space() {
         let (_r, w) = make_channel(64);
-        assert_ne!(w.poll() & poll_flags::POLLOUT, 0, "POLLOUT when space available");
+        assert_ne!(
+            w.poll() & poll_flags::POLLOUT,
+            0,
+            "POLLOUT when space available"
+        );
     }
 
     #[test]

@@ -16,7 +16,12 @@ fn main(arg0: usize) -> ! {
     let cpu = stem::arch::whoami();
     stem::debug!(
         "[sprout] whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
-        cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
+        cpu.cs,
+        cpu.ss,
+        cpu.cpl,
+        cpu.rsp,
+        cpu.rip,
+        cpu.rflags
     );
 
     info!("SPROUT: v0.4.1 [REBUILT] starting (Supervisor Mode)...");

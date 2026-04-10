@@ -35,7 +35,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
-    
+
     let tid = unsafe { crate::sched::current_tid_current() };
     crate::ktrace!("VFS: sys_fs_open path='{}' tid={}", path, tid);
 
@@ -152,12 +152,7 @@ pub fn sys_fs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize
     Ok(n)
 }
 
-pub fn sys_fs_stat(
-    fd: usize,
-    stat_ptr: usize,
-    _a2: usize,
-    _a3: usize,
-) -> SysResult<usize> {
+pub fn sys_fs_stat(fd: usize, stat_ptr: usize, _a2: usize, _a3: usize) -> SysResult<usize> {
     let stat_size = core::mem::size_of::<abi::fs::FileStat>();
     validate_user_range(stat_ptr, stat_size, true)?;
 
@@ -197,12 +192,12 @@ pub fn sys_fs_readdir(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<us
 
     let mut kbuf = vec![0u8; buf_len];
     let offset: u64 = *offset_cell.lock();
-    
-    // 1. First, call the node's own readdir. 
+
+    // 1. First, call the node's own readdir.
     // This fills the buffer using the filesystem's own entries.
     let mut n = node.readdir(offset, &mut kbuf)?;
 
-    // 2. Then, supplement with mount points if there is space and we've reached 
+    // 2. Then, supplement with mount points if there is space and we've reached
     // the "end" of the node's natural entries (heuristic: n < buf_len).
     if n < buf_len {
         let mounts = crate::vfs::mount::get_mounts_under(&path);
@@ -354,13 +349,16 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
     let (pipe_id, read_node, write_node) = crate::ipc::pipe::create_fd_pair_with_id(4096, false);
     let (read_fd, write_fd) = {
         let mut lock = pinfo_arc.lock();
-        let read_fd = lock
-            .fd_table
-            .open(read_node, crate::vfs::OpenFlags::read_only(), alloc::format!("pipe:{}", pipe_id))?;
-        match lock
-            .fd_table
-            .open(write_node, crate::vfs::OpenFlags::write_only(), alloc::format!("pipe:{}", pipe_id))
-        {
+        let read_fd = lock.fd_table.open(
+            read_node,
+            crate::vfs::OpenFlags::read_only(),
+            alloc::format!("pipe:{}", pipe_id),
+        )?;
+        match lock.fd_table.open(
+            write_node,
+            crate::vfs::OpenFlags::write_only(),
+            alloc::format!("pipe:{}", pipe_id),
+        ) {
             Ok(wfd) => (read_fd, wfd),
             Err(e) => {
                 let _ = lock.fd_table.close(read_fd);
@@ -443,21 +441,21 @@ pub fn sys_fs_mount(
 
     // Resolve the provider's write handle to a port Arc.
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    
+
     // Attempt 1: Check if it's a VFS FD pointing to a PortNode
     let req_port = {
         let lock = pinfo_arc.lock();
         if let Ok(file) = lock.fd_table.get(provider_write_handle as u32) {
-             // Try to downcast or check if it's a PortNode
-             // Since we don't have easy downcasting for traits in no_std without more machinery,
-             // we'll use a hack or update the trait. 
-             // Actually, we can check the mode and if it's S_IFIFO (set in PortNode)
-             // But the best way is to try to call a method.
-             // For now, let's assume if it came from recv_handle and it's a PortNode, we can get it.
-             // We'll add a helper to PortNode or use a well-known trick.
-             
-             // I'll add a method `as_port()` to VfsNode with default None.
-             file.node.as_port()
+            // Try to downcast or check if it's a PortNode
+            // Since we don't have easy downcasting for traits in no_std without more machinery,
+            // we'll use a hack or update the trait.
+            // Actually, we can check the mode and if it's S_IFIFO (set in PortNode)
+            // But the best way is to try to call a method.
+            // For now, let's assume if it came from recv_handle and it's a PortNode, we can get it.
+            // We'll add a helper to PortNode or use a well-known trick.
+
+            // I'll add a method `as_port()` to VfsNode with default None.
+            file.node.as_port()
         } else {
             None
         }
@@ -496,12 +494,8 @@ pub fn sys_fs_mount(
     let req_port_id = crate::ipc::find_port_id(&req_port).ok_or(Errno::EBADF)?;
 
     // Build and mount the provider filesystem.
-    let provider_fs = vfs::provider::ProviderFs::new(
-        req_port,
-        resp_port,
-        resp_write_handle.0,
-        req_port_id.0,
-    );
+    let provider_fs =
+        vfs::provider::ProviderFs::new(req_port, resp_port, resp_write_handle.0, req_port_id.0);
     vfs::mount::mount(&abs_path, provider_fs);
 
     crate::kinfo!("vfs: mounted userland provider at {}", abs_path);
@@ -588,12 +582,22 @@ pub fn sys_fs_poll(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysRes
         node: Option<Arc<dyn vfs::VfsNode>>,
         events: u16,
     }
-    let mut entries = vec![Entry { node: None, events: 0 }; nfds];
+    let mut entries = vec![
+        Entry {
+            node: None,
+            events: 0
+        };
+        nfds
+    ];
     {
         let lock = pinfo_arc.lock();
         for (i, kfd) in kfds.iter().enumerate() {
             if kfd.fd >= 0 {
-                entries[i].node = lock.fd_table.get(kfd.fd as u32).ok().map(|f| f.node.clone());
+                entries[i].node = lock
+                    .fd_table
+                    .get(kfd.fd as u32)
+                    .ok()
+                    .map(|f| f.node.clone());
                 entries[i].events = kfd.events;
             }
         }
@@ -744,10 +748,11 @@ pub fn sys_watch_fd(fd: usize, mask: usize, flags: usize) -> SysResult<usize> {
     crate::vfs::watch::register_watch(&node, watch.clone())?;
 
     // Return the watch as a new file descriptor
-    let watch_fd = pinfo_arc
-        .lock()
-        .fd_table
-        .open(watch, crate::vfs::OpenFlags::read_only(), "watch:fd".into())?;
+    let watch_fd = pinfo_arc.lock().fd_table.open(
+        watch,
+        crate::vfs::OpenFlags::read_only(),
+        "watch:fd".into(),
+    )?;
     Ok(watch_fd as usize)
 }
 
@@ -769,10 +774,11 @@ pub fn sys_watch_path(
     crate::vfs::watch::register_watch(&node, watch.clone())?;
 
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-    let watch_fd = pinfo_arc
-        .lock()
-        .fd_table
-        .open(watch, crate::vfs::OpenFlags::read_only(), alloc::format!("watch:{}", abs_path))?;
+    let watch_fd = pinfo_arc.lock().fd_table.open(
+        watch,
+        crate::vfs::OpenFlags::read_only(),
+        alloc::format!("watch:{}", abs_path),
+    )?;
     Ok(watch_fd as usize)
 }
 

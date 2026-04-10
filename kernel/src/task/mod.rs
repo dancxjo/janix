@@ -1,6 +1,6 @@
+pub mod exec;
 pub mod loader;
 pub mod registry;
-pub mod exec;
 use crate::sched as scheduler;
 
 pub use crate::sched::Scheduler;
@@ -183,8 +183,13 @@ pub fn preempt_enable<R: BootRuntime>() {
         let _cr3_after = rt.debug_active_aspace_root();
 
         unsafe {
-            rt.tasking()
-                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
+            rt.tasking().switch_with_tls(
+                &mut *switch.from_ctx,
+                &*switch.to_ctx,
+                switch.to_tid,
+                switch.from_user_fs_base,
+                switch.to_user_fs_base,
+            );
         }
     }
 
@@ -215,8 +220,13 @@ pub fn resched_if_needed<R: BootRuntime>() {
         let _cr3_after = rt.debug_active_aspace_root();
 
         unsafe {
-            rt.tasking()
-                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
+            rt.tasking().switch_with_tls(
+                &mut *switch.from_ctx,
+                &*switch.to_ctx,
+                switch.to_tid,
+                switch.from_user_fs_base,
+                switch.to_user_fs_base,
+            );
         }
     }
 
@@ -277,7 +287,7 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
             // No runnable work — halt until next IRQ (timer tick, device, IPI)
             crate::runtime::<R>().wait_for_interrupt();
             crate::sched::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            
+
             idle_count += 1;
             if idle_count % 1000 == 0 {
                 let cpu = crate::sched::current_cpu_index::<R>();

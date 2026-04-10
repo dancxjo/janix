@@ -1,14 +1,8 @@
-use crate::geometry::{PointF, LineCap, LineJoin, Color};
+use crate::geometry::{Color, LineCap, LineJoin, PointF};
 use alloc::vec::Vec;
 
 /// Flatten a quadratic bezier curve into line segments using adaptive subdivision.
-pub fn flatten_quad(
-    p0: PointF,
-    cp: PointF,
-    p1: PointF,
-    tolerance: f32,
-    output: &mut Vec<PointF>,
-) {
+pub fn flatten_quad(p0: PointF, cp: PointF, p1: PointF, tolerance: f32, output: &mut Vec<PointF>) {
     flatten_quad_recursive(p0, cp, p1, tolerance, output, 0);
 }
 
@@ -164,24 +158,26 @@ pub fn expand_stroke(path: &TessellatedPath, style: &StrokeStyle) -> Tessellated
     let offset = style.width * 0.5;
 
     for contour in &path.contours {
-        if contour.count < 2 { continue; }
-        
+        if contour.count < 2 {
+            continue;
+        }
+
         let start_idx = result.vertices.len();
         for i in 0..contour.count {
             let curr = path.vertices[contour.start + i];
-            
+
             // Calculate normal
             let (px, py) = if i + 1 < contour.count {
                 let next = path.vertices[contour.start + i + 1];
                 let dx = next.x - curr.x;
                 let dy = next.y - curr.y;
-                let len = libm::sqrtf(dx*dx + dy*dy).max(0.001);
+                let len = libm::sqrtf(dx * dx + dy * dy).max(0.001);
                 (-dy / len * offset, dx / len * offset)
             } else {
                 let prev = path.vertices[contour.start + i - 1];
                 let dx = curr.x - prev.x;
                 let dy = curr.y - prev.y;
-                let len = libm::sqrtf(dx*dx + dy*dy).max(0.001);
+                let len = libm::sqrtf(dx * dx + dy * dy).max(0.001);
                 (-dy / len * offset, dx / len * offset)
             };
 

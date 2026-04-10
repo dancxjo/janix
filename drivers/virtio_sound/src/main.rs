@@ -26,8 +26,8 @@ use virtio::device::VirtioDevice;
 const QUEUE_SIZE: u16 = 64;
 
 fn find_virtio_sound_device() -> Option<String> {
-    use stem::syscall::vfs::{vfs_open, vfs_readdir, vfs_close, vfs_read};
     use abi::syscall::vfs_flags;
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
 
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
         Ok(fd) => fd,
@@ -47,9 +47,15 @@ fn find_virtio_sound_device() -> Option<String> {
     let mut pos = 0;
     while pos < n {
         let entry_buf = &buf[pos..n];
-        let name = core::str::from_utf8(entry_buf).unwrap_or("").split('\0').next().unwrap_or("");
-        if name.is_empty() { break; }
-        
+        let name = core::str::from_utf8(entry_buf)
+            .unwrap_or("")
+            .split('\0')
+            .next()
+            .unwrap_or("");
+        if name.is_empty() {
+            break;
+        }
+
         if name.starts_with("pci-") {
             let path = alloc::format!("/sys/devices/{}/class", name);
             if let Ok(id_fd) = vfs_open(&path, vfs_flags::O_RDONLY) {
@@ -85,11 +91,14 @@ fn main(boot_fd: usize) -> ! {
                 if count >= 2 {
                     let mut offset = 4;
                     // Skip argv[0]
-                    let arg0_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                    let arg0_len =
+                        u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap()) as usize;
                     offset += 4 + arg0_len;
                     // argv[1]
                     if offset + 4 <= buf.len() {
-                        let arg1_len = u32::from_le_bytes(buf[offset..offset+4].try_into().unwrap()) as usize;
+                        let arg1_len =
+                            u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
+                                as usize;
                         offset += 4;
                         if offset + arg1_len <= buf.len() {
                             if let Ok(s) = core::str::from_utf8(&buf[offset..offset + arg1_len]) {
@@ -112,9 +121,12 @@ fn main(boot_fd: usize) -> ! {
     } else {
         0
     };
-    
+
     let mut path_str = if path_len > 0 {
-        core::str::from_utf8(&path_buf[..path_len]).unwrap_or("").trim_matches(char::from(0)).to_string()
+        core::str::from_utf8(&path_buf[..path_len])
+            .unwrap_or("")
+            .trim_matches(char::from(0))
+            .to_string()
     } else {
         String::new()
     };
@@ -133,7 +145,9 @@ fn main(boot_fd: usize) -> ! {
         Ok(d) => d,
         Err(e) => {
             error!("SND: Failed to claim device at {}: {:?}", path_str, e);
-            loop { stem::time::sleep_ms(1000); }
+            loop {
+                stem::time::sleep_ms(1000);
+            }
         }
     };
 
@@ -193,9 +207,9 @@ fn main(boot_fd: usize) -> ! {
         write_handle, read_handle
     );
     // Publish to VFS
-    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
     use abi::sound::AudioInfoPayload;
-    
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
+
     let payload = AudioInfoPayload {
         magic: AudioInfoPayload::MAGIC,
         write_handle: write_handle as u32,
@@ -206,9 +220,15 @@ fn main(boot_fd: usize) -> ! {
     };
 
     let _ = vfs_mkdir("/services/sound");
-    if let Ok(fd) = vfs_open("/services/sound/main", abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+    if let Ok(fd) = vfs_open(
+        "/services/sound/main",
+        abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR,
+    ) {
         let slice = unsafe {
-            core::slice::from_raw_parts(&payload as *const _ as *const u8, abi::sound::AUDIO_INFO_PAYLOAD_SIZE)
+            core::slice::from_raw_parts(
+                &payload as *const _ as *const u8,
+                abi::sound::AUDIO_INFO_PAYLOAD_SIZE,
+            )
         };
         let _ = vfs_write(fd, slice);
         let _ = vfs_close(fd);

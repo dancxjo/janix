@@ -280,10 +280,13 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     disk.read_port_handle = Some(read_handle);
 
     // Publish to VFS
-    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
     let _ = vfs_mkdir("/services/storage");
     let name = alloc::format!("/services/storage/ata_{}_{}", channel, drive);
-    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+    if let Ok(fd) = vfs_open(
+        &name,
+        abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR,
+    ) {
         let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
         let _ = vfs_close(fd);
     }
@@ -294,12 +297,7 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
 
     info!(
         "ATA_DISK: Registered disk ch={} drv={} sectors={} lba48={} model='{}' rpc_port={}",
-        channel,
-        drive,
-        disk.sector_count,
-        disk.supports_lba48,
-        model_str,
-        write_handle
+        channel, drive, disk.sector_count, disk.supports_lba48, model_str, write_handle
     );
 }
 
@@ -493,10 +491,13 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     dev.read_port_handle = Some(read_handle);
 
     // Publish to VFS
-    use stem::syscall::vfs::{vfs_mkdir, vfs_open, vfs_write, vfs_close};
+    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
     let _ = vfs_mkdir("/services/storage");
     let name = alloc::format!("/services/storage/atapi_{}_{}", channel, drive);
-    if let Ok(fd) = vfs_open(&name, abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR) {
+    if let Ok(fd) = vfs_open(
+        &name,
+        abi::syscall::vfs_flags::O_CREAT | abi::syscall::vfs_flags::O_RDWR,
+    ) {
         let _ = vfs_write(fd, alloc::format!("{}", write_handle).as_bytes());
         let _ = vfs_close(fd);
     }
@@ -507,10 +508,7 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
 
     info!(
         "ATA_DISK: Registered ATAPI ch={} drv={} model='{}' rpc_port={}",
-        channel,
-        drive,
-        model_str,
-        write_handle
+        channel, drive, model_str, write_handle
     );
 }
 

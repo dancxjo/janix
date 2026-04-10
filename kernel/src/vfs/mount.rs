@@ -68,7 +68,7 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
         return Err(Errno::ENOENT);
     }
 
-    // Capture matching drivers into a local list to avoid holding the spinlock 
+    // Capture matching drivers into a local list to avoid holding the spinlock
     // during potentially blocking driver lookups.
     let matches: Vec<(String, Arc<dyn VfsDriver>)> = {
         let table = MOUNT_TABLE.lock();
@@ -142,7 +142,8 @@ pub fn create(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
         table
             .iter()
             .find_map(|entry| {
-                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+                strip_prefix(path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
             })
             .ok_or(Errno::ENOENT)?
     };
@@ -161,7 +162,8 @@ pub fn mkdir(path: &str) -> SysResult<()> {
         table
             .iter()
             .find_map(|entry| {
-                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+                strip_prefix(path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
             })
             .ok_or(Errno::ENOENT)?
     };
@@ -180,7 +182,8 @@ pub fn unlink(path: &str) -> SysResult<()> {
         table
             .iter()
             .find_map(|entry| {
-                strip_prefix(path, &entry.prefix).map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+                strip_prefix(path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
             })
             .ok_or(Errno::ENOENT)?
     };
@@ -201,7 +204,11 @@ pub fn rename(old_path: &str, new_path: &str) -> SysResult<()> {
             .find_map(|entry| {
                 let old_rel = strip_prefix(old_path, &entry.prefix)?;
                 let new_rel = strip_prefix(new_path, &entry.prefix)?;
-                Some((old_rel.to_string(), new_rel.to_string(), Arc::clone(&entry.driver)))
+                Some((
+                    old_rel.to_string(),
+                    new_rel.to_string(),
+                    Arc::clone(&entry.driver),
+                ))
             })
             .ok_or(Errno::EXDEV)?
     };
@@ -274,7 +281,7 @@ mod tests {
                 mode: VfsStat::S_IFCHR | 0o666,
                 size: 0,
                 ino: 99,
-            ..Default::default()
+                ..Default::default()
             })
         }
     }

@@ -50,6 +50,7 @@ pub fn map_page(
     if perms.user {
         flags |= 1 << 2;
     } // U/S
+    
     /*if !perms.exec {
         flags |= 1 << 63;
     }*/ // NX
@@ -142,11 +143,7 @@ pub fn unmap_page(aspace: X86_64AddressSpace, virt: u64) -> Result<Option<u64>, 
     Ok(Some(phys))
 }
 
-pub fn protect_page(
-    aspace: X86_64AddressSpace,
-    virt: u64,
-    perms: MapPerms,
-) -> Result<(), ()> {
+pub fn protect_page(aspace: X86_64AddressSpace, virt: u64, perms: MapPerms) -> Result<(), ()> {
     let pml4 = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
 
     let pml4_idx = (virt >> 39) & 0x1ff;

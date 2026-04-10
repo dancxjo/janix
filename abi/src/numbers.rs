@@ -36,7 +36,8 @@ pub const SYS_ENV_LIST: u32 = 0x1104;
 // ============================================================================
 // Time & Waiting (0x1200)
 // ============================================================================
-pub const SYS_SLEEP_NS: u32 = 0x1200;
+pub const SYS_SLEEP: u32 = 0x1200;
+pub const SYS_SLEEP_NS: u32 = SYS_SLEEP;
 pub const SYS_SLEEP_MS: u32 = 0x1201;
 pub const SYS_TIME_MONOTONIC: u32 = 0x1202;
 pub const SYS_TIME_NOW: u32 = 0x1203;

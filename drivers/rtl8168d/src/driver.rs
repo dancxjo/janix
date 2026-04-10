@@ -91,8 +91,12 @@ pub struct Rtl8168Driver {
 impl Rtl8168Driver {
     pub fn new(sysfs_path: &str) -> Result<Self, Errno> {
         // Read internal handle from /sys/devices/.../handle
-        let handle = read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
-        info!("RTL8168: discovered device handle 0x{:x} from {}", handle, sysfs_path);
+        let handle =
+            read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
+        info!(
+            "RTL8168: discovered device handle 0x{:x} from {}",
+            handle, sysfs_path
+        );
 
         let claim = device_claim(handle)?;
         let mmio = device_map_mmio(claim, 0)?;

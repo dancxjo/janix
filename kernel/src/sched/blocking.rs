@@ -66,8 +66,13 @@ pub fn block_current<R: BootRuntime>() {
         rt.tasking().activate_address_space(switch.to_aspace);
 
         unsafe {
-            rt.tasking()
-                .switch_with_tls(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid, switch.from_user_fs_base, switch.to_user_fs_base);
+            rt.tasking().switch_with_tls(
+                &mut *switch.from_ctx,
+                &*switch.to_ctx,
+                switch.to_tid,
+                switch.from_user_fs_base,
+                switch.to_user_fs_base,
+            );
         }
     }
 

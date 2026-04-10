@@ -25,28 +25,28 @@ pub struct DevTreeCtx {
 
 pub fn init() -> Result<DevTreeCtx, ()> {
     debug!("SPROUT: devtree::init entry (VFS-native)");
- 
+
     // 1. Get HHDM Offset
     debug!("SPROUT: Reading HHDM offset from /sys/firmware/hhdm");
     let hhdm = read_sys_u64("/sys/firmware/hhdm").unwrap_or(0) as usize;
     if hhdm == 0 {
         stem::warn!("SPROUT: Failed to read HHDM offset!");
     }
- 
+
     // 2. Check for Firmware
     let mut acpi_rsdp = None;
     let mut dtb_ptr = None;
- 
+
     if let Ok(val) = read_sys_u64("/sys/firmware/acpi") {
         acpi_rsdp = Some(val as usize);
         debug!("SPROUT: ACPI RSDP = 0x{:x}", val);
     }
- 
+
     if let Ok(val) = read_sys_u64("/sys/firmware/dtb") {
         dtb_ptr = Some(val as usize);
         debug!("SPROUT: DTB PHYS = 0x{:x}", val);
     }
- 
+
     debug!("SPROUT: Init OK, returning context (graph discovery eradicated)");
     Ok(DevTreeCtx {
         host: abi::types::ThingId::default(),
@@ -58,16 +58,16 @@ pub fn init() -> Result<DevTreeCtx, ()> {
         dtb_node_id: None,
     })
 }
- 
+
 fn read_sys_u64(path: &str) -> Result<u64, ()> {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
- 
+
     let fd = vfs_open(path, O_RDONLY).map_err(|_| ())?;
     let mut buf = [0u8; 32];
     let n = vfs_read(fd, &mut buf).map_err(|_| ())?;
     let _ = vfs_close(fd);
- 
+
     let s = core::str::from_utf8(&buf[..n]).map_err(|_| ())?;
     let trimmed = s.trim();
     if trimmed.starts_with("0x") {

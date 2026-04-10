@@ -6,6 +6,7 @@ pub mod wait;
 use abi::device::{DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR};
 use abi::errors::Errno;
 pub use abi::syscall::*;
+use abi::time::{ClockId, TimeSpec};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -75,9 +76,9 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
 }
 
 pub use channel::{
-    channel_capacity, channel_close, channel_create, channel_len, channel_recv, channel_recv_handle,
-    channel_send, channel_send_all, channel_send_handle, channel_try_recv, channel_wait,
-    ChannelHandle,
+    channel_capacity, channel_close, channel_create, channel_len, channel_recv,
+    channel_recv_handle, channel_send, channel_send_all, channel_send_handle, channel_try_recv,
+    channel_wait, ChannelHandle,
 };
 pub use vfs::{
     dup, dup2, pipe, vfs_chdir, vfs_close, vfs_getcwd, vfs_mkdir, vfs_mount, vfs_open, vfs_poll,
@@ -94,7 +95,7 @@ pub fn yield_now() {
 
 pub fn sleep_ns(ns: u64) {
     unsafe {
-        raw_syscall6(SYS_SLEEP_NS, ns as usize, 0, 0, 0, 0, 0);
+        raw_syscall6(SYS_SLEEP, ns as usize, 0, 0, 0, 0, 0);
     }
 }
 
@@ -192,12 +193,31 @@ pub fn env_list(buf: &mut [u8]) -> Result<usize, Errno> {
 }
 
 pub fn monotonic_ns() -> u64 {
-    let ret = unsafe { raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0) };
-    if ret < 0 {
-        0
-    } else {
-        ret as u64
-    }
+    time_now(ClockId::Monotonic)
+        .ok()
+        .and_then(|spec| spec.as_nanos())
+        .unwrap_or(0)
+}
+
+pub fn time_now(clock_id: ClockId) -> Result<TimeSpec, Errno> {
+    time_now_raw(clock_id as u32)
+}
+
+pub fn time_now_raw(clock_id: u32) -> Result<TimeSpec, Errno> {
+    let mut spec = TimeSpec::ZERO;
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_TIME_NOW,
+            clock_id as usize,
+            (&mut spec as *mut TimeSpec).cast::<u8>() as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)?;
+    Ok(spec)
 }
 
 pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> {

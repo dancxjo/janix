@@ -13,12 +13,15 @@ extern crate alloc;
 
 // Modules are now declared in main.rs
 use crate::ledger::DeviceLedger;
-use crate::pipelines::{DisplayHandles, setup_display_pipeline, setup_graphics_stack, setup_input_broker, setup_serial_shell};
+use crate::pipelines::{
+    setup_display_pipeline, setup_graphics_stack, setup_input_broker, setup_serial_shell,
+    DisplayHandles,
+};
 use crate::task::{ManagedTask, TaskKind};
 use alloc::format;
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
 use stem::syscall::{channel_create, channel_send_all, vfs_mount, ChannelHandle};
 use stem::{error, info, warn};
@@ -57,7 +60,7 @@ impl Supervisor {
 
         // Stage 4: Fan-out Setup Pipelines in parallel
         info!("SPROUT: Fanning out setup pipelines...");
-        
+
         let tasks_for_display = self.tasks.clone();
         let _ = stem::thread::spawn_task(move || {
             let _ = setup_display_pipeline(tasks_for_display, 0, 1);
@@ -104,16 +107,22 @@ impl Supervisor {
         loop {
             self.process_registrations();
             self.monitor();
-            
+
             if step % 20 == 0 {
                 stem::debug!("SPROUT: Still waiting for display (step {})...", step);
             }
             if step % 100 == 0 {
-                stem::debug!("SPROUT: Health check: Loop still running, tasks={}", self.tasks.lock().len());
+                stem::debug!(
+                    "SPROUT: Health check: Loop still running, tasks={}",
+                    self.tasks.lock().len()
+                );
             }
             step += 1;
-            
-            if let Ok(fd) = stem::syscall::vfs::vfs_open("/dev/display/card0", stem::abi::syscall::vfs_flags::O_RDONLY) {
+
+            if let Ok(fd) = stem::syscall::vfs::vfs_open(
+                "/dev/display/card0",
+                stem::abi::syscall::vfs_flags::O_RDONLY,
+            ) {
                 let _ = stem::syscall::vfs::vfs_close(fd);
                 stem::info!("SPROUT: Display card0 detected. Proceeding.");
                 break;
@@ -129,7 +138,7 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        // We no longer auto-spawn everything in /bin. 
+        // We no longer auto-spawn everything in /bin.
         // We only scan to keep the registry metadata if needed.
         stem::debug!("SPROUT: Discovery loop disabled in favor of devd.");
     }
@@ -162,7 +171,6 @@ impl Supervisor {
             Err(e) => warn!("SPROUT: Failed to spawn devd: {:?}", e),
         }
     }
-
 
     fn monitor(&mut self) {
         let mut tasks = self.tasks.lock();
@@ -217,15 +225,18 @@ impl Supervisor {
     }
 
     fn process_registrations(&mut self) {
-        use abi::supervisor_protocol::{self, classes, MSG_BIND_READY, MSG_BIND_ASSIGNED, MSG_BIND_FAILED, MSG_SERVICE_READY, MSG_SERVICE_EXITING};
         use abi::display_driver_protocol;
-        use stem::syscall::{vfs_mount, channel_send_all};
+        use abi::supervisor_protocol::{
+            self, classes, MSG_BIND_ASSIGNED, MSG_BIND_FAILED, MSG_BIND_READY, MSG_SERVICE_EXITING,
+            MSG_SERVICE_READY,
+        };
+        use stem::syscall::{channel_send_all, vfs_mount};
 
         let mut buf = [0u8; 1024];
 
         let mut tasks_vec = self.tasks.lock();
         if tasks_vec.is_empty() {
-             // stem::debug!("SPROUT: No tasks to process registrations for.");
+            // stem::debug!("SPROUT: No tasks to process registrations for.");
         }
 
         // We check EACH task's private response channel
@@ -237,9 +248,18 @@ impl Supervisor {
             // stem::debug!("SPROUT: Polling task {} on port {}...", task.name, task.drv_resp_read);
 
             while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
-                stem::debug!("SPROUT: Received {} bytes from task {} (tid={})", n, task.name, task.pid.unwrap_or(0));
+                stem::debug!(
+                    "SPROUT: Received {} bytes from task {} (tid={})",
+                    n,
+                    task.name,
+                    task.pid.unwrap_or(0)
+                );
                 if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
-                    stem::debug!("SPROUT: Received message type {} from {}", header.msg_type, task.name);
+                    stem::debug!(
+                        "SPROUT: Received message type {} from {}",
+                        header.msg_type,
+                        task.name
+                    );
                     if header.msg_type == MSG_BIND_READY {
                         // Helper: send MSG_BIND_FAILED back to the driver.
                         let send_bind_failed = |req_write: u32, id: u64, code: u32, msg: &[u8]| {
@@ -252,10 +272,18 @@ impl Supervisor {
                                 _reserved: 0,
                                 reason,
                             };
-                            let mut payload_bytes = [0u8; supervisor_protocol::BIND_FAILED_PAYLOAD_SIZE];
+                            let mut payload_bytes =
+                                [0u8; supervisor_protocol::BIND_FAILED_PAYLOAD_SIZE];
                             let mut reply_buf = [0u8; 256];
-                            if let Some(p_len) = supervisor_protocol::encode_bind_failed_le(&failed, &mut payload_bytes) {
-                                if let Some(total_len) = display_driver_protocol::encode_message(&mut reply_buf, MSG_BIND_FAILED, &payload_bytes[..p_len]) {
+                            if let Some(p_len) = supervisor_protocol::encode_bind_failed_le(
+                                &failed,
+                                &mut payload_bytes,
+                            ) {
+                                if let Some(total_len) = display_driver_protocol::encode_message(
+                                    &mut reply_buf,
+                                    MSG_BIND_FAILED,
+                                    &payload_bytes[..p_len],
+                                ) {
                                     let _ = channel_send_all(req_write, &reply_buf[..total_len]);
                                 }
                             }
@@ -263,7 +291,12 @@ impl Supervisor {
 
                         if let Some(ready) = supervisor_protocol::decode_bind_ready_le(payload) {
                             let task_name = task.name.clone();
-                            stem::debug!("SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})", task_name, ready.bind_instance_id, ready.class_mask);
+                            stem::debug!(
+                                "SPROUT: BIND_READY from {} (ID: {}, Classes: 0x{:x})",
+                                task_name,
+                                ready.bind_instance_id,
+                                ready.class_mask
+                            );
 
                             // 1. Extract provider port
                             // Drivers send the vfs handle BEFORE the BIND_READY message
@@ -271,13 +304,20 @@ impl Supervisor {
                             match stem::syscall::channel_recv_handle(task.drv_resp_read) {
                                 Ok(p) => {
                                     provider_port = p;
-                                    stem::debug!("SPROUT: Received VFS provider handle {} from {}", p, task_name);
+                                    stem::debug!(
+                                        "SPROUT: Received VFS provider handle {} from {}",
+                                        p,
+                                        task_name
+                                    );
                                 }
                                 Err(e) => {
                                     warn!("SPROUT: Failed to receive VFS provider handle from {}: {:?}", task_name, e);
-                                    send_bind_failed(task.drv_req_write, ready.bind_instance_id,
+                                    send_bind_failed(
+                                        task.drv_req_write,
+                                        ready.bind_instance_id,
                                         supervisor_protocol::errors::ERR_NO_PROVIDER_HANDLE,
-                                        b"no provider handle attached");
+                                        b"no provider handle attached",
+                                    );
                                 }
                             }
 
@@ -301,9 +341,12 @@ impl Supervisor {
                                     Some(pair) => pair,
                                     None => {
                                         warn!("SPROUT: BIND_READY from {} has unrecognised class_mask 0x{:x} — rejecting", task_name, ready.class_mask);
-                                        send_bind_failed(task.drv_req_write, ready.bind_instance_id,
+                                        send_bind_failed(
+                                            task.drv_req_write,
+                                            ready.bind_instance_id,
                                             supervisor_protocol::errors::ERR_UNKNOWN_CLASS,
-                                            b"class_mask is zero or unrecognised");
+                                            b"class_mask is zero or unrecognised",
+                                        );
                                         continue;
                                     }
                                 };
@@ -316,52 +359,95 @@ impl Supervisor {
                                 // 3. Mount
                                 match vfs_mount(provider_port, &path) {
                                     Ok(()) => {
-                                        stem::debug!("SPROUT: Sovereign mount success: {} -> {}", task_name, path);
-                                        
+                                        stem::debug!(
+                                            "SPROUT: Sovereign mount success: {} -> {}",
+                                            task_name,
+                                            path
+                                        );
+
                                         // 4. Reply to driver
-                                        let mut assigned = supervisor_protocol::BindAssignedPayload {
-                                            bind_instance_id: ready.bind_instance_id,
-                                            status: 0,
-                                            unit_number: unit,
-                                            primary_path: [0u8; 64],
-                                        };
+                                        let mut assigned =
+                                            supervisor_protocol::BindAssignedPayload {
+                                                bind_instance_id: ready.bind_instance_id,
+                                                status: 0,
+                                                unit_number: unit,
+                                                primary_path: [0u8; 64],
+                                            };
                                         let path_bytes = path.as_bytes();
                                         let len = path_bytes.len().min(64);
-                                        assigned.primary_path[..len].copy_from_slice(&path_bytes[..len]);
+                                        assigned.primary_path[..len]
+                                            .copy_from_slice(&path_bytes[..len]);
 
                                         let mut reply_buf = [0u8; 256];
-                                        let mut payload_bytes = [0u8; supervisor_protocol::BIND_ASSIGNED_PAYLOAD_SIZE];
-                                        if let Some(p_len) = supervisor_protocol::encode_bind_assigned_le(&assigned, &mut payload_bytes) {
-                                            if let Some(total_len) = display_driver_protocol::encode_message(&mut reply_buf, MSG_BIND_ASSIGNED, &payload_bytes[..p_len]) {
-                                                let _ = channel_send_all(task.drv_req_write, &reply_buf[..total_len]);
+                                        let mut payload_bytes =
+                                            [0u8; supervisor_protocol::BIND_ASSIGNED_PAYLOAD_SIZE];
+                                        if let Some(p_len) =
+                                            supervisor_protocol::encode_bind_assigned_le(
+                                                &assigned,
+                                                &mut payload_bytes,
+                                            )
+                                        {
+                                            if let Some(total_len) =
+                                                display_driver_protocol::encode_message(
+                                                    &mut reply_buf,
+                                                    MSG_BIND_ASSIGNED,
+                                                    &payload_bytes[..p_len],
+                                                )
+                                            {
+                                                let _ = channel_send_all(
+                                                    task.drv_req_write,
+                                                    &reply_buf[..total_len],
+                                                );
                                             }
                                         }
                                     }
                                     Err(e) => {
-                                        warn!("SPROUT: Sovereign mount FAILED for {}: {:?}", task_name, e);
-                                        send_bind_failed(task.drv_req_write, ready.bind_instance_id,
+                                        warn!(
+                                            "SPROUT: Sovereign mount FAILED for {}: {:?}",
+                                            task_name, e
+                                        );
+                                        send_bind_failed(
+                                            task.drv_req_write,
+                                            ready.bind_instance_id,
                                             supervisor_protocol::errors::ERR_MOUNT_FAILED,
-                                            b"vfs_mount failed");
+                                            b"vfs_mount failed",
+                                        );
                                     }
                                 }
                             }
                         } else {
-                            warn!("SPROUT: Received malformed BIND_READY from {} — rejecting", task.name);
-                            send_bind_failed(task.drv_req_write, 0,
+                            warn!(
+                                "SPROUT: Received malformed BIND_READY from {} — rejecting",
+                                task.name
+                            );
+                            send_bind_failed(
+                                task.drv_req_write,
+                                0,
                                 supervisor_protocol::errors::ERR_INVALID_MESSAGE,
-                                b"BIND_READY payload is malformed");
+                                b"BIND_READY payload is malformed",
+                            );
                         }
                     } else if header.msg_type == MSG_SERVICE_READY {
                         if let Some(svc) = supervisor_protocol::decode_service_ready_le(payload) {
-                            stem::debug!("SPROUT: SERVICE_READY from {} (ID: {})", task.name, svc.bind_instance_id);
+                            stem::debug!(
+                                "SPROUT: SERVICE_READY from {} (ID: {})",
+                                task.name,
+                                svc.bind_instance_id
+                            );
                             info!("SPROUT: Service '{}' is fully operational.", task.name);
                         }
                     } else if header.msg_type == MSG_SERVICE_EXITING {
                         if let Some(svc) = supervisor_protocol::decode_service_exiting_le(payload) {
                             if svc.exit_code == 0 {
-                                info!("SPROUT: Service '{}' exiting cleanly (ID: {}).", task.name, svc.bind_instance_id);
+                                info!(
+                                    "SPROUT: Service '{}' exiting cleanly (ID: {}).",
+                                    task.name, svc.bind_instance_id
+                                );
                             } else {
-                                warn!("SPROUT: Service '{}' exiting with error code {} (ID: {}).", task.name, svc.exit_code, svc.bind_instance_id);
+                                warn!(
+                                    "SPROUT: Service '{}' exiting with error code {} (ID: {}).",
+                                    task.name, svc.exit_code, svc.bind_instance_id
+                                );
                             }
                         }
                     }

@@ -153,7 +153,7 @@ fn main(arg: usize) -> ! {
     debug!("RTC: System clock anchored to {} unix_secs", unix_secs);
 
     debug!("RTC: Entering maintenance loop.");
- 
+
     loop {
         stem::sleep(core::time::Duration::from_secs(3600)); // Update once per hour
         let (year, month, day, hour, minute, second) = read_rtc();

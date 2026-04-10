@@ -110,7 +110,12 @@ impl VirtioNetDriver {
 
         stem::debug!(
             "VirtIO-NET: MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
         );
 
         // Read link status
@@ -153,7 +158,8 @@ impl VirtioNetDriver {
         let rx_pool_phys = device_dma_phys(rx_pool_virt).map_err(|_| Errno::EFAULT)?;
         stem::debug!(
             "VirtIO-NET: Allocated RX pool ({} pages, {} buffers)",
-            RX_PAGES_NEEDED, QUEUE_SIZE
+            RX_PAGES_NEEDED,
+            QUEUE_SIZE
         );
 
         // Sub-allocate individual buffers from the pool

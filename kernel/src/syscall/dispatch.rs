@@ -14,9 +14,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_LOG_WRITE => handlers::sys_log_write(args[0], args[1], args[2]),
         SYS_YIELD => handlers::sys_yield(),
         SYS_SLEEP_MS => handlers::sys_sleep_ms(args[0] as u64),
-        SYS_SLEEP_NS => handlers::sys_sleep_ns(args[0] as u64),
+        SYS_SLEEP => handlers::sys_sleep_ns(args[0] as u64),
         SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
-        SYS_TIME_NOW => handlers::sys_time_now(),
+        SYS_TIME_NOW => handlers::sys_time_now(args[0] as u32, args[1]),
         SYS_TIME_ANCHOR => handlers::sys_time_anchor(args[0] as u64),
         SYS_DEVICE_CALL => handlers::sys_device_call(args[0]),
         SYS_SPAWN_THREAD => handlers::sys_spawn_thread(args[0], args[1]),
@@ -46,13 +46,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_VM_ADVISE => handlers::sys_vm_advise(args[0]),
         SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
-        SYS_TASK_EXEC => handlers::sys_task_exec(
-            args[0] as u32,
-            args[1],
-            args[2],
-            args[3],
-            args[4],
-        ),
+        SYS_TASK_EXEC => {
+            handlers::sys_task_exec(args[0] as u32, args[1], args[2], args[3], args[4])
+        }
         SYS_TASK_SET_TLS_BASE => handlers::sys_task_set_tls_base(args[0]),
         SYS_TASK_GET_TLS_BASE => handlers::sys_task_get_tls_base(),
 

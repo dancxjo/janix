@@ -1,11 +1,11 @@
 pub const FB_INFO_PAYLOAD_SIZE: usize = 24;
-use abi::display::{BufferId, DisplayInfo, PlaneCommit, CommitRequest, PlaneId};
-use abi::pixel::PixelFormat;
+use abi::display::{BufferId, CommitRequest, DisplayInfo, PlaneCommit, PlaneId};
 use abi::errors::{Errno, SysResult};
+use abi::pixel::PixelFormat;
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use alloc::collections::BTreeMap;
-use stem::{debug, info};
 use stem::syscall::{vfs_close, vfs_open, vfs_read, vm_map, vm_unmap};
+use stem::{debug, info};
 
 /// HW Framebuffer description
 pub struct Framebuffer {
@@ -74,16 +74,22 @@ impl BootFbDriver {
         let id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
 
-        self.buffers.insert(id, MappedBuffer {
-            ptr: resp.addr as *mut u8,
-            size,
-            width: handle.width,
-            height: handle.height,
-            stride: handle.stride,
-            format: handle.format,
-        });
+        self.buffers.insert(
+            id,
+            MappedBuffer {
+                ptr: resp.addr as *mut u8,
+                size,
+                width: handle.width,
+                height: handle.height,
+                stride: handle.stride,
+                format: handle.format,
+            },
+        );
 
-        debug!("display_bootfb: imported buffer {} ({}x{} @ {:p})", id.0, handle.width, handle.height, resp.addr as *mut u8);
+        debug!(
+            "display_bootfb: imported buffer {} ({}x{} @ {:p})",
+            id.0, handle.width, handle.height, resp.addr as *mut u8
+        );
         Ok(id)
     }
 
@@ -109,10 +115,10 @@ impl BootFbDriver {
 
     fn blit_primary(&mut self, commit: &PlaneCommit) -> SysResult<()> {
         let buffer = self.buffers.get(&commit.buffer_id).ok_or(Errno::ENOENT)?;
-        
+
         // Simple full-frame blit for now.
         // TODO: Respect commit.src_rect and commit.dst_rect.
-        
+
         let pitch_bpp = if self.fb.width > 0 {
             (self.fb.stride / self.fb.width) as usize
         } else {
@@ -141,7 +147,7 @@ impl BootFbDriver {
 }
 
 fn find_framebuffer() -> Option<Framebuffer> {
-    use abi::display_driver_protocol::{FbInfoPayload};
+    use abi::display_driver_protocol::FbInfoPayload;
     use abi::syscall::vfs_flags::O_RDONLY;
 
     debug!("display_bootfb: probing /dev/fb0...");

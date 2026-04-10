@@ -6,7 +6,8 @@
 
 use abi::errors::{Errno, SysResult};
 use abi::syscall::{
-    PollFd, SYS_FS_CLOSE, SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_OPEN,
+    PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
+    SYS_FS_DUP2, SYS_FS_GETCWD, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
     SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
     SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
     SYS_FS_DEVICE_CALL, SYS_FS_CHDIR, SYS_FS_GETCWD, SYS_FD_FROM_HANDLE, SYS_FS_NOTIFY,
@@ -315,7 +316,12 @@ pub fn vfs_rename(old_path: &str, new_path: &str) -> SysResult<()> {
 
 /// Issue a device-specific call (ioctl) to a VFS file descriptor.
 /// Issue a device-specific call (ioctl) to a VFS file descriptor.
-pub fn vfs_device_call(fd: u32, kind: abi::device::DeviceKind, op: u32, arg: u64) -> SysResult<u64> {
+pub fn vfs_device_call(
+    fd: u32,
+    kind: abi::device::DeviceKind,
+    op: u32,
+    arg: u64,
+) -> SysResult<u64> {
     let call = abi::device::DeviceCall {
         kind,
         op,
@@ -345,17 +351,7 @@ pub fn vfs_device_call_raw(fd: u32, call: &abi::device::DeviceCall) -> SysResult
 
 /// Change the current working directory of the process.
 pub fn vfs_chdir(path: &str) -> SysResult<()> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_FS_CHDIR,
-            path.as_ptr() as usize,
-            path.len(),
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_FS_CHDIR, path.as_ptr() as usize, path.len(), 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -378,13 +374,7 @@ pub fn vfs_getcwd(buf: &mut [u8]) -> SysResult<usize> {
 
 /// Bridge an IPC handle into the VFS as a file descriptor.
 pub fn vfs_fd_from_handle(handle: u32) -> SysResult<u32> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_FD_FROM_HANDLE,
-            handle as usize,
-            0, 0, 0, 0, 0
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_FD_FROM_HANDLE, handle as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u32)
 }
 
@@ -396,7 +386,9 @@ pub fn vfs_notify(req_handle: u32, node_handle: u64, revents: u16) -> SysResult<
             req_handle as usize,
             node_handle as usize,
             revents as usize,
-            0, 0, 0
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret).map(|_| ())

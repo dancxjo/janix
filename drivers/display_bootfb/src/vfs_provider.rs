@@ -1,11 +1,14 @@
 use crate::driver::BootFbDriver;
-use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
-use abi::display::{BufferHandle, CommitRequest, DISPLAY_OP_GET_INFO, DISPLAY_OP_IMPORT_BUFFER, DISPLAY_OP_RELEASE_BUFFER, DISPLAY_OP_COMMIT, BufferId};
 use abi::device::DeviceCall;
-use abi::errors::{Errno};
+use abi::display::{
+    BufferHandle, BufferId, CommitRequest, DISPLAY_OP_COMMIT, DISPLAY_OP_GET_INFO,
+    DISPLAY_OP_IMPORT_BUFFER, DISPLAY_OP_RELEASE_BUFFER,
+};
+use abi::errors::Errno;
+use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
 use alloc::vec::Vec;
-use stem::syscall::{channel_send, ChannelHandle};
 use stem::info;
+use stem::syscall::{channel_send, ChannelHandle};
 
 // Handle IDs for this driver.
 pub const HANDLE_ROOT: u64 = 0;
@@ -154,7 +157,9 @@ fn handle_device_call(driver: &mut BootFbDriver, resp_port: ChannelHandle, paylo
     }
 
     let call: DeviceCall = unsafe {
-        core::ptr::read_unaligned(payload[8..8 + core::mem::size_of::<DeviceCall>()].as_ptr() as *const _)
+        core::ptr::read_unaligned(
+            payload[8..8 + core::mem::size_of::<DeviceCall>()].as_ptr() as *const _
+        )
     };
 
     let call_payload = &payload[8 + core::mem::size_of::<DeviceCall>()..];
@@ -163,7 +168,10 @@ fn handle_device_call(driver: &mut BootFbDriver, resp_port: ChannelHandle, paylo
         DISPLAY_OP_GET_INFO => {
             let info = driver.get_info();
             let out_bytes = unsafe {
-                core::slice::from_raw_parts(&info as *const _ as *const u8, core::mem::size_of::<abi::display::DisplayInfo>())
+                core::slice::from_raw_parts(
+                    &info as *const _ as *const u8,
+                    core::mem::size_of::<abi::display::DisplayInfo>(),
+                )
             };
             send_ok_device_call(resp_port, 0, out_bytes);
         }
@@ -172,9 +180,8 @@ fn handle_device_call(driver: &mut BootFbDriver, resp_port: ChannelHandle, paylo
                 send_err(resp_port, E_INVAL);
                 return;
             }
-            let buffer_handle: BufferHandle = unsafe {
-                core::ptr::read_unaligned(call_payload.as_ptr() as *const _)
-            };
+            let buffer_handle: BufferHandle =
+                unsafe { core::ptr::read_unaligned(call_payload.as_ptr() as *const _) };
             match driver.import_buffer(&buffer_handle) {
                 Ok(id) => {
                     send_ok_device_call(resp_port, id.0, &[]);
@@ -187,24 +194,28 @@ fn handle_device_call(driver: &mut BootFbDriver, resp_port: ChannelHandle, paylo
                 send_err(resp_port, E_INVAL);
                 return;
             }
-            let id = BufferId(u32::from_le_bytes([call_payload[0], call_payload[1], call_payload[2], call_payload[3]]));
+            let id = BufferId(u32::from_le_bytes([
+                call_payload[0],
+                call_payload[1],
+                call_payload[2],
+                call_payload[3],
+            ]));
             match driver.release_buffer(id) {
                 Ok(()) => send_ok_device_call(resp_port, 0, &[]),
                 Err(e) => send_err(resp_port, e as u8),
             }
         }
         DISPLAY_OP_COMMIT => {
-             if call_payload.len() < 4 { // At least plane count
+            if call_payload.len() < 4 {
+                // At least plane count
                 send_err(resp_port, E_INVAL);
                 return;
             }
-            let req = unsafe {
-                 &*(call_payload.as_ptr() as *const CommitRequest)
-            };
+            let req = unsafe { &*(call_payload.as_ptr() as *const CommitRequest) };
             // Note: Since req has variable planes, we should be careful.
             // CommitRequest is repr(C) and has planes: [PlaneCommit; 0].
             // The actual planes follow it.
-            
+
             match driver.commit(req) {
                 Ok(()) => send_ok_device_call(resp_port, 0, &[]),
                 Err(e) => send_err(resp_port, e as u8),

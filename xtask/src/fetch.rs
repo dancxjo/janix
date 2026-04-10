@@ -385,7 +385,6 @@ fn fetch_pciids(assets: &Path) -> Result<()> {
     Ok(())
 }
 
-
 fn fetch_unifont(assets: &Path) -> Result<()> {
     println!("==> Fetching Unifont...");
     require_tool("curl")?;
@@ -404,12 +403,8 @@ fn fetch_unifont(assets: &Path) -> Result<()> {
         )?;
 
         println!("    Extracting unifont.hex...");
-        run_cmd(
-            Command::new("gunzip")
-                .arg("-f")
-                .arg(&gz_path),
-        )?;
-        
+        run_cmd(Command::new("gunzip").arg("-f").arg(&gz_path))?;
+
         let extracted = fonts_dir.join("unifont_all.hex");
         if extracted.exists() {
             fs::rename(&extracted, &unifont_dest)?;

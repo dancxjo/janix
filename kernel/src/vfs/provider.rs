@@ -11,12 +11,12 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use spin::Mutex;
 
+use crate::sched::wait_queue::WaitQueue;
+use crate::syscall::validate::{copyin, copyout};
 use abi::{
     errors::{Errno, SysResult},
     vfs_rpc::{VFS_RPC_MAX_DATA, VFS_RPC_MAX_RESP, VfsRpcOp, VfsRpcReqHeader},
 };
-use crate::syscall::validate::{copyin, copyout};
-use crate::sched::wait_queue::WaitQueue;
 
 use super::{VfsDriver, VfsNode, VfsStat};
 
@@ -123,7 +123,9 @@ impl ProviderFs {
                 waiters: BTreeMap::new(),
             }),
         });
-        PROVIDER_MAP.lock().insert(req_port_id, Arc::downgrade(&this));
+        PROVIDER_MAP
+            .lock()
+            .insert(req_port_id, Arc::downgrade(&this));
         this
     }
 
@@ -170,17 +172,29 @@ impl VfsDriver for ProviderFs {
         payload[off + 4..].copy_from_slice(new_bytes);
 
         let resp = self.channel.lock().rpc(VfsRpcOp::Rename, &payload)?;
-        if resp.is_empty() { return Err(Errno::EIO); }
-        if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
+        if resp.is_empty() {
+            return Err(Errno::EIO);
+        }
+        if resp[0] != 0 {
+            return Err(errno_from_u8(resp[0]));
+        }
         Ok(())
     }
 }
 
 fn parse_response_handle(resp: &[u8]) -> SysResult<u64> {
-    if resp.is_empty() { return Err(Errno::EIO); }
-    if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
-    if resp.len() < 9 { return Err(Errno::EIO); }
-    Ok(u64::from_le_bytes([resp[1], resp[2], resp[3], resp[4], resp[5], resp[6], resp[7], resp[8]]))
+    if resp.is_empty() {
+        return Err(Errno::EIO);
+    }
+    if resp[0] != 0 {
+        return Err(errno_from_u8(resp[0]));
+    }
+    if resp.len() < 9 {
+        return Err(Errno::EIO);
+    }
+    Ok(u64::from_le_bytes([
+        resp[1], resp[2], resp[3], resp[4], resp[5], resp[6], resp[7], resp[8],
+    ]))
 }
 
 // ── ProviderChannelRef ────────────────────────────────────────────────────────
@@ -201,12 +215,18 @@ impl ProviderChannelRef {
         let hdr_size = core::mem::size_of::<VfsRpcReqHeader>();
         let mut msg = vec![0u8; hdr_size + payload.len()];
         unsafe {
-            core::ptr::copy_nonoverlapping(&hdr as *const _ as *const u8, msg.as_mut_ptr(), hdr_size);
+            core::ptr::copy_nonoverlapping(
+                &hdr as *const _ as *const u8,
+                msg.as_mut_ptr(),
+                hdr_size,
+            );
         }
         msg[hdr_size..].copy_from_slice(payload);
 
         let written = self.req.send(&msg);
-        if written < msg.len() { return Err(Errno::EIO); }
+        if written < msg.len() {
+            return Err(Errno::EIO);
+        }
 
         let mut resp_buf = vec![0u8; VFS_RPC_MAX_RESP];
         let n = self.recv_response(&mut resp_buf)?;
@@ -218,8 +238,12 @@ impl ProviderChannelRef {
         let tid = unsafe { crate::sched::current_tid_current() };
         loop {
             let n = self.resp.try_recv(buf);
-            if n > 0 { return Ok(n); }
-            if !self.resp.has_writers() { return Err(Errno::EPIPE); }
+            if n > 0 {
+                return Ok(n);
+            }
+            if !self.resp.has_writers() {
+                return Err(Errno::EPIPE);
+            }
             self.resp.add_waiter_read(tid);
             let n = self.resp.try_recv(buf);
             if n > 0 {
@@ -230,7 +254,9 @@ impl ProviderChannelRef {
                 self.resp.remove_waiter_read(tid);
                 return Err(Errno::EPIPE);
             }
-            unsafe { crate::sched::block_current_erased(); }
+            unsafe {
+                crate::sched::block_current_erased();
+            }
         }
     }
 }
@@ -292,24 +318,43 @@ impl VfsNode for ProviderNode {
     fn device_call(&self, call: &abi::device::DeviceCall) -> SysResult<usize> {
         let in_len = call.in_len as usize;
         let out_len = call.out_len as usize;
-        if in_len > VFS_RPC_MAX_DATA || out_len > VFS_RPC_MAX_DATA { return Err(Errno::EINVAL); }
+        if in_len > VFS_RPC_MAX_DATA || out_len > VFS_RPC_MAX_DATA {
+            return Err(Errno::EINVAL);
+        }
         let mut payload = vec![0u8; 8 + core::mem::size_of::<abi::device::DeviceCall>() + in_len];
         payload[..8].copy_from_slice(&self.handle.to_le_bytes());
         unsafe {
-            core::ptr::copy_nonoverlapping(call as *const _ as *const u8, payload[8..].as_mut_ptr(), core::mem::size_of::<abi::device::DeviceCall>());
+            core::ptr::copy_nonoverlapping(
+                call as *const _ as *const u8,
+                payload[8..].as_mut_ptr(),
+                core::mem::size_of::<abi::device::DeviceCall>(),
+            );
         }
         if in_len > 0 {
-            unsafe { copyin(&mut payload[8 + core::mem::size_of::<abi::device::DeviceCall>()..], call.in_ptr as usize)?; }
+            unsafe {
+                copyin(
+                    &mut payload[8 + core::mem::size_of::<abi::device::DeviceCall>()..],
+                    call.in_ptr as usize,
+                )?;
+            }
         }
         let resp = self.channel.lock().rpc(VfsRpcOp::DeviceCall, &payload)?;
-        if resp.is_empty() { return Err(Errno::EIO); }
-        if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
-        if resp.len() < 9 { return Err(Errno::EIO); }
+        if resp.is_empty() {
+            return Err(Errno::EIO);
+        }
+        if resp[0] != 0 {
+            return Err(errno_from_u8(resp[0]));
+        }
+        if resp.len() < 9 {
+            return Err(Errno::EIO);
+        }
         let ret_val = u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]);
         let actual_out_len = u32::from_le_bytes([resp[5], resp[6], resp[7], resp[8]]) as usize;
         if actual_out_len > 0 && out_len > 0 {
             let copy_n = actual_out_len.min(out_len).min(resp.len() - 9);
-            unsafe { copyout(call.out_ptr as usize, &resp[9..9 + copy_n])?; }
+            unsafe {
+                copyout(call.out_ptr as usize, &resp[9..9 + copy_n])?;
+            }
         }
         Ok(ret_val as usize)
     }
@@ -339,13 +384,20 @@ impl VfsNode for ProviderNode {
         self.wait_queue.remove(tid);
         if self.wait_queue.is_empty() {
             let payload = self.handle.to_le_bytes();
-            let _ = self.channel.lock().rpc(VfsRpcOp::UnsubscribeReady, &payload);
+            let _ = self
+                .channel
+                .lock()
+                .rpc(VfsRpcOp::UnsubscribeReady, &payload);
         }
     }
 }
 
 pub fn notify_by_port(port_id: u32, handle: u64, revents: u16) -> SysResult<()> {
-    let weak = PROVIDER_MAP.lock().get(&port_id).cloned().ok_or(Errno::ENOENT)?;
+    let weak = PROVIDER_MAP
+        .lock()
+        .get(&port_id)
+        .cloned()
+        .ok_or(Errno::ENOENT)?;
     if let Some(fs) = weak.upgrade() {
         fs.notify(handle, revents);
         Ok(())
@@ -355,9 +407,15 @@ pub fn notify_by_port(port_id: u32, handle: u64, revents: u16) -> SysResult<()> 
 }
 
 fn parse_response_read(resp: &[u8], buf: &mut [u8]) -> SysResult<usize> {
-    if resp.is_empty() { return Err(Errno::EIO); }
-    if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
-    if resp.len() < 5 { return Err(Errno::EIO); }
+    if resp.is_empty() {
+        return Err(Errno::EIO);
+    }
+    if resp[0] != 0 {
+        return Err(errno_from_u8(resp[0]));
+    }
+    if resp.len() < 5 {
+        return Err(Errno::EIO);
+    }
     let n = u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]) as usize;
     let data = &resp[5..];
     let copy_n = n.min(data.len()).min(buf.len());
@@ -366,20 +424,41 @@ fn parse_response_read(resp: &[u8], buf: &mut [u8]) -> SysResult<usize> {
 }
 
 fn parse_response_u32(resp: &[u8]) -> SysResult<u32> {
-    if resp.is_empty() { return Err(Errno::EIO); }
-    if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
-    if resp.len() < 5 { return Err(Errno::EIO); }
+    if resp.is_empty() {
+        return Err(Errno::EIO);
+    }
+    if resp[0] != 0 {
+        return Err(errno_from_u8(resp[0]));
+    }
+    if resp.len() < 5 {
+        return Err(Errno::EIO);
+    }
     Ok(u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]))
 }
 
 fn parse_response_stat(resp: &[u8]) -> SysResult<VfsStat> {
-    if resp.is_empty() { return Err(Errno::EIO); }
-    if resp[0] != 0 { return Err(errno_from_u8(resp[0])); }
-    if resp.len() < 21 { return Err(Errno::EIO); }
+    if resp.is_empty() {
+        return Err(Errno::EIO);
+    }
+    if resp[0] != 0 {
+        return Err(errno_from_u8(resp[0]));
+    }
+    if resp.len() < 21 {
+        return Err(Errno::EIO);
+    }
     let mode = u32::from_le_bytes([resp[1], resp[2], resp[3], resp[4]]);
-    let size = u64::from_le_bytes([resp[5], resp[6], resp[7], resp[8], resp[9], resp[10], resp[11], resp[12],]);
-    let ino = u64::from_le_bytes([resp[13], resp[14], resp[15], resp[16], resp[17], resp[18], resp[19], resp[20],]);
-    Ok(VfsStat { mode, size, ino, ..Default::default() })
+    let size = u64::from_le_bytes([
+        resp[5], resp[6], resp[7], resp[8], resp[9], resp[10], resp[11], resp[12],
+    ]);
+    let ino = u64::from_le_bytes([
+        resp[13], resp[14], resp[15], resp[16], resp[17], resp[18], resp[19], resp[20],
+    ]);
+    Ok(VfsStat {
+        mode,
+        size,
+        ino,
+        ..Default::default()
+    })
 }
 
 fn errno_from_u8(v: u8) -> Errno {

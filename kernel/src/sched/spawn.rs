@@ -204,8 +204,12 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
         self.state.enqueue_task(safe_cpu, priority as usize, id);
 
-        // If the target CPU is not the current one, send an IPI to wake it up
-        if safe_cpu != super::current_cpu_index::<R>() {
+        // Ensure the target CPU actually performs a reschedule for this new runnable task.
+        if safe_cpu == super::current_cpu_index::<R>() {
+            self.state.per_cpu[safe_cpu].need_resched = true;
+        } else {
+            super::GLOBAL_NEED_RESCHED[safe_cpu]
+                .store(true, core::sync::atomic::Ordering::Release);
             super::DIAG_IPI_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
@@ -337,8 +341,12 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
         self.state.enqueue_task(safe_cpu, priority as usize, id);
 
-        // If the target CPU is not the current one, send an IPI to wake it up
-        if safe_cpu != super::current_cpu_index::<R>() {
+        // Ensure the target CPU actually performs a reschedule for this new runnable task.
+        if safe_cpu == super::current_cpu_index::<R>() {
+            self.state.per_cpu[safe_cpu].need_resched = true;
+        } else {
+            super::GLOBAL_NEED_RESCHED[safe_cpu]
+                .store(true, core::sync::atomic::Ordering::Release);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
                 safe_cpu,
@@ -438,8 +446,12 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
         self.state.enqueue_task(safe_cpu, priority as usize, id);
 
-        // If the target CPU is not the current one, send an IPI to wake it up
-        if safe_cpu != super::current_cpu_index::<R>() {
+        // Ensure the target CPU actually performs a reschedule for this new runnable task.
+        if safe_cpu == super::current_cpu_index::<R>() {
+            self.state.per_cpu[safe_cpu].need_resched = true;
+        } else {
+            super::GLOBAL_NEED_RESCHED[safe_cpu]
+                .store(true, core::sync::atomic::Ordering::Release);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
                 safe_cpu,

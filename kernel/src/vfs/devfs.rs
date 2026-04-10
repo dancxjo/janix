@@ -331,6 +331,10 @@ impl VfsNode for ConsoleNode {
             ..Default::default()
         })
     }
+
+    fn is_tty(&self) -> bool {
+        true
+    }
 }
 
 // ── /dev/null ────────────────────────────────────────────────────────────────

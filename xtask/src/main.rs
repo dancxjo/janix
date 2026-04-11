@@ -23,7 +23,9 @@ use xshell::Shell;
 use crate::bdd::bdd;
 use crate::build::build;
 use crate::clean::{clean, distclean};
-use crate::common::project_root;
+use crate::common::{
+    COLOR_BLUE, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW, project_root,
+};
 use crate::fetch::fetch;
 use crate::image::{
     IsoConfig, ProgramConfig, build_hdd, build_iso, build_iso_with_config, default_programs,
@@ -218,7 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 build_iso(&sh, &env, &programs)?
             };
-            println!("ISO generated at: {}", path.display());
+            println!("{}ISO generated at: {}{}", COLOR_GREEN, path.display(), COLOR_RESET);
         }
         Commands::Hdd { env, profile, init } => {
             limine(&sh)?;
@@ -226,7 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let path = build_hdd(&sh, &env, &programs)?;
-            println!("HDD generated at: {}", path.display());
+            println!("{}HDD generated at: {}{}", COLOR_GREEN, path.display(), COLOR_RESET);
         }
         Commands::Run {
             env,

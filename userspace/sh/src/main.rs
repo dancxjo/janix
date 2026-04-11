@@ -12,11 +12,11 @@ fn prompt() {
     match stem::syscall::vfs_getcwd(&mut buf) {
         Ok(n) => {
             let cwd = core::str::from_utf8(&buf[..n]).unwrap_or("/");
-            let out = alloc::format!("thing {} # ", cwd);
+            let out = alloc::format!("\x1B[32mthing\x1B[0m \x1B[34m{}\x1B[0m # ", cwd);
             let _ = vfs_write(1, out.as_bytes());
         }
         Err(_) => {
-            let _ = vfs_write(1, b"thing-os # ");
+            let _ = vfs_write(1, b"\x1B[32mthing-os\x1B[0m # ");
         }
     }
 }

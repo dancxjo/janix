@@ -159,6 +159,16 @@ fn can_log_to_graph(_level: Level) -> bool {
     false
 }
 
+fn level_to_colored_str(level: Level) -> &'static str {
+    match level {
+        Level::Error => "\x1b[31;1mERROR\x1b[0m",
+        Level::Warn => "\x1b[33mWARN \x1b[0m",
+        Level::Info => "\x1b[32mINFO \x1b[0m",
+        Level::Debug => "\x1b[34mDEBUG\x1b[0m",
+        Level::Trace => "\x1b[35mTRACE\x1b[0m",
+    }
+}
+
 /// Check if this level should be logged (considering MIN_LOG_LEVEL)
 #[inline]
 fn should_log(level: Level) -> bool {
@@ -193,7 +203,7 @@ pub fn _log_event(
                 writer,
                 "[{}] [{}] [{}] [CPU{}] ",
                 ts,
-                meta.level.as_str(),
+                level_to_colored_str(meta.level),
                 event_str,
                 writer.runtime.current_cpu_id().0
             );
@@ -229,7 +239,7 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
             let ts = writer.runtime.mono_ticks();
             let _ = write!(
                 writer,
-                "[{}] [-----] [{}] [CPU{}] ",
+                "[{}] [\x1b[36m-----\x1b[0m] [{}] [CPU{}] ",
                 ts,
                 source,
                 writer.runtime.current_cpu_id().0

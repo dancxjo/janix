@@ -83,6 +83,11 @@ fn format_mode(mode: u32) -> String {
     s
 }
 
+const COLOR_DIR: &str = "\x1B[34m";
+const COLOR_EXE: &str = "\x1B[32m";
+const COLOR_DEV: &str = "\x1B[33m";
+const COLOR_RESET: &str = "\x1B[0m";
+
 fn list_path(path: &str, flags: &Flags, is_nested: bool) {
     stem::debug!("ls: listing path '{}'", path);
     if flags.recursive || is_nested {
@@ -110,17 +115,34 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         }
     };
 
+    let name_at_path = path.split('/').last().unwrap_or(path);
+    let is_dir = (stat.mode & 0o170000) == 0o040000;
+    let is_exe = (stat.mode & 0o111) != 0;
+    let is_dev = (stat.mode & 0o020000) != 0 || (stat.mode & 0o060000) != 0;
+
+    let color = if is_dir {
+        COLOR_DIR
+    } else if is_dev {
+        COLOR_DEV
+    } else if is_exe {
+        COLOR_EXE
+    } else {
+        ""
+    };
+
     if (stat.mode & 0o170000) != 0o040000 {
         // Not a directory, just print the file itself
         if flags.long {
             print(&format!(
-                "{} {:8} {}\n",
+                "{} {:8} {}{}{}\n",
                 format_mode(stat.mode),
                 stat.size,
-                path
+                color,
+                path,
+                if color.is_empty() { "" } else { COLOR_RESET }
             ));
         } else {
-            print(&format!("{}\n", path));
+            print(&format!("{}{}{}\n", color, path, if color.is_empty() { "" } else { COLOR_RESET }));
         }
         let _ = vfs_close(fd);
         return;
@@ -165,44 +187,58 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         }
         full_path.push_str(&name);
 
-        if flags.long {
-            match vfs_open(&full_path, 0) {
-                Ok(child_fd) => {
-                    if let Ok(child_stat) = vfs_stat(child_fd) {
+        match vfs_open(&full_path, 0) {
+            Ok(child_fd) => {
+                if let Ok(child_stat) = vfs_stat(child_fd) {
+                    let c_is_dir = (child_stat.mode & 0o170000) == 0o040000;
+                    let c_is_exe = (child_stat.mode & 0o111) != 0 && !c_is_dir;
+                    let c_is_dev = (child_stat.mode & 0o020000) != 0 || (child_stat.mode & 0o060000) != 0;
+
+                    let c_color = if c_is_dir {
+                        COLOR_DIR
+                    } else if c_is_dev {
+                        COLOR_DEV
+                    } else if c_is_exe {
+                        COLOR_EXE
+                    } else {
+                        ""
+                    };
+
+                    if flags.long {
                         print(&format!(
-                            "{} {:8} {}\n",
+                            "{} {:8} {}{}{}\n",
                             format_mode(child_stat.mode),
                             child_stat.size,
-                            name
+                            c_color,
+                            name,
+                            if c_color.is_empty() { "" } else { COLOR_RESET }
                         ));
-                        if flags.recursive
-                            && (child_stat.mode & 0o170000) == 0o040000
-                            && name != "."
-                            && name != ".."
-                        {
-                            subdirs.push(full_path);
-                        }
+                    } else {
+                        print(&format!("{}{}{}  ", c_color, name, if c_color.is_empty() { "" } else { COLOR_RESET }));
                     }
-                    let _ = vfs_close(child_fd);
+
+                    if flags.recursive
+                        && c_is_dir
+                        && name != "."
+                        && name != ".."
+                    {
+                        subdirs.push(full_path);
+                    }
                 }
-                Err(_) => {
-                    print(&format!("?--------- ?        {}\n", name));
-                }
+                let _ = vfs_close(child_fd);
             }
-        } else {
-            print(&format!("{}\n", name));
-            if flags.recursive && name != "." && name != ".." {
-                // We need to check if it's a directory
-                if let Ok(child_fd) = vfs_open(&full_path, 0) {
-                    if let Ok(child_stat) = vfs_stat(child_fd) {
-                        if (child_stat.mode & 0o170000) == 0o040000 {
-                            subdirs.push(full_path);
-                        }
-                    }
-                    let _ = vfs_close(child_fd);
+            Err(_) => {
+                if flags.long {
+                    print(&format!("?--------- ?        {}\n", name));
+                } else {
+                    print(&format!("{}  ", name));
                 }
             }
         }
+    }
+
+    if !flags.long {
+        print("\n");
     }
 
     if flags.recursive && !subdirs.is_empty() {

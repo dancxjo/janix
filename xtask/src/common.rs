@@ -1,5 +1,11 @@
 //! Common utilities shared across xtask modules.
 
+pub const COLOR_RED: &str = "\x1b[31m";
+pub const COLOR_GREEN: &str = "\x1b[32m";
+pub const COLOR_YELLOW: &str = "\x1b[33m";
+pub const COLOR_BLUE: &str = "\x1b[34m";
+pub const COLOR_RESET: &str = "\x1b[0m";
+
 use std::path::PathBuf;
 
 /// Get the project root directory (parent of xtask).

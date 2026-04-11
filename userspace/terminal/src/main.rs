@@ -67,10 +67,11 @@ impl Font {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 enum AnsiState {
     Normal,
     Esc,
-    Csi,
+    Csi { params: Vec<u32>, current_num: Option<u32> },
 }
 
 struct Terminal {
@@ -81,6 +82,8 @@ struct Terminal {
     font: Font,
     cursor_x: u32,
     cursor_y: u32,
+    current_fg: u32,
+    current_bg: u32,
     ansi_state: AnsiState,
 }
 
@@ -94,6 +97,8 @@ impl Terminal {
             font,
             cursor_x: 0,
             cursor_y: 0,
+            current_fg: 0xFFFFFFFF, // White
+            current_bg: 0xFF000000, // Black
             ansi_state: AnsiState::Normal,
         }
     }
@@ -106,8 +111,23 @@ impl Terminal {
         }
     }
 
-    fn putc(&mut self, c: char, fg: u32, bg: u32) {
-        match self.ansi_state {
+    fn ansi_color_to_u32(code: u32, is_bg: bool) -> u32 {
+        let base = if is_bg { 40 } else { 30 };
+        match code - base {
+            0 => 0xFF000000, // Black
+            1 => 0xFFFF0000, // Red
+            2 => 0xFF00FF00, // Green
+            3 => 0xFFFFFF00, // Yellow
+            4 => 0xFF0000FF, // Blue
+            5 => 0xFFFF00FF, // Magenta
+            6 => 0xFF00FFFF, // Cyan
+            7 => 0xFFFFFFFF, // White
+            _ => if is_bg { 0xFF000000 } else { 0xFFFFFFFF },
+        }
+    }
+
+    fn putc(&mut self, c: char) {
+        match self.ansi_state.clone() {
             AnsiState::Normal => {
                 if c == '\x1B' {
                     self.ansi_state = AnsiState::Esc;
@@ -121,29 +141,64 @@ impl Terminal {
                     }
                     return;
                 }
+                if c == '\r' {
+                    self.cursor_x = 0;
+                    return;
+                }
+                if c == '\x08' { // Backspace
+                     let width = 8; // Assuming standard width for backspace for now
+                     if self.cursor_x >= width {
+                         self.cursor_x -= width;
+                     }
+                     return;
+                }
                 // Handle tab as 4 spaces
                 if c == '\t' {
                     for _ in 0..4 {
-                        self.putc(' ', fg, bg);
+                        self.putc(' ');
                     }
                     return;
                 }
             }
             AnsiState::Esc => {
                 if c == '[' {
-                    self.ansi_state = AnsiState::Csi;
+                    self.ansi_state = AnsiState::Csi { params: Vec::new(), current_num: None };
                 } else {
                     self.ansi_state = AnsiState::Normal;
                 }
                 return;
             }
-            AnsiState::Csi => {
-                if c == '2' {
-                    // Part of [2J
+            AnsiState::Csi { mut params, mut current_num } => {
+                if c.is_ascii_digit() {
+                    let digit = c.to_digit(10).unwrap();
+                    current_num = Some(current_num.unwrap_or(0) * 10 + digit);
+                    self.ansi_state = AnsiState::Csi { params, current_num };
+                    return;
+                } else if c == ';' {
+                    params.push(current_num.unwrap_or(0));
+                    self.ansi_state = AnsiState::Csi { params, current_num: None };
+                    return;
+                } else if c == 'm' {
+                    // SGR - Select Graphic Rendition
+                    params.push(current_num.unwrap_or(0));
+                    for &p in &params {
+                        if p == 0 {
+                            self.current_fg = 0xFFFFFFFF;
+                            self.current_bg = 0xFF000000;
+                        } else if (30..=37).contains(&p) {
+                            self.current_fg = Self::ansi_color_to_u32(p, false);
+                        } else if (40..=47).contains(&p) {
+                            self.current_bg = Self::ansi_color_to_u32(p, true);
+                        } else if (90..=97).contains(&p) {
+                            // Bright fg
+                             self.current_fg = Self::ansi_color_to_u32(p - 60, false) | 0xFF888888; // Hacky bright
+                        }
+                    }
+                    self.ansi_state = AnsiState::Normal;
                     return;
                 } else if c == 'J' {
                     // Clear screen
-                    self.clear(0xFF000000); // Black
+                    self.clear(self.current_bg);
                     self.ansi_state = AnsiState::Normal;
                     return;
                 } else if c == 'H' {
@@ -168,7 +223,7 @@ impl Terminal {
             .unwrap_or(8);
 
         if self.cursor_x + width > self.width {
-            self.putc('\n', fg, bg);
+            self.putc('\n');
         }
 
         let bitmap = self
@@ -183,8 +238,8 @@ impl Terminal {
                 width,
                 self.cursor_x,
                 self.cursor_y,
-                fg,
-                bg,
+                self.current_fg,
+                self.current_bg,
             );
             self.cursor_x += width;
         }
@@ -239,14 +294,14 @@ impl Terminal {
                 self.fb_ptr.add(total_pixels - row_pixels),
                 row_pixels,
             );
-            last_lines.fill(0xFF000000); // Black
+            last_lines.fill(self.current_bg);
         }
         self.cursor_y -= 16;
     }
 
     fn write_str(&mut self, s: &str) {
         for c in s.chars() {
-            self.putc(c, 0xFFFFFFFF, 0xFF000000);
+            self.putc(c);
         }
     }
 }

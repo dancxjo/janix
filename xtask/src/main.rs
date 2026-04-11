@@ -14,6 +14,7 @@ mod image;
 mod kill;
 mod limine;
 mod run;
+mod rustc_thingos;
 mod scan;
 
 use clap::{Parser, Subcommand};
@@ -164,6 +165,12 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
+    /// Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos
+    ///
+    /// Set SKIP_RUSTC_THINGOS=1 to skip this step.
+    /// The result is cached under target/rustc-thingos/ and keyed on the
+    /// target JSON spec plus rust-toolchain.toml.
+    RustcThingos,
     /// Run HTTP proxy for guest internet access (Guest -> Host -> Internet)
     GuestProxy {
         /// Listen port
@@ -195,6 +202,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
+            // Build rustc for thingos (cached; set SKIP_RUSTC_THINGOS=1 to skip).
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
 
@@ -274,6 +283,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
         Commands::Fetch => fetch()?,
+        Commands::RustcThingos => {
+            rustc_thingos::build_rustc_thingos(&sh, "x86_64")?;
+        }
         Commands::GuestProxy { port } => guest_proxy::run(port)?,
         Commands::Audit => audit::audit()?,
         Commands::Scan(args) => scan::run(args)?,

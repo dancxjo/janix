@@ -145,6 +145,7 @@ impl VfsDriver for DevFs {
             "rtc" => Ok(Arc::new(RtcNode)),
             "random" => Ok(Arc::new(RandomNode)),
             "urandom" => Ok(Arc::new(UrandomNode)),
+            "kmsg" => Ok(Arc::new(KmsgNode)),
             _ => Err(Errno::ENOENT),
         }
     }
@@ -232,6 +233,7 @@ impl VfsNode for DevDirNode {
         names.push("rtc".to_string());
         names.push("random".to_string());
         names.push("urandom".to_string());
+        names.push("kmsg".to_string());
         {
             let reg = DEVICE_REGISTRY.lock();
             for name in reg.keys() {
@@ -788,6 +790,55 @@ impl VfsNode for UrandomNode {
     fn poll(&self) -> u16 {
         // Always ready for both read and write.
         abi::syscall::poll_flags::POLLIN | abi::syscall::poll_flags::POLLOUT
+    }
+}
+
+// ── /dev/kmsg ────────────────────────────────────────────────────────────────
+
+/// Character device node for `/dev/kmsg`.
+///
+/// Provides a read-only view of the kernel message buffer (ring buffer).
+/// Currently handles a single snapshot of the buffer per read call for simplicity.
+pub struct KmsgNode;
+
+impl VfsNode for KmsgNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        // We use a temporary buffer to avoid holding the log lock for too long
+        // and because copy_log_buffer currently returns the whole buffer.
+        // For dmesg, a full snapshot is usually what's wanted.
+        let mut temp = vec![0u8; crate::logging::get_log_buffer_len()];
+        let n = crate::logging::copy_log_buffer(&mut temp);
+        
+        let off = offset as usize;
+        if off >= n {
+            return Ok(0);
+        }
+        
+        let avail = &temp[off..n];
+        let count = avail.len().min(buf.len());
+        buf[..count].copy_from_slice(&avail[..count]);
+        Ok(count)
+    }
+
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        // Linux allows writing to /dev/kmsg to inject logs, but we'll stick to 
+        // read-only for now.
+        Err(Errno::EPERM)
+    }
+
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFCHR | 0o444,
+            size: crate::logging::get_log_buffer_len() as u64,
+            ino: 8,
+            nlink: 1,
+            rdev: VfsStat::makedev(1, 11),
+            ..Default::default()
+        })
     }
 }
 

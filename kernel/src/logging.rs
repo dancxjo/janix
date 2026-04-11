@@ -4,6 +4,7 @@
 //! With optional span correlation for multi-line output.
 
 use crate::BootRuntimeBase;
+use alloc::collections::VecDeque;
 use alloc::format;
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -14,6 +15,8 @@ pub use abi::logging::Level;
 pub type LogLevel = Level;
 
 static GLOBAL_LOGGER: Mutex<Option<Logger>> = Mutex::new(None);
+static LOG_BUFFER: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+const MAX_LOG_BUFFER_SIZE: usize = 128 * 1024; // 128 KB
 static IN_GRAPH_LOG: AtomicBool = AtomicBool::new(false);
 static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
 
@@ -151,6 +154,41 @@ pub unsafe fn force_unlock() {
     // SAFETY: Only called from panic handler when logger lock may be poisoned
     unsafe {
         GLOBAL_LOGGER.force_unlock();
+        LOG_BUFFER.force_unlock();
+    }
+}
+
+pub fn copy_log_buffer(buf: &mut [u8]) -> usize {
+    let lock = LOG_BUFFER.lock();
+    let n = lock.len().min(buf.len());
+    let (s1, s2) = lock.as_slices();
+    
+    let n1 = s1.len().min(n);
+    buf[..n1].copy_from_slice(&s1[..n1]);
+    
+    let n2 = (n - n1).min(s2.len());
+    if n2 > 0 {
+        buf[n1..n1+n2].copy_from_slice(&s2[..n2]);
+    }
+    
+    n1 + n2
+}
+
+pub fn get_log_buffer_len() -> usize {
+    LOG_BUFFER.lock().len()
+}
+
+struct LogBufferWriter<'a>(&'a mut VecDeque<u8>);
+
+impl<'a> Write for LogBufferWriter<'a> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for &b in s.as_bytes() {
+            if self.0.len() >= MAX_LOG_BUFFER_SIZE {
+                self.0.pop_front();
+            }
+            self.0.push_back(b);
+        }
+        Ok(())
     }
 }
 
@@ -220,7 +258,29 @@ pub fn _log_event(
         }
     }
 
-    // 2. Graph Persistence (REMOVED)
+    // 2. Log Buffer Output
+    {
+        let mut lock = LOG_BUFFER.lock();
+        let mut writer = LogBufferWriter(&mut *lock);
+        let ts = crate::runtime_base().mono_ticks();
+        let _ = write!(
+            writer,
+            "[{}] [{}] [{}] [CPU{}] ",
+            ts,
+            meta.level.as_str(),
+            event_str,
+            crate::runtime_base().current_cpu_id().0
+        );
+        let _ = writer.write_fmt(msg_fmt);
+        if !fields.is_empty() {
+            for (k, v) in fields {
+                let _ = write!(writer, " {}={}", k, v);
+            }
+        }
+        let _ = writer.write_str("\n");
+    }
+
+    // 3. Graph Persistence (REMOVED)
 }
 
 // Backward compatibility shim for kinfo! etc
@@ -247,6 +307,22 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
             let _ = writer.write_fmt(args);
             let _ = writer.write_char('\n');
         }
+    }
+
+    // 2. Log Buffer Output
+    {
+        let mut lock = LOG_BUFFER.lock();
+        let mut writer = LogBufferWriter(&mut *lock);
+        let ts = crate::runtime_base().mono_ticks();
+        let _ = write!(
+            writer,
+            "[{}] [-----] [{}] [CPU{}] ",
+            ts,
+            source,
+            crate::runtime_base().current_cpu_id().0
+        );
+        let _ = writer.write_fmt(args);
+        let _ = writer.write_str("\n");
     }
 }
 

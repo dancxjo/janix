@@ -127,10 +127,8 @@ index 00000000..78981fba
 +        self.alloc(layout)
 +    }
 +
-+    unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-+        let _ = old_layout;
-+        let _ = new_size;
-+        ptr
++    unsafe fn realloc(&self, _ptr: *mut u8, _old_layout: Layout, _new_size: usize) -> *mut u8 {
++        core::ptr::null_mut()
 +    }
 +}
 diff --git a/library/std/src/sys/env_consts.rs b/library/std/src/sys/env_consts.rs
@@ -369,21 +367,21 @@ index 00000000..93bf392d
 +    }
 +
 +    pub fn set_read_timeout(&self, t: Option<Duration>) -> io::Result<()> {
-+        self.read_timeout.set(t).unwrap();
++        *self.read_timeout.lock().unwrap() = t;
 +        Ok(())
 +    }
 +
 +    pub fn set_write_timeout(&self, t: Option<Duration>) -> io::Result<()> {
-+        self.write_timeout.set(t).unwrap();
++        *self.write_timeout.lock().unwrap() = t;
 +        Ok(())
 +    }
 +
 +    pub fn read_timeout(&self) -> io::Result<Option<Duration>> {
-+        Ok(self.read_timeout.get_cloned().unwrap())
++        Ok(*self.read_timeout.lock().unwrap())
 +    }
 +
 +    pub fn write_timeout(&self) -> io::Result<Option<Duration>> {
-+        Ok(self.write_timeout.get_cloned().unwrap())
++        Ok(*self.write_timeout.lock().unwrap())
 +    }
 +
 +    pub fn peek(&self, _: &mut [u8]) -> io::Result<usize> {
@@ -395,8 +393,8 @@ index 00000000..93bf392d
 +            return Ok(0);
 +        }
 +
-+        let nonblocking = self.nonblocking.get_cloned().unwrap();
-+        let timeout = self.read_timeout.get_cloned().unwrap();
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.read_timeout.lock().unwrap();
 +        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
 +
 +        loop {
@@ -434,8 +432,8 @@ index 00000000..93bf392d
 +            return Ok(0);
 +        }
 +
-+        let nonblocking = self.nonblocking.get_cloned().unwrap();
-+        let timeout = self.write_timeout.get_cloned().unwrap();
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.write_timeout.lock().unwrap();
 +        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
 +
 +        loop {
@@ -516,7 +514,7 @@ index 00000000..93bf392d
 +    }
 +
 +    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-+        self.nonblocking.set(nonblocking).unwrap();
++        *self.nonblocking.lock().unwrap() = nonblocking;
 +        Ok(())
 +    }
 +
@@ -1108,11 +1106,10 @@ diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/threa
 index e88011aa..1dde5484 100644
 --- a/library/std/src/sys/thread_local/mod.rs
 +++ b/library/std/src/sys/thread_local/mod.rs
-@@ -30,6 +30,8 @@
+@@ -30,6 +30,7 @@
          target_os = "zkvm",
          target_os = "trusty",
          target_os = "vexos",
-+            target_os = "thingos",
 +        target_os = "thingos",
      ) => {
          mod no_threads;

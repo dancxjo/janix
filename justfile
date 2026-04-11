@@ -220,12 +220,15 @@ smoke:
 # here only for reference and diagnostic messages.
 rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 
-# Initialize (or update) the vendor/rust git submodule and apply our patches.
+# Initialize (or update) the vendor/rust git submodule, then apply our patches.
 # vendor/rust is tracked as a shallow git submodule — see .gitmodules.
+# Patches from patches/rust/thingos-pal.patch are applied automatically so
+# every environment starts from the same patched working tree.
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
     ROOT_DIR="$(pwd)"
+    PATCH_FILE="patches/rust/thingos-pal.patch"
     if [ -f vendor/rust/.git ] || [ -d vendor/rust/.git ]; then
         echo "vendor/rust submodule already initialized."
         echo "  To reset to the clean upstream state, run: just rust-reset"
@@ -239,6 +242,20 @@ fetch-rust:
         echo "==> Initializing library/backtrace submodule..."
         cd vendor/rust && git submodule update --init --depth 1 library/backtrace
         cd "$ROOT_DIR"
+    fi
+    # Apply our patches unless they have already been applied.
+    # `git apply --check` exits non-zero when the patch can't apply cleanly
+    # (already applied, or conflicts), so we only apply when the check passes.
+    if [ -f "$PATCH_FILE" ]; then
+        CHECK_OUTPUT=$(git -C vendor/rust apply --check "../../${PATCH_FILE}" 2>&1) && CHECK_EXIT=0 || CHECK_EXIT=$?
+        if [ "$CHECK_EXIT" -eq 0 ]; then
+            echo "==> Applying ${PATCH_FILE}..."
+            git -C vendor/rust apply "../../${PATCH_FILE}"
+            echo "==> Patches applied."
+        else
+            echo "==> Patches already applied or do not apply cleanly (skipping)."
+            echo "    git apply --check said: ${CHECK_OUTPUT}"
+        fi
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
 
@@ -279,16 +296,22 @@ rust-reset:
 rust-apply-patches:
     #!/usr/bin/env bash
     set -euo pipefail
+    PATCH_FILE="patches/rust/thingos-pal.patch"
     if [ ! -f vendor/rust/.git ] && [ ! -d vendor/rust/.git ]; then
         echo "vendor/rust submodule is not initialized. Run: just fetch-rust"
         exit 1
     fi
-    if [ ! -f patches/rust/thingos-pal.patch ]; then
+    if [ ! -f "$PATCH_FILE" ]; then
         echo "No patches found in patches/rust/. Nothing to apply."
         exit 0
     fi
-    cd vendor/rust
-    git apply ../../patches/rust/thingos-pal.patch
-    echo "==> Applied patches/rust/thingos-pal.patch"
+    CHECK_OUTPUT=$(git -C vendor/rust apply --check "../../${PATCH_FILE}" 2>&1) && CHECK_EXIT=0 || CHECK_EXIT=$?
+    if [ "$CHECK_EXIT" -eq 0 ]; then
+        git -C vendor/rust apply "../../${PATCH_FILE}"
+        echo "==> Applied ${PATCH_FILE}"
+    else
+        echo "==> Patch already applied or does not apply cleanly — skipping."
+        echo "    git apply --check said: ${CHECK_OUTPUT}"
+    fi
 
 

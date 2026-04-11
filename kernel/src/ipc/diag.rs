@@ -60,6 +60,15 @@ pub static VFS_RPC_DEAD_PROVIDER: AtomicU64 = AtomicU64::new(0);
 
 // ── Text renderers ────────────────────────────────────────────────────────────
 
+/// Record a dead-provider error: increments both `VFS_RPC_ERRORS` and
+/// `VFS_RPC_DEAD_PROVIDER`.  Call this whenever a VFS RPC send fails or the
+/// response port returns `EPIPE` (provider exited mid-call).
+#[inline]
+pub fn record_dead_provider_error() {
+    VFS_RPC_ERRORS.fetch_add(1, Ordering::Relaxed);
+    VFS_RPC_DEAD_PROVIDER.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Render channel counters as a human-readable text block (for `/proc/ipc/channels`).
 pub fn channels_text() -> alloc::string::String {
     alloc::format!(

@@ -11,8 +11,11 @@
 //! | `/proc/meminfo`            | Heap memory statistics |
 //! | `/proc/cpuinfo`            | CPU model and frequency |
 //! | `/proc/uptime`             | Seconds since boot |
+//! | `/proc/self`               | Directory for the calling process |
+//! | `/proc/self/exe`           | Symlink to calling process's executable |
 //! | `/proc/<pid>/status`       | Process state, name, ppid |
 //! | `/proc/<pid>/cmdline`      | argv as null-delimited bytes |
+//! | `/proc/<pid>/exe`          | Symlink to the process's executable |
 //! | `/proc/<pid>/fd/`          | Directory of open fd targets |
 
 use abi::errors::{Errno, SysResult};
@@ -56,6 +59,10 @@ impl VfsDriver for ProcFs {
             "ipc/channels" => Ok(Arc::new(IpcDiagNode::channels())),
             "ipc/pipes" => Ok(Arc::new(IpcDiagNode::pipes())),
             "ipc/vfs_rpc" => Ok(Arc::new(IpcDiagNode::vfs_rpc())),
+            // /proc/self — virtual directory for the calling process
+            "self" => Ok(Arc::new(ProcSelfDirNode)),
+            // /proc/self/exe — symlink to the current process's executable
+            "self/exe" => Ok(Arc::new(ProcSelfExeNode)),
             _ => {
                 // Try to match /proc/<pid>/... paths.
                 // `path` is already relative to the mount point, so it looks
@@ -119,6 +126,10 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
             )))
         }
         "fd" => Ok(Arc::new(ProcPidFdDirNode { pid })),
+        "exe" => {
+            // /proc/<pid>/exe — symlink to the process's executable path.
+            Ok(Arc::new(ProcPidExeNode { exec_path: snap.exec_path.clone() }))
+        }
         _ => Err(Errno::ENOENT),
     }
 }
@@ -150,6 +161,7 @@ impl VfsNode for ProcDirNode {
             String::from("cpuinfo"),
             String::from("uptime"),
             String::from("ipc"),
+            String::from("self"),
         ];
         for snap in crate::sched::list_processes_current() {
             names.push(alloc::format!("{}", snap.pid));
@@ -180,7 +192,7 @@ impl VfsNode for ProcPidDirNode {
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        let entries = ["status", "cmdline", "fd"];
+        let entries = ["status", "cmdline", "fd", "exe"];
         super::write_readdir_entries(entries.into_iter(), offset, buf)
     }
 }
@@ -214,7 +226,112 @@ impl VfsNode for ProcPidFdDirNode {
     }
 }
 
-// ── Static text node ──────────────────────────────────────────────────────────
+// ── /proc/self — virtual directory for the calling process ───────────────────
+
+struct ProcSelfDirNode;
+
+impl VfsNode for ProcSelfDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o555,
+            size: 0,
+            ino: 210,
+            ..Default::default()
+        })
+    }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let entries = ["exe"];
+        super::write_readdir_entries(entries.into_iter(), offset, buf)
+    }
+}
+
+// ── /proc/self/exe — symlink to the current process's executable ──────────────
+
+/// A symlink node that resolves to the calling process's executable path.
+///
+/// Reading returns the path; `readlink` returns it directly for VFS consumers.
+struct ProcSelfExeNode;
+
+impl VfsNode for ProcSelfExeNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let target = self.readlink()?;
+        let data = target.as_bytes();
+        let off = offset as usize;
+        if off >= data.len() {
+            return Ok(0);
+        }
+        let n = (data.len() - off).min(buf.len());
+        buf[..n].copy_from_slice(&data[off..off + n]);
+        Ok(n)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EROFS)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFLNK | 0o777,
+            size: 0,
+            ino: 211,
+            ..Default::default()
+        })
+    }
+    fn readlink(&self) -> SysResult<String> {
+        let pinfo = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let path = pinfo.lock().exec_path.clone();
+        if path.is_empty() {
+            Err(Errno::ENOENT)
+        } else {
+            Ok(path)
+        }
+    }
+}
+
+// ── /proc/<pid>/exe — symlink to a specific process's executable ──────────────
+
+/// A symlink node that resolves to a given process's executable path.
+struct ProcPidExeNode {
+    exec_path: String,
+}
+
+impl VfsNode for ProcPidExeNode {
+    fn read(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let target = self.readlink()?;
+        let data = target.as_bytes();
+        let off = offset as usize;
+        if off >= data.len() {
+            return Ok(0);
+        }
+        let n = (data.len() - off).min(buf.len());
+        buf[..n].copy_from_slice(&data[off..off + n]);
+        Ok(n)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EROFS)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFLNK | 0o777,
+            size: 0,
+            ino: 0, // dynamic; caller doesn't rely on stable ino for exe nodes
+            ..Default::default()
+        })
+    }
+    fn readlink(&self) -> SysResult<String> {
+        if self.exec_path.is_empty() {
+            Err(Errno::ENOENT)
+        } else {
+            Ok(self.exec_path.clone())
+        }
+    }
+}
+
+
 
 /// Returns a fixed byte slice on read.
 struct StaticTextNode {

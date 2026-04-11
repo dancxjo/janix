@@ -82,6 +82,12 @@ pub struct ProcessInfo {
     /// original thread group is left intact.  After a successful exec commit
     /// the caller is the only surviving thread and the flag is irrelevant.
     pub exec_in_progress: bool,
+    /// Path of the executable image currently running in this process.
+    ///
+    /// Populated at spawn time from `argv[0]` (or the module path) and updated
+    /// on every `exec` with the resolved path of the new image.  Exposed to
+    /// userspace as `/proc/self/exe` (a read-only symlink target).
+    pub exec_path: alloc::string::String,
 }
 
 pub struct Task<R: BootRuntime> {

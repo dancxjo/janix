@@ -9,9 +9,9 @@ their VFS provider into the device namespace.
 ## Overview
 
 When a driver is launched by sprout (or by `devd`), it receives a pair of
-private channel handles as part of its bootstrap data:
+private channel things as part of its bootstrap data:
 
-| Handle          | Direction         | Purpose                                 |
+| Thing           | Direction         | Purpose                                 |
 |-----------------|-------------------|-----------------------------------------|
 | `drv_req_read`  | Supervisor → Driver | Commands and replies from the supervisor |
 | `drv_resp_write`| Driver → Supervisor | Registration messages and status updates |
@@ -25,7 +25,7 @@ All messages follow the framing defined in `abi::display_driver_protocol`
 
 | Constant              | Value  | Direction             | Meaning                                       |
 |-----------------------|--------|-----------------------|-----------------------------------------------|
-| `MSG_BIND_READY`      | 0x8001 | Driver → Supervisor   | Driver ready; VFS provider handle attached    |
+| `MSG_BIND_READY`      | 0x8001 | Driver → Supervisor   | Driver ready; VFS provider thing attached     |
 | `MSG_BIND_ASSIGNED`   | 0x8002 | Supervisor → Driver   | Registration accepted; path assigned          |
 | `MSG_BIND_FAILED`     | 0x8003 | Supervisor → Driver   | Registration rejected; error details included |
 | `MSG_SERVICE_READY`   | 0x8004 | Driver → Supervisor   | Service fully operational                     |
@@ -40,12 +40,11 @@ All types and encode/decode helpers are in `abi::supervisor_protocol`.
 ```
 Driver                                   Supervisor (sprout)
   │                                             │
-  │── channel_send_handle(vfs_write) ──────────▶│  (VFS provider handle)
-  │── MSG_BIND_READY ──────────────────────────▶│  (BindReadyPayload)
+  │── channel_send_msg(vfs_write+MSG_BIND_READY) ─▶│  (VFS provider thing + BindReadyPayload)
   │                                             │
   │                                ┌────────────┤
   │                                │ Verify:    │
-  │                                │ • handle   │
+  │                                │ • thing    │
   │                                │ • class_mask│
   │                                │ • vfs_mount │
   │                                └────────────┤
@@ -66,9 +65,9 @@ Driver                                   Supervisor (sprout)
 
 ### Step 1: Send `MSG_BIND_READY`
 
-The driver creates a VFS provider port pair and sends:
+The driver creates a VFS provider channel pair and sends:
 
-1. The **write** end of the VFS provider port via `channel_send_handle` on
+1. The **write** thing of the VFS provider channel via `channel_send_msg` on
    `drv_resp_write`.
 2. A `MSG_BIND_READY` message with a `BindReadyPayload` on `drv_resp_write`.
 
@@ -90,8 +89,7 @@ let msg_len = display_driver_protocol::encode_message(
     &mut buf, supervisor_protocol::MSG_BIND_READY, &payload_bytes,
 ).unwrap();
 
-channel_send_handle(drv_resp_write, vfs_write);   // handle first
-channel_send_all(drv_resp_write, &buf[..msg_len]);
+channel_send_msg(drv_resp_write, &buf[..msg_len], &[vfs_write]).unwrap(); // thing + bytes together
 ```
 
 ### Step 2: Wait for `MSG_BIND_ASSIGNED` or `MSG_BIND_FAILED`
@@ -154,15 +152,15 @@ order, sending `MSG_BIND_FAILED` on the first failure:
 | Step | Check                                  | Error code                  |
 |------|----------------------------------------|-----------------------------|
 | 1    | `decode_bind_ready_le` succeeds        | `ERR_INVALID_MESSAGE` (1)   |
-| 2    | `channel_recv_handle` returns a handle | `ERR_NO_PROVIDER_HANDLE` (2)|
+| 2    | `channel_recv_msg` returns a thing     | `ERR_NO_PROVIDER_HANDLE` (2)|
 | 3    | `class_mask != 0` and is recognised    | `ERR_UNKNOWN_CLASS` (3)     |
-| 4    | `vfs_mount(handle, path)` succeeds     | `ERR_MOUNT_FAILED` (4)      |
+| 4    | `vfs_mount(thing, path)` succeeds      | `ERR_MOUNT_FAILED` (4)      |
 
 On success, sprout:
 
 1. Allocates a canonical path under `/dev/<class>/` using a per-class
    monotonic counter tracked in its internal `DeviceLedger`.
-2. Calls `vfs_mount(provider_handle, path)` to publish the driver's VFS
+2. Calls `vfs_mount(provider_thing, path)` to publish the driver's VFS
    subtree.
 3. Replies with `MSG_BIND_ASSIGNED` carrying the assigned path and unit
    number.
@@ -206,7 +204,7 @@ Drivers with no recognised class bit receive `MSG_BIND_FAILED` with
 | Constant                  | Value | Meaning                                      |
 |---------------------------|-------|----------------------------------------------|
 | `ERR_INVALID_MESSAGE`     | 1     | `BIND_READY` payload could not be decoded    |
-| `ERR_NO_PROVIDER_HANDLE`  | 2     | No VFS provider handle attached              |
+| `ERR_NO_PROVIDER_HANDLE`  | 2     | No VFS provider thing attached               |
 | `ERR_UNKNOWN_CLASS`       | 3     | `class_mask` is zero or unrecognised         |
 | `ERR_MOUNT_FAILED`        | 4     | Kernel `vfs_mount` call failed               |
 

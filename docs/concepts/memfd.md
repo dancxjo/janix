@@ -1,7 +1,7 @@
 # Memfd: the Bulk-Data Path
 
 Thing-OS uses a **two-tier IPC model**: small control messages flow over
-channels, and large or zero-copy data travels via memory-mapped file descriptors
+channels, and large or zero-copy data travels via memory-mapped things
 (**memfd**).
 
 ## Doctrine: control over channels, bulk over memfd
@@ -9,47 +9,47 @@ channels, and large or zero-copy data travels via memory-mapped file descriptors
 | Concern | Mechanism | When to use |
 |---|---|---|
 | Commands, events, ACKs | `channel_send` / `channel_recv` | latency-sensitive; fits in a few hundred bytes |
-| Pixel buffers, audio rings, large blobs | `memfd_create` + `vm_map` + `channel_send_handle` | throughput-sensitive; larger than a channel ring |
+| Pixel buffers, audio rings, large blobs | `memfd_create` + `vm_map` + `channel_send_msg` | throughput-sensitive; larger than a channel ring |
 
 Never embed multi-kilobyte payloads in channel messages.  Instead, put the data
-in a memfd and send the file descriptor across the channel with
-`channel_send_handle`.  The control message then carries only a small
-[`abi::memfd::MemFdRef`] descriptor (16 bytes) that names the fd, and the byte
-length of the valid window.
+in a memfd and send the thing across the channel with
+`channel_send_msg`.  The control message then carries only a small
+[`abi::memfd::MemFdRef`] descriptor (16 bytes) that names the thing, and the
+byte length of the valid window.
 
 ## Memfd lifetime and reference counting
 
 The kernel maintains a reference count on each memfd region:
 
 * A `memfd_create` call allocates contiguous physical frames and returns an
-  open file descriptor (`fd`).
-* Every `vm_map` call that backs itself on the fd increments the count.
-* Calling `vfs_close(fd)` decrements the fd's reference.
+  open thing.
+* Every `vm_map` call that backs itself on the thing increments the count.
+* Calling `vfs_close(thing)` decrements the thing's reference.
 * Calling `vm_unmap` decrements the mapping's reference.
-* **Physical memory is freed only when the last fd and the last mapping are
+* **Physical memory is freed only when the last thing and the last mapping are
   both gone.**
 
 This means a receiver can safely hold onto its mapping even after the sender
-has closed its own copy of the fd.
+has closed its own copy of the thing.
 
 ## Sharing a memfd across processes
 
 ```
 Creator                          Receiver
 ───────                          ────────
-memfd_create("frame", size)  →  fd
+memfd_create("frame", size)  →  thing
 
-vm_map(fd, READ|WRITE|USER)  →  ptr
+vm_map(thing, READ|WRITE|USER)  →  ptr
 [fill pixel data at ptr]
 
-channel_send_handle(chan, fd)  ───────────►  channel_recv_handle(chan) → new_fd
-                                              vm_map(new_fd, READ|USER) → ptr
-                                              [read pixel data at ptr]
-                                              vm_unmap(ptr, size)
-                                              vfs_close(new_fd)
+channel_send_msg(chan, b"", &[thing])  ──────►  channel_recv_msg(chan) → new_thing
+                                                 vm_map(new_thing, READ|USER) → ptr
+                                                 [read pixel data at ptr]
+                                                 vm_unmap(ptr, size)
+                                                 vfs_close(new_thing)
 
 vm_unmap(ptr, size)
-vfs_close(fd)
+vfs_close(thing)
            ╰── last reference dropped → physical pages freed
 ```
 
@@ -58,18 +58,18 @@ vfs_close(fd)
 **Sender side**
 
 ```rust
-use stem::syscall::{memfd_create, vm_map, channel_send_handle};
+use stem::syscall::{memfd_create, vm_map, channel_send_msg};
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use abi::memfd::MemFdRef;
 
-let fd = memfd_create("frame", width * height * 4)?;
+let thing = memfd_create("frame", width * height * 4)?;
 
 let req = VmMapReq {
     addr_hint: 0,
     len: width * height * 4,
     prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
     flags: VmMapFlags::empty(),
-    backing: VmBacking::File { fd, offset: 0 },
+    backing: VmBacking::File { fd: thing, offset: 0 },
 };
 let mapped = vm_map(&req)?;
 let pixels: &mut [u32] = unsafe {
@@ -79,31 +79,30 @@ let pixels: &mut [u32] = unsafe {
 // … fill pixels …
 
 // Build the descriptor that will travel in the control message.
-let desc = MemFdRef::new(fd, (width * height * 4) as u64);
-
-// Transfer ownership of the fd to the receiver.
-channel_send_handle(channel, fd as usize)?;
+let desc = MemFdRef::new(thing, (width * height * 4) as u64);
 
 // Encode the descriptor into the control message.
 let mut ctrl = [0u8; 17];
 ctrl[0] = MSG_PRESENT;
 desc.encode_le(&mut ctrl[1..]).unwrap();
-channel_send(channel, &ctrl)?;
+
+// Transfer the thing and bytes atomically.
+channel_send_msg(channel, &ctrl, &[thing])?;
 ```
 
 **Receiver side**
 
 ```rust
-use stem::syscall::{channel_recv_handle, channel_recv, vm_map};
+use stem::syscall::{channel_recv_msg, vm_map};
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use abi::memfd::MemFdRef;
 
-// First receive the fd itself.
-let new_fd = channel_recv_handle(channel)?;
-
-// Then receive the control message with the descriptor.
+// Receive the control bytes and the thing in one atomic call.
 let mut ctrl = [0u8; 17];
-channel_recv(channel, &mut ctrl)?;
+let mut things = [0u32; 1];
+let (_data_len, _thing_count) = channel_recv_msg(channel, &mut ctrl, &mut things)?;
+let new_thing = things[0];
+
 let desc = MemFdRef::decode_le(&ctrl[1..]).unwrap();
 
 let req = VmMapReq {
@@ -111,7 +110,7 @@ let req = VmMapReq {
     len: desc.length as usize,
     prot: VmProt::READ | VmProt::USER,
     flags: VmMapFlags::empty(),
-    backing: VmBacking::File { fd: new_fd, offset: 0 },
+    backing: VmBacking::File { fd: new_thing, offset: 0 },
 };
 let mapped = vm_map(&req)?;
 let pixels: &[u32] = unsafe {
@@ -121,16 +120,17 @@ let pixels: &[u32] = unsafe {
 // … consume pixels …
 
 vm_unmap(mapped.addr, desc.length as usize)?;
-vfs_close(new_fd)?;
+vfs_close(new_thing)?;
 ```
 
 ## Revocation
 
 There is no forced-unmap primitive.  A sender signals "I am done with this
-buffer" by closing its own fd and sending a companion control message (e.g.
+buffer" by closing its own thing and sending a companion control message (e.g.
 `MSG_BUFFER_RELEASED`).  The receiver is responsible for unmapping promptly
-when it receives that signal.  As long as the receiver holds its fd open, the
-physical memory remains allocated — leaking is possible, so protocol designers
+when it receives that signal.  As long as the receiver holds its thing open,
+the physical memory remains allocated — leaking is possible, so protocol
+designers
 must include an explicit release signal.
 
 ## Persistent shared rings
@@ -140,12 +140,12 @@ repeated transfer handshakes, allocate the memfd once at setup and share it for
 the lifetime of the session:
 
 1. Server calls `memfd_create("ring", RING_BYTES)` and maps it read-write.
-2. Server sends the fd to the client at connection time via
-   `channel_send_handle`.
+2. Server sends the thing to the client at connection time via
+   `channel_send_msg`.
 3. Client maps it and keeps the mapping open.
 4. Both sides use an atomic sequence-number protocol (in the shared memory) to
-   signal produce/consume positions — no fd transfers on the hot path.
-5. When the session ends, both sides close their fd and unmap.
+   signal produce/consume positions — no thing transfers on the hot path.
+5. When the session ends, both sides close their thing and unmap.
 
 ## Wire descriptor: `abi::memfd::MemFdRef`
 
@@ -154,7 +154,7 @@ All control-plane messages that accompany a memfd transfer **must** embed a
 
 | Byte offset | Size | Field | Notes |
 |---|---|---|---|
-| 0 | 4 | `fd` | Sender-local fd (receiver obtains its own via `channel_recv_handle`) |
+| 0 | 4 | `fd` | Sender-local thing (receiver obtains its own via `channel_recv_msg`) |
 | 4 | 4 | `_pad` | Reserved, must be zero |
 | 8 | 8 | `length` | Byte length of the valid data window |
 
@@ -165,8 +165,8 @@ with `width`, `height`, `stride`, `format`, and `modifier` fields.
 
 | Crate | Pattern |
 |---|---|
-| `display_bootfb` | Bootstrap memfd passed as argv fd to deliver channel handles |
+| `display_bootfb` | Bootstrap memfd passed as argv thing to deliver channel things |
 | `display_virtio_gpu` | Frame-pool memfd created at startup; textures uploaded via per-frame memfds |
 | `petals` | `Texture` type wraps a memfd + `vm_map` pointer for CPU-side pixel writes |
-| `sprout` | Bootstrap memfd used to deliver driver channel handles at spawn time |
-| `blossom` SVG | `SvgSource::MemFd(fd)` transfers SVG bytes without copying into the IPC ring |
+| `sprout` | Bootstrap memfd used to deliver driver channel things at spawn time |
+| `blossom` SVG | `SvgSource::MemFd(thing)` transfers SVG bytes without copying into the IPC ring |

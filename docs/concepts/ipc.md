@@ -1,8 +1,14 @@
 # IPC Doctrine — Thing-OS Canonical Primitive Model
 
-Thing-OS inter-process communication is built on five primitives.  Each has
+Thing-OS inter-process communication is built on six primitives.  Each has
 one job.  Use the right primitive for the job; do not stretch one to cover
 another.
+
+> **Terminology note**: in Thing-OS a kernel-managed reference to an open
+> object is called a **thing** — not a "file descriptor" (POSIX) and not a
+> "handle" (Win32).  Everything is a thing.  Syscall return values that would
+> be called `fd` in POSIX or `HANDLE` in Win32 are things here.  Code
+> examples below use `thing` as the conventional variable name.
 
 ---
 
@@ -10,10 +16,11 @@ another.
 
 | Primitive | Syscall family | When to use |
 |-----------|---------------|-------------|
-| **Channel** | `SYS_CHANNEL_*` | Discrete messages: commands, ACKs, events, handles, RPC |
+| **Channel** | `SYS_CHANNEL_*` | Discrete messages: commands, ACKs, events, thing passing, RPC |
 | **Pipe** | `SYS_PIPE` / `SYS_FS_*` | Sequential byte streams: stdio, process output pipelines |
 | **Memfd** | `SYS_MEMFD_CREATE` / `SYS_VM_MAP` | Bulk data, zero-copy buffers, shared rings |
 | **Futex** | `SYS_FUTEX_WAIT` / `SYS_FUTEX_WAKE` | Low-level in-process synchronisation, mutex/condvar building blocks |
+| **Poll/wait** | `SYS_FS_POLL` | Readiness multiplexing across pipes, channels, and provider things |
 | **VFS RPC** | `SYS_FS_MOUNT` + channel protocol | Structured request/reply filesystem provider interface |
 
 ---
@@ -23,7 +30,7 @@ another.
 ### What channels are
 
 A **channel** is a bounded, message-oriented, bidirectional-by-pair IPC
-primitive.  `SYS_CHANNEL_CREATE` returns a write handle and a read handle that
+primitive.  `SYS_CHANNEL_CREATE` returns a write thing and a read thing that
 share one ring buffer.
 
 ### Message model
@@ -31,17 +38,16 @@ share one ring buffer.
 - Messages are discrete: each `channel_send` / `channel_recv` pair transfers
   one logical unit.
 - Maximum message size: 4 KiB (the ring capacity).  Larger payloads must use
-  memfd (see §5).
+  memfd (see §4).
 - `channel_send_all` is atomic: it either writes the entire payload or fails
   with `EAGAIN`.  Prefer it over `channel_send` for protocol messages.
 
-### Handle passing
+### Thing passing
 
-A channel message may carry one attached **capability handle** per
-`channel_send_handle` call.  The kernel re-numbers the handle in the
-receiver's fd table when the receiver calls `channel_recv_handle`.  Supported
-capability types: VFS file descriptors, memfds, channel endpoints, VFS
-provider ports.
+A channel message may carry attached capability things via `channel_send_msg`.
+The kernel re-numbers each thing in the receiver's thing table when the
+receiver calls `channel_recv_msg`.  Supported capability types: VFS things,
+memfds, channel endpoints, VFS provider things.
 
 See `docs/concepts/channel_semantics.md` for the full specification.
 
@@ -50,7 +56,7 @@ See `docs/concepts/channel_semantics.md` for the full specification.
 - Any control-plane exchange: service requests, device commands, event
   notifications, registration handshakes.
 - Request/reply RPC that is not naturally file-shaped.
-- Passing capabilities (file descriptors, provider handles) between processes.
+- Passing capabilities (things) between processes.
 
 ### When **not** to use channels
 
@@ -58,18 +64,32 @@ See `docs/concepts/channel_semantics.md` for the full specification.
 - Sequential byte streams without message boundaries — use a pipe.
 - Shared-state synchronisation within a single address space — use a futex.
 
+### Short example
+
+```rust
+use stem::syscall::channel::{channel_create, channel_send_all, channel_recv};
+
+// Create a channel and send a one-shot command.
+let (write_thing, read_thing) = channel_create(4096).expect("channel_create");
+channel_send_all(write_thing, b"ping").expect("send");
+
+let mut buf = [0u8; 8];
+let n = channel_recv(read_thing, &mut buf).expect("recv");
+assert_eq!(&buf[..n], b"ping");
+```
+
 ---
 
 ## 3. Pipes
 
 ### What pipes are
 
-A **pipe** is a one-way, anonymous byte stream.  `SYS_PIPE` returns a read fd
-and a write fd backed by a kernel ring buffer.
+A **pipe** is a one-way, anonymous byte stream.  `SYS_PIPE` returns a read
+thing and a write thing backed by a kernel ring buffer.
 
 ### When to use pipes
 
-- Parent–child stdio (`fd 0`, `fd 1`, `fd 2`).
+- Parent–child stdio (thing 0, thing 1, thing 2).
 - Any producer–consumer relationship where the data has no message boundaries
   and both ends run in a direct parent–child relationship.
 - Shell pipelines.
@@ -82,6 +102,25 @@ and a write fd backed by a kernel ring buffer.
 
 See `docs/concepts/channels_vs_pipes.md` for a detailed comparison.
 
+### Short example
+
+```rust
+use stem::syscall::vfs::{pipe, vfs_read, vfs_write, vfs_close};
+
+// Create a pipe; write bytes on one end and read on the other.
+let mut things = [0u32; 2];
+pipe(&mut things).expect("pipe");
+let (read_thing, write_thing) = (things[0], things[1]);
+
+vfs_write(write_thing, b"hello").expect("write");
+vfs_close(write_thing).expect("close write");   // signal EOF to reader
+
+let mut buf = [0u8; 8];
+let n = vfs_read(read_thing, &mut buf).expect("read");
+assert_eq!(&buf[..n], b"hello");
+vfs_close(read_thing).expect("close read");
+```
+
 ---
 
 ## 4. Memfd
@@ -89,15 +128,15 @@ See `docs/concepts/channels_vs_pipes.md` for a detailed comparison.
 ### What memfd is
 
 A **memfd** (`SYS_MEMFD_CREATE`) is an anonymous, resizable, in-kernel memory
-object exposed as a file descriptor.  The caller maps it into its address space
+object exposed as a thing.  The caller maps it into its address space
 with `SYS_VM_MAP`.
 
 ### When to use memfd
 
 - Pixel buffers, audio rings, network receive windows — any bulk-data path.
-- Zero-copy exchange: sender writes into the mapped region, sends the fd over a
-  channel; receiver maps it read-only.
-- Persistent shared rings for audio or network I/O that avoids repeated fd
+- Zero-copy exchange: sender writes into the mapped region, sends the thing
+  over a channel; receiver maps it read-only.
+- Persistent shared rings for audio or network I/O that avoids repeated thing
   transfers on the hot path.
 
 ### Doctrine
@@ -105,10 +144,27 @@ with `SYS_VM_MAP`.
 > **Control plane over channels; bulk data over memfd.**
 
 Never embed multi-kilobyte payloads in channel messages.  Pass a
-`abi::memfd::MemFdRef` (16 bytes) in the control message and the actual fd
-via `channel_send_handle`.
+`abi::memfd::MemFdRef` (16 bytes) in the control message and the actual thing
+via `channel_send_msg`.
 
 See `docs/concepts/memfd.md` for the full lifecycle and wire format.
+
+### Short example
+
+```rust
+use stem::syscall::memfd::memfd_create;
+use stem::syscall::vm::{vm_map, MapFlags};
+use stem::syscall::channel::channel_send_msg;
+
+// Share a pixel buffer zero-copy via a memfd thing.
+let frame_thing = memfd_create("frame", 1024 * 768 * 4).expect("memfd_create");
+let ptr = vm_map(frame_thing, 0, 1024 * 768 * 4, MapFlags::READ_WRITE)
+    .expect("vm_map");
+// … fill pixel data at ptr …
+channel_send_msg(chan_write_thing, b"frame-ready", &[frame_thing])
+    .expect("send_msg");
+// Receiver calls channel_recv_msg → gets a new thing for the same memfd region.
+```
 
 ---
 
@@ -118,7 +174,8 @@ See `docs/concepts/memfd.md` for the full lifecycle and wire format.
 
 A **futex** is a 32-bit user-space integer at a known virtual address.  The
 kernel provides `SYS_FUTEX_WAIT` and `SYS_FUTEX_WAKE` to park or wake threads
-based on the value of that integer.
+based on the value of that integer.  Futexes are not things — they are raw
+memory addresses within the caller's address space.
 
 ### When to use futex
 
@@ -133,21 +190,84 @@ based on the value of that integer.
   channels.
 - Any IPC that carries data, not just a signal — use a channel or pipe.
 
+### Short example
+
+```rust
+use core::sync::atomic::{AtomicU32, Ordering};
+use stem::syscall::futex::{futex_wait, futex_wake};
+
+static LOCK: AtomicU32 = AtomicU32::new(0); // 0 = unlocked, 1 = locked
+
+// Acquire: spin once, then block if still held.
+while LOCK.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    futex_wait(LOCK.as_ptr(), 1, None).ok(); // park until value changes
+}
+
+// Release: clear the lock and wake one waiter.
+LOCK.store(0, Ordering::Release);
+futex_wake(LOCK.as_ptr(), 1).ok();
+```
+
 ---
 
-## 6. VFS RPC
+## 6. Poll/wait
+
+### What poll/wait is
+
+`SYS_FS_POLL` is the unified readiness multiplexer.  Given a list of things
+(pipes, channels bridged via `SYS_FD_FROM_HANDLE`, or provider things) and
+an optional timeout, it returns the set of things that are ready for the
+requested I/O operations.
+
+### When to use poll/wait
+
+- Any event loop that needs to wait on more than one source at once.
+- Implementing `select`/`epoll`-style reactor patterns.
+- Waiting for the first of several channel replies to arrive.
+
+### When **not** to use poll/wait
+
+- Waiting on a single thing that you can block on directly — just call
+  `channel_recv` or `vfs_read`; both park the thread until data arrives.
+- In-process signalling between threads — use a futex.
+
+### Short example
+
+```rust
+use stem::syscall::vfs::fs_poll;
+use abi::poll::{PollItem, POLLIN};
+
+// Wait on a pipe read thing and a channel read thing simultaneously.
+let items = [
+    PollItem { thing: pipe_read_thing, events: POLLIN },
+    PollItem { thing: chan_read_thing, events: POLLIN },
+];
+let ready_count = fs_poll(&mut items.clone(), u64::MAX /* block forever */)
+    .expect("poll");
+for item in &items[..ready_count] {
+    if item.revents & POLLIN != 0 {
+        // … read from item.thing …
+    }
+}
+```
+
+See `docs/concepts/readiness.md` for the full readiness flag semantics.
+
+---
+
+## 7. VFS RPC
 
 ### What VFS RPC is
 
 VFS RPC allows a userland process to export a subtree of the filesystem
 namespace.  The kernel serialises every filesystem operation (open, read,
 write, stat, readdir …) into a typed message and delivers it to the provider's
-channel.  The provider answers synchronously.
+channel thing.  The provider answers synchronously.
 
 ### When to use VFS RPC
 
 - Implementing filesystem drivers (iso9660d, network FS, synthetic /proc entries).
-- Exposing a device as a set of files under `/dev`.
+- Exposing a device as a set of things under `/dev`.
 - Any service that looks naturally file-shaped to its clients.
 
 ### When **not** to use VFS RPC
@@ -158,30 +278,39 @@ channel.  The provider answers synchronously.
 See `docs/concepts/vfs_rpc_provider.md` for the provider lifecycle and wire
 protocol.
 
+### Short example
+
+```rust
+use ipc_helpers::provider::{ProviderLoop, ProviderResponse};
+use abi::vfs_rpc::VfsRpcOp;
+
+// Mount a virtual directory at /run/myservice and answer open/read ops.
+let (provider_write_thing, provider_read_thing) = channel_create(4096)
+    .expect("channel_create");
+fs_mount("/run/myservice", provider_write_thing).expect("mount");
+
+let mut loop_ = ProviderLoop::new(provider_read_thing);
+loop_.run(|op| match op {
+    VfsRpcOp::Open { name, .. } => ProviderResponse::ok_thing(make_file_thing(name)),
+    VfsRpcOp::Read { thing, buf, .. } => ProviderResponse::data(read_file(thing, buf)),
+    _ => ProviderResponse::err(Errno::ENOSYS),
+});
+```
+
 ---
 
-## 7. Decision Matrix
+## 8. Decision Matrix
 
 | I need to … | Use |
 |-------------|-----|
 | Send a command / event to a service | Channel |
 | Do synchronous request/reply RPC | Channel + `abi::rpc::RpcHeader` |
-| Pass a file descriptor to another process | Channel + `channel_send_handle` |
-| Transfer a large buffer zero-copy | Memfd + channel (for the descriptor) |
+| Pass a thing (capability) to another process | Channel + `channel_send_msg` |
+| Transfer a large buffer zero-copy | Memfd thing + channel (to pass the thing) |
 | Stream bytes parent→child | Pipe |
 | Expose a subtree as a filesystem | VFS RPC |
-| Wait on multiple I/O sources at once | `SYS_FS_POLL` (works for all VFS fds) |
+| Wait on multiple things at once | `SYS_FS_POLL` (works for all VFS things) |
 | Implement a mutex or condvar | Futex (or `stem::sync` wrappers) |
-
----
-
-## 8. Readiness and Waiting
-
-All VFS-backed fds — pipes, channels bridged via `SYS_FD_FROM_HANDLE`, and
-mounted provider files — participate in the same `SYS_FS_POLL` readiness model.
-An event loop does not need to special-case object types.
-
-See `docs/concepts/readiness.md` for the full specification.
 
 ---
 

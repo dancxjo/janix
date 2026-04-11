@@ -80,7 +80,7 @@ fn run_service(capacity: usize) {
         out[RpcHeader::WIRE_SIZE..RpcHeader::WIRE_SIZE + reply_payload.len()]
             .copy_from_slice(reply_payload);
         channel_send_all(
-            write_h,    // use the client's reply handle if passed separately
+            write_h,    // use the client's reply thing if passed separately
             &out[..RpcHeader::WIRE_SIZE + reply_payload.len()],
         ).ok();
     }
@@ -119,7 +119,7 @@ fn call_service(svc_write: u32, svc_read: u32) {
 
 ## Recipe 3 — Handle passing (first-class message API)
 
-**Problem**: transfer one or more file descriptors or channel handles from one
+**Problem**: transfer one or more things (capabilities) from one
 process to another as part of a message.
 
 ### New API (preferred): `channel_send_msg` / `channel_recv_msg`
@@ -148,12 +148,12 @@ fn recv_fds(channel: u32) -> (u32, u32) {
 }
 ```
 
-The kernel re-numbers each handle in the receiver's fd table.  Duplicate
-semantics: the sender retains its own fd/handle.
+The kernel re-numbers each thing in the receiver's thing table.  Duplicate
+semantics: the sender retains its own thing.
 
 ### Legacy API (compatibility): `channel_send_handle` / `channel_recv_handle`
 
-The old single-handle API is still supported as a compatibility wrapper:
+The old single-thing API is still supported as a compatibility wrapper:
 
 ```rust
 use stem::syscall::channel::{channel_send_handle, channel_recv_handle, channel_send_all, channel_recv};
@@ -302,7 +302,7 @@ use stem::syscall::vfs::{vfs_poll, vfs_fd_from_handle};
 use abi::syscall::{PollFd, poll_flags};
 
 fn event_loop(pipe_read: u32, channel_write_h: u32, channel_read_h: u32, dev_fd: u32) {
-    // Bridge the channel read handle into a VFS fd for poll.
+    // Bridge the channel read thing into a VFS thing for poll.
     let channel_fd = vfs_fd_from_handle(channel_read_h).expect("bridge");
 
     let mut fds = [
@@ -354,7 +354,7 @@ fn register_driver(drv_req_read: u32, drv_resp_write: u32, bind_instance_id: u64
     // 1. Create provider channel.
     let (vfs_write, vfs_read) = channel_create(VFS_RPC_MAX_REQ * 8).unwrap();
 
-    // 2. Send provider handle + BIND_READY.
+    // 2. Send provider thing + BIND_READY.
     let payload = supervisor_protocol::BindReadyPayload {
         bind_instance_id,
         class_mask: classes::DISPLAY_CARD | classes::FRAMEBUFFER,

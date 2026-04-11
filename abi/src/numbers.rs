@@ -149,6 +149,9 @@ pub const SYS_FS_SYMLINK: u32 = 0x4019;
 pub const SYS_FS_READLINK: u32 = 0x401A;
 /// Truncate an open file to `size` bytes (ftruncate semantics).
 pub const SYS_FS_FTRUNCATE: u32 = 0x401B;
+/// Stat a path without following the final symlink (lstat semantics).
+/// Args: (path_ptr, path_len, stat_ptr) → 0
+pub const SYS_FS_LSTAT: u32 = 0x401C;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

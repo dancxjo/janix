@@ -7,11 +7,11 @@
 use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
-    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_MKDIR,
-    SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR,
-    SYS_FS_READLINK, SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK,
-    SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
-    SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_LSTAT,
+    SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ,
+    SYS_FS_READDIR, SYS_FS_READLINK, SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
+    SYS_FS_SYMLINK, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD,
+    SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -128,6 +128,30 @@ pub fn vfs_stat(fd: u32) -> SysResult<abi::fs::FileStat> {
             fd as usize,
             &mut stat as *mut abi::fs::FileStat as usize,
             0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| stat)
+}
+
+/// Stat a path without following the final symlink (`lstat` semantics).
+///
+/// Unlike [`vfs_stat`] which operates on an open fd, this takes a path and
+/// resolves it without following the last path component if it is a symlink.
+/// Returns the symlink node's own metadata (mode `S_IFLNK`, size = target
+/// length, etc.) rather than the target's metadata.
+///
+/// Returns a [`abi::fs::FileStat`] on success, or an [`Errno`] on failure.
+pub fn vfs_lstat(path: &str) -> SysResult<abi::fs::FileStat> {
+    let mut stat = abi::fs::FileStat::default();
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_LSTAT,
+            path.as_ptr() as usize,
+            path.len(),
+            &mut stat as *mut abi::fs::FileStat as usize,
             0,
             0,
             0,

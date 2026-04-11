@@ -569,12 +569,12 @@ static mut RAW_RUNTIME_BASE: Option<&'static dyn BootRuntimeBase> = None;
 /// Initialize the runtime. Panics if called more than once.
 pub fn init_runtime<R: BootRuntime>(runtime: &'static R) {
     let name = core::any::type_name::<R>();
-    crate::contract!("INIT_RUNTIME: type={}", name);
     RUNTIME.set(runtime as &'static dyn core::any::Any);
     RUNTIME_BASE.set(runtime as &'static dyn BootRuntimeBase);
     unsafe {
         RAW_RUNTIME_BASE = Some(runtime as &'static dyn BootRuntimeBase);
     }
+    crate::contract!("INIT_RUNTIME: type={}", name);
 }
 
 pub fn runtime<R: BootRuntime>() -> &'static R {

@@ -4,7 +4,6 @@
 //! With optional span correlation for multi-line output.
 
 use crate::BootRuntimeBase;
-use alloc::collections::VecDeque;
 use alloc::format;
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -15,8 +14,16 @@ pub use abi::logging::Level;
 pub type LogLevel = Level;
 
 static GLOBAL_LOGGER: Mutex<Option<Logger>> = Mutex::new(None);
-static LOG_BUFFER: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+
 const MAX_LOG_BUFFER_SIZE: usize = 128 * 1024; // 128 KB
+static mut LOG_DATA: [u8; MAX_LOG_BUFFER_SIZE] = [0; MAX_LOG_BUFFER_SIZE];
+
+struct LogBufferState {
+    head: usize,
+    len: usize,
+}
+static LOG_STATE: Mutex<LogBufferState> = Mutex::new(LogBufferState { head: 0, len: 0 });
+
 static IN_GRAPH_LOG: AtomicBool = AtomicBool::new(false);
 static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
 
@@ -154,39 +161,47 @@ pub unsafe fn force_unlock() {
     // SAFETY: Only called from panic handler when logger lock may be poisoned
     unsafe {
         GLOBAL_LOGGER.force_unlock();
-        LOG_BUFFER.force_unlock();
+        LOG_STATE.force_unlock();
     }
 }
 
 pub fn copy_log_buffer(buf: &mut [u8]) -> usize {
-    let lock = LOG_BUFFER.lock();
-    let n = lock.len().min(buf.len());
-    let (s1, s2) = lock.as_slices();
+    let state = LOG_STATE.lock();
+    let n = state.len.min(buf.len());
     
-    let n1 = s1.len().min(n);
-    buf[..n1].copy_from_slice(&s1[..n1]);
-    
-    let n2 = (n - n1).min(s2.len());
-    if n2 > 0 {
-        buf[n1..n1+n2].copy_from_slice(&s2[..n2]);
+    let mut read_idx = if state.len < MAX_LOG_BUFFER_SIZE {
+        0
+    } else {
+        state.head
+    };
+
+    for i in 0..n {
+        unsafe {
+            buf[i] = LOG_DATA[read_idx];
+        }
+        read_idx = (read_idx + 1) % MAX_LOG_BUFFER_SIZE;
     }
     
-    n1 + n2
+    n
 }
 
 pub fn get_log_buffer_len() -> usize {
-    LOG_BUFFER.lock().len()
+    LOG_STATE.lock().len
 }
 
-struct LogBufferWriter<'a>(&'a mut VecDeque<u8>);
+struct LogBufferWriter;
 
-impl<'a> Write for LogBufferWriter<'a> {
+impl Write for LogBufferWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        let mut state = LOG_STATE.lock();
         for &b in s.as_bytes() {
-            if self.0.len() >= MAX_LOG_BUFFER_SIZE {
-                self.0.pop_front();
+            unsafe {
+                LOG_DATA[state.head] = b;
             }
-            self.0.push_back(b);
+            state.head = (state.head + 1) % MAX_LOG_BUFFER_SIZE;
+            if state.len < MAX_LOG_BUFFER_SIZE {
+                state.len += 1;
+            }
         }
         Ok(())
     }
@@ -260,16 +275,19 @@ pub fn _log_event(
 
     // 2. Log Buffer Output
     {
-        let mut lock = LOG_BUFFER.lock();
-        let mut writer = LogBufferWriter(&mut *lock);
-        let ts = crate::runtime_base().mono_ticks();
+        let mut writer = LogBufferWriter;
+        let (ts, cpu) = if crate::is_runtime_initialized() {
+            (crate::runtime_base().mono_ticks(), crate::runtime_base().current_cpu_id().0)
+        } else {
+            (0, 0)
+        };
         let _ = write!(
             writer,
             "[{}] [{}] [{}] [CPU{}] ",
             ts,
             meta.level.as_str(),
             event_str,
-            crate::runtime_base().current_cpu_id().0
+            cpu
         );
         let _ = writer.write_fmt(msg_fmt);
         if !fields.is_empty() {
@@ -311,15 +329,18 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
 
     // 2. Log Buffer Output
     {
-        let mut lock = LOG_BUFFER.lock();
-        let mut writer = LogBufferWriter(&mut *lock);
-        let ts = crate::runtime_base().mono_ticks();
+        let mut writer = LogBufferWriter;
+        let (ts, cpu) = if crate::is_runtime_initialized() {
+            (crate::runtime_base().mono_ticks(), crate::runtime_base().current_cpu_id().0)
+        } else {
+            (0, 0)
+        };
         let _ = write!(
             writer,
             "[{}] [-----] [{}] [CPU{}] ",
             ts,
             source,
-            crate::runtime_base().current_cpu_id().0
+            cpu
         );
         let _ = writer.write_fmt(args);
         let _ = writer.write_str("\n");

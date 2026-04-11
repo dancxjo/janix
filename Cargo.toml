@@ -50,6 +50,7 @@ members = [
     "userspace/head",
     "userspace/tail",
     "userspace/wc",
+    "userspace/grep",
     "userspace/cp",
     "userspace/mv",
     "userspace/rm",

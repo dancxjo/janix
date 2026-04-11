@@ -17,5 +17,6 @@
     "relocation-model": "static",
     "features": "-mmx",
     "disable-redzone": true,
-    "executables": true
+    "executables": true,
+    "has-thread-local": true
 }

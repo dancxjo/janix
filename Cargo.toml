@@ -96,6 +96,7 @@ members = [
     "userspace/tests/test_futex",
     "userspace/tests/test_exec_env",
     "userspace/tests/test_threads",
+    "userspace/tests/test_thread_std",
     "userspace/ld_so",
     "userspace/libdl",
     "userspace/tests/test_dyn_loader",

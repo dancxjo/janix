@@ -228,20 +228,26 @@ ensure-rust-patched: fetch-rust
         echo "ERROR: vendor/rust/ not found after fetch-rust. Run: just fetch-rust" >&2
         exit 1
     fi
-    if [ ! -f patches/rust/thingos-pal.patch ]; then
+    shopt -s nullglob
+    patches=( patches/rust/*.patch )
+    if [ ${#patches[@]} -eq 0 ]; then
         echo "No patches found in patches/rust/. Nothing to apply."
         exit 0
     fi
+    IFS=$'\n' sorted=($(printf '%s\n' "${patches[@]}" | sort))
+    # Check if the first patch is already applied by trying to reverse it.
+    first="../../${sorted[0]}"
     cd vendor/rust
-    # If the patch can be reversed cleanly it is already applied — skip.
-    if git apply --reverse --check ../../patches/rust/thingos-pal.patch 2>/dev/null; then
+    if git apply --reverse --check "$first" 2>/dev/null; then
         echo "==> Rust patches already applied, skipping."
     else
-        git apply ../../patches/rust/thingos-pal.patch \
-            || { echo "ERROR: Failed to apply patches/rust/thingos-pal.patch." \
-                      "The working tree may be dirty or the patch may be incompatible." \
-                      "Try: just rust-reset && just ensure-rust-patched" >&2; exit 1; }
-        echo "==> Applied patches/rust/thingos-pal.patch"
+        for p in "${sorted[@]}"; do
+            git apply "../../$p" \
+                || { echo "ERROR: Failed to apply $p." \
+                          "The working tree may be dirty or incompatible." \
+                          "Try: just rust-reset && just ensure-rust-patched" >&2; exit 1; }
+        done
+        echo "==> Applied ${#sorted[@]} patch file(s) from patches/rust/"
     fi
 
 # Fetch (shallow clone) the Rust source tree into vendor/rust/
@@ -272,7 +278,11 @@ fetch-rust:
 
 
 # Save local modifications in vendor/rust/ as patches
-rust-save-patches:
+# Save local vendor/rust modifications as a patch.
+# Usage: just rust-save-patches [name]
+# If [name] is given (e.g. "30-fs"), saves to patches/rust/30-fs.patch.
+# Otherwise saves to patches/rust/thingos-pal.patch (legacy default).
+rust-save-patches name="thingos-pal":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p patches/rust
@@ -283,10 +293,11 @@ rust-save-patches:
         echo "No changes to save."
         exit 0
     fi
-    git diff > ../../patches/rust/thingos-pal.patch
-    echo "==> Saved patch to patches/rust/thingos-pal.patch"
-    echo "  $(wc -l < ../../patches/rust/thingos-pal.patch) lines"
-    echo "  Files changed: $(grep -c '^diff' ../../patches/rust/thingos-pal.patch)"
+    OUTFILE="../../patches/rust/{{name}}.patch"
+    git diff > "$OUTFILE"
+    echo "==> Saved patch to patches/rust/{{name}}.patch"
+    echo "  $(wc -l < "$OUTFILE") lines"
+    echo "  Files changed: $(grep -c '^diff' "$OUTFILE")"
 
 # Hard-reset vendor/rust/ to the pinned commit (discards local changes)
 rust-reset:
@@ -303,7 +314,7 @@ rust-reset:
     git clean -fd
     echo "==> vendor/rust reset to {{rust_commit}}"
 
-# Apply saved patches from patches/rust/ to vendor/rust/
+# Apply all patches in patches/rust/*.patch to vendor/rust/ in sorted order.
 rust-apply-patches:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -311,11 +322,18 @@ rust-apply-patches:
         echo "vendor/rust does not exist. Run: just fetch-rust"
         exit 1
     fi
-    if [ ! -f patches/rust/thingos-pal.patch ]; then
+    shopt -s nullglob
+    patches=( patches/rust/*.patch )
+    if [ ${#patches[@]} -eq 0 ]; then
         echo "No patches found in patches/rust/. Nothing to apply."
         exit 0
     fi
+    # Sort by filename so numbered patches apply in order
+    IFS=$'\n' sorted=($(printf '%s\n' "${patches[@]}" | sort))
     cd vendor/rust
-    git apply ../../patches/rust/thingos-pal.patch
-    echo "==> Applied patches/rust/thingos-pal.patch"
+    for p in "${sorted[@]}"; do
+        echo "==> Applying $p ..."
+        git apply "../../$p"
+    done
+    echo "==> All patches applied (${#sorted[@]} files)"
 

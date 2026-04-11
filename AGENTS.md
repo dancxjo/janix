@@ -66,9 +66,10 @@ When working on Rust std or `stem::pal` integration, treat `vendor/rust/` as eph
 
 - `vendor/rust/` is not committed to the repository.
 - `just fetch-rust` populates `vendor/rust/` with the pinned upstream Rust tree only.
-- `patches/rust/thingos-pal.patch` is the committed source of truth for Thing-OS Rust source modifications.
+- `patches/rust/` contains numbered patch files (`NN-name.patch`) applied in sorted order; these are the committed source of truth for Thing-OS Rust source modifications.
 - `just rust-apply-patches` must be run before you inspect or edit `vendor/rust/` for Thing-OS-specific behavior.
-- `just rust-save-patches` must be run after any change under `vendor/rust/`, or those edits are invisible to the repo and can be lost.
+- `just rust-save-patches [name]` saves the current diff as `patches/rust/<name>.patch` (default `thingos-pal`). Use a numbered name (e.g. `70-fs`) to target a specific logical group.
+- To split a monolithic diff into the numbered files run `python3 scripts/split_rust_patch.py`.
 
 Expected workflow:
 

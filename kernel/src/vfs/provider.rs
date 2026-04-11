@@ -54,16 +54,13 @@ impl ProviderChannel {
         }
         msg[hdr_size..].copy_from_slice(payload);
 
+        crate::ipc::diag::VFS_RPC_REQUESTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
         let written = self.req.send(&msg);
         if written < msg.len() {
-            crate::ipc::diag::VFS_RPC_ERRORS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            crate::ipc::diag::VFS_RPC_DEAD_PROVIDER
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::ipc::diag::record_dead_provider_error();
             return Err(Errno::EIO);
         }
-
-        crate::ipc::diag::VFS_RPC_REQUESTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
         let mut resp_buf = vec![0u8; VFS_RPC_MAX_RESP];
         let n = self.recv_response(&mut resp_buf)?;
@@ -79,6 +76,7 @@ impl ProviderChannel {
                 return Ok(n);
             }
             if !self.resp.has_writers() {
+                crate::ipc::diag::record_dead_provider_error();
                 return Err(Errno::EPIPE);
             }
             self.resp.add_waiter_read(tid);
@@ -89,6 +87,7 @@ impl ProviderChannel {
             }
             if !self.resp.has_writers() {
                 self.resp.remove_waiter_read(tid);
+                crate::ipc::diag::record_dead_provider_error();
                 return Err(Errno::EPIPE);
             }
             unsafe {
@@ -229,8 +228,11 @@ impl ProviderChannelRef {
         }
         msg[hdr_size..].copy_from_slice(payload);
 
+        crate::ipc::diag::VFS_RPC_REQUESTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
         let written = self.req.send(&msg);
         if written < msg.len() {
+            crate::ipc::diag::record_dead_provider_error();
             return Err(Errno::EIO);
         }
 
@@ -248,6 +250,7 @@ impl ProviderChannelRef {
                 return Ok(n);
             }
             if !self.resp.has_writers() {
+                crate::ipc::diag::record_dead_provider_error();
                 return Err(Errno::EPIPE);
             }
             self.resp.add_waiter_read(tid);
@@ -258,6 +261,7 @@ impl ProviderChannelRef {
             }
             if !self.resp.has_writers() {
                 self.resp.remove_waiter_read(tid);
+                crate::ipc::diag::record_dead_provider_error();
                 return Err(Errno::EPIPE);
             }
             unsafe {

@@ -13,14 +13,13 @@
 //! You can debug janix with `cat` and `ls`.
 //! This program is the first step towards that world.
 
-#![no_main]
+#![no_std]
+#[stem::main]
+fn main() -> ! {
+    use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
+    use stem::info;
+    use stem::syscall::{vfs_close, vfs_open, vfs_read, vfs_write};
 
-use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};
-use stem::info;
-use stem::syscall::{vfs_close, vfs_open, vfs_read, vfs_write};
-
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
     // ── /dev/console write ────────────────────────────────────────────────
     match vfs_open("/dev/console", O_WRONLY) {
         Ok(fd) => {

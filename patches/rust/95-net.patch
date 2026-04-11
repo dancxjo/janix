@@ -18,7 +18,7 @@ new file mode 100644
 index 00000000..043c469e
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,1026 @@
+@@ -0,0 +1,1117 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -98,6 +98,8 @@ index 00000000..043c469e
 +    read_timeout: Arc<Mutex<Option<Duration>>>,
 +    write_timeout: Arc<Mutex<Option<Duration>>>,
 +    nonblocking: Arc<Mutex<bool>>,
++    /// Userspace peek buffer: bytes read from VFS but not yet consumed by `read()`.
++    peek_buf: Arc<Mutex<vec::Vec<u8>>>,
 +}
 +
 +impl TcpStream {
@@ -144,6 +146,7 @@ index 00000000..043c469e
 +            read_timeout: Arc::new(Mutex::new(None)),
 +            write_timeout: Arc::new(Mutex::new(None)),
 +            nonblocking: Arc::new(Mutex::new(false)),
++            peek_buf: Arc::new(Mutex::new(vec::Vec::new())),
 +        };
 +
 +        let peer_ip = peer_v4.ip().octets();
@@ -185,8 +188,43 @@ index 00000000..043c469e
 +        Ok(*self.write_timeout.lock().unwrap())
 +    }
 +
-+    pub fn peek(&self, _: &mut [u8]) -> io::Result<usize> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++    pub fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
++        if buf.is_empty() {
++            return Ok(0);
++        }
++        let mut peek_buf = self.peek_buf.lock().unwrap();
++        if peek_buf.is_empty() {
++            // Fill the peek buffer with a fresh read from the VFS.
++            let mut tmp = vec::Vec::new();
++            tmp.resize(buf.len(), 0u8);
++            let nonblocking = *self.nonblocking.lock().unwrap();
++            let timeout = *self.read_timeout.lock().unwrap();
++            let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
++            loop {
++                match vfs_read(self.data_fd, &mut tmp) {
++                    Ok(0) => return Ok(0),
++                    Ok(n) => {
++                        peek_buf.extend_from_slice(&tmp[..n]);
++                        break;
++                    }
++                    Err(err) if err.raw_os_error() == Some(EAGAIN) && nonblocking => {
++                        return Err(io::Error::from_raw_os_error(EAGAIN));
++                    }
++                    Err(err) if err.raw_os_error() == Some(EAGAIN) => {
++                        if deadline_expired(deadline) {
++                            return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                        }
++                        sleep_ns(IO_POLL_NS);
++                        thread::yield_now();
++                    }
++                    Err(err) => return Err(err),
++                }
++            }
++        }
++        // Copy without consuming — peek does not advance the read position.
++        let copy_len = buf.len().min(peek_buf.len());
++        buf[..copy_len].copy_from_slice(&peek_buf[..copy_len]);
++        Ok(copy_len)
 +    }
 +
 +    pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
@@ -194,6 +232,16 @@ index 00000000..043c469e
 +            return Ok(0);
 +        }
 +
++        // Drain any bytes staged by a prior peek() call.
++        {
++            let mut peek_buf = self.peek_buf.lock().unwrap();
++            if !peek_buf.is_empty() {
++                let copy_len = buf.len().min(peek_buf.len());
++                buf[..copy_len].copy_from_slice(&peek_buf[..copy_len]);
++                let _ = peek_buf.drain(..copy_len);
++                return Ok(copy_len);
++            }
++        }
 +        let nonblocking = *self.nonblocking.lock().unwrap();
 +        let timeout = *self.read_timeout.lock().unwrap();
 +        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
@@ -223,6 +271,22 @@ index 00000000..043c469e
 +    pub fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
 +        if bufs.is_empty() {
 +            return Ok(0);
++        }
++        // If there is peeked data staged, drain it into the first non-empty buffer
++        // before going to the kernel — preserving correct read ordering.
++        {
++            let mut peek_buf = self.peek_buf.lock().unwrap();
++            if !peek_buf.is_empty() {
++                for b in bufs.iter_mut() {
++                    if !b.is_empty() {
++                        let copy_len = b.len().min(peek_buf.len());
++                        b[..copy_len].copy_from_slice(&peek_buf[..copy_len]);
++                        let _ = peek_buf.drain(..copy_len);
++                        return Ok(copy_len);
++                    }
++                }
++                return Ok(0);
++            }
 +        }
 +        let iovecs: vec::Vec<KernelIoVec> = bufs
 +            .iter()
@@ -380,6 +444,7 @@ index 00000000..043c469e
 +            read_timeout: Arc::new(Mutex::new(*self.read_timeout.lock().unwrap())),
 +            write_timeout: Arc::new(Mutex::new(*self.write_timeout.lock().unwrap())),
 +            nonblocking: Arc::new(Mutex::new(*self.nonblocking.lock().unwrap())),
++            peek_buf: Arc::new(Mutex::new(vec::Vec::new())),
 +        })
 +    }
 +
@@ -543,6 +608,7 @@ index 00000000..043c469e
 +                        read_timeout: Arc::new(Mutex::new(None)),
 +                        write_timeout: Arc::new(Mutex::new(None)),
 +                        nonblocking: Arc::new(Mutex::new(false)),
++                        peek_buf: Arc::new(Mutex::new(vec::Vec::new())),
 +                    };
 +                    return Ok((stream, peer_addr));
 +                }

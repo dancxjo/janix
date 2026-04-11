@@ -74,6 +74,7 @@ use super::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
 use crate::syscall;
 use crate::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
 use abi::errors::{Errno, SysResult};
+use spin::Mutex;
 
 /// A VFS file descriptor returned by [`vfs_open`].
 pub type Fd = u32;
@@ -117,14 +118,52 @@ pub struct TcpHandle {
     pub ctl_fd: Fd,
     /// Whether the data fd is in nonblocking mode (PAL-level flag).
     nonblocking: bool,
+    /// Userspace peek buffer: bytes read from VFS but not yet consumed.
+    peek_buf: Mutex<alloc::vec::Vec<u8>>,
 }
 
 impl TcpHandle {
     /// Read up to `buf.len()` bytes from the TCP data stream.
     ///
-    /// Returns `Err(EAGAIN)` when nonblocking and no data is available.
+    /// Drains any bytes staged by a prior [`peek`](Self::peek) call before
+    /// reading from the VFS.  Returns `Err(EAGAIN)` when nonblocking and no
+    /// data is available.
     pub fn read(&self, buf: &mut [u8]) -> SysResult<usize> {
+        // Drain peek buffer first.
+        let mut peek_buf = self.peek_buf.lock();
+        if !peek_buf.is_empty() {
+            let copy_len = buf.len().min(peek_buf.len());
+            buf[..copy_len].copy_from_slice(&peek_buf[..copy_len]);
+            let _ = peek_buf.drain(..copy_len);
+            return Ok(copy_len);
+        }
+        drop(peek_buf);
         vfs_read(self.data_fd, buf)
+    }
+
+    /// Peek up to `buf.len()` bytes from the TCP data stream without consuming them.
+    ///
+    /// If the internal peek buffer is empty a VFS read is issued to fill it.
+    /// The data is copied into `buf` but remains in the peek buffer so that
+    /// the next [`read`](Self::read) call will return the same bytes.
+    ///
+    /// Returns `Err(EAGAIN)` when nonblocking and no data is available.
+    pub fn peek(&self, buf: &mut [u8]) -> SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let mut peek_buf = self.peek_buf.lock();
+        if peek_buf.is_empty() {
+            let mut tmp = alloc::vec![0u8; buf.len()];
+            let n = vfs_read(self.data_fd, &mut tmp)?;
+            if n == 0 {
+                return Ok(0);
+            }
+            peek_buf.extend_from_slice(&tmp[..n]);
+        }
+        let copy_len = buf.len().min(peek_buf.len());
+        buf[..copy_len].copy_from_slice(&peek_buf[..copy_len]);
+        Ok(copy_len)
     }
 
     /// Write `buf` to the TCP data stream.
@@ -215,6 +254,7 @@ impl TcpListenerHandle {
                             data_fd,
                             ctl_fd,
                             nonblocking: false,
+                            peek_buf: Mutex::new(alloc::vec::Vec::new()),
                         },
                         remote_ip,
                         remote_port,
@@ -497,6 +537,7 @@ pub fn tcp_connect(addr: &str, port: u16, deadline_ns: u64) -> SysResult<TcpHand
         data_fd,
         ctl_fd,
         nonblocking: false,
+        peek_buf: Mutex::new(alloc::vec::Vec::new()),
     })
 }
 

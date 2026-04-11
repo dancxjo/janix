@@ -2,8 +2,8 @@
 
 Thing-OS uses a single, coherent readiness model for all waitable kernel
 objects.  The same set of flags, the same poll contract, and the same
-blocking pattern apply whether you are waiting on a pipe, a channel (IPC
-port), a VFS-backed device file, or a mix of all three.
+blocking pattern apply whether you are waiting on a pipe, a channel, a
+VFS-backed device thing, or a mix of all three.
 
 ---
 
@@ -18,7 +18,7 @@ All readiness is expressed as a bitmask using the constants in
 | `POLLOUT`  | 0x0004 | Space is available to write without blocking. |
 | `POLLERR`  | 0x0008 | An error condition is present; applicable to write ends when the peer has closed. |
 | `POLLHUP`  | 0x0010 | The peer has closed its end (hangup). Always checked regardless of `events`. |
-| `POLLNVAL` | 0x0020 | The file descriptor is not open or is not valid. |
+| `POLLNVAL` | 0x0020 | The thing is not open or is not valid. |
 
 `POLLERR` and `POLLHUP` are always reported in `revents` if they occur,
 even when not listed in `events`.
@@ -55,13 +55,13 @@ A consumer detects EOF by receiving `POLLIN` with no readable bytes
 A writer detects that the read end is gone by observing `POLLERR | POLLHUP`
 on its write end.  A subsequent `write` call will return `EPIPE`.
 
-### 2.2 Channels / IPC Ports (`PortNode`)
+### 2.2 Channels (`PortNode`)
 
-Channels are bounded byte queues created by `SYS_CHANNEL_CREATE`.  Each
-channel exposes a read handle and a write handle, each of which can be
-bridged to a VFS file descriptor via `SYS_FS_FD_FROM_HANDLE`.
+Channels are bounded message queues created by `SYS_CHANNEL_CREATE`.  Each
+channel exposes a read thing and a write thing, each of which can be
+bridged to a VFS thing via `SYS_FS_FD_FROM_HANDLE`.
 
-**Read handle:**
+**Read thing:**
 
 | Condition | POLLIN | POLLHUP |
 |-----------|--------|---------|
@@ -70,7 +70,7 @@ bridged to a VFS file descriptor via `SYS_FS_FD_FROM_HANDLE`.
 | Queue empty, writer closed | ✓ | ✓ |
 | Queue has bytes, writer closed | ✓ | ✓ |
 
-**Write handle:**
+**Write thing:**
 
 | Condition | POLLOUT | POLLERR | POLLHUP |
 |-----------|---------|---------|---------|
@@ -83,10 +83,10 @@ can handle both without special-casing.
 
 ### 2.3 VFS-Backed Files
 
-Regular files and device nodes opened via `SYS_FS_OPEN` implement
+Regular things and device nodes opened via `SYS_FS_OPEN` implement
 `VfsNode::poll`.  The default implementation returns `POLLIN | POLLOUT`
-unconditionally, matching POSIX semantics for non-socket file descriptors:
-**regular files are always ready**.
+unconditionally, matching POSIX semantics for non-socket things:
+**regular things are always ready**.
 
 Device-specific implementations (e.g. a framebuffer driver, a terminal)
 may override this to reflect actual buffer state.
@@ -99,7 +99,8 @@ may override this to reflect actual buffer state.
 SYS_FS_POLL(pollfds_ptr: usize, nfds: usize, timeout_ms: usize) -> SysResult<usize>
 ```
 
-- `pollfds_ptr` — pointer to a `[PollFd; nfds]` array in user memory
+- `pollfds_ptr` — pointer to a `[PollFd; nfds]` array in user memory, where
+                  each `PollFd.fd` is a **thing** number
 - `nfds`        — number of entries (max 256)
 - `timeout_ms`  — `0` = non-blocking; `usize::MAX` = block indefinitely;
                   any other value = timeout in milliseconds
@@ -130,11 +131,11 @@ completes or after the task is parked.
 use stem::syscall::vfs::*;
 use abi::syscall::{PollFd, poll_flags};
 
-fn run_event_loop(pipe_read: u32, channel_fd: u32, file_fd: u32) {
+fn run_event_loop(pipe_read: u32, channel_thing: u32, file_thing: u32) {
     let mut fds = [
-        PollFd { fd: pipe_read as i32,  events: poll_flags::POLLIN, revents: 0 },
-        PollFd { fd: channel_fd as i32, events: poll_flags::POLLIN, revents: 0 },
-        PollFd { fd: file_fd as i32,    events: poll_flags::POLLIN | poll_flags::POLLOUT, revents: 0 },
+        PollFd { fd: pipe_read as i32,       events: poll_flags::POLLIN, revents: 0 },
+        PollFd { fd: channel_thing as i32,   events: poll_flags::POLLIN, revents: 0 },
+        PollFd { fd: file_thing as i32,      events: poll_flags::POLLIN | poll_flags::POLLOUT, revents: 0 },
     ];
 
     loop {
@@ -185,5 +186,5 @@ any other kernel waitable that needs to participate in `SYS_FS_POLL`.
 
 The higher-level `SYS_WAIT_MANY` syscall (see `docs/wait_many.md`) uses a
 parallel but orthogonal mechanism based on typed `WaitSpec` entries.  For
-VFS file descriptors, `SYS_WAIT_MANY` supports `WaitKind::Fd` which routes
+VFS things, `SYS_WAIT_MANY` supports `WaitKind::Fd` which routes
 through the same `VfsNode::poll` / waiter API.

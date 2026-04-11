@@ -1,6 +1,15 @@
-//! Kernel IPC: Port-based inter-process communication
+//! Kernel IPC: Channel-based inter-process communication
 //!
-//! Provides capability-gated byte pipes for userspace communication.
+//! Provides capability-gated message queues (channels) and byte streams
+//! (pipes) for userspace communication.
+//!
+//! # Terminology
+//!
+//! The kernel-managed reference to an open object is called a **thing** in
+//! Thing-OS — what POSIX calls a "file descriptor" and Win32 calls a
+//! "handle".  Internally the ring-buffer backing a channel is implemented as
+//! a `Port`; that is an implementation detail.  User-facing syscalls and
+//! documentation always say **channel** and **thing**.
 
 pub mod diag;
 mod handles;

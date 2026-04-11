@@ -10,9 +10,9 @@
 //!   any metadata that directs how bulk data should be interpreted.
 //!
 //! - **Bulk plane** – large, throughput-sensitive data shared via memory-mapped
-//!   file descriptors (`memfd`). The sender creates a `memfd`, writes data into
-//!   it (or keeps it as a persistent shared ring), and passes the file
-//!   descriptor to the receiver via `channel_send_handle`. The receiver calls
+//!   things (`memfd`). The sender creates a `memfd`, writes data into
+//!   it (or keeps it as a persistent shared ring), and passes the thing
+//!   to the receiver via `channel_send_msg`. The receiver calls
 //!   `vm_map` to obtain a writable or read-only view without copying.
 //!
 //! # Memfd lifecycle
@@ -20,29 +20,29 @@
 //! ```text
 //! Creator                         Receiver
 //! -------                         --------
-//! memfd_create("name", size) -> fd
-//! vm_map(fd, READ|WRITE)     -> ptr   (optional, if creator also writes)
+//! memfd_create("name", size) -> thing
+//! vm_map(thing, READ|WRITE)  -> ptr   (optional, if creator also writes)
 //! [fill data at ptr]
-//! channel_send_handle(ch, fd) ----->  channel_recv_handle(ch) -> new_fd
-//!                                     vm_map(new_fd, READ) -> ptr
-//!                                     [read data at ptr]
-//!                                     vm_unmap(ptr, size)
-//!                                     vfs_close(new_fd)
+//! channel_send_msg(ch, b"", &[thing]) ---->  channel_recv_msg(ch) -> new_thing
+//!                                             vm_map(new_thing, READ) -> ptr
+//!                                             [read data at ptr]
+//!                                             vm_unmap(ptr, size)
+//!                                             vfs_close(new_thing)
 //! vm_unmap(ptr, size)
-//! vfs_close(fd)                        (fd dropped → physical memory freed)
+//! vfs_close(thing)                        (thing dropped → physical memory freed)
 //! ```
 //!
 //! The physical memory is reference-counted by the kernel: it is released only
-//! when **all** file-descriptor handles and all `vm_map` mappings that reference
-//! it have been dropped.
+//! when **all** things and all `vm_map` mappings that reference it have been
+//! dropped.
 //!
 //! # Revocation
 //!
-//! A sender may stop sharing a memfd region by closing its own fd. Existing
+//! A sender may stop sharing a memfd region by closing its own thing. Existing
 //! mappings in other processes remain valid until those processes call
-//! `vm_unmap` or close their own fd copy. There is no forced-unmap primitive;
-//! processes are expected to honour the protocol and unmap promptly when the
-//! companion control message signals that the buffer is done.
+//! `vm_unmap` or close their own thing copy. There is no forced-unmap
+//! primitive; processes are expected to honour the protocol and unmap promptly
+//! when the companion control message signals that the buffer is done.
 //!
 //! # Wire format
 //!
@@ -52,9 +52,9 @@
 //!
 //! ```text
 //! offset  size  field
-//!      0     4  fd       – file descriptor number (sender-local when embedded
-//!                          in a message; the receiver obtains its own fd via
-//!                          channel_recv_handle before mapping)
+//!      0     4  fd       – thing number (sender-local when embedded in a
+//!                          message; the receiver obtains its own thing via
+//!                          channel_recv_msg before mapping)
 //!      4     4  _pad     – reserved, must be zero
 //!      8     8  length   – byte length of the valid data window
 //! ```
@@ -68,14 +68,14 @@
 /// Canonical inline descriptor for a bulk-data memfd region.
 ///
 /// Embed this in any control-plane message that accompanies a memfd transfer.
-/// The fd field is the sender's local fd number; the physical backing is
-/// transferred by passing the fd over the channel with `channel_send_handle`.
+/// The `fd` field is the sender's local thing number; the physical backing is
+/// transferred by passing the thing over the channel with `channel_send_msg`.
 ///
 /// Wire size: [`MEMFD_REF_WIRE_SIZE`] bytes (little-endian).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemFdRef {
-    /// Sender-local file descriptor.
+    /// Sender-local thing number.
     pub fd: u32,
     /// Reserved padding (must be zero).
     pub _pad: u32,

@@ -1,7 +1,12 @@
-//! Port: Fixed-size ring buffer for IPC (SPSC for v0)
+//! Port: the internal ring-buffer backing a user-facing channel.
 //!
-//! Ports are kernel-managed byte pipes with capability-gated access.
-//! Each port has a single writer and single reader handle.
+//! A **channel** (as exposed by `SYS_CHANNEL_CREATE` and the `SYS_CHANNEL_*`
+//! family) is the user-visible IPC primitive.  Internally each channel is
+//! backed by a `Port` — a fixed-capacity SPSC ring buffer with a structured
+//! message queue.  `Port` / `PortId` are kernel-private names; user-space
+//! and all documentation should say "channel" and "thing" instead.
+//!
+//! Each port has a single writer and single reader thing.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;

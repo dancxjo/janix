@@ -9,14 +9,14 @@ Thing-OS.  Every kernel implementation detail referenced here is in
 ## 1. What Is a Channel
 
 A **channel** is a bounded, FIFO, byte-oriented ring buffer shared between
-exactly one writer handle and one reader handle.
+exactly one writer thing and one reader thing.
 
-`SYS_CHANNEL_CREATE(capacity) -> (write_handle, read_handle)`
+`SYS_CHANNEL_CREATE(capacity) -> (write_thing, read_thing)`
 
 - `capacity` is clamped to `[64, 65536]` bytes and rounded up to the next
   power of two.
-- The kernel returns a packed `usize`: `(write_handle << 16) | read_handle`.
-- Handle `0` is reserved and always invalid.
+- The kernel returns a packed `usize`: `(write_thing << 16) | read_thing`.
+- Thing `0` is reserved and always invalid.
 
 ---
 
@@ -27,7 +27,7 @@ exactly one writer handle and one reader handle.
 | Minimum ring capacity | 64 bytes | |
 | Maximum ring capacity | 65536 bytes (64 KiB) | Requested via `SYS_CHANNEL_CREATE` |
 | Maximum single message | 4096 bytes (4 KiB) | Enforced by `SYS_CHANNEL_SEND` / `SYS_CHANNEL_SEND_ALL` |
-| Maximum attached handles | 1 per `SYS_CHANNEL_SEND_HANDLE` call | Queued independently from byte data |
+| Maximum attached things | 1 per `SYS_CHANNEL_SEND_HANDLE` call | Queued independently from byte data |
 
 > **Practical guideline**: protocol messages should fit in a few hundred bytes.
 > For anything larger, embed a `abi::memfd::MemFdRef` and transfer the data
@@ -78,20 +78,20 @@ There is no reordering.
 
 `SYS_CHANNEL_SEND_ALL` does **not** block; it fails with `EAGAIN` if the ring
 is full.  The caller is responsible for retrying (or using poll/wait to wait
-for `POLLOUT` on the bridged VFS fd).
+for `POLLOUT` on the bridged VFS thing).
 
 ### Receiver blocks
 
-`SYS_CHANNEL_RECV` parks the calling task in the port's read wait queue until
+`SYS_CHANNEL_RECV` parks the calling task in the channel's read wait queue until
 data arrives or the write end is closed.
 
 `SYS_CHANNEL_TRY_RECV` never blocks.
 
 ### `SYS_CHANNEL_WAIT`
 
-Wait on one or more handles simultaneously.  The caller supplies an array of
-handle values and a flags word (`READABLE | WRITABLE`).  Returns the first
-handle that becomes ready.  Blocks indefinitely until at least one handle is
+Wait on one or more things simultaneously.  The caller supplies an array of
+thing values and a flags word (`READABLE | WRITABLE`).  Returns the first
+thing that becomes ready.  Blocks indefinitely until at least one thing is
 ready.
 
 ---
@@ -104,7 +104,7 @@ ready.
 2. `channel_recv` drains remaining buffered bytes normally.
 3. After the buffer is empty, `channel_recv` returns `EPIPE` to signal
    end-of-stream.
-4. Polling the read fd reports `POLLIN | POLLHUP`.
+4. Polling the read thing reports `POLLIN | POLLHUP`.
 
 ### Read end closes (receiver exits or calls `channel_close`)
 
@@ -112,12 +112,12 @@ ready.
 2. All further `SYS_CHANNEL_SEND` and `SYS_CHANNEL_SEND_ALL` calls return
    `EPIPE`.
 3. Any threads blocked in `SYS_CHANNEL_SEND` are woken immediately.
-4. Polling the write fd reports `POLLERR | POLLHUP`.
+4. Polling the write thing reports `POLLERR | POLLHUP`.
 
 ### Process crash / unexpected exit
 
-The kernel closes all handles owned by a process on exit, triggering the same
-peer-death sequences above.  A service that holds a channel read handle will
+The kernel closes all things owned by a process on exit, triggering the same
+peer-death sequences above.  A service that holds a channel read thing will
 observe `POLLERR | POLLHUP` on its write end within the same scheduling
 quantum that the sender process exits.
 
@@ -130,7 +130,7 @@ When a channel is closed while capability handles are still queued (i.e.
 
 - The kernel drops the `Arc` reference it holds to each queued node.
 - If no other references exist, the underlying VFS node is closed.
-- No handles are silently leaked into any process's fd table.
+- No things are silently leaked into any process's thing table.
 
 ---
 
@@ -138,33 +138,33 @@ When a channel is closed while capability handles are still queued (i.e.
 
 | Error | Condition |
 |-------|-----------|
-| `EBADF` | Handle value does not exist or has the wrong mode |
+| `EBADF` | Thing value does not exist or has the wrong mode |
 | `EINVAL` | `count == 0` or `count > 64` in `channel_wait` |
 | `EAGAIN` | Ring is full (`send_all`) or empty (`try_recv`) |
 | `EPIPE` | The peer endpoint is closed |
-| `ENOMEM` | Handle table is full (`MAX_HANDLES = 1024`) |
+| `ENOMEM` | Thing table is full (`MAX_HANDLES = 1024`) |
 | `EIO` | Internal ring write shorter than expected (provider send error) |
 
 ---
 
 ## 9. Bridging Channels to VFS Poll
 
-`SYS_FD_FROM_HANDLE(handle) -> fd`
+`SYS_FD_FROM_HANDLE(thing) -> thing`
 
-Wraps a channel handle in a VFS file descriptor so it can participate in
-`SYS_FS_POLL`.  The fd inherits the handle's mode (read or write).
+Wraps a channel thing in a VFS thing so it can participate in
+`SYS_FS_POLL`.  The resulting thing inherits the source's mode (read or write).
 
 Once bridged:
-- `POLLIN` fires when the ring has bytes (read end).
-- `POLLOUT` fires when the ring has free space (write end).
+- `POLLIN` fires when the ring has bytes (read thing).
+- `POLLOUT` fires when the ring has free space (write thing).
 - `POLLHUP` fires when the peer has closed.
-- `POLLERR` fires when the peer has closed the read end (write-end perspective).
+- `POLLERR` fires when the peer has closed the read end (write-thing perspective).
 
 ---
 
 ## 10. Diagnostics
 
-The kernel maintains per-port counters exposed under `/proc/ipc/channels`:
+The kernel maintains per-channel counters exposed under `/proc/ipc/channels`:
 
 | Counter | Description |
 |---------|-------------|
@@ -172,8 +172,8 @@ The kernel maintains per-port counters exposed under `/proc/ipc/channels`:
 | `recvs` | Total `channel_recv` calls that read ≥1 byte |
 | `bytes_sent` | Cumulative bytes written |
 | `bytes_recv` | Cumulative bytes read |
-| `handles_sent` | Total capability handles enqueued |
-| `handles_recv` | Total capability handles dequeued |
+| `handles_sent` | Total capability things enqueued |
+| `handles_recv` | Total capability things dequeued |
 | `full_events` | Times `channel_send_all` returned `EAGAIN` due to full ring |
 | `peer_deaths` | Times a peer closure was observed |
 

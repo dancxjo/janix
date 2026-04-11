@@ -425,6 +425,35 @@ impl Receiver {
 mod tests {
     use super::*;
     use alloc::sync::Arc;
+    use crate::sched::blocking::WAKE_TASK_HOOK;
+    use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+    // ── Wake-hook helpers (serialised by WAKE_TEST_GUARD) ──────────────────────
+
+    static WAKE_TEST_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+    static WOKEN_IDS: [AtomicU64; 16] = [const { AtomicU64::new(0) }; 16];
+    static WOKEN_LEN: AtomicUsize = AtomicUsize::new(0);
+
+    fn reset_wakes() {
+        WOKEN_LEN.store(0, Ordering::SeqCst);
+        for slot in &WOKEN_IDS {
+            slot.store(0, Ordering::SeqCst);
+        }
+    }
+
+    fn record_wake(id: u64) {
+        let idx = WOKEN_LEN.fetch_add(1, Ordering::SeqCst);
+        if idx < WOKEN_IDS.len() {
+            WOKEN_IDS[idx].store(id, Ordering::SeqCst);
+        }
+    }
+
+    fn wake_log() -> alloc::vec::Vec<u64> {
+        let len = WOKEN_LEN.load(Ordering::SeqCst).min(WOKEN_IDS.len());
+        (0..len)
+            .map(|i| WOKEN_IDS[i].load(Ordering::SeqCst))
+            .collect()
+    }
 
     /// Test basic send/receive on a Port
     #[test]
@@ -611,5 +640,202 @@ mod tests {
         // Drain the message
         port.try_recv_msg();
         assert!(port.is_empty());
+    }
+
+    // ── Peer-death semantics ──────────────────────────────────────────────────
+
+    /// Closing the write end marks the port as having no writers.
+    #[test]
+    fn test_close_writer_marks_no_writers() {
+        let port = Arc::new(Port::new(64));
+        assert!(port.has_writers());
+        assert!(port.has_readers());
+
+        assert!(!port.close_writer()); // not destroyed (reader still open)
+        assert!(!port.has_writers());
+        assert!(port.has_readers());
+    }
+
+    /// Closing the read end marks the port as having no readers.
+    #[test]
+    fn test_close_reader_marks_no_readers() {
+        let port = Arc::new(Port::new(64));
+        assert!(port.has_writers());
+        assert!(port.has_readers());
+
+        assert!(!port.close_reader()); // not destroyed (writer still open)
+        assert!(port.has_writers());
+        assert!(!port.has_readers());
+    }
+
+    /// After the write end closes, already-buffered bytes are still readable,
+    /// but a subsequent recv on an empty ring signals EOF (has_writers == false).
+    #[test]
+    fn test_recv_drains_then_eof_after_writer_close() {
+        let port = Arc::new(Port::new(64));
+        let written = port.send(b"hello");
+        assert_eq!(written, 5);
+
+        port.close_writer();
+        assert!(!port.has_writers(), "writer is closed");
+
+        // Buffered bytes are still available
+        let mut buf = [0u8; 64];
+        let n = port.try_recv(&mut buf);
+        assert_eq!(n, 5);
+        assert_eq!(&buf[..n], b"hello");
+
+        // Ring is now empty and writer is gone → syscall would return EPIPE
+        assert_eq!(port.try_recv(&mut buf), 0);
+        assert!(!port.has_writers());
+    }
+
+    /// Structured messages queued before the writer closes are still delivered.
+    #[test]
+    fn test_msg_queue_drains_after_writer_close() {
+        let port = Arc::new(Port::new(64));
+        port.send_msg(alloc::vec![42u8], alloc::vec![]);
+        port.close_writer();
+
+        let msg = port.try_recv_msg().expect("message must survive writer close");
+        assert_eq!(msg.data, &[42u8]);
+        assert!(port.try_recv_msg().is_none());
+        assert!(!port.has_writers());
+    }
+
+    // ── FIFO ordering ─────────────────────────────────────────────────────────
+
+    /// Bytes written in multiple sends are delivered in FIFO order.
+    #[test]
+    fn test_fifo_ordering_byte_stream() {
+        let port = Arc::new(Port::new(256));
+        port.send(&[1u8, 2, 3]);
+        port.send(&[4u8, 5, 6]);
+
+        let mut buf = [0u8; 256];
+        let n = port.try_recv(&mut buf);
+        assert_eq!(n, 6);
+        assert_eq!(&buf[..n], &[1u8, 2, 3, 4, 5, 6]);
+    }
+
+    // ── Atomicity edge cases ──────────────────────────────────────────────────
+
+    /// send_all succeeds when the ring has exactly enough space, and fails
+    /// (all-or-nothing) when it has one byte less.
+    #[test]
+    fn test_send_all_at_exact_capacity_boundary() {
+        let port = Arc::new(Port::new(16));
+
+        // Fill the ring exactly
+        assert!(port.send_all(&[0xAAu8; 16]));
+        // Ring is full — even a 1-byte send_all must fail
+        assert!(!port.send_all(&[0xFF]));
+
+        // Drain all
+        let mut buf = [0u8; 16];
+        let n = port.try_recv(&mut buf);
+        assert_eq!(n, 16);
+
+        // Now there is room; a 16-byte write should succeed again
+        assert!(port.send_all(&[0xBBu8; 16]));
+    }
+
+    /// send_all with a length equal to capacity − 1 must not corrupt the buffer.
+    #[test]
+    fn test_send_all_partial_fill_then_top_up() {
+        let port = Arc::new(Port::new(16));
+
+        // Write 15 bytes (one slot free)
+        assert!(port.send_all(&[0x01u8; 15]));
+        // Try to write 2 more — does not fit (only 1 free slot)
+        assert!(!port.send_all(&[0x02u8; 2]));
+        // Write exactly 1 — fits
+        assert!(port.send_all(&[0x03u8]));
+
+        let mut out = [0u8; 16];
+        let n = port.try_recv(&mut out);
+        assert_eq!(n, 16);
+        assert_eq!(&out[..15], &[0x01u8; 15]);
+        assert_eq!(out[15], 0x03);
+    }
+
+    // ── Wakeup on peer death ──────────────────────────────────────────────────
+
+    /// When the write end closes, all registered read waiters are woken.
+    #[test]
+    fn test_close_writer_wakes_read_waiters() {
+        let _g = WAKE_TEST_GUARD.lock();
+        reset_wakes();
+        WAKE_TASK_HOOK.store(record_wake as *mut (), Ordering::SeqCst);
+
+        let port = Arc::new(Port::new(64));
+        port.add_waiter_read(100);
+        port.add_waiter_read(101);
+        port.close_writer();
+
+        let log = wake_log();
+        assert!(log.contains(&100), "tid 100 must be woken on writer close");
+        assert!(log.contains(&101), "tid 101 must be woken on writer close");
+    }
+
+    /// When the read end closes, all registered write waiters are woken.
+    #[test]
+    fn test_close_reader_wakes_write_waiters() {
+        let _g = WAKE_TEST_GUARD.lock();
+        reset_wakes();
+        WAKE_TASK_HOOK.store(record_wake as *mut (), Ordering::SeqCst);
+
+        let port = Arc::new(Port::new(64));
+        port.add_waiter_write(200);
+        port.add_waiter_write(201);
+        port.close_reader();
+
+        let log = wake_log();
+        assert!(log.contains(&200), "tid 200 must be woken on reader close");
+        assert!(log.contains(&201), "tid 201 must be woken on reader close");
+    }
+
+    // ── Cleanup semantics for queued caps ─────────────────────────────────────
+
+    /// Caps queued in the message queue are released when the port is dropped.
+    /// No cap should silently leak into any process's thing table.
+    #[test]
+    fn test_queued_caps_released_on_port_drop() {
+        let port = Arc::new(Port::new(64));
+        let cap: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        let weak = Arc::downgrade(&cap);
+
+        // Enqueue the cap; the port now holds the only strong reference besides
+        // the local `cap` binding.
+        port.send_cap(cap);
+
+        // Drop the local binding — port is the sole owner now.
+        // (The strong count is 1, held by the message queue.)
+        let strong_before = weak.strong_count();
+        assert_eq!(strong_before, 1, "only the port queue holds the cap");
+
+        // Drop the port → the VecDeque<KernelMessage> is dropped → Arc is freed.
+        drop(port);
+        assert!(
+            weak.upgrade().is_none(),
+            "cap must be freed when port is dropped"
+        );
+    }
+
+    /// Multiple caps in a single message are all released when the port drops.
+    #[test]
+    fn test_multiple_queued_caps_all_released_on_drop() {
+        let port = Arc::new(Port::new(64));
+
+        let cap1: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        let cap2: Arc<dyn crate::vfs::VfsNode> = Arc::new(DummyCap);
+        let weak1 = Arc::downgrade(&cap1);
+        let weak2 = Arc::downgrade(&cap2);
+
+        port.send_msg(alloc::vec![], alloc::vec![cap1, cap2]);
+
+        drop(port);
+        assert!(weak1.upgrade().is_none(), "cap1 must be freed");
+        assert!(weak2.upgrade().is_none(), "cap2 must be freed");
     }
 }

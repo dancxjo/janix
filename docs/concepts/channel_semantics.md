@@ -27,7 +27,8 @@ exactly one writer thing and one reader thing.
 | Minimum ring capacity | 64 bytes | |
 | Maximum ring capacity | 65536 bytes (64 KiB) | Requested via `SYS_CHANNEL_CREATE` |
 | Maximum single message | 4096 bytes (4 KiB) | Enforced by `SYS_CHANNEL_SEND` / `SYS_CHANNEL_SEND_ALL` |
-| Maximum attached things | 1 per `SYS_CHANNEL_SEND_HANDLE` call | Queued independently from byte data |
+| Maximum attached things per `SYS_CHANNEL_SEND_MSG` | 64 | Returns `EINVAL` if exceeded |
+| Maximum attached things per `SYS_CHANNEL_SEND_HANDLE` | 1 | Queued independently from byte data |
 
 > **Practical guideline**: protocol messages should fit in a few hundred bytes.
 > For anything larger, embed a `abi::memfd::MemFdRef` and transfer the data
@@ -139,7 +140,7 @@ When a channel is closed while capability handles are still queued (i.e.
 | Error | Condition |
 |-------|-----------|
 | `EBADF` | Thing value does not exist or has the wrong mode |
-| `EINVAL` | `count == 0` or `count > 64` in `channel_wait` |
+| `EINVAL` | `count == 0` or `count > 64` in `channel_wait`; `handles_count > 64` in `channel_send_msg` |
 | `EAGAIN` | Ring is full (`send_all`) or empty (`try_recv`) |
 | `EPIPE` | The peer endpoint is closed |
 | `ENOMEM` | Thing table is full (`MAX_HANDLES = 1024`) |

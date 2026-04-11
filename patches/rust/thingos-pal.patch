@@ -878,7 +878,7 @@ new file mode 100644
 index 00000000..1fcbb23e
 --- /dev/null
 +++ b/library/std/src/sys/pal/thingos/common.rs
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,118 @@
 +//! ThingOS PAL — core platform primitives.
 +//!
 +//! This is a stub implementation. Functions will be fleshed out as the
@@ -906,6 +906,11 @@ index 00000000..1fcbb23e
 +    core::intrinsics::abort();
 +}
 +
++/// Low-level syscall entry point shared across ThingOS `sys` modules.
++///
++/// Exposed as `pub` so that platform-specific modules such as `sys::time`,
++/// `sys::args`, `sys::env`, and `sys::stdio` can call it via
++/// `crate::sys::pal::raw_syscall6` without duplicating the inline-asm.
 +pub unsafe fn raw_syscall6(
 +    n: u32,
 +    a0: usize,
@@ -1148,7 +1153,7 @@ new file mode 100644
 index 00000000..00000000
 --- /dev/null
 +++ b/library/std/src/sys/time/thingos.rs
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,124 @@
 +//! ThingOS time implementation.
 +//!
 +//! `Instant`    — backed by `SYS_TIME_MONOTONIC` (0x1202), returns nanoseconds as usize.
@@ -1183,6 +1188,10 @@ index 00000000..00000000
 +}
 +
 +/// Query SYS_TIME_MONOTONIC — returns nanoseconds since boot as a usize.
++///
++/// Returns 0 on syscall failure; callers treat 0 as the epoch of the monotonic
++/// clock rather than aborting, matching the behaviour of other embedded PALs.
++/// A return of 0 is only expected before the scheduler is fully initialized.
 +fn monotonic_ns() -> u64 {
 +    let ret = unsafe { raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0) };
 +    if ret < 0 { 0 } else { ret as u64 }
@@ -1540,7 +1549,7 @@ new file mode 100644
 index 00000000..00000000
 --- /dev/null
 +++ b/library/std/src/sys/stdio/thingos.rs
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,99 @@
 +//! ThingOS stdio implementation.
 +//!
 +//! File descriptors 0, 1, 2 are pre-populated by the kernel at spawn time
@@ -1647,7 +1656,10 @@ index 00000000..00000000
 +    fn flush(&mut self) -> io::Result<()> { Ok(()) }
 +}
 +
-+/// Use a 1-byte buffer for stdin so reads complete one byte at a time from serial/console.
++/// Use the default buffer size for stdin I/O.
++///
++/// Larger buffers allow more efficient block reads when stdin is connected to a pipe.
++/// For interactive serial/console use, the TTY layer handles line buffering.
 +pub const STDIN_BUF_SIZE: usize = crate::sys::io::DEFAULT_BUF_SIZE;
 +
 +pub fn is_ebadf(err: &io::Error) -> bool {

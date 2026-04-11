@@ -59,7 +59,7 @@ fn main() {
     match now.duration_since(SystemTime::UNIX_EPOCH) {
         Ok(since_epoch) => {
             println!("[time_test] seconds since UNIX_EPOCH = {}", since_epoch.as_secs());
-            if since_epoch.as_secs() == 0 {
+            if since_epoch.is_zero() {
                 println!("[time_test] WARN: wall clock at epoch (RTC not set?)");
             }
         }

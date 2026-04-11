@@ -257,7 +257,7 @@ new file mode 100644
 index 00000000..93bf392d
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,767 @@
+@@ -0,0 +1,882 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -584,53 +584,149 @@ index 00000000..93bf392d
 +    }
 +}
 +
-+pub struct TcpListener(!);
++pub struct TcpListener {
++    id: u32,
++    ctl_fd: i32,
++    accept_fd: i32,
++    nonblocking: Arc<Mutex<bool>>,
++}
 +
 +impl TcpListener {
-+    pub fn bind<A: ToSocketAddrs>(_: A) -> io::Result<TcpListener> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++    pub fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
++        each_addr(addr, |a| Self::bind_inner(a))
++    }
++
++    fn bind_inner(addr: &SocketAddr) -> io::Result<TcpListener> {
++        let SocketAddr::V4(local_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++
++        let id = allocate_tcp_socket()?;
++        let ctl_path = socket_path(id, "ctl");
++        let ctl_fd = vfs_open(&ctl_path, O_WRONLY)?;
++
++        let port = local_v4.port();
++        let cmd = format!("listen {port} 128");
++        if let Err(e) = vfs_write(ctl_fd, cmd.as_bytes()) {
++            let _ = vfs_close(ctl_fd);
++            return Err(e);
++        }
++
++        let accept_path = socket_path(id, "accept");
++        let accept_fd = match vfs_open(&accept_path, O_RDONLY | O_NONBLOCK) {
++            Ok(fd) => fd,
++            Err(e) => {
++                let _ = vfs_write(ctl_fd, b"close");
++                let _ = vfs_close(ctl_fd);
++                return Err(e);
++            }
++        };
++
++        Ok(TcpListener { id, ctl_fd, accept_fd, nonblocking: Arc::new(Mutex::new(false)) })
 +    }
 +
 +    pub fn socket_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        if let Some(local) = read_status(self.id).ok().and_then(|s| s.local) {
++            return Ok(local);
++        }
++        Err(io::Error::from_raw_os_error(EINVAL))
 +    }
 +
 +    pub fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-+        self.0
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        loop {
++            let mut buf = [0u8; 64];
++            match vfs_read(self.accept_fd, &mut buf) {
++                Ok(n) if n > 0 => {
++                    let text = crate::str::from_utf8(&buf[..n])
++                        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?
++                        .trim();
++                    let (conn_id, remote_ip, remote_port) = parse_accept_line(text)?;
++                    let peer_addr = SocketAddr::V4(SocketAddrV4::new(
++                        Ipv4Addr::new(remote_ip[0], remote_ip[1], remote_ip[2], remote_ip[3]),
++                        remote_port,
++                    ));
++                    let data_path = socket_path(conn_id, "data");
++                    let conn_ctl_path = socket_path(conn_id, "ctl");
++                    let data_fd = vfs_open(&data_path, O_RDWR | O_NONBLOCK)?;
++                    let conn_ctl_fd = match vfs_open(&conn_ctl_path, O_WRONLY) {
++                        Ok(fd) => fd,
++                        Err(e) => {
++                            let _ = vfs_close(data_fd);
++                            return Err(e);
++                        }
++                    };
++                    let stream = TcpStream {
++                        id: conn_id,
++                        data_fd,
++                        ctl_fd: conn_ctl_fd,
++                        peer_addr,
++                        read_timeout: Arc::new(Mutex::new(None)),
++                        write_timeout: Arc::new(Mutex::new(None)),
++                        nonblocking: Arc::new(Mutex::new(false)),
++                    };
++                    return Ok((stream, peer_addr));
++                }
++                Ok(_) => {
++                    if nonblocking {
++                        return Err(io::Error::from_raw_os_error(EAGAIN));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
++                    if nonblocking {
++                        return Err(io::Error::from_raw_os_error(EAGAIN));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(e) => return Err(e),
++            }
++        }
 +    }
 +
 +    pub fn duplicate(&self) -> io::Result<TcpListener> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_ttl(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn ttl(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_only_v6(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn only_v6(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
-+        self.0
++        Ok(None)
 +    }
 +
-+    pub fn set_nonblocking(&self, _: bool) -> io::Result<()> {
-+        self.0
++    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
++        *self.nonblocking.lock().unwrap() = nonblocking;
++        Ok(())
++    }
++}
++
++impl Drop for TcpListener {
++    fn drop(&mut self) {
++        let _ = vfs_write(self.ctl_fd, b"close");
++        let _ = vfs_close(self.accept_fd);
++        let _ = vfs_close(self.ctl_fd);
 +    }
 +}
 +
 +impl fmt::Debug for TcpListener {
-+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-+        self.0
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("TcpListener").field("id", &self.id).finish()
 +    }
 +}
 +
@@ -969,6 +1065,25 @@ index 00000000..93bf392d
 +    let port = port.parse::<u16>().ok()?;
 +    let ip = ip.parse::<Ipv4Addr>().ok()?;
 +    Some(SocketAddr::V4(SocketAddrV4::new(ip, port)))
++}
++
++/// Parse an accept-response line: `"<conn_id> <a>.<b>.<c>.<d> <port>"`.
++fn parse_accept_line(text: &str) -> io::Result<(u32, [u8; 4], u16)> {
++    let mut parts = text.split_whitespace();
++    let conn_id: u32 = parts
++        .next()
++        .ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?
++        .parse()
++        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    let ip_str = parts.next().ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?;
++    let port: u16 = parts
++        .next()
++        .ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?
++        .parse()
++        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    let ip: Ipv4Addr =
++        ip_str.parse().map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    Ok((conn_id, ip.octets(), port))
 +}
 +
 +fn deadline_expired(deadline: Option<u64>) -> bool {

@@ -82,10 +82,10 @@ pub use channel::{
     channel_send_msg, channel_try_recv, channel_wait, ChannelHandle,
 };
 pub use vfs::{
-    dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_close, vfs_fcntl, vfs_fsync,
-    vfs_getcwd, vfs_isatty, vfs_mkdir, vfs_mount, vfs_open, vfs_poll, vfs_read, vfs_readdir,
-    vfs_realpath, vfs_rename, vfs_seek, vfs_stat, vfs_umount, vfs_unlink, vfs_watch_fd,
-    vfs_watch_path, vfs_write,
+    dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_chmod, vfs_close, vfs_fcntl, vfs_fchmod,
+    vfs_fsync, vfs_futimes, vfs_getcwd, vfs_isatty, vfs_mkdir, vfs_mount, vfs_open, vfs_poll,
+    vfs_read, vfs_readdir, vfs_realpath, vfs_rename, vfs_seek, vfs_stat, vfs_umount, vfs_unlink,
+    vfs_utimes, vfs_watch_fd, vfs_watch_path, vfs_write,
 };
 pub use wait::wait_many;
 

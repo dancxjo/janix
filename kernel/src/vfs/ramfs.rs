@@ -46,6 +46,8 @@ fn now() -> (u64, u32) {
 /// Per-file mutable state (data + timestamps).
 struct RamfsFileInner {
     data: Vec<u8>,
+    /// POSIX permission bits (lower 12 bits of st_mode; default 0o644).
+    mode: u32,
     /// Last access time (seconds, nanoseconds).
     atime: (u64, u32),
     /// Last modification time (content write / truncate).
@@ -59,6 +61,7 @@ impl RamfsFileInner {
         let ts = now();
         Self {
             data,
+            mode: 0o644,
             atime: ts,
             mtime: ts,
             ctime: ts,
@@ -69,6 +72,8 @@ impl RamfsFileInner {
 /// Per-directory mutable state (children + timestamps).
 struct RamfsDirInner {
     children: BTreeMap<String, Arc<RamfsEntry>>,
+    /// POSIX permission bits (lower 12 bits of st_mode; default 0o755).
+    mode: u32,
     /// Last access time.
     atime: (u64, u32),
     /// Last modification time (child added / removed).
@@ -82,6 +87,7 @@ impl RamfsDirInner {
         let ts = now();
         Self {
             children: BTreeMap::new(),
+            mode: 0o755,
             atime: ts,
             mtime: ts,
             ctime: ts,
@@ -206,7 +212,7 @@ impl VfsNode for RamfsNode {
                 let lock = inner.lock();
                 let size = lock.data.len() as u64;
                 Ok(VfsStat {
-                    mode: VfsStat::S_IFREG | 0o644,
+                    mode: VfsStat::S_IFREG | (lock.mode & 0o7777),
                     size,
                     ino: *ino,
                     nlink: 1,
@@ -228,7 +234,7 @@ impl VfsNode for RamfsNode {
                     .filter(|e| matches!(***e, RamfsEntry::Dir(_, _)))
                     .count() as u32;
                 Ok(VfsStat {
-                    mode: VfsStat::S_IFDIR | 0o755,
+                    mode: VfsStat::S_IFDIR | (lock.mode & 0o7777),
                     size: 0,
                     ino: *ino,
                     nlink: 2 + subdir_count,
@@ -248,6 +254,60 @@ impl VfsNode for RamfsNode {
                 nlink: 1,
                 ..Default::default()
             }),
+        }
+    }
+
+    fn chmod(&self, mode: u32) -> SysResult<()> {
+        let ts = now();
+        match &*self.0 {
+            RamfsEntry::File(inner, _) => {
+                let mut lock = inner.lock();
+                lock.mode = mode & 0o7777;
+                lock.ctime = ts;
+                Ok(())
+            }
+            RamfsEntry::Dir(inner, _) => {
+                let mut lock = inner.lock();
+                lock.mode = mode & 0o7777;
+                lock.ctime = ts;
+                Ok(())
+            }
+            RamfsEntry::Symlink(_, _) => {
+                // Symlink permissions are fixed at 0o777; chmod is a no-op.
+                Ok(())
+            }
+        }
+    }
+
+    fn utimes(&self, atime: Option<(u64, u32)>, mtime: Option<(u64, u32)>) -> SysResult<()> {
+        let ts = now();
+        match &*self.0 {
+            RamfsEntry::File(inner, _) => {
+                let mut lock = inner.lock();
+                if let Some((sec, nsec)) = atime {
+                    lock.atime = (sec, nsec);
+                }
+                if let Some((sec, nsec)) = mtime {
+                    lock.mtime = (sec, nsec);
+                }
+                lock.ctime = ts;
+                Ok(())
+            }
+            RamfsEntry::Dir(inner, _) => {
+                let mut lock = inner.lock();
+                if let Some((sec, nsec)) = atime {
+                    lock.atime = (sec, nsec);
+                }
+                if let Some((sec, nsec)) = mtime {
+                    lock.mtime = (sec, nsec);
+                }
+                lock.ctime = ts;
+                Ok(())
+            }
+            RamfsEntry::Symlink(_, _) => {
+                // Symlink timestamps are not stored; silently succeed.
+                Ok(())
+            }
         }
     }
 

@@ -454,6 +454,7 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     let _ = root_fs.mkdir("run");
     let _ = root_fs.mkdir("services");
     let _ = root_fs.mkdir("session");
+    let _ = root_fs.mkdir("data");
 
     // Create the root union filesystem.
     let mut root_union = union::UnionFs::new_fallthrough();
@@ -490,6 +491,10 @@ pub fn init(modules: &'static [crate::BootModuleDesc]) {
     // Session namespace — filesystem-native GUI objects live here.
     mount::mount("/session", Arc::new(ramfs::RamFs::new()));
     crate::kdebug!("vfs: mounted tmpfs at /session");
+
+    // Persistent user data — writable scratchpad for userland programs.
+    mount::mount("/data", Arc::new(ramfs::RamFs::new()));
+    crate::kdebug!("vfs: mounted tmpfs at /data");
 }
 
 /// Helper for filesystem drivers to implement `readdir`.

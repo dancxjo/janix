@@ -1198,6 +1198,114 @@ pub fn sys_fs_readlink(
     Ok(needed)
 }
 
+// ── chmod ────────────────────────────────────────────────────────────────────
+
+/// Set the permission bits for the file at `path` (path-based chmod).
+///
+/// `mode` contains the lower 12 bits of the POSIX permission mask
+/// (`0o7777`); the file-type bits are ignored.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_chmod(path_ptr: usize, path_len: usize, mode: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    let abs_path = resolve_path(path)?;
+    let node = vfs::mount::lookup(&abs_path)?;
+    node.chmod((mode as u32) & 0o7777)?;
+    Ok(0)
+}
+
+/// Set the permission bits for the file associated with `fd` (fd-based fchmod).
+///
+/// `mode` contains the lower 12 bits of the POSIX permission mask
+/// (`0o7777`); the file-type bits are ignored.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_fchmod(fd: usize, mode: usize) -> SysResult<usize> {
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        lock.fd_table.get(fd as u32)?.node.clone()
+    };
+    node.chmod((mode as u32) & 0o7777)?;
+    Ok(0)
+}
+
+// ── utimes helpers ───────────────────────────────────────────────────────────
+
+/// Copy a [`abi::fs::UtimesRequest`] from userspace and decode it into
+/// optional `(sec, nsec)` pairs.
+fn read_utimes_request(
+    times_ptr: usize,
+) -> SysResult<(Option<(u64, u32)>, Option<(u64, u32)>)> {
+    use abi::fs::UtimesRequest;
+    let size = core::mem::size_of::<UtimesRequest>();
+    validate_user_range(times_ptr, size, false)?;
+    let mut req = UtimesRequest::default();
+    let buf = unsafe {
+        core::slice::from_raw_parts_mut(&mut req as *mut UtimesRequest as *mut u8, size)
+    };
+    unsafe { copyin(buf, times_ptr)? };
+    let atime = if req.atime_sec == UtimesRequest::OMIT {
+        None
+    } else {
+        Some((req.atime_sec, req.atime_nsec))
+    };
+    let mtime = if req.mtime_sec == UtimesRequest::OMIT {
+        None
+    } else {
+        Some((req.mtime_sec, req.mtime_nsec))
+    };
+    Ok((atime, mtime))
+}
+
+// ── utimes ───────────────────────────────────────────────────────────────────
+
+/// Set the access and modification timestamps for the file at `path`.
+///
+/// `times_ptr` points to an [`abi::fs::UtimesRequest`] struct.
+/// `flags`: bit 0 = `AT_SYMLINK_NOFOLLOW` — if set, operate on a symlink
+/// node itself rather than its target (reserved; currently returns `ENOTSUP`
+/// if a symlink is found at the target path and this flag is set).
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_utimes(
+    path_ptr: usize,
+    path_len: usize,
+    times_ptr: usize,
+    _flags: usize,
+) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    let (atime, mtime) = read_utimes_request(times_ptr)?;
+    let abs_path = resolve_path(path)?;
+    let node = vfs::mount::lookup(&abs_path)?;
+    node.utimes(atime, mtime)?;
+    Ok(0)
+}
+
+/// Set the access and modification timestamps for the file associated with `fd`.
+///
+/// `times_ptr` points to an [`abi::fs::UtimesRequest`] struct.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_futimes(fd: usize, times_ptr: usize) -> SysResult<usize> {
+    let (atime, mtime) = read_utimes_request(times_ptr)?;
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        lock.fd_table.get(fd as u32)?.node.clone()
+    };
+    node.utimes(atime, mtime)?;
+    Ok(0)
+}
+
 
 #[cfg(test)]
 mod tests {

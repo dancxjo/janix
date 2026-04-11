@@ -346,6 +346,30 @@ pub trait VfsNode: Send + Sync {
     fn readlink(&self) -> SysResult<alloc::string::String> {
         Err(abi::errors::Errno::EINVAL)
     }
+
+    /// Change the permission bits of this node.
+    ///
+    /// `mode` contains the lower 12 bits of the POSIX permission mask
+    /// (permission bits plus setuid/setgid/sticky: `0o7777`).
+    ///
+    /// Default: returns [`Errno::ENOTSUP`] for nodes that do not support
+    /// permission mutation.
+    fn chmod(&self, _mode: u32) -> SysResult<()> {
+        Err(abi::errors::Errno::EOPNOTSUPP)
+    }
+
+    /// Update the access and/or modification timestamps of this node.
+    ///
+    /// `atime` — `Some((sec, nsec))` to set the access time, `None` to leave it
+    /// unchanged.
+    /// `mtime` — `Some((sec, nsec))` to set the modification time, `None` to
+    /// leave it unchanged.
+    ///
+    /// Default: returns [`Errno::ENOTSUP`] for nodes that do not support
+    /// timestamp mutation.
+    fn utimes(&self, _atime: Option<(u64, u32)>, _mtime: Option<(u64, u32)>) -> SysResult<()> {
+        Err(abi::errors::Errno::EOPNOTSUPP)
+    }
 }
 
 // ── VfsDriver ───────────────────────────────────────────────────────────────

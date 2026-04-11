@@ -2701,12 +2701,13 @@ index 00000000..00000000
 +//! Hard links are not supported and return `Unsupported`.
 +//!
 +//! # Permissions
-+//! ThingOS exposes POSIX-style `mode` bits in the stat structure.  Setting
-+//! permissions is not yet implemented (returns `Ok(())`).
++//! ThingOS exposes POSIX-style `mode` bits in the stat structure.  Permissions
++//! can be changed via `SYS_FS_CHMOD` (path-based) and `SYS_FS_FCHMOD` (fd-based).
 +//!
 +//! # Timestamps
-+//! atime/mtime/ctime are read-only (kernel manages them).  Setting timestamps
-+//! via `set_times` returns `Ok(())` as a no-op.
++//! atime/mtime/ctime can be updated via `SYS_FS_UTIMES` (path-based) and
++//! `SYS_FS_FUTIMES` (fd-based).  Pass `u64::MAX` for `atime_sec` or `mtime_sec`
++//! in the request struct to leave that timestamp unchanged.
 +
 +use crate::ffi::{OsStr, OsString};
 +use crate::fs::TryLockError;
@@ -2738,7 +2739,11 @@ index 00000000..00000000
 +const SYS_FS_SYMLINK: u32 = 0x4019;
 +const SYS_FS_READLINK: u32 = 0x401A;
 +const SYS_FS_FTRUNCATE: u32 = 0x401B;
-+const SYS_FS_LSTAT: u32 = 0x401C;
++const SYS_FS_CHMOD: u32 = 0x401C;
++const SYS_FS_FCHMOD: u32 = 0x401D;
++const SYS_FS_UTIMES: u32 = 0x401E;
++const SYS_FS_FUTIMES: u32 = 0x401F;
++const SYS_FS_LSTAT: u32 = 0x4020;
 +
 +// ── Open flags (abi/src/numbers.rs vfs_flags) ─────────────────────────────────
 +const O_RDONLY: u32 = 0x0000;
@@ -2831,6 +2836,42 @@ index 00000000..00000000
 +    blocks: u64,
 +}
 +
++// ── ABI utimes layout (must match abi/src/fs.rs UtimesRequest) ────────────────
++
++/// Sentinel for `atime_sec`/`mtime_sec` meaning "do not update this timestamp".
++const UTIME_OMIT: u64 = u64::MAX;
++
++#[repr(C)]
++#[derive(Copy, Clone, Default)]
++struct AbiUtimesRequest {
++    atime_sec: u64,
++    atime_nsec: u32,
++    _pad1: u32,
++    mtime_sec: u64,
++    mtime_nsec: u32,
++    _pad2: u32,
++}
++
++impl AbiUtimesRequest {
++    fn from_file_times(times: &FileTimes) -> Self {
++        let (atime_sec, atime_nsec) = match times.accessed {
++            Some(t) => {
++                let d = t.0;
++                (d.as_secs(), d.subsec_nanos())
++            }
++            None => (UTIME_OMIT, 0),
++        };
++        let (mtime_sec, mtime_nsec) = match times.modified {
++            Some(t) => {
++                let d = t.0;
++                (d.as_secs(), d.subsec_nanos())
++            }
++            None => (UTIME_OMIT, 0),
++        };
++        Self { atime_sec, atime_nsec, _pad1: 0, mtime_sec, mtime_nsec, _pad2: 0 }
++    }
++}
++
 +// ── Public types ──────────────────────────────────────────────────────────────
 +
 +pub struct File(FileDesc);
@@ -2866,7 +2907,10 @@ index 00000000..00000000
 +}
 +
 +#[derive(Copy, Clone, Debug, Default)]
-+pub struct FileTimes {}
++pub struct FileTimes {
++    accessed: Option<SystemTime>,
++    modified: Option<SystemTime>,
++}
 +
 +#[derive(Clone, PartialEq, Eq, Debug)]
 +pub struct FilePermissions {
@@ -2934,8 +2978,12 @@ index 00000000..00000000
 +// ── FileTimes ─────────────────────────────────────────────────────────────────
 +
 +impl FileTimes {
-+    pub fn set_accessed(&mut self, _t: SystemTime) {}
-+    pub fn set_modified(&mut self, _t: SystemTime) {}
++    pub fn set_accessed(&mut self, t: SystemTime) {
++        self.accessed = Some(t);
++    }
++    pub fn set_modified(&mut self, t: SystemTime) {
++        self.modified = Some(t);
++    }
 +}
 +
 +// ── FileType ──────────────────────────────────────────────────────────────────
@@ -3220,14 +3268,19 @@ index 00000000..00000000
 +        Ok(File(FileDesc::from_raw(new_fd)))
 +    }
 +
-+    pub fn set_permissions(&self, _perm: FilePermissions) -> io::Result<()> {
-+        // Permissions not yet mutable on ThingOS.
-+        Ok(())
++    pub fn set_permissions(&self, perm: FilePermissions) -> io::Result<()> {
++        let ret = unsafe {
++            raw_syscall6(SYS_FS_FCHMOD, self.0.raw() as usize, (perm.mode & 0o7777) as usize, 0, 0, 0, 0)
++        };
++        cvt(ret).map(|_| ())
 +    }
 +
-+    pub fn set_times(&self, _times: FileTimes) -> io::Result<()> {
-+        // Timestamp mutation not yet supported on ThingOS.
-+        Ok(())
++    pub fn set_times(&self, times: FileTimes) -> io::Result<()> {
++        let req = AbiUtimesRequest::from_file_times(&times);
++        let ret = unsafe {
++            raw_syscall6(SYS_FS_FUTIMES, self.0.raw() as usize, &req as *const AbiUtimesRequest as usize, 0, 0, 0, 0)
++        };
++        cvt(ret).map(|_| ())
 +    }
 +}
 +
@@ -3524,19 +3577,27 @@ index 00000000..00000000
 +    crate::sys::unsupported()
 +}
 +
-+pub fn set_perm(_path: &Path, _perm: FilePermissions) -> io::Result<()> {
-+    // Permission mutation not yet supported on ThingOS.
-+    Ok(())
++pub fn set_perm(path: &Path, perm: FilePermissions) -> io::Result<()> {
++    let path_str = path_to_str(path)?;
++    let ret = unsafe {
++        raw_syscall6(SYS_FS_CHMOD, path_str.as_ptr() as usize, path_str.len(), (perm.mode & 0o7777) as usize, 0, 0, 0)
++    };
++    cvt(ret).map(|_| ())
 +}
 +
-+pub fn set_times(_path: &Path, _times: FileTimes) -> io::Result<()> {
-+    // Timestamp mutation not yet supported on ThingOS.
-+    Ok(())
++pub fn set_times(path: &Path, times: FileTimes) -> io::Result<()> {
++    let path_str = path_to_str(path)?;
++    let req = AbiUtimesRequest::from_file_times(&times);
++    let ret = unsafe {
++        raw_syscall6(SYS_FS_UTIMES, path_str.as_ptr() as usize, path_str.len(), &req as *const AbiUtimesRequest as usize, 0, 0, 0)
++    };
++    cvt(ret).map(|_| ())
 +}
 +
-+pub fn set_times_nofollow(_path: &Path, _times: FileTimes) -> io::Result<()> {
-+    // Timestamp mutation not yet supported on ThingOS.
-+    Ok(())
++pub fn set_times_nofollow(path: &Path, times: FileTimes) -> io::Result<()> {
++    // AT_SYMLINK_NOFOLLOW is not yet supported; delegate to the same syscall.
++    // If symlink handling is needed in future, pass a nofollow flag here.
++    set_times(path, times)
 +}
 diff --git a/library/std/src/sys/pipe/mod.rs b/library/std/src/sys/pipe/mod.rs
 index 0000000..0000000 100644

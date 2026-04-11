@@ -6,6 +6,12 @@
 
 use abi::errors::SysResult;
 use abi::syscall::{
+    PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CHMOD, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL,
+    SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_FCHMOD, SYS_FS_FTRUNCATE, SYS_FS_FUTIMES,
+    SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN,
+    SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK, SYS_FS_REALPATH, SYS_FS_RENAME,
+    SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK,
+    SYS_FS_UTIMES, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
     SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_LSTAT,
     SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ,
@@ -578,4 +584,117 @@ pub fn tcsetattr(fd: u32, termios: &abi::termios::Termios) -> SysResult<()> {
         out_len: 0,
     };
     vfs_device_call_raw(fd, &call).map(|_| ())
+}
+
+// ── chmod / fchmod ────────────────────────────────────────────────────────────
+
+/// Change the permission bits of the file at `path` (chmod).
+///
+/// `mode` contains the lower 12 bits of the POSIX permission mask (`0o7777`);
+/// the file-type bits are ignored by the kernel.
+///
+/// Returns `Ok(())` on success, [`Errno::ENOTSUP`] if the filesystem does
+/// not support permission mutation, or another errno on failure.
+pub fn vfs_chmod(path: &str, mode: u32) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_CHMOD,
+            path.as_ptr() as usize,
+            path.len(),
+            (mode & 0o7777) as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Change the permission bits of the file associated with `fd` (fchmod).
+///
+/// `mode` contains the lower 12 bits of the POSIX permission mask (`0o7777`).
+///
+/// Returns `Ok(())` on success, [`Errno::ENOTSUP`] if the filesystem does
+/// not support permission mutation, or another errno on failure.
+pub fn vfs_fchmod(fd: u32, mode: u32) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_FCHMOD,
+            fd as usize,
+            (mode & 0o7777) as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+// ── utimes / futimes ──────────────────────────────────────────────────────────
+
+/// Set the access and/or modification timestamps of the file at `path`.
+///
+/// Pass `Some(ts)` to update a timestamp, or `None` to leave it unchanged.
+///
+/// Returns `Ok(())` on success, [`Errno::ENOTSUP`] if the filesystem does
+/// not support timestamp mutation, or another errno on failure.
+pub fn vfs_utimes(
+    path: &str,
+    atime: Option<abi::fs::Timespec>,
+    mtime: Option<abi::fs::Timespec>,
+) -> SysResult<()> {
+    let req = abi::fs::UtimesRequest {
+        atime_sec: atime.map_or(abi::fs::UtimesRequest::OMIT, |t| t.sec),
+        atime_nsec: atime.map_or(0, |t| t.nsec),
+        _pad1: 0,
+        mtime_sec: mtime.map_or(abi::fs::UtimesRequest::OMIT, |t| t.sec),
+        mtime_nsec: mtime.map_or(0, |t| t.nsec),
+        _pad2: 0,
+    };
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_UTIMES,
+            path.as_ptr() as usize,
+            path.len(),
+            &req as *const abi::fs::UtimesRequest as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Set the access and/or modification timestamps of the file associated with `fd`.
+///
+/// Pass `Some(ts)` to update a timestamp, or `None` to leave it unchanged.
+///
+/// Returns `Ok(())` on success, [`Errno::ENOTSUP`] if the filesystem does
+/// not support timestamp mutation, or another errno on failure.
+pub fn vfs_futimes(
+    fd: u32,
+    atime: Option<abi::fs::Timespec>,
+    mtime: Option<abi::fs::Timespec>,
+) -> SysResult<()> {
+    let req = abi::fs::UtimesRequest {
+        atime_sec: atime.map_or(abi::fs::UtimesRequest::OMIT, |t| t.sec),
+        atime_nsec: atime.map_or(0, |t| t.nsec),
+        _pad1: 0,
+        mtime_sec: mtime.map_or(abi::fs::UtimesRequest::OMIT, |t| t.sec),
+        mtime_nsec: mtime.map_or(0, |t| t.nsec),
+        _pad2: 0,
+    };
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_FUTIMES,
+            fd as usize,
+            &req as *const abi::fs::UtimesRequest as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
 }

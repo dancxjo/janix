@@ -36,6 +36,76 @@ impl Timespec {
     }
 }
 
+/// Request structure for the `SYS_FS_UTIMES` and `SYS_FS_FUTIMES` syscalls.
+///
+/// Pass to the kernel to update the access time (`atime`) and/or modification
+/// time (`mtime`) of a file.  Set `atime_sec` or `mtime_sec` to
+/// [`UtimesRequest::OMIT`] to leave the corresponding timestamp unchanged.
+///
+/// Both the kernel and the Rust stdlib PAL layer use this exact layout.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct UtimesRequest {
+    /// New access time — seconds since the Unix epoch.
+    /// Set to [`Self::OMIT`] to leave `atime` unchanged.
+    pub atime_sec: u64,
+    /// New access time — nanosecond component (0–999_999_999).
+    pub atime_nsec: u32,
+    /// Reserved padding; must be zero.
+    pub _pad1: u32,
+    /// New modification time — seconds since the Unix epoch.
+    /// Set to [`Self::OMIT`] to leave `mtime` unchanged.
+    pub mtime_sec: u64,
+    /// New modification time — nanosecond component (0–999_999_999).
+    pub mtime_nsec: u32,
+    /// Reserved padding; must be zero.
+    pub _pad2: u32,
+}
+
+impl UtimesRequest {
+    /// Sentinel for `atime_sec`/`mtime_sec` meaning "do not update this timestamp".
+    pub const OMIT: u64 = u64::MAX;
+
+    /// Build a request that sets both timestamps.
+    #[inline]
+    pub const fn both(atime: Timespec, mtime: Timespec) -> Self {
+        Self {
+            atime_sec: atime.sec,
+            atime_nsec: atime.nsec,
+            _pad1: 0,
+            mtime_sec: mtime.sec,
+            mtime_nsec: mtime.nsec,
+            _pad2: 0,
+        }
+    }
+
+    /// Build a request that only updates `atime`.
+    #[inline]
+    pub const fn atime_only(atime: Timespec) -> Self {
+        Self {
+            atime_sec: atime.sec,
+            atime_nsec: atime.nsec,
+            _pad1: 0,
+            mtime_sec: Self::OMIT,
+            mtime_nsec: 0,
+            _pad2: 0,
+        }
+    }
+
+    /// Build a request that only updates `mtime`.
+    #[inline]
+    pub const fn mtime_only(mtime: Timespec) -> Self {
+        Self {
+            atime_sec: Self::OMIT,
+            atime_nsec: 0,
+            _pad1: 0,
+            mtime_sec: mtime.sec,
+            mtime_nsec: mtime.nsec,
+            _pad2: 0,
+        }
+    }
+}
+
 /// File status structure returned by the `stat`/`fstat` syscall (`SYS_FS_STAT`).
 ///
 /// All fields are stable across the userspace/kernel ABI boundary.

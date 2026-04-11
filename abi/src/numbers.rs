@@ -149,9 +149,17 @@ pub const SYS_FS_SYMLINK: u32 = 0x4019;
 pub const SYS_FS_READLINK: u32 = 0x401A;
 /// Truncate an open file to `size` bytes (ftruncate semantics).
 pub const SYS_FS_FTRUNCATE: u32 = 0x401B;
+/// Change file permission bits by path (chmod).
+pub const SYS_FS_CHMOD: u32 = 0x401C;
+/// Change file permission bits by open file descriptor (fchmod).
+pub const SYS_FS_FCHMOD: u32 = 0x401D;
+/// Set access and modification timestamps by path (utimes).
+pub const SYS_FS_UTIMES: u32 = 0x401E;
+/// Set access and modification timestamps by open file descriptor (futimes).
+pub const SYS_FS_FUTIMES: u32 = 0x401F;
 /// Stat a path without following the final symlink (lstat semantics).
 /// Args: (path_ptr, path_len, stat_ptr) → 0
-pub const SYS_FS_LSTAT: u32 = 0x401C;
+pub const SYS_FS_LSTAT: u32 = 0x4020;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

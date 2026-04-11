@@ -62,6 +62,7 @@ members = [
     "userspace/pwd",
     "userspace/true",
     "userspace/false",
+    "userspace/ipc_service_demo",
 
     "userspace/iso9660",
     "userspace/iso9660d",

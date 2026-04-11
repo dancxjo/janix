@@ -919,6 +919,7 @@ name = "display_bootfb"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ipc_helpers",
  "stem",
 ]
 
@@ -1848,6 +1849,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipc_service_demo"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "ipc_helpers",
+ "stem",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1872,6 +1882,7 @@ name = "iso9660d"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ipc_helpers",
  "iso9660",
  "stem",
 ]

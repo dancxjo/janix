@@ -216,7 +216,7 @@ smoke:
 # --- Vendored Rust Standard Library ---
 
 # The commit hash of rust-lang/rust matching our nightly toolchain
-rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
+rust_commit := "main"
 
 # Ensure the Rust stdlib patches are applied (idempotent).
 # Uses a hash of all patches to detect changes.
@@ -268,7 +268,7 @@ fetch-rust:
     else
         echo "==> Shallow-cloning rust-lang/rust at {{rust_commit}}..."
         git clone --depth 1 --filter=blob:none --no-checkout \
-            https://github.com/rust-lang/rust.git vendor/rust
+            https://github.com/dancxjo/rust-thingos.git vendor/rust
         cd vendor/rust
         git fetch --depth 1 origin {{rust_commit}}
         git checkout {{rust_commit}}

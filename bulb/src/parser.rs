@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn test_exact_match() {
-        let line = "[12345] [INFO-] [kernel::main] Hello World";
+        let line = "[12345] [INFO] [kernel::main] Hello World";
         let parts = parse_log_line(line);
         assert_eq!(
             parts,
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_non_numeric_time() {
-        let line = "[abc] [INFO-] [kernel] Message";
+        let line = "[abc] [INFO] [kernel] Message";
         let parts = parse_log_line(line);
         assert_eq!(
             parts,
@@ -106,7 +106,7 @@ mod tests {
                 time: None,
                 level: None,
                 source: None,
-                message: "[abc] [INFO-] [kernel] Message"
+                message: "[abc] [INFO] [kernel] Message"
             }
         );
     }
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_malformed_time_bracket() {
-        let line = "[123 [INFO-] [source] msg";
+        let line = "[123 [INFO] [source] msg";
         let parts = parse_log_line(line);
         assert_eq!(
             parts,
@@ -136,7 +136,7 @@ mod tests {
                 time: None,
                 level: None,
                 source: None,
-                message: "[123 [INFO-] [source] msg"
+                message: "[123 [INFO] [source] msg"
             }
         );
     }

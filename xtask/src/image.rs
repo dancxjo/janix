@@ -174,6 +174,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "true",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "false",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "input_echo",
             is_init: false,
             boot_module: true,
@@ -223,6 +235,24 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "fetchd",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "iso_reader",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "ping",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "nslookup",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -283,6 +313,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "hello_stdio",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "vfs_hello",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -403,6 +439,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "test_threads",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "test_futex",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "test_thread_std",
             is_init: false,
             boot_module: true,
             features: vec![],

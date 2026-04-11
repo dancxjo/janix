@@ -75,6 +75,8 @@ members = [
     "userspace/iso_reader",
     "userspace/netd",
     "userspace/fetchd",
+    "userspace/ping",
+    "userspace/nslookup",
     "userspace/hello_std",
     "userspace/proc_smoke",
     "userspace/vfs_hello",
@@ -107,6 +109,7 @@ members = [
 # Exclude wasm32 theme crates (different target)
 exclude = [
     "bulb/themes/genie_circles",
+    "vendor/rust",
 ]
 
 resolver = "2"

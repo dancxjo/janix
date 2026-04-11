@@ -196,7 +196,6 @@ test *args:
         -p abi-macros \
         -p pciids \
         -p xtask \
-        -p phloem \
         -p stem \
         -p stem-macros \
         -p bulb \

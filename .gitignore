@@ -6,6 +6,7 @@
 iso_root*/
 *.log
 *.pid
+/build
 
 # rustc-thingos build cache (produced by `just rustc-thingos` / `just iso`)
 /target/rustc-thingos/

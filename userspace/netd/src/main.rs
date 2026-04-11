@@ -77,7 +77,7 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    net_provider.set_ip_config(dhcp_config.ip, dhcp_config.prefix_len, dhcp_config.gateway);
+    net_provider.set_ip_config(dhcp_config.ip, dhcp_config.prefix_len, dhcp_config.gateway, dhcp_config.dns);
     info!("NETD: Network ready — entering VFS service loop");
 
     let mut socket_api = SocketApi::new();

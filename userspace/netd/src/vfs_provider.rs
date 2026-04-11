@@ -87,6 +87,7 @@ const HANDLE_UDP_DIR: u64 = 13;
 const HANDLE_UDP_NEW: u64 = 14;
 const HANDLE_DNS_DIR: u64 = 15;
 const HANDLE_DNS_LOOKUP: u64 = 16;
+const HANDLE_DNS_SERVER: u64 = 17;
 
 /// Dynamic handle base for TCP socket sub-files.
 /// Handle = TCP_DYN_BASE | ((api_handle as u64) << 8) | subfile_id
@@ -112,6 +113,7 @@ pub struct IpConfig {
     pub ip: Ipv4Address,
     pub prefix_len: u8,
     pub gateway: Ipv4Address,
+    pub dns_server: Ipv4Address,
 }
 
 // ── main provider struct ──────────────────────────────────────────────────────
@@ -189,11 +191,18 @@ impl NetVfsProvider {
     }
 
     /// Update the IP configuration after DHCP completes.
-    pub fn set_ip_config(&mut self, ip: Ipv4Address, prefix_len: u8, gateway: Ipv4Address) {
+    pub fn set_ip_config(
+        &mut self,
+        ip: Ipv4Address,
+        prefix_len: u8,
+        gateway: Ipv4Address,
+        dns_server: Ipv4Address,
+    ) {
         self.ip_config = Some(IpConfig {
             ip,
             prefix_len,
             gateway,
+            dns_server,
         });
     }
 
@@ -515,6 +524,7 @@ impl NetVfsProvider {
             "udp/new" => Some(HANDLE_UDP_NEW),
             "dns" => Some(HANDLE_DNS_DIR),
             "dns/lookup" => Some(HANDLE_DNS_LOOKUP),
+            "dns/server" => Some(HANDLE_DNS_SERVER),
             other => self.resolve_dynamic_path(other),
         }
     }
@@ -588,6 +598,7 @@ impl NetVfsProvider {
                 }
             }
             HANDLE_ROUTES => ReadResult::text_offset(&self.routes_text(socket_api), offset),
+            HANDLE_DNS_SERVER => ReadResult::text_offset(&self.dns_server_text(), offset),
             // tcp/new: allocate a new TCP socket, return its id as text
             HANDLE_TCP_NEW => {
                 if offset > 0 {
@@ -861,6 +872,7 @@ impl NetVfsProvider {
                 ip,
                 prefix_len,
                 gateway: Ipv4Address::new(0, 0, 0, 0),
+                dns_server: Ipv4Address::new(0, 0, 0, 0),
             });
         }
         WriteResult::Ok(text.len())
@@ -1068,6 +1080,9 @@ impl NetVfsProvider {
                 }
                 entries
             }
+            HANDLE_DNS_DIR => {
+                vec![("server".into(), HANDLE_DNS_SERVER, 8)]
+            }
             // Dynamic TCP socket directory
             h if h >= TCP_DYN_BASE && h < UDP_DYN_BASE && (h & 0xFF) == SF_DIR as u64 => {
                 let bid = TCP_DYN_BASE | (h & !0xFF);
@@ -1110,6 +1125,7 @@ impl NetVfsProvider {
             HANDLE_ROUTES => (S_IFREG | 0o644, 0),
             HANDLE_TCP_NEW | HANDLE_UDP_NEW => (S_IFREG | 0o444, 0),
             HANDLE_DNS_LOOKUP => (S_IFREG | 0o644, 0),
+            HANDLE_DNS_SERVER => (S_IFREG | 0o444, self.dns_server_text().len()),
             h if h >= TCP_DYN_BASE && h < UDP_DYN_BASE => {
                 let sf = (h & 0xFF) as u8;
                 let api_handle = ((h - TCP_DYN_BASE) >> 8) as u32;
@@ -1218,6 +1234,16 @@ impl NetVfsProvider {
                 )
             }
             None => "# no routes\n".into(),
+        }
+    }
+
+    fn dns_server_text(&self) -> String {
+        match &self.ip_config {
+            Some(c) => {
+                let d = c.dns_server.as_bytes();
+                format!("{}.{}.{}.{}\n", d[0], d[1], d[2], d[3])
+            }
+            None => "0.0.0.0\n".into(),
         }
     }
 }

@@ -26,6 +26,7 @@ pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
         return;
     }
 
+    #[allow(unreachable_code)]
     scalar::blit_rgba8888_over_scalar(dst, src);
 }
 
@@ -95,6 +96,7 @@ pub fn composite_solid_masked_over(
         return;
     }
 
+    #[allow(unreachable_code)]
     scalar::composite_solid_masked_over_scalar(
         dst,
         dst_stride,
@@ -174,6 +176,7 @@ pub fn composite_src_masked_over(
         return;
     }
 
+    #[allow(unreachable_code)]
     scalar::composite_src_masked_over_scalar(
         dst,
         dst_stride,

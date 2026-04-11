@@ -239,6 +239,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
+            // Build rustc for thingos (cached; set SKIP_RUSTC_THINGOS=1 to skip).
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let iso_path = build_iso(&sh, &env, &programs)?;
@@ -266,6 +268,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
+            // Build rustc for thingos (cached; set SKIP_RUSTC_THINGOS=1 to skip).
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let hdd_path = build_hdd(&sh, &env, &programs)?;

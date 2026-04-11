@@ -4,6 +4,7 @@ PHDRS {
     text PT_LOAD FLAGS(5);
     rodata PT_LOAD FLAGS(4);
     data PT_LOAD FLAGS(6);
+    tls PT_TLS;
 }
 
 SECTIONS {
@@ -29,6 +30,15 @@ SECTIONS {
         *(.data .data.*)
         LONG(0); 
     } :data
+
+    .tdata : {
+        *(.tdata .tdata.*)
+    } :data :tls
+
+    .tbss : {
+        *(.tbss .tbss.*)
+        *(.tcommon)
+    } :data :tls
 
     .bss : {
         *(.bss .bss.*)

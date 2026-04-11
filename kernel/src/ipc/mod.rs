@@ -14,6 +14,7 @@
 pub mod diag;
 mod handles;
 pub mod pipe;
+pub mod unix_socket;
 mod port;
 
 pub use handles::{Handle, HandleEntry, HandleMode, HandleTable, MAX_HANDLES};

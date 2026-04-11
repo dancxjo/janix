@@ -127,6 +127,15 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_SYMLINK => handlers::vfs::sys_fs_symlink(args[0], args[1], args[2], args[3]),
         SYS_FS_READLINK => handlers::vfs::sys_fs_readlink(args[0], args[1], args[2], args[3]),
 
+        // ── Unix domain sockets ───────────────────────────────────────────
+        SYS_SOCKET => handlers::sys_socket(args[0], args[1], args[2]),
+        SYS_BIND => handlers::sys_bind(args[0], args[1], args[2]),
+        SYS_LISTEN => handlers::sys_listen(args[0], args[1]),
+        SYS_ACCEPT => handlers::sys_accept(args[0]),
+        SYS_CONNECT => handlers::sys_connect(args[0], args[1], args[2]),
+        SYS_SHUTDOWN => handlers::sys_shutdown(args[0], args[1]),
+        SYS_SOCKETPAIR => handlers::sys_socketpair(args[0], args[1], args[2], args[3]),
+
         _ => Err(abi::errors::Errno::ENOSYS),
     };
 

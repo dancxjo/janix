@@ -59,6 +59,20 @@ pub enum Errno {
     ECONNREFUSED = 111,
     // Add more as needed, following Linux numbers usually helps debugging
 
+    // Socket-related errors (Linux numbers)
+    /// Operation not supported on transport endpoint.
+    EOPNOTSUPP = 95,
+    /// Address family not supported by protocol.
+    EAFNOSUPPORT = 97,
+    /// Address already in use.
+    EADDRINUSE = 98,
+    /// Protocol wrong type for socket.
+    EPROTOTYPE = 91,
+    /// Socket operation on non-socket.
+    ENOTSOCK = 88,
+    /// Transport endpoint is not connected.
+    ENOTCONN = 107,
+
     // Custom/Extension
 }
 
@@ -139,6 +153,12 @@ pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
             105 => Err(Errno::ENOBUFS),
             110 => Err(Errno::ETIMEDOUT),
             111 => Err(Errno::ECONNREFUSED),
+            88 => Err(Errno::ENOTSOCK),
+            91 => Err(Errno::EPROTOTYPE),
+            95 => Err(Errno::EOPNOTSUPP),
+            97 => Err(Errno::EAFNOSUPPORT),
+            98 => Err(Errno::EADDRINUSE),
+            107 => Err(Errno::ENOTCONN),
             _ => Err(Errno::EINVAL), // Fallback for unknown codes
         }
     } else {

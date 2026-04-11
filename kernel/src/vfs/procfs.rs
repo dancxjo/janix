@@ -331,7 +331,7 @@ impl VfsNode for ProcPidExeNode {
     }
 }
 
-
+// ── Static text node ──────────────────────────────────────────────────────────
 
 /// Returns a fixed byte slice on read.
 struct StaticTextNode {

@@ -56,6 +56,7 @@ members = [
     "userspace/rm",
     "userspace/mkdir",
     "userspace/touch",
+    "userspace/dmesg",
     "userspace/stat",
     "userspace/dirname",
     "userspace/basename",

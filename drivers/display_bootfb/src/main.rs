@@ -7,11 +7,11 @@ mod driver;
 mod vfs_provider;
 
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
-use alloc::vec;
 use driver::BootFbDriver;
-use stem::syscall::{channel_create, channel_recv, channel_try_recv, vfs_mount};
+use ipc_helpers::provider::ProviderLoop;
+use stem::syscall::{channel_create, channel_recv};
 use stem::{debug, info, warn};
-use vfs_provider::handle_vfs_rpc;
+use vfs_provider::dispatch_vfs_rpc;
 
 #[stem::main]
 fn main(boot_fd: usize) -> ! {
@@ -236,15 +236,21 @@ fn main(boot_fd: usize) -> ! {
         }
     }
 
-    let mut req_buf = vec![0u8; VFS_RPC_MAX_REQ];
+    // VFS provider service loop — ProviderLoop blocks on channel_recv and
+    // dispatches each decoded request to dispatch_vfs_rpc.
+    info!("display_bootfb: entering VFS provider service loop");
+    let mut lp = ProviderLoop::new(vfs_read);
     loop {
-        match channel_try_recv(vfs_read, &mut req_buf) {
-            Ok(n) if n > 0 => {
-                handle_vfs_rpc(&mut driver, &req_buf[..n]);
-            }
-            _ => {
-                stem::time::sleep_ms(1);
-            }
-        }
+        let req = match lp.next_request() {
+            Ok(r) => r,
+            Err(_) => break,
+        };
+        let resp = dispatch_vfs_rpc(&mut driver, &req);
+        lp.send_response(req.resp_port, resp).ok();
+    }
+
+    info!("display_bootfb: VFS provider channel closed — halting");
+    loop {
+        stem::syscall::yield_now();
     }
 }

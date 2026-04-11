@@ -7,6 +7,7 @@ use abi::font_protocol::{
     decode_request_tag, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics,
     FontRequestTag, FontResponseTag, GetFaceMetrics, GlyphPlacement,
 };
+use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;

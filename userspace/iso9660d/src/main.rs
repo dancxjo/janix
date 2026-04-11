@@ -10,9 +10,9 @@
 //! 2. **Probing** — reads each block device and looks for a valid ISO9660 PVD.
 //! 3. **Mounting** — calls `SYS_FS_MOUNT(provider_port, "/mnt/iso")` so the
 //!    kernel routes VFS operations here.
-//! 4. **Service loop** — waits for VFS RPC messages on its request port,
-//!    dispatches them to the [`IsoFs`] library, and sends responses back
-//!    through the response port handle embedded in each request header.
+//! 4. **Service loop** — uses [`ipc_helpers::provider::ProviderLoop`] to read
+//!    requests, dispatch them to the [`IsoFs`] library, and send typed
+//!    responses back to the kernel.
 //!
 //! ## VFS RPC protocol
 //!
@@ -33,16 +33,15 @@ extern crate alloc;
 use abi::block_device_protocol::{
     BlockDeviceError, BlockDeviceRequest, BlockDeviceResponse, ReadRequest, ReadResponse,
 };
-use abi::schema::{keys, kinds};
-use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
+use abi::errors::Errno;
+use abi::vfs_rpc::VfsRpcOp;
 use alloc::vec::Vec;
+use ipc_helpers::provider::{ProviderLoop, ProviderRequest, ProviderResponse};
 use iso9660::{IsoFs, ISO_SECTOR_SIZE};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
-use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_readdir};
-use stem::syscall::{
-    channel_create, channel_recv, channel_send, channel_wait, vfs_mount, ChannelHandle,
-};
+use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
+use stem::syscall::{channel_create, vfs_mount, ChannelHandle};
 use stem::{info, warn};
 
 #[unsafe(link_section = ".thing_manifest")]
@@ -92,12 +91,13 @@ impl BlockDevice for PortBlockDevice {
             )
         };
         req[5..].copy_from_slice(req_bytes);
-        channel_send(self.port, &req).map_err(|_| BlockError::IoError)?;
+        stem::syscall::channel_send(self.port, &req).map_err(|_| BlockError::IoError)?;
 
         let expected =
             core::mem::size_of::<ReadResponse>() + (count as usize * ISO_SECTOR_SIZE as usize) + 1;
         let mut resp_buf = alloc::vec![0u8; expected];
-        let n = channel_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
+        let n = stem::syscall::channel_recv(self.resp_r, &mut resp_buf)
+            .map_err(|_| BlockError::IoError)?;
         if n < core::mem::size_of::<ReadResponse>() + 1 {
             return Err(BlockError::IoError);
         }
@@ -155,145 +155,77 @@ fn decode_handle(h: u64) -> (u32, u32) {
     ((h >> 32) as u32, (h & 0xFFFF_FFFF) as u32)
 }
 
-// ── VFS RPC dispatch ─────────────────────────────────────────────────────────
+// ── File type bits ────────────────────────────────────────────────────────────
 
-/// File type bits (same as kernel VfsStat::S_IFxxx).
 const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 
-/// Errno values we return in VFS RPC responses.
-const E_OK: u8 = 0;
-const E_NOENT: u8 = 2;
-const E_IO: u8 = 5;
-const E_ROFS: u8 = 30;
-const E_INVAL: u8 = 22;
-const E_NOTSUP: u8 = 38; // ENOSYS — used as "not supported"
+// ── VFS RPC dispatch ─────────────────────────────────────────────────────────
 
-/// Send a VFS RPC response to `resp_port`.
-fn send_resp(resp_port: ChannelHandle, data: &[u8]) {
-    let _ = channel_send(resp_port, data);
-}
-
-/// Send an error response.
-fn send_err(resp_port: ChannelHandle, errno: u8) {
-    send_resp(resp_port, &[errno]);
-}
-
-/// Handle one VFS RPC request for a mounted ISO9660 filesystem.
-fn handle_vfs_rpc(fs: &IsoFs, dev: &PortBlockDevice, buf: &[u8]) {
-    if buf.len() < core::mem::size_of::<VfsRpcReqHeader>() {
-        return;
-    }
-
-    // Parse header.
-    let hdr_size = core::mem::size_of::<VfsRpcReqHeader>();
-    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as ChannelHandle;
-    let op_byte = buf[4];
-    let payload = &buf[hdr_size..];
-
-    let op = match VfsRpcOp::from_u8(op_byte) {
-        Some(o) => o,
-        None => {
-            send_err(resp_port, E_NOTSUP);
-            return;
-        }
-    };
-
-    match op {
-        VfsRpcOp::Lookup => handle_lookup(fs, dev, resp_port, payload),
-        VfsRpcOp::Read => handle_read(fs, dev, resp_port, payload),
-        VfsRpcOp::Write => send_err(resp_port, E_ROFS),
-        VfsRpcOp::Readdir => handle_readdir(fs, dev, resp_port, payload),
-        VfsRpcOp::Stat => handle_stat(fs, dev, resp_port, payload),
-        VfsRpcOp::Close => send_resp(resp_port, &[E_OK]),
+/// Dispatch one decoded VFS RPC request and return the appropriate response.
+fn dispatch_request(
+    fs: &IsoFs,
+    dev: &PortBlockDevice,
+    req: &ProviderRequest,
+) -> ProviderResponse {
+    match req.op {
+        VfsRpcOp::Lookup => handle_lookup(fs, dev, &req.payload),
+        VfsRpcOp::Read => handle_read(dev, &req.payload),
+        VfsRpcOp::Write => ProviderResponse::err(Errno::EROFS),
+        VfsRpcOp::Readdir => handle_readdir(fs, dev, &req.payload),
+        VfsRpcOp::Stat => handle_stat(fs, dev, &req.payload),
+        VfsRpcOp::Close => ProviderResponse::ok_empty(),
         VfsRpcOp::Poll => {
-            // Always report readable.
-            let mut r = [0u8; 5];
-            r[0] = E_OK;
-            r[1..5].copy_from_slice(&1u32.to_le_bytes()); // POLLIN
-            send_resp(resp_port, &r);
+            // Always report readable (POLLIN = 1).
+            ProviderResponse::ok_bytes(&1u32.to_le_bytes())
         }
-        VfsRpcOp::DeviceCall => send_err(resp_port, E_NOTSUP),
-        VfsRpcOp::SubscribeReady => send_resp(resp_port, &[E_OK]),
-        VfsRpcOp::UnsubscribeReady => send_resp(resp_port, &[E_OK]),
-        VfsRpcOp::Rename => send_err(resp_port, E_NOTSUP),
+        VfsRpcOp::SubscribeReady | VfsRpcOp::UnsubscribeReady => ProviderResponse::ok_empty(),
+        _ => ProviderResponse::err(Errno::ENOSYS),
     }
 }
 
 /// LOOKUP: resolve a path within the ISO and return a handle.
-fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
+fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, payload: &[u8]) -> ProviderResponse {
     if payload.len() < 4 {
-        send_err(resp_port, E_INVAL);
-        return;
+        return ProviderResponse::err(Errno::EINVAL);
     }
     let path_len = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
     if payload.len() < 4 + path_len {
-        send_err(resp_port, E_INVAL);
-        return;
+        return ProviderResponse::err(Errno::EINVAL);
     }
     let path_bytes = &payload[4..4 + path_len];
     let path = match core::str::from_utf8(path_bytes) {
         Ok(p) => p,
-        Err(_) => {
-            send_err(resp_port, E_INVAL);
-            return;
-        }
+        Err(_) => return ProviderResponse::err(Errno::EINVAL),
     };
 
     // Empty path means the mount-point root directory.
-    let (lba, size, is_dir) = if path.is_empty() || path == "/" {
-        (fs.pvd.root_dir_extent, fs.pvd.root_dir_size, true)
+    let (lba, size) = if path.is_empty() || path == "/" {
+        (fs.pvd.root_dir_extent, fs.pvd.root_dir_size)
     } else {
         match fs.lookup_path(dev, path) {
-            Some(entry) => (entry.extent_lba, entry.size, entry.is_directory),
-            None => {
-                send_err(resp_port, E_NOENT);
-                return;
-            }
+            Some(entry) => (entry.extent_lba, entry.size),
+            None => return ProviderResponse::err(Errno::ENOENT),
         }
     };
 
-    let handle = encode_handle(lba, size);
-    let mut resp = [0u8; 9];
-    resp[0] = E_OK;
-    resp[1..9].copy_from_slice(&handle.to_le_bytes());
-    // Embed the directory flag in handle bit 63 (high bit of ino is unused).
-    // Actually we store it separately in the stat — here we just return handle.
-    let _ = is_dir; // used in stat/readdir
-    send_resp(resp_port, &resp);
+    ProviderResponse::ok_u64(encode_handle(lba, size))
 }
 
-/// READ: read file data.
-fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
+/// READ: read file data from a handle.
+fn handle_read(dev: &PortBlockDevice, payload: &[u8]) -> ProviderResponse {
     if payload.len() < 20 {
-        send_err(resp_port, E_INVAL);
-        return;
+        return ProviderResponse::err(Errno::EINVAL);
     }
-    let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
-        payload[7],
-    ]);
-    let offset = u64::from_le_bytes([
-        payload[8],
-        payload[9],
-        payload[10],
-        payload[11],
-        payload[12],
-        payload[13],
-        payload[14],
-        payload[15],
-    ]);
-    let len = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+    let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
+    let offset = u64::from_le_bytes(payload[8..16].try_into().unwrap());
+    let len = u32::from_le_bytes(payload[16..20].try_into().unwrap()) as usize;
 
     let (lba, size) = decode_handle(handle);
 
     if offset >= size as u64 {
-        // Past EOF — return 0 bytes.
-        let mut resp = [0u8; 5];
-        resp[0] = E_OK;
-        // bytes_read = 0
-        send_resp(resp_port, &resp);
-        return;
+        // Past EOF — return 0 bytes (ok_read prepends the length).
+        return ProviderResponse::ok_read(&[]);
     }
 
     let iso_file = iso9660::IsoFile {
@@ -303,43 +235,21 @@ fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, pay
     let clamped_len = len.min((size as u64 - offset) as usize);
 
     match iso_file.read_range(dev, offset, clamped_len) {
-        Ok(data) => {
-            let mut resp = Vec::with_capacity(5 + data.len());
-            resp.push(E_OK);
-            resp.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            resp.extend_from_slice(&data);
-            send_resp(resp_port, &resp);
-        }
-        Err(_) => send_err(resp_port, E_IO),
+        Ok(data) => ProviderResponse::ok_read(&data),
+        Err(_) => ProviderResponse::err(Errno::EIO),
     }
 }
 
 /// READDIR: list directory entries.
 ///
-/// The response data is a sequence of packed `DirentWire` structs followed by
-/// the name bytes.  The `offset` parameter is used as an entry index (not a
-/// byte offset) for simplicity.
-fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
+/// The `offset` parameter is treated as an entry index (not a byte offset).
+fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, payload: &[u8]) -> ProviderResponse {
     if payload.len() < 20 {
-        send_err(resp_port, E_INVAL);
-        return;
+        return ProviderResponse::err(Errno::EINVAL);
     }
-    let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
-        payload[7],
-    ]);
-    let offset = u64::from_le_bytes([
-        payload[8],
-        payload[9],
-        payload[10],
-        payload[11],
-        payload[12],
-        payload[13],
-        payload[14],
-        payload[15],
-    ]);
-    let max_bytes =
-        u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+    let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
+    let offset = u64::from_le_bytes(payload[8..16].try_into().unwrap());
+    let max_bytes = u32::from_le_bytes(payload[16..20].try_into().unwrap()) as usize;
 
     let (lba, size) = decode_handle(handle);
     let entries = fs.list_dir(dev, lba, size);
@@ -364,33 +274,20 @@ fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, p
         out.extend_from_slice(&name_bytes[..name_len as usize]);
     }
 
-    let mut resp = Vec::with_capacity(5 + out.len());
-    resp.push(E_OK);
-    resp.extend_from_slice(&(out.len() as u32).to_le_bytes());
-    resp.extend_from_slice(&out);
-    send_resp(resp_port, &resp);
+    ProviderResponse::ok_read(&out)
 }
 
 /// STAT: return metadata for a handle.
-fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payload: &[u8]) {
+fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, payload: &[u8]) -> ProviderResponse {
     if payload.len() < 8 {
-        send_err(resp_port, E_INVAL);
-        return;
+        return ProviderResponse::err(Errno::EINVAL);
     }
-    let handle = u64::from_le_bytes([
-        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
-        payload[7],
-    ]);
+    let handle = u64::from_le_bytes(payload[0..8].try_into().unwrap());
     let (lba, size) = decode_handle(handle);
 
-    // Determine if this is a directory by checking if the root dir matches or
-    // trying to parse the first few bytes of the extent.
     let is_dir = if lba == fs.pvd.root_dir_extent {
         true
     } else {
-        // Peek at the extent to see if it looks like a directory (has valid
-        // directory records).  For simplicity we check by listing — if we can
-        // get entries it's a directory.
         let entries = fs.list_dir(dev, lba, size);
         !entries.is_empty()
     };
@@ -400,14 +297,8 @@ fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: ChannelHandle, payl
     } else {
         S_IFREG | 0o444
     };
-    let ino = handle; // reuse handle as inode number
 
-    let mut resp = [0u8; 21]; // 1 + 4 + 8 + 8
-    resp[0] = E_OK;
-    resp[1..5].copy_from_slice(&mode.to_le_bytes());
-    resp[5..13].copy_from_slice(&(size as u64).to_le_bytes());
-    resp[13..21].copy_from_slice(&ino.to_le_bytes());
-    send_resp(resp_port, &resp);
+    ProviderResponse::ok_stat(mode, size as u64, handle)
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -417,7 +308,7 @@ fn main(_arg: usize) -> ! {
     info!("iso9660d: starting ISO9660 VFS provider");
 
     // 1. Find block devices via VFS.
-    let mut mounted: Option<(IsoFs, PortBlockDevice, ChannelHandle, ChannelHandle)> = None;
+    let mut mounted: Option<(IsoFs, PortBlockDevice, ChannelHandle)> = None;
 
     if let Ok(fd) = vfs_open("/services/storage", abi::syscall::vfs_flags::O_RDONLY) {
         let mut buf = [0u8; 4096];
@@ -449,9 +340,9 @@ fn main(_arg: usize) -> ! {
                                     if let Some(fs) = IsoFs::probe(&block_dev) {
                                         info!("iso9660d: found ISO9660 on device {}", name);
 
-                                        // 3. Create the provider port pair.
+                                        // 3. Create the provider channel pair.
                                         let (req_write, req_read) = match channel_create(
-                                            VFS_RPC_MAX_REQ * 8,
+                                            abi::vfs_rpc::VFS_RPC_MAX_REQ * 8,
                                         ) {
                                             Ok(p) => p,
                                             Err(e) => {
@@ -465,9 +356,8 @@ fn main(_arg: usize) -> ! {
                                         // 4. Mount via SYS_FS_MOUNT.
                                         match vfs_mount(req_write, "/mnt/iso") {
                                             Ok(()) => {
-                                                info!("iso9660d: mounted at /mnt/iso (provider port w={} r={})", req_write, req_read);
-                                                mounted =
-                                                    Some((fs, block_dev, req_write, req_read));
+                                                info!("iso9660d: mounted at /mnt/iso (req_read={})", req_read);
+                                                mounted = Some((fs, block_dev, req_read));
                                                 let _ = vfs_close(h_fd);
                                                 break;
                                             }
@@ -488,7 +378,7 @@ fn main(_arg: usize) -> ! {
         let _ = vfs_close(fd);
     }
 
-    let (fs, dev, _req_write, req_read) = match mounted {
+    let (fs, dev, req_read) = match mounted {
         Some(m) => m,
         None => {
             info!("iso9660d: no ISO9660 filesystem found — sleeping");
@@ -498,24 +388,21 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // 5. Service loop.
+    // 5. Service loop using ProviderLoop — far less boilerplate than raw
+    //    channel_recv + manual header parsing.
     info!("iso9660d: entering VFS RPC service loop");
-    let mut req_buf = alloc::vec![0u8; VFS_RPC_MAX_REQ];
-
+    let mut lp = ProviderLoop::new(req_read);
     loop {
-        match channel_wait(&[req_read], abi::syscall::channel_wait::READABLE) {
-            Ok(_) => {}
-            Err(_) => {
-                stem::sleep(core::time::Duration::from_millis(10));
-                continue;
-            }
-        }
+        let req = match lp.next_request() {
+            Ok(r) => r,
+            Err(_) => break, // channel closed — exit cleanly
+        };
+        let resp = dispatch_request(&fs, &dev, &req);
+        lp.send_response(req.resp_port, resp).ok();
+    }
 
-        match channel_recv(req_read, &mut req_buf) {
-            Ok(n) if n > 0 => {
-                handle_vfs_rpc(&fs, &dev, &req_buf[..n]);
-            }
-            _ => {}
-        }
+    info!("iso9660d: provider channel closed — exiting");
+    loop {
+        stem::syscall::yield_now();
     }
 }

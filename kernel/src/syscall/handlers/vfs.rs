@@ -1294,6 +1294,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![1],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }))
     }
 

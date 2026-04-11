@@ -1322,6 +1322,7 @@ index 00000000..00000000
 +const SYS_GETPID: u32 = 0x1002;
 +const SYS_FS_CHDIR: u32 = 0x4012;
 +const SYS_FS_GETCWD: u32 = 0x4013;
++const SYS_FS_READLINK: u32 = 0x401A;
 +
 +/// Converts a negative syscall return value to an io::Error.
 +#[inline]
@@ -1414,12 +1415,31 @@ index 00000000..00000000
 +
 +impl crate::error::Error for JoinPathsError {}
 +
-+/// `current_exe` is not yet supported on ThingOS.
-+///
-+/// A stable proc-style source (e.g. `/proc/self/exe`) does not exist yet.
-+/// Return an explicit unsupported error rather than a fake path.
++/// Returns the path of the current process's executable by reading the
++/// `/proc/self/exe` symlink exposed by the ThingOS kernel.
 +pub fn current_exe() -> io::Result<PathBuf> {
-+    super::unsupported()
++    const PATH: &[u8] = b"/proc/self/exe";
++    let mut buf = crate::vec![0u8; 4096];
++    let ret = unsafe {
++        raw_syscall6(
++            SYS_FS_READLINK,
++            PATH.as_ptr() as usize,
++            PATH.len(),
++            buf.as_mut_ptr() as usize,
++            buf.len(),
++            0,
++            0,
++        )
++    };
++    if ret < 0 {
++        return Err(syscall_err(ret));
++    }
++    let n = ret as usize;
++    buf.truncate(n);
++    let s = crate::string::String::from_utf8(buf).map_err(|_| {
++        io::const_error!(io::ErrorKind::InvalidData, "current_exe path is not valid UTF-8")
++    })?;
++    Ok(PathBuf::from(s))
 +}
 +
 +/// Returns `/tmp`, which is always mounted as a ramfs on ThingOS.

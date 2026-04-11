@@ -1164,6 +1164,7 @@ pub fn list_processes<R: BootRuntime>() -> alloc::vec::Vec<hooks::ProcessSnapsho
                     name,
                     state: task.state,
                     argv: pi.argv.clone(),
+                    exec_path: pi.exec_path.clone(),
                 });
             }
         }
@@ -2997,6 +2998,7 @@ mod tests {
                     cwd: alloc::string::String::from("/"),
                     thread_ids: alloc::vec![pid as TaskId],
                     exec_in_progress: false,
+                    exec_path: alloc::string::String::new(),
                 },
             ))),
             user_fs_base: 0,
@@ -3156,6 +3158,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![7000, 7001],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         {
@@ -3185,6 +3188,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8700, 8701],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         // Register both tasks.
@@ -3235,6 +3239,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8800, 8801],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3287,6 +3292,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9100, 9101, 9102],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3369,6 +3375,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9300],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         // Before exec: flag is clear — new threads would be accepted.

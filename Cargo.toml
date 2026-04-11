@@ -71,6 +71,7 @@ members = [
     "userspace/netd",
     "userspace/fetchd",
     "userspace/hello_std",
+    "userspace/proc_smoke",
     "userspace/vfs_hello",
     "userspace/stdio_demo",
     "userspace/hello_stdio",

@@ -793,11 +793,11 @@ fn setup_stdio_fds<R: BootRuntime>(
 pub struct SpawnExResult {
     pub child_tid: TaskId,
     pub child_pid: u32,
-    /// Pipe ID for stdin (parent writes). 0 if not piped.
+    /// Parent's fd for stdin (parent writes to this fd). 0 if not piped.
     pub stdin_pipe: u64,
-    /// Pipe ID for stdout (parent reads). 0 if not piped.
+    /// Parent's fd for stdout (parent reads from this fd). 0 if not piped.
     pub stdout_pipe: u64,
-    /// Pipe ID for stderr (parent reads). 0 if not piped.
+    /// Parent's fd for stderr (parent reads from this fd). 0 if not piped.
     pub stderr_pipe: u64,
 }
 
@@ -875,8 +875,58 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         crate::vfs::fd_table::FdTable::new()
     };
 
-    let (stdin_pipe, stdout_pipe, stderr_pipe) =
+    let (stdin_pipe_id, stdout_pipe_id, stderr_pipe_id) =
         setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
+
+    // Open the parent-side pipe ends in the parent's fd table so the parent
+    // can communicate with the child via normal file descriptors.
+    //
+    // For stdin PIPE:  parent holds the WRITE end (fd is returned as stdin_pipe).
+    // For stdout PIPE: parent holds the READ end (fd is returned as stdout_pipe).
+    // For stderr PIPE: parent holds the READ end (fd is returned as stderr_pipe).
+    //
+    // If there is no parent process, or an end cannot be opened, the pipe will
+    // still work from the child's side (it will see EOF when the write end is
+    // never written to / the read end is never read from).
+    let mut parent_stdin_fd: u64 = 0;
+    let mut parent_stdout_fd: u64 = 0;
+    let mut parent_stderr_fd: u64 = 0;
+    if let Some(parent_pi) = &parent_pinfo {
+        let mut plk = parent_pi.lock();
+        if stdin_pipe_id != 0 {
+            if let Some(write_node) = crate::ipc::pipe::write_node_for_id(stdin_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    write_node,
+                    crate::vfs::OpenFlags::write_only(),
+                    alloc::format!("pipe:{}", stdin_pipe_id),
+                ) {
+                    parent_stdin_fd = fd as u64;
+                }
+            }
+        }
+        if stdout_pipe_id != 0 {
+            if let Some(read_node) = crate::ipc::pipe::read_node_for_id(stdout_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    read_node,
+                    crate::vfs::OpenFlags::read_only(),
+                    alloc::format!("pipe:{}", stdout_pipe_id),
+                ) {
+                    parent_stdout_fd = fd as u64;
+                }
+            }
+        }
+        if stderr_pipe_id != 0 {
+            if let Some(read_node) = crate::ipc::pipe::read_node_for_id(stderr_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    read_node,
+                    crate::vfs::OpenFlags::read_only(),
+                    alloc::format!("pipe:{}", stderr_pipe_id),
+                ) {
+                    parent_stderr_fd = fd as u64;
+                }
+            }
+        }
+    }
 
     // Create per-process identity with provided argv & env
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
@@ -908,16 +958,14 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         task.user_fs_base = aux_info.tls_tp;
     }
 
-    // Queue setting the process name
-
     rt.irq_restore(_irq);
 
     Ok(SpawnExResult {
         child_tid: id,
         child_pid: id as u32,
-        stdin_pipe,
-        stdout_pipe,
-        stderr_pipe,
+        stdin_pipe: parent_stdin_fd,
+        stdout_pipe: parent_stdout_fd,
+        stderr_pipe: parent_stderr_fd,
     })
 }
 

@@ -31,7 +31,8 @@ index 00000000..ba7f15ec
 +//! symlinks) and then calls `SYS_FS_STAT` on the resulting fd.  `lstat` uses
 +//! `SYS_FS_LSTAT`, a dedicated path-based syscall that resolves the final
 +//! path component without following it, returning symlink metadata directly.
-+//! Hard links are not supported and return `Unsupported`.
++//! Hard links are supported via `SYS_FS_LINK` for regular files on ramfs
++//! mount points.
 +//!
 +//! # Permissions
 +//! ThingOS exposes POSIX-style `mode` bits in the stat structure.  Permissions
@@ -79,6 +80,7 @@ index 00000000..ba7f15ec
 +const SYS_FS_LSTAT: u32 = 0x4020;
 +const SYS_FS_READV: u32 = 0x4021;
 +const SYS_FS_WRITEV: u32 = 0x4022;
++const SYS_FS_LINK: u32 = 0x4023;
 +
 +// ── Scatter-gather I/O vector (matches abi::syscall::IoVec / POSIX struct iovec) ──
 +#[repr(C)]
@@ -942,9 +944,21 @@ index 00000000..ba7f15ec
 +    cvt(ret).map(|_| ())
 +}
 +
-+pub fn link(_src: &Path, _dst: &Path) -> io::Result<()> {
-+    // ThingOS does not support hard links.
-+    Err(io::const_error!(io::ErrorKind::Unsupported, "hard links are not supported on ThingOS"))
++pub fn link(src: &Path, dst: &Path) -> io::Result<()> {
++    let src_str = path_to_str(src)?;
++    let dst_str = path_to_str(dst)?;
++    let ret = unsafe {
++        raw_syscall6(
++            SYS_FS_LINK,
++            src_str.as_ptr() as usize,
++            src_str.len(),
++            dst_str.as_ptr() as usize,
++            dst_str.len(),
++            0,
++            0,
++        )
++    };
++    cvt(ret).map(|_| ())
 +}
 +
 +pub fn set_perm(path: &Path, perm: FilePermissions) -> io::Result<()> {

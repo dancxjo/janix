@@ -64,6 +64,9 @@ members = [
     "userspace/true",
     "userspace/false",
     "userspace/ipc_service_demo",
+    "userspace/ipc_pipe_demo",
+    "userspace/ipc_provider_demo",
+    "userspace/ipc_memfd_demo",
 
     "userspace/iso9660",
     "userspace/iso9660d",

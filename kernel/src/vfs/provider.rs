@@ -490,3 +490,305 @@ fn errno_from_u8(v: u8) -> Errno {
         _ => Errno::EIO,
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::sync::Arc;
+    use alloc::vec;
+
+    fn make_port(cap: usize) -> Arc<crate::ipc::Port> {
+        Arc::new(crate::ipc::Port::new(cap))
+    }
+
+    // ── errno_from_u8 ────────────────────────────────────────────────────────
+
+    #[test]
+    fn errno_from_u8_known_values() {
+        assert!(matches!(errno_from_u8(1), Errno::EPERM));
+        assert!(matches!(errno_from_u8(2), Errno::ENOENT));
+        assert!(matches!(errno_from_u8(5), Errno::EIO));
+        assert!(matches!(errno_from_u8(9), Errno::EBADF));
+        assert!(matches!(errno_from_u8(11), Errno::EAGAIN));
+        assert!(matches!(errno_from_u8(12), Errno::ENOMEM));
+        assert!(matches!(errno_from_u8(13), Errno::EACCES));
+        assert!(matches!(errno_from_u8(17), Errno::EEXIST));
+        assert!(matches!(errno_from_u8(20), Errno::ENOTDIR));
+        assert!(matches!(errno_from_u8(21), Errno::EISDIR));
+        assert!(matches!(errno_from_u8(22), Errno::EINVAL));
+        assert!(matches!(errno_from_u8(28), Errno::ENOSPC));
+        assert!(matches!(errno_from_u8(32), Errno::EPIPE));
+        assert!(matches!(errno_from_u8(38), Errno::ENOSYS));
+    }
+
+    #[test]
+    fn errno_from_u8_unknown_falls_back_to_eio() {
+        assert!(matches!(errno_from_u8(200), Errno::EIO));
+        assert!(matches!(errno_from_u8(255), Errno::EIO));
+        assert!(matches!(errno_from_u8(0), Errno::EIO)); // 0 is "OK", not an errno
+    }
+
+    // ── parse_response_handle ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_response_handle_ok() {
+        let mut resp = vec![0u8; 9];
+        resp[0] = 0; // status OK
+        resp[1..9].copy_from_slice(&42u64.to_le_bytes());
+        assert_eq!(parse_response_handle(&resp).unwrap(), 42u64);
+    }
+
+    #[test]
+    fn parse_response_handle_error_enoent() {
+        let resp = vec![2u8]; // ENOENT
+        assert!(matches!(parse_response_handle(&resp), Err(Errno::ENOENT)));
+    }
+
+    #[test]
+    fn parse_response_handle_too_short() {
+        // Status is OK (0) but only 2 payload bytes — need 8
+        let resp = vec![0u8, 0u8, 1u8];
+        assert!(matches!(parse_response_handle(&resp), Err(Errno::EIO)));
+    }
+
+    #[test]
+    fn parse_response_handle_empty() {
+        assert!(matches!(parse_response_handle(&[]), Err(Errno::EIO)));
+    }
+
+    // ── parse_response_u32 ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_response_u32_ok() {
+        let mut resp = vec![0u8; 5];
+        resp[0] = 0;
+        resp[1..5].copy_from_slice(&1024u32.to_le_bytes());
+        assert_eq!(parse_response_u32(&resp).unwrap(), 1024u32);
+    }
+
+    #[test]
+    fn parse_response_u32_error_eagain() {
+        let resp = vec![11u8]; // EAGAIN
+        assert!(matches!(parse_response_u32(&resp), Err(Errno::EAGAIN)));
+    }
+
+    #[test]
+    fn parse_response_u32_empty() {
+        assert!(matches!(parse_response_u32(&[]), Err(Errno::EIO)));
+    }
+
+    #[test]
+    fn parse_response_u32_too_short() {
+        let resp = vec![0u8, 1u8]; // status OK, only 1 byte payload
+        assert!(matches!(parse_response_u32(&resp), Err(Errno::EIO)));
+    }
+
+    // ── parse_response_stat ──────────────────────────────────────────────────
+
+    #[test]
+    fn parse_response_stat_ok() {
+        let mut resp = vec![0u8; 21]; // 1 (status) + 4 (mode) + 8 (size) + 8 (ino)
+        resp[0] = 0;
+        resp[1..5].copy_from_slice(&0o100644u32.to_le_bytes());
+        resp[5..13].copy_from_slice(&4096u64.to_le_bytes());
+        resp[13..21].copy_from_slice(&7u64.to_le_bytes());
+        let stat = parse_response_stat(&resp).unwrap();
+        assert_eq!(stat.mode, 0o100644);
+        assert_eq!(stat.size, 4096);
+        assert_eq!(stat.ino, 7);
+    }
+
+    #[test]
+    fn parse_response_stat_error_eacces() {
+        let resp = vec![13u8]; // EACCES
+        assert!(matches!(parse_response_stat(&resp), Err(Errno::EACCES)));
+    }
+
+    #[test]
+    fn parse_response_stat_too_short() {
+        let resp = vec![0u8; 10]; // status OK but only 9 payload bytes (need 20)
+        assert!(matches!(parse_response_stat(&resp), Err(Errno::EIO)));
+    }
+
+    // ── parse_response_read ──────────────────────────────────────────────────
+
+    #[test]
+    fn parse_response_read_ok() {
+        let data = b"hello";
+        let mut resp = vec![0u8; 1 + 4 + data.len()];
+        resp[0] = 0;
+        resp[1..5].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        resp[5..].copy_from_slice(data);
+        let mut buf = [0u8; 16];
+        let n = parse_response_read(&resp, &mut buf).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(&buf[..5], b"hello");
+    }
+
+    #[test]
+    fn parse_response_read_buf_smaller_than_data() {
+        // Provider reports 10 bytes, but caller only has a 4-byte buf
+        let data = b"0123456789";
+        let mut resp = vec![0u8; 1 + 4 + data.len()];
+        resp[0] = 0;
+        resp[1..5].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        resp[5..].copy_from_slice(data);
+        let mut buf = [0u8; 4];
+        let n = parse_response_read(&resp, &mut buf).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&buf, b"0123");
+    }
+
+    #[test]
+    fn parse_response_read_error_eio() {
+        let resp = vec![5u8]; // EIO
+        let mut buf = [0u8; 8];
+        assert!(matches!(parse_response_read(&resp, &mut buf), Err(Errno::EIO)));
+    }
+
+    // ── Dead provider: request ring full → EIO ───────────────────────────────
+
+    /// When the kernel cannot write to the provider's request port (ring full),
+    /// `rpc()` must return `Err(EIO)` immediately — this is the
+    /// "provider back-pressure / dead" path.
+    #[test]
+    fn rpc_returns_eio_when_request_ring_full() {
+        let req_port = make_port(16); // tiny ring so it fills quickly
+        let resp_port = make_port(256);
+
+        // Flood the ring buffer so the next send() will return 0.
+        let fill = vec![0xABu8; req_port.capacity()];
+        req_port.send(&fill);
+
+        let ch = ProviderChannelRef {
+            req: req_port,
+            resp: resp_port,
+            resp_write_handle: 99,
+        };
+
+        // A Stat request payload is 8 bytes (handle: u64); combined with the
+        // 7-byte header the message is 15 bytes and won't fit the full ring.
+        let result = ch.rpc(VfsRpcOp::Stat, &[0u8; 8]);
+        assert!(
+            matches!(result, Err(Errno::EIO)),
+            "expected EIO when request ring is full, got {:?}",
+            result
+        );
+    }
+
+    // ── Dead provider: response writer gone → EPIPE ──────────────────────────
+
+    /// When the provider dies after the kernel sends a request but before it
+    /// sends a response, the response port's writer count drops to zero.
+    /// `recv_response()` must detect this and return `Err(EPIPE)` without
+    /// blocking forever.
+    #[test]
+    fn rpc_returns_epipe_when_response_writer_gone() {
+        let req_port = make_port(4096);
+        let resp_port = make_port(256);
+
+        // Simulate provider death: drop the write end of the response port.
+        // (In production the write handle is in the provider's handle table;
+        // when the process exits the handle table drops all handles.)
+        resp_port.close_writer();
+
+        let ch = ProviderChannelRef {
+            req: req_port,
+            resp: resp_port,
+            resp_write_handle: 99,
+        };
+
+        // Send succeeds (data lands in the ring), but response never arrives.
+        let payload = b"\x05\x00\x00\x00hello"; // Lookup "hello"
+        let result = ch.rpc(VfsRpcOp::Lookup, payload);
+        assert!(
+            matches!(result, Err(Errno::EPIPE)),
+            "expected EPIPE when response writer is gone, got {:?}",
+            result
+        );
+    }
+
+    // ── Dead provider: diagnostics counter ───────────────────────────────────
+
+    /// Every dead-provider event must increment `VFS_RPC_DEAD_PROVIDER`.
+    #[test]
+    fn dead_provider_increments_counter() {
+        use core::sync::atomic::Ordering;
+
+        let before = crate::ipc::diag::VFS_RPC_DEAD_PROVIDER.load(Ordering::Relaxed);
+
+        let req_port = make_port(4096);
+        let resp_port = make_port(256);
+        resp_port.close_writer();
+
+        let ch = ProviderChannelRef {
+            req: req_port,
+            resp: resp_port,
+            resp_write_handle: 0,
+        };
+        // Ignore the result; we only care about the counter.
+        let _ = ch.rpc(VfsRpcOp::Stat, &[0u8; 8]);
+
+        let after = crate::ipc::diag::VFS_RPC_DEAD_PROVIDER.load(Ordering::Relaxed);
+        assert!(
+            after > before,
+            "VFS_RPC_DEAD_PROVIDER should have been incremented"
+        );
+    }
+
+    /// Every dead-provider event must also increment the generic
+    /// `VFS_RPC_ERRORS` counter.
+    #[test]
+    fn dead_provider_increments_error_counter() {
+        use core::sync::atomic::Ordering;
+
+        let before = crate::ipc::diag::VFS_RPC_ERRORS.load(Ordering::Relaxed);
+
+        let req_port = make_port(4096);
+        let resp_port = make_port(256);
+        resp_port.close_writer();
+
+        let ch = ProviderChannelRef {
+            req: req_port,
+            resp: resp_port,
+            resp_write_handle: 0,
+        };
+        let _ = ch.rpc(VfsRpcOp::Stat, &[0u8; 8]);
+
+        let after = crate::ipc::diag::VFS_RPC_ERRORS.load(Ordering::Relaxed);
+        assert!(after > before);
+    }
+
+    // ── Successful round-trip (response in ring before recv) ─────────────────
+
+    /// When a response is already waiting in the ring before `rpc()` is called,
+    /// the call must return successfully without ever blocking.
+    #[test]
+    fn rpc_ok_when_response_preloaded() {
+        let req_port = make_port(4096);
+        let resp_port = make_port(4096);
+
+        // Pre-load a valid Stat response into the response ring.
+        // Format: [status=0][mode: u32 LE][size: u64 LE][ino: u64 LE]
+        let mut preloaded = vec![0u8; 21];
+        preloaded[0] = 0; // OK
+        preloaded[1..5].copy_from_slice(&0o040755u32.to_le_bytes()); // mode: dir
+        preloaded[5..13].copy_from_slice(&0u64.to_le_bytes()); // size: 0
+        preloaded[13..21].copy_from_slice(&1u64.to_le_bytes()); // ino: 1
+        resp_port.send(&preloaded);
+
+        let ch = ProviderChannelRef {
+            req: req_port,
+            resp: resp_port,
+            resp_write_handle: 0,
+        };
+
+        // The Stat RPC should complete without blocking.
+        let raw = ch.rpc(VfsRpcOp::Stat, &[0u8; 8]).unwrap();
+        let stat = parse_response_stat(&raw).unwrap();
+        assert_eq!(stat.mode, 0o040755);
+        assert_eq!(stat.ino, 1);
+    }
+}

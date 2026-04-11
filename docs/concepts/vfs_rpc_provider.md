@@ -93,19 +93,88 @@ request port are dropped.  The `ProviderFs` enters the dead state immediately.
 
 ---
 
-## 3. Dead Provider Behaviour
+## 3. Thread and Task Blocking
 
-When the kernel's `ProviderFs` detects that its provider is dead:
+Each VFS RPC is a **synchronous blocking call** on the kernel thread that
+issued the original user syscall:
 
-- All in-flight RPC calls return `EIO` to their callers.
-- Subsequent VFS operations on the mounted subtree return `EIO`.
-- The mount point remains in the VFS tree until explicitly unmounted.  Clients
-  will receive `EIO` on every operation until the path is unmounted or a new
-  provider is mounted.
+1. The kernel thread serialises the request into the IPC ring buffer and sends
+   it to the provider's request port.
+2. The kernel thread then blocks on the response port, waiting for the provider
+   to reply.
+3. Once the reply arrives the kernel thread is unblocked, the response is
+   parsed, and the result is returned to the user process.
+
+Only the thread making the VFS call blocks.  The provider process and all other
+kernel threads continue running independently.
+
+The provider must not perform its own blocking operations that depend on the
+blocked kernel thread — doing so would cause a deadlock.
 
 ---
 
-## 4. Wire Protocol
+## 4. Dead Provider Behaviour
+
+The kernel detects a dead provider via two distinct paths:
+
+### Path A — Request send fails (ring buffer full or reader gone)
+
+```rust
+let written = req_port.send(&msg);
+if written < msg.len() {
+    // provider cannot receive requests → EIO
+}
+```
+
+This occurs when the provider's request ring is full **or** the provider has
+exited and dropped its read handle.  The RPC returns `Err(EIO)` immediately.
+
+### Path B — Response never arrives (provider died mid-RPC)
+
+```rust
+loop {
+    let n = resp_port.try_recv(&mut buf);
+    if n > 0 { return Ok(n); }
+    if !resp_port.has_writers() {
+        // provider dropped the response port write handle → EPIPE
+        return Err(EPIPE);
+    }
+    // … block until woken …
+}
+```
+
+This occurs when the provider crashes or exits after the kernel has already
+sent the request but before a response is written.  The RPC returns
+`Err(EPIPE)`.
+
+### Deterministic behaviour summary
+
+| Situation | Kernel returns |
+|-----------|----------------|
+| Request ring is full (provider too slow or dead) | `EIO` |
+| Provider exits before reading request | `EIO` |
+| Provider exits after reading request but before replying | `EPIPE` |
+| Provider replies with a non-zero status byte | Corresponding `errno` |
+
+Both `EIO` and `EPIPE` are counted in the `VFS_RPC_DEAD_PROVIDER` diagnostic
+counter at `/proc/ipc/vfs_rpc`.
+
+### Mount liveness
+
+- The mount point remains in the VFS tree after the provider dies.
+- All subsequent operations on the mounted subtree return `EIO` or `EPIPE`
+  depending on where in the RPC cycle the failure is detected.
+- The mount is not automatically removed; an administrator must call
+  `SYS_FS_UMOUNT(path)` to clean it up or mount a replacement provider at the
+  same path.
+
+This behaviour is tested in `kernel/src/vfs/provider.rs` (the
+`rpc_returns_eio_when_request_ring_full` and
+`rpc_returns_epipe_when_response_writer_gone` test cases).
+
+---
+
+## 5. Wire Protocol
 
 ### Request header (7 bytes)
 
@@ -118,7 +187,7 @@ Every request starts with a `VfsRpcReqHeader`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `resp_port` | `u32 LE` | Write handle of the kernel's private response port |
-| `op` | `u8` | Operation code (see §5) |
+| `op` | `u8` | Operation code (see §6) |
 | `_pad` | `[u8; 2]` | Reserved, must be zero |
 
 The provider **must** send the response to `resp_port` using `channel_send_all`.
@@ -136,7 +205,7 @@ The provider **must** send the response to `resp_port` using `channel_send_all`.
 
 ---
 
-## 5. Operation Codes
+## 6. Operation Codes
 
 | Code | Name | Request payload | Response payload (on OK) |
 |------|------|-----------------|--------------------------|
@@ -163,7 +232,7 @@ Each directory entry in a `Readdir` response is a packed
 
 ---
 
-## 6. Size Limits
+## 7. Size Limits
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -174,7 +243,7 @@ Each directory entry in a `Readdir` response is a packed
 
 ---
 
-## 7. Required Responses
+## 8. Required Responses
 
 A provider **must** reply to every request.  Failing to reply causes the
 calling thread to block indefinitely.
@@ -185,7 +254,7 @@ For unknown op codes, reply with `errno::EINVAL` (22).
 
 ---
 
-## 8. Timeout and Cancellation
+## 9. Timeout and Cancellation
 
 There is no per-RPC timeout in the current kernel implementation.  A provider
 that stalls on a request will stall the calling user thread indefinitely.
@@ -196,7 +265,7 @@ on the first stalled RPC.
 
 ---
 
-## 9. Using the `ipc_helpers` Provider Loop
+## 10. Using the `ipc_helpers` Provider Loop
 
 The `libs/ipc_helpers` crate provides `ProviderLoop` which handles all framing:
 
@@ -219,7 +288,7 @@ loop {
 
 ---
 
-## 10. See Also
+## 11. See Also
 
 - `abi/src/vfs_rpc.rs` — wire types
 - `kernel/src/vfs/provider.rs` — kernel `ProviderFs`

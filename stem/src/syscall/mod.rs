@@ -717,6 +717,9 @@ pub fn spawn_process_ex_cwd(
         cwd_len: cwd.map_or(0, |s| s.len() as u32),
         _pad4: 0,
     };
+    // SAFETY: `req`, `argv_blob`, `env_blob`, and `cwd` all live on the stack
+    // until after `raw_syscall6` returns.  The kernel copies all pointer fields
+    // synchronously during the syscall, so there is no use-after-free risk.
 
     let mut resp = abi::types::SpawnProcessExResp::default();
     let ret = unsafe {

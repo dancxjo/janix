@@ -448,6 +448,9 @@ pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
 
+    /// Maximum allowed length for a cwd path supplied via SpawnProcessExReq.
+    const MAX_CWD_LEN: usize = 4096;
+
     // Copy in the request struct
     validate_user_range(req_ptr, core::mem::size_of::<SpawnProcessExReq>(), false)?;
     let mut req = SpawnProcessExReq::default();
@@ -514,7 +517,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
     // Decode optional cwd override
     let cwd = if req.cwd_len > 0 && req.cwd_ptr != 0 {
         let clen = req.cwd_len as usize;
-        if clen > 4096 {
+        if clen > MAX_CWD_LEN {
             return Err(Errno::EINVAL);
         }
         validate_user_range(req.cwd_ptr as usize, clen, false)?;

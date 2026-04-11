@@ -157,6 +157,9 @@ pub const SYS_FS_FCHMOD: u32 = 0x401D;
 pub const SYS_FS_UTIMES: u32 = 0x401E;
 /// Set access and modification timestamps by open file descriptor (futimes).
 pub const SYS_FS_FUTIMES: u32 = 0x401F;
+/// Stat a path without following the final symlink (lstat semantics).
+/// Args: (path_ptr, path_len, stat_ptr) → 0
+pub const SYS_FS_LSTAT: u32 = 0x4020;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

@@ -22,6 +22,7 @@ pub struct ProcessSnapshot {
     pub name: String,
     pub state: TaskState,
     pub argv: Vec<Vec<u8>>,
+    pub exec_path: String,
 }
 
 pub(crate) static mut YIELD_HOOK: Option<fn() -> bool> = None;

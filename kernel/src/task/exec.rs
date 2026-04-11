@@ -69,7 +69,7 @@ pub fn task_exec_current<R: BootRuntime>(
     }
 
     // 3. Resolve executable from FD
-    let node = {
+    let (node, exec_fd_path) = {
         let pinfo = pinfo_arc.lock();
         let open_file = match pinfo.fd_table.get(fd) {
             Ok(f) => f,
@@ -83,7 +83,8 @@ pub fn task_exec_current<R: BootRuntime>(
         if !stat.is_reg() {
             abort_exec!(Errno::EACCES);
         }
-        open_file.node.clone()
+        let path = (*open_file.path).clone();
+        (open_file.node.clone(), path)
     };
 
     // 4. Read the entire file into kernel memory (v1)
@@ -239,6 +240,8 @@ pub fn task_exec_current<R: BootRuntime>(
         // Rebuild auxv from freshly loaded image.  AT_* constants follow
         // the standard ELF auxiliary-vector specification (see elf.h).
         pinfo.auxv = build_auxv(&aux_info, page_size);
+        // Record the executable path for /proc/self/exe.
+        pinfo.exec_path = exec_fd_path;
         // Close all file descriptors marked FD_CLOEXEC before the new image runs.
         pinfo.fd_table.close_on_exec();
         // Commit: caller is now the only thread; clear the flag.
@@ -485,6 +488,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![tid_leader, tid_sibling],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }))
     }
 
@@ -545,6 +549,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9230, 9231, 9232],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         let caller_tid: crate::task::TaskId = 9230;
@@ -577,6 +582,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9240],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         let caller_tid: crate::task::TaskId = 9240;
@@ -700,6 +706,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9300],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         // Set up: fd 0 survives, fd 1 has FD_CLOEXEC.
@@ -749,6 +756,7 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9310],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }));
 
         {

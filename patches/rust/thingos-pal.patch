@@ -257,7 +257,7 @@ new file mode 100644
 index 00000000..93bf392d
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,624 @@
+@@ -0,0 +1,893 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -287,9 +287,15 @@ index 00000000..93bf392d
 +const ETIMEDOUT: i32 = 110;
 +const ECONNREFUSED: i32 = 111;
 +const ENOTSUP: i32 = 95;
++const ENOTCONN: i32 = 107;
 +
 +const CONNECT_POLL_NS: u64 = 5_000_000;
 +const IO_POLL_NS: u64 = 1_000_000;
++
++/// Default TCP listen backlog passed to netd.
++const LISTEN_BACKLOG: u16 = 128;
++/// Buffer large enough for a single accept-response line: `"<conn_id> <ip> <port>\n"`.
++const ACCEPT_RESPONSE_BUF_SIZE: usize = 64;
 +
 +#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 +enum TcpState {
@@ -583,187 +589,417 @@ index 00000000..93bf392d
 +    }
 +}
 +
-+pub struct TcpListener(!);
++pub struct TcpListener {
++    id: u32,
++    ctl_fd: i32,
++    accept_fd: i32,
++    nonblocking: Arc<Mutex<bool>>,
++}
 +
 +impl TcpListener {
-+    pub fn bind<A: ToSocketAddrs>(_: A) -> io::Result<TcpListener> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++    pub fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
++        each_addr(addr, |a| Self::bind_inner(a))
++    }
++
++    fn bind_inner(addr: &SocketAddr) -> io::Result<TcpListener> {
++        let SocketAddr::V4(local_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++
++        let id = allocate_tcp_socket()?;
++        let ctl_path = socket_path(id, "ctl");
++        let ctl_fd = vfs_open(&ctl_path, O_WRONLY)?;
++
++        let port = local_v4.port();
++        let cmd = format!("listen {port} {LISTEN_BACKLOG}");
++        if let Err(e) = vfs_write(ctl_fd, cmd.as_bytes()) {
++            let _ = vfs_close(ctl_fd);
++            return Err(e);
++        }
++
++        let accept_path = socket_path(id, "accept");
++        let accept_fd = match vfs_open(&accept_path, O_RDONLY | O_NONBLOCK) {
++            Ok(fd) => fd,
++            Err(e) => {
++                let _ = vfs_write(ctl_fd, b"close");
++                let _ = vfs_close(ctl_fd);
++                return Err(e);
++            }
++        };
++
++        Ok(TcpListener { id, ctl_fd, accept_fd, nonblocking: Arc::new(Mutex::new(false)) })
 +    }
 +
 +    pub fn socket_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        if let Some(local) = read_status(self.id).ok().and_then(|s| s.local) {
++            return Ok(local);
++        }
++        Err(io::Error::from_raw_os_error(EINVAL))
 +    }
 +
 +    pub fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
-+        self.0
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        loop {
++            let mut buf = [0u8; ACCEPT_RESPONSE_BUF_SIZE];
++            match vfs_read(self.accept_fd, &mut buf) {
++                Ok(n) if n > 0 => {
++                    let text = crate::str::from_utf8(&buf[..n])
++                        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?
++                        .trim();
++                    let (conn_id, remote_ip, remote_port) = parse_accept_line(text)?;
++                    let peer_addr = SocketAddr::V4(SocketAddrV4::new(
++                        Ipv4Addr::new(remote_ip[0], remote_ip[1], remote_ip[2], remote_ip[3]),
++                        remote_port,
++                    ));
++                    let data_path = socket_path(conn_id, "data");
++                    let conn_ctl_path = socket_path(conn_id, "ctl");
++                    let data_fd = vfs_open(&data_path, O_RDWR | O_NONBLOCK)?;
++                    let conn_ctl_fd = match vfs_open(&conn_ctl_path, O_WRONLY) {
++                        Ok(fd) => fd,
++                        Err(e) => {
++                            let _ = vfs_close(data_fd);
++                            return Err(e);
++                        }
++                    };
++                    // The fd is always opened O_NONBLOCK so that vfs_read never
++                    // blocks the kernel thread.  The stream's `nonblocking` field
++                    // is the PAL-level flag that controls whether the read/write
++                    // loops spin-wait (false) or return EAGAIN immediately (true).
++                    // Newly accepted streams start in blocking (spin-wait) mode,
++                    // matching the POSIX default for accepted sockets.
++                    let stream = TcpStream {
++                        id: conn_id,
++                        data_fd,
++                        ctl_fd: conn_ctl_fd,
++                        peer_addr,
++                        read_timeout: Arc::new(Mutex::new(None)),
++                        write_timeout: Arc::new(Mutex::new(None)),
++                        nonblocking: Arc::new(Mutex::new(false)),
++                    };
++                    return Ok((stream, peer_addr));
++                }
++                Ok(_) => {
++                    if nonblocking {
++                        return Err(io::Error::from_raw_os_error(EAGAIN));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
++                    if nonblocking {
++                        return Err(io::Error::from_raw_os_error(EAGAIN));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(e) => return Err(e),
++            }
++        }
 +    }
 +
 +    pub fn duplicate(&self) -> io::Result<TcpListener> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_ttl(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn ttl(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_only_v6(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn only_v6(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
-+        self.0
++        Ok(None)
 +    }
 +
-+    pub fn set_nonblocking(&self, _: bool) -> io::Result<()> {
-+        self.0
++    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
++        *self.nonblocking.lock().unwrap() = nonblocking;
++        Ok(())
++    }
++}
++
++impl Drop for TcpListener {
++    fn drop(&mut self) {
++        let _ = vfs_write(self.ctl_fd, b"close");
++        let _ = vfs_close(self.accept_fd);
++        let _ = vfs_close(self.ctl_fd);
 +    }
 +}
 +
 +impl fmt::Debug for TcpListener {
-+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-+        self.0
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("TcpListener").field("id", &self.id).finish()
 +    }
 +}
 +
-+pub struct UdpSocket(!);
++pub struct UdpSocket {
++    id: u32,
++    data_fd: i32,
++    ctl_fd: i32,
++    local_addr: SocketAddr,
++    read_timeout: Arc<Mutex<Option<Duration>>>,
++    write_timeout: Arc<Mutex<Option<Duration>>>,
++    nonblocking: Arc<Mutex<bool>>,
++    connected_remote: Arc<Mutex<Option<SocketAddr>>>,
++}
 +
 +impl UdpSocket {
-+    pub fn bind<A: ToSocketAddrs>(_: A) -> io::Result<UdpSocket> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++    pub fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<UdpSocket> {
++        each_addr(addr, |a| Self::bind_inner(a))
++    }
++
++    fn bind_inner(addr: &SocketAddr) -> io::Result<UdpSocket> {
++        let SocketAddr::V4(local_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++
++        let id = allocate_udp_socket()?;
++        let ctl_path = udp_socket_path(id, "ctl");
++        let ctl_fd = vfs_open(&ctl_path, O_WRONLY)?;
++
++        let port = local_v4.port();
++        let cmd = format!("bind {port}");
++        if let Err(e) = vfs_write(ctl_fd, cmd.as_bytes()) {
++            let _ = vfs_close(ctl_fd);
++            return Err(e);
++        }
++
++        let data_path = udp_socket_path(id, "data");
++        let data_fd = match vfs_open(&data_path, O_RDWR | O_NONBLOCK) {
++            Ok(fd) => fd,
++            Err(e) => {
++                let _ = vfs_write(ctl_fd, b"close");
++                let _ = vfs_close(ctl_fd);
++                return Err(e);
++            }
++        };
++
++        Ok(UdpSocket {
++            id,
++            data_fd,
++            ctl_fd,
++            local_addr: SocketAddr::V4(*local_v4),
++            read_timeout: Arc::new(Mutex::new(None)),
++            write_timeout: Arc::new(Mutex::new(None)),
++            nonblocking: Arc::new(Mutex::new(false)),
++            connected_remote: Arc::new(Mutex::new(None)),
++        })
 +    }
 +
 +    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        self.connected_remote
++            .lock()
++            .unwrap()
++            .ok_or_else(|| io::Error::from_raw_os_error(ENOTCONN))
 +    }
 +
 +    pub fn socket_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        Ok(self.local_addr)
 +    }
 +
-+    pub fn recv_from(&self, _: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-+        self.0
++    pub fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.read_timeout.lock().unwrap();
++        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
++        // Wire format on read: [4: src_ipv4][2: src_port_le][4: len_le][payload]
++        let header_len: usize = 10;
++        let mut raw = vec![0u8; header_len + buf.len()];
++        loop {
++            match vfs_read(self.data_fd, &mut raw) {
++                Ok(n) if n >= header_len => {
++                    let src_ip: [u8; 4] = raw[..4].try_into().unwrap();
++                    let src_port = u16::from_le_bytes([raw[4], raw[5]]);
++                    let payload_len =
++                        u32::from_le_bytes([raw[6], raw[7], raw[8], raw[9]]) as usize;
++                    let copy_len = payload_len.min(buf.len()).min(n - header_len);
++                    buf[..copy_len].copy_from_slice(&raw[header_len..header_len + copy_len]);
++                    let src_addr =
++                        SocketAddr::new(IpAddr::V4(Ipv4Addr::from(src_ip)), src_port);
++                    return Ok((copy_len, src_addr));
++                }
++                Ok(_) => return Err(io::Error::from_raw_os_error(EINVAL)),
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) && nonblocking => {
++                    return Err(io::Error::from_raw_os_error(EAGAIN));
++                }
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
++                    if deadline_expired(deadline) {
++                        return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(e) => return Err(e),
++            }
++        }
 +    }
 +
 +    pub fn peek_from(&self, _: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn send_to(&self, _: &[u8], _: &SocketAddr) -> io::Result<usize> {
-+        self.0
++    pub fn send_to(&self, data: &[u8], addr: &SocketAddr) -> io::Result<usize> {
++        let SocketAddr::V4(dest_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++        let dest_ip = dest_v4.ip().octets();
++        let dest_port = dest_v4.port();
++        // Wire format on write: [4: dest_ipv4][2: dest_port_le][4: len_le][payload]
++        let header_len: usize = 10;
++        let mut pkt = vec![0u8; header_len + data.len()];
++        pkt[..4].copy_from_slice(&dest_ip);
++        pkt[4..6].copy_from_slice(&dest_port.to_le_bytes());
++        pkt[6..10].copy_from_slice(&(data.len() as u32).to_le_bytes());
++        pkt[10..].copy_from_slice(data);
++        vfs_write(self.data_fd, &pkt)?;
++        Ok(data.len())
 +    }
 +
 +    pub fn duplicate(&self) -> io::Result<UdpSocket> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn set_read_timeout(&self, _: Option<Duration>) -> io::Result<()> {
-+        self.0
++    pub fn set_read_timeout(&self, t: Option<Duration>) -> io::Result<()> {
++        *self.read_timeout.lock().unwrap() = t;
++        Ok(())
 +    }
 +
-+    pub fn set_write_timeout(&self, _: Option<Duration>) -> io::Result<()> {
-+        self.0
++    pub fn set_write_timeout(&self, t: Option<Duration>) -> io::Result<()> {
++        *self.write_timeout.lock().unwrap() = t;
++        Ok(())
 +    }
 +
 +    pub fn read_timeout(&self) -> io::Result<Option<Duration>> {
-+        self.0
++        Ok(*self.read_timeout.lock().unwrap())
 +    }
 +
 +    pub fn write_timeout(&self) -> io::Result<Option<Duration>> {
-+        self.0
++        Ok(*self.write_timeout.lock().unwrap())
 +    }
 +
 +    pub fn set_broadcast(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn broadcast(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_loop_v4(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_loop_v4(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_ttl_v4(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_ttl_v4(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_loop_v6(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_loop_v6(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn join_multicast_v4(&self, _: &Ipv4Addr, _: &Ipv4Addr) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn join_multicast_v6(&self, _: &Ipv6Addr, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn leave_multicast_v4(&self, _: &Ipv4Addr, _: &Ipv4Addr) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn leave_multicast_v6(&self, _: &Ipv6Addr, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_ttl(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn ttl(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
-+        self.0
++        Ok(None)
 +    }
 +
-+    pub fn set_nonblocking(&self, _: bool) -> io::Result<()> {
-+        self.0
++    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
++        *self.nonblocking.lock().unwrap() = nonblocking;
++        Ok(())
 +    }
 +
-+    pub fn recv(&self, _: &mut [u8]) -> io::Result<usize> {
-+        self.0
++    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
++        if self.connected_remote.lock().unwrap().is_none() {
++            return Err(io::Error::from_raw_os_error(ENOTCONN));
++        }
++        let (n, _) = self.recv_from(buf)?;
++        Ok(n)
 +    }
 +
 +    pub fn peek(&self, _: &mut [u8]) -> io::Result<usize> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn send(&self, _: &[u8]) -> io::Result<usize> {
-+        self.0
++    pub fn send(&self, data: &[u8]) -> io::Result<usize> {
++        let remote = *self.connected_remote.lock().unwrap();
++        let Some(addr) = remote else {
++            return Err(io::Error::from_raw_os_error(ENOTCONN));
++        };
++        self.send_to(data, &addr)
 +    }
 +
-+    pub fn connect<A: ToSocketAddrs>(&self, _: A) -> io::Result<()> {
-+        self.0
++    pub fn connect<A: ToSocketAddrs>(&self, addr: A) -> io::Result<()> {
++        each_addr(addr, |a| {
++            let SocketAddr::V4(v4) = a else {
++                return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++            };
++            let ip = v4.ip().octets();
++            let port = v4.port();
++            let cmd = format!("connect {}.{}.{}.{} {}", ip[0], ip[1], ip[2], ip[3], port);
++            vfs_write(self.ctl_fd, cmd.as_bytes())?;
++            *self.connected_remote.lock().unwrap() = Some(*a);
++            Ok(())
++        })
++    }
++}
++
++impl Drop for UdpSocket {
++    fn drop(&mut self) {
++        let _ = vfs_write(self.ctl_fd, b"close");
++        let _ = vfs_close(self.data_fd);
++        let _ = vfs_close(self.ctl_fd);
 +    }
 +}
 +
 +impl fmt::Debug for UdpSocket {
-+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-+        self.0
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("UdpSocket")
++            .field("id", &self.id)
++            .field("local", &self.local_addr)
++            .field("remote", &*self.connected_remote.lock().unwrap())
++            .finish()
 +    }
 +}
 +
@@ -788,6 +1024,20 @@ index 00000000..93bf392d
 +
 +fn socket_path(id: u32, subpath: &str) -> String {
 +    format!("/net/tcp/{id}/{subpath}")
++}
++
++fn allocate_udp_socket() -> io::Result<u32> {
++    let fd = vfs_open("/net/udp/new", O_RDONLY)?;
++    let mut buf = [0u8; 32];
++    let n = vfs_read(fd, &mut buf)?;
++    vfs_close(fd)?;
++    let text =
++        crate::str::from_utf8(&buf[..n]).map_err(|_| io::Error::from_raw_os_error(EINVAL))?.trim();
++    text.parse::<u32>().map_err(|_| io::Error::from_raw_os_error(EINVAL))
++}
++
++fn udp_socket_path(id: u32, subpath: &str) -> String {
++    format!("/net/udp/{id}/{subpath}")
 +}
 +
 +fn read_status(id: u32) -> io::Result<StatusInfo> {
@@ -826,6 +1076,25 @@ index 00000000..93bf392d
 +    let port = port.parse::<u16>().ok()?;
 +    let ip = ip.parse::<Ipv4Addr>().ok()?;
 +    Some(SocketAddr::V4(SocketAddrV4::new(ip, port)))
++}
++
++/// Parse an accept-response line: `"<conn_id> <a>.<b>.<c>.<d> <port>"`.
++fn parse_accept_line(text: &str) -> io::Result<(u32, [u8; 4], u16)> {
++    let mut parts = text.split_whitespace();
++    let conn_id: u32 = parts
++        .next()
++        .ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?
++        .parse()
++        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    let ip_str = parts.next().ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?;
++    let port: u16 = parts
++        .next()
++        .ok_or_else(|| io::Error::from_raw_os_error(EINVAL))?
++        .parse()
++        .map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    let ip: Ipv4Addr =
++        ip_str.parse().map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++    Ok((conn_id, ip.octets(), port))
 +}
 +
 +fn deadline_expired(deadline: Option<u64>) -> bool {
@@ -1053,6 +1322,7 @@ index 00000000..00000000
 +const SYS_GETPID: u32 = 0x1002;
 +const SYS_FS_CHDIR: u32 = 0x4012;
 +const SYS_FS_GETCWD: u32 = 0x4013;
++const SYS_FS_READLINK: u32 = 0x401A;
 +
 +/// Converts a negative syscall return value to an io::Error.
 +#[inline]
@@ -1145,12 +1415,31 @@ index 00000000..00000000
 +
 +impl crate::error::Error for JoinPathsError {}
 +
-+/// `current_exe` is not yet supported on ThingOS.
-+///
-+/// A stable proc-style source (e.g. `/proc/self/exe`) does not exist yet.
-+/// Return an explicit unsupported error rather than a fake path.
++/// Returns the path of the current process's executable by reading the
++/// `/proc/self/exe` symlink exposed by the ThingOS kernel.
 +pub fn current_exe() -> io::Result<PathBuf> {
-+    super::unsupported()
++    const PATH: &[u8] = b"/proc/self/exe";
++    let mut buf = crate::vec![0u8; 4096];
++    let ret = unsafe {
++        raw_syscall6(
++            SYS_FS_READLINK,
++            PATH.as_ptr() as usize,
++            PATH.len(),
++            buf.as_mut_ptr() as usize,
++            buf.len(),
++            0,
++            0,
++        )
++    };
++    if ret < 0 {
++        return Err(syscall_err(ret));
++    }
++    let n = ret as usize;
++    buf.truncate(n);
++    let s = crate::string::String::from_utf8(buf).map_err(|_| {
++        io::const_error!(io::ErrorKind::InvalidData, "current_exe path is not valid UTF-8")
++    })?;
++    Ok(PathBuf::from(s))
 +}
 +
 +/// Returns `/tmp`, which is always mounted as a ramfs on ThingOS.
@@ -1720,25 +2009,56 @@ index 00000000..00000000
 +    Some(Stderr::new())
 +}
 diff --git a/library/std/src/sys/random/mod.rs b/library/std/src/sys/random/mod.rs
-index 91f72d07..24e2f4a3 100644
+index 91f72d07..00000000 100644
 --- a/library/std/src/sys/random/mod.rs
 +++ b/library/std/src/sys/random/mod.rs
-@@ -106,6 +106,7 @@
+@@ -102,6 +102,10 @@
+         mod zkvm;
+         pub use zkvm::fill_bytes;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use thingos::fill_bytes;
++    }
+     any(
          all(target_family = "wasm", target_os = "unknown"),
          target_os = "xous",
-         target_os = "vexos",
-+        target_os = "thingos",
-     ) => {
-         // FIXME: finally remove std support for wasm32-unknown-unknown
-         // FIXME: add random data generation to xous
-@@ -122,6 +123,7 @@
-     all(target_os = "wasi", not(target_env = "p1")),
-     target_os = "xous",
-     target_os = "vexos",
-+    target_os = "thingos",
- )))]
- pub fn hashmap_random_keys() -> (u64, u64) {
-     let mut buf = [0; 16];
+diff --git a/library/std/src/sys/random/thingos.rs b/library/std/src/sys/random/thingos.rs
+new file mode 100644
+index 00000000..00000000
+--- /dev/null
++++ b/library/std/src/sys/random/thingos.rs
+@@ -0,0 +1,28 @@
++//! Random data for ThingOS via the SYS_GETRANDOM syscall (0x7001).
++//!
++//! The kernel entropy pool is seeded from hardware (RDRAND/RDSEED) and
++//! caps each call at 256 bytes.  We loop until the caller's buffer is full.
++use crate::sys::pal::raw_syscall6;
++
++/// Syscall number for SYS_GETRANDOM (defined in `abi/src/numbers.rs`).
++const SYS_GETRANDOM: u32 = 0x7001;
++/// Maximum bytes the kernel fills per SYS_GETRANDOM call.
++const GETRANDOM_MAX: usize = 256;
++
++pub fn fill_bytes(bytes: &mut [u8]) {
++    let mut offset = 0;
++    while offset < bytes.len() {
++        // Pass at most GETRANDOM_MAX bytes per call so the kernel doesn't
++        // reject oversized requests.
++        let chunk_len = (bytes.len() - offset).min(GETRANDOM_MAX);
++        let chunk = &mut bytes[offset..offset + chunk_len];
++        // args: buf_ptr, buf_len, flags (0 = blocking, fill fully)
++        let ret = unsafe {
++            raw_syscall6(SYS_GETRANDOM, chunk.as_mut_ptr() as usize, chunk_len, 0, 0, 0, 0)
++        };
++        // SYS_GETRANDOM returns 0 on success (not byte count); a negative
++        // value encodes an errno-style error code.
++        if ret < 0 {
++            panic!("SYS_GETRANDOM failed: {}", ret);
++        }
++        offset += chunk_len;
++    }
++}
 diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/thread_local/mod.rs
 index e88011aa..1dde5484 100644
 --- a/library/std/src/sys/thread_local/mod.rs
@@ -2373,9 +2693,11 @@ index 00000000..00000000
 +//! the ThingOS kernel (see `abi/src/numbers.rs`).
 +//!
 +//! # Symlink support
-+//! ThingOS VFS has basic symlink support (`SYS_FS_SYMLINK`, `SYS_FS_READLINK`).
-+//! The `stat` implementation does **not** follow symlinks (same as `lstat` on
-+//! POSIX), because `SYS_FS_OPEN` + `SYS_FS_STAT` resolves via the open node.
++//! ThingOS VFS has basic symlink support (`SYS_FS_SYMLINK`, `SYS_FS_READLINK`,
++//! `SYS_FS_LSTAT`).  `stat` opens the path via `SYS_FS_OPEN` (which follows
++//! symlinks) and then calls `SYS_FS_STAT` on the resulting fd.  `lstat` uses
++//! `SYS_FS_LSTAT`, a dedicated path-based syscall that resolves the final
++//! path component without following it, returning symlink metadata directly.
 +//! Hard links are not supported and return `Unsupported`.
 +//!
 +//! # Permissions
@@ -2421,6 +2743,7 @@ index 00000000..00000000
 +const SYS_FS_FCHMOD: u32 = 0x401D;
 +const SYS_FS_UTIMES: u32 = 0x401E;
 +const SYS_FS_FUTIMES: u32 = 0x401F;
++const SYS_FS_LSTAT: u32 = 0x4020;
 +
 +// ── Open flags (abi/src/numbers.rs vfs_flags) ─────────────────────────────────
 +const O_RDONLY: u32 = 0x0000;
@@ -3083,10 +3406,21 @@ index 00000000..00000000
 +}
 +
 +pub fn lstat(path: &Path) -> io::Result<FileAttr> {
-+    // ThingOS does not have a separate lstat syscall; treat the same as stat.
-+    // Symlink metadata can still be obtained via SYS_FS_STAT on an opened
-+    // symlink node.
-+    stat(path)
++    let path_str = path_to_str(path)?;
++    let mut s = AbiFileStat::default();
++    let ret = unsafe {
++        raw_syscall6(
++            SYS_FS_LSTAT,
++            path_str.as_ptr() as usize,
++            path_str.len(),
++            &mut s as *mut AbiFileStat as usize,
++            0,
++            0,
++            0,
++        )
++    };
++    cvt(ret)?;
++    Ok(FileAttr { stat: s })
 +}
 +
 +pub fn readdir(path: &Path) -> io::Result<ReadDir> {

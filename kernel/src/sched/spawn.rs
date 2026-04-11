@@ -65,6 +65,7 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         cwd: alloc::string::String::from("/"),
         thread_ids: alloc::vec![pid as TaskId],
         exec_in_progress: false,
+        exec_path: alloc::string::String::new(),
     }))
 }
 
@@ -89,6 +90,7 @@ fn inherit_process_info<R: BootRuntime>(
             cwd: parent.cwd.clone(),
             thread_ids: alloc::vec![pid as TaskId],
             exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
         }))
     } else {
         default_process_info(pid, ppid)
@@ -629,6 +631,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         let mut lock = pinfo.lock();
         lock.argv = alloc::vec![module.name.as_bytes().to_vec()];
         lock.auxv = crate::task::exec::build_auxv(&aux_info, page_size);
+        lock.exec_path = alloc::format!("/boot/{}", module.name);
     }
 
     // Store name, process_info, and initial TLS thread pointer on the task struct.
@@ -948,6 +951,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         },
         thread_ids: alloc::vec![id],
         exec_in_progress: false,
+        exec_path: alloc::format!("/boot/{}", module.name),
     }));
 
     // Store name, process_info, and initial TLS thread pointer on the task struct.

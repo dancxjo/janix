@@ -418,6 +418,15 @@ pub trait VfsDriver: Send + Sync {
     fn symlink(&self, _target: &str, _link_path: &str) -> SysResult<()> {
         Err(abi::errors::Errno::EROFS)
     }
+
+    /// Create a hard link at `dst_path` that refers to the same file as `src_path`.
+    ///
+    /// Hard links are only meaningful for regular files.  The default
+    /// implementation returns `EOPNOTSUPP`; writable filesystems (ramfs)
+    /// should override this.
+    fn link(&self, _src_path: &str, _dst_path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::EOPNOTSUPP)
+    }
 }
 
 // ── Namespace ────────────────────────────────────────────────────────────────

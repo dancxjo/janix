@@ -210,6 +210,42 @@ pub fn symlink(target: &str, link_path: &str) -> SysResult<()> {
     driver.symlink(target, &rel)
 }
 
+/// Create a hard link at `dst_path` referring to the same file as `src_path`.
+///
+/// Both paths must be absolute and within the same mount point.
+/// Returns `EXDEV` if the paths are on different mount points, and `ENOENT`
+/// if either path has no matching mount.
+pub fn link(src_path: &str, dst_path: &str) -> SysResult<()> {
+    if !src_path.starts_with('/') || !dst_path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let (src_rel, dst_rel, driver): (String, String, Arc<dyn VfsDriver>) = {
+        let table = MOUNT_TABLE.lock();
+        // Find the best (longest-prefix) mount for each path individually so
+        // we can distinguish "no mount" (ENOENT) from "different mounts" (EXDEV).
+        let src_entry = table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(src_path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?;
+        let dst_entry = table
+            .iter()
+            .find_map(|entry| {
+                strip_prefix(dst_path, &entry.prefix)
+                    .map(|rel| (rel.to_string(), Arc::clone(&entry.driver)))
+            })
+            .ok_or(Errno::ENOENT)?;
+        // Both paths must resolve to the same driver (same mount point).
+        if !Arc::ptr_eq(&src_entry.1, &dst_entry.1) {
+            return Err(Errno::EXDEV);
+        }
+        (src_entry.0, dst_entry.0, src_entry.1)
+    };
+    driver.link(&src_rel, &dst_rel)
+}
+
 /// Rename a file or directory from `old_path` to `new_path`.
 ///
 /// Both paths must be absolute and within the same mount point.

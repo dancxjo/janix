@@ -166,6 +166,9 @@ pub const SYS_FS_READV: u32 = 0x4021;
 /// Scatter-gather write to an open file descriptor.
 /// Args: (fd, iovec_ptr, iovec_count) → total_bytes_written
 pub const SYS_FS_WRITEV: u32 = 0x4022;
+/// Create a hard link at `dst` pointing to the same inode as `src`.
+/// Args: (src_ptr, src_len, dst_ptr, dst_len) → 0
+pub const SYS_FS_LINK: u32 = 0x4023;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

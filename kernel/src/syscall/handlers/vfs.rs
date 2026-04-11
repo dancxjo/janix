@@ -1295,6 +1295,52 @@ pub fn sys_fs_symlink(
     Ok(0)
 }
 
+// ── link (hard link) ─────────────────────────────────────────────────────────
+
+/// Create a hard link at `dst` that refers to the same inode as `src`.
+///
+/// Signature: `SYS_FS_LINK(src_ptr, src_len, dst_ptr, dst_len) → 0`
+///
+/// - `src` must be an existing regular file (hard-linking directories is not
+///   supported).
+/// - `dst` is the path at which the new directory entry is created.
+/// - Returns `Ok(0)` on success.
+/// - Returns `ENOENT` if `src` does not exist or the parent of `dst` does not exist.
+/// - Returns `EEXIST` if an entry already exists at `dst`.
+/// - Returns `EPERM` if `src` is a directory or symlink.
+/// - Returns `EXDEV` if `src` and `dst` are on different mount points.
+/// - Returns `EOPNOTSUPP` if the underlying filesystem does not support hard links.
+pub fn sys_fs_link(
+    src_ptr: usize,
+    src_len: usize,
+    dst_ptr: usize,
+    dst_len: usize,
+) -> SysResult<usize> {
+    if src_len == 0 || src_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    if dst_len == 0 || dst_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(src_ptr, src_len, false)?;
+    validate_user_range(dst_ptr, dst_len, false)?;
+
+    let mut src_buf = vec![0u8; src_len];
+    let mut dst_buf = vec![0u8; dst_len];
+    unsafe {
+        copyin(&mut src_buf, src_ptr)?;
+        copyin(&mut dst_buf, dst_ptr)?;
+    }
+    let src = core::str::from_utf8(&src_buf).map_err(|_| Errno::EINVAL)?;
+    let dst = core::str::from_utf8(&dst_buf).map_err(|_| Errno::EINVAL)?;
+
+    let abs_src = resolve_path(src)?;
+    let abs_dst = resolve_path(dst)?;
+
+    vfs::mount::link(&abs_src, &abs_dst)?;
+    Ok(0)
+}
+
 // ── readlink ─────────────────────────────────────────────────────────────────
 
 /// Read the target of the symbolic link at `path`.

@@ -48,6 +48,10 @@ struct RamfsFileInner {
     data: Vec<u8>,
     /// POSIX permission bits (lower 12 bits of st_mode; default 0o644).
     mode: u32,
+    /// Hard-link count.  Starts at 1; incremented by [`link`] and decremented
+    /// by [`unlink`].  The file data is freed by `Arc` when the last directory
+    /// entry holding this node is removed.
+    nlink: u32,
     /// Last access time (seconds, nanoseconds).
     atime: (u64, u32),
     /// Last modification time (content write / truncate).
@@ -62,6 +66,7 @@ impl RamfsFileInner {
         Self {
             data,
             mode: 0o644,
+            nlink: 1,
             atime: ts,
             mtime: ts,
             ctime: ts,
@@ -215,7 +220,7 @@ impl VfsNode for RamfsNode {
                     mode: VfsStat::S_IFREG | (lock.mode & 0o7777),
                     size,
                     ino: *ino,
-                    nlink: 1,
+                    nlink: lock.nlink,
                     atime_sec: lock.atime.0,
                     atime_nsec: lock.atime.1,
                     mtime_sec: lock.mtime.0,
@@ -410,6 +415,36 @@ impl RamFs {
         dir.insert_child(link_name, symlink_entry)
     }
 
+    /// Create a hard link at `dst_path` referring to the same inode as `src_path`.
+    ///
+    /// Hard links are only supported for regular files; attempting to hard-link
+    /// a directory returns `EPERM` (POSIX-compliant).
+    pub fn create_hard_link(&self, src_path: &str, dst_path: &str) -> SysResult<()> {
+        let src_entry = self.resolve_entry(src_path)?;
+        // Only regular files may be hard-linked.
+        match &*src_entry {
+            RamfsEntry::Dir(_, _) => return Err(Errno::EPERM),
+            RamfsEntry::Symlink(_, _) => return Err(Errno::EPERM),
+            RamfsEntry::File(_, _) => {}
+        }
+        let (dst_dir_path, dst_name) = split_last(dst_path).ok_or(Errno::EINVAL)?;
+        let dst_dir = self.resolve_entry(dst_dir_path)?;
+        // Reject if destination already exists.
+        if dst_dir.lookup_child(dst_name).is_ok() {
+            return Err(Errno::EEXIST);
+        }
+        // Insert the *same* Arc into the destination directory first;
+        // only increment nlink once the insert has succeeded.
+        dst_dir.insert_child(dst_name, src_entry.clone())?;
+        if let RamfsEntry::File(file_inner, _) = &*src_entry {
+            let ts = now();
+            let mut fl = file_inner.lock();
+            fl.nlink = fl.nlink.saturating_add(1);
+            fl.ctime = ts;
+        }
+        Ok(())
+    }
+
     /// Resolve `path` to its `RamfsEntry`, walking the tree.
     fn resolve_entry(&self, path: &str) -> SysResult<Arc<RamfsEntry>> {
         let mut current = self.root.clone();
@@ -473,14 +508,17 @@ impl VfsDriver for RamFs {
         match &*dir {
             RamfsEntry::Dir(inner, _) => {
                 let mut lock = inner.lock();
-                if lock.children.remove(file_name).is_some() {
-                    let ts = now();
-                    lock.mtime = ts;
-                    lock.ctime = ts;
-                    Ok(())
-                } else {
-                    Err(Errno::ENOENT)
+                let entry = lock.children.remove(file_name).ok_or(Errno::ENOENT)?;
+                let ts = now();
+                lock.mtime = ts;
+                lock.ctime = ts;
+                // Decrement the hard-link count for regular files.
+                if let RamfsEntry::File(file_inner, _) = &*entry {
+                    let mut fl = file_inner.lock();
+                    fl.nlink = fl.nlink.saturating_sub(1);
+                    fl.ctime = ts;
                 }
+                Ok(())
             }
             _ => Err(Errno::ENOTDIR),
         }
@@ -545,6 +583,11 @@ impl VfsDriver for RamFs {
     /// Create a symbolic link at `link_path` pointing to `target`.
     fn symlink(&self, target: &str, link_path: &str) -> SysResult<()> {
         self.create_symlink(target, link_path)
+    }
+
+    /// Create a hard link at `dst_path` referring to the same file as `src_path`.
+    fn link(&self, src_path: &str, dst_path: &str) -> SysResult<()> {
+        self.create_hard_link(src_path, dst_path)
     }
 }
 
@@ -1006,5 +1049,86 @@ mod tests {
         let node = fs.lookup("lnk3").unwrap();
         let st = node.stat().unwrap();
         assert_eq!(st.nlink, 1);
+    }
+
+    // ── Hard-link tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hard_link_creates_second_entry_with_same_ino() {
+        let fs = RamFs::new();
+        fs.create_file("orig.txt", b"hello".to_vec()).unwrap();
+        fs.create_hard_link("orig.txt", "link.txt").unwrap();
+
+        let orig_ino = fs.lookup("orig.txt").unwrap().stat().unwrap().ino;
+        let link_ino = fs.lookup("link.txt").unwrap().stat().unwrap().ino;
+        assert_eq!(orig_ino, link_ino, "hard link must share inode number");
+    }
+
+    #[test]
+    fn test_hard_link_nlink_is_two() {
+        let fs = RamFs::new();
+        fs.create_file("f.txt", b"data".to_vec()).unwrap();
+        fs.create_hard_link("f.txt", "f2.txt").unwrap();
+
+        let st = fs.lookup("f.txt").unwrap().stat().unwrap();
+        assert_eq!(st.nlink, 2, "nlink should be 2 after one hard link");
+    }
+
+    #[test]
+    fn test_hard_link_data_shared() {
+        let fs = RamFs::new();
+        fs.create_file("src.txt", b"content".to_vec()).unwrap();
+        fs.create_hard_link("src.txt", "dst.txt").unwrap();
+
+        // Reading through the link returns the original content.
+        let node = fs.lookup("dst.txt").unwrap();
+        let mut buf = [0u8; 7];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 7);
+        assert_eq!(&buf, b"content");
+    }
+
+    #[test]
+    fn test_hard_link_unlink_decrements_nlink() {
+        let fs = RamFs::new();
+        fs.create_file("h.txt", b"hi".to_vec()).unwrap();
+        fs.create_hard_link("h.txt", "h2.txt").unwrap();
+
+        // Remove the link; the original should have nlink = 1 again.
+        fs.unlink("h2.txt").unwrap();
+        let st = fs.lookup("h.txt").unwrap().stat().unwrap();
+        assert_eq!(st.nlink, 1);
+    }
+
+    #[test]
+    fn test_hard_link_to_directory_returns_eperm() {
+        let fs = RamFs::new();
+        fs.mkdir("adir").unwrap();
+        let err = fs.create_hard_link("adir", "adir_link").unwrap_err();
+        assert_eq!(err, Errno::EPERM);
+    }
+
+    #[test]
+    fn test_hard_link_to_symlink_returns_eperm() {
+        let fs = RamFs::new();
+        fs.create_symlink("/target", "sl").unwrap();
+        let err = fs.create_hard_link("sl", "sl2").unwrap_err();
+        assert_eq!(err, Errno::EPERM);
+    }
+
+    #[test]
+    fn test_hard_link_dst_exists_returns_eexist() {
+        let fs = RamFs::new();
+        fs.create_file("a.txt", b"a".to_vec()).unwrap();
+        fs.create_file("b.txt", b"b".to_vec()).unwrap();
+        let err = fs.create_hard_link("a.txt", "b.txt").unwrap_err();
+        assert_eq!(err, Errno::EEXIST);
+    }
+
+    #[test]
+    fn test_hard_link_src_missing_returns_enoent() {
+        let fs = RamFs::new();
+        let err = fs.create_hard_link("ghost.txt", "link.txt").unwrap_err();
+        assert_eq!(err, Errno::ENOENT);
     }
 }

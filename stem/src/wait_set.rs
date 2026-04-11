@@ -16,14 +16,16 @@
 //! use core::time::Duration;
 //!
 //! let mut set = WaitSet::new();
-//! let tok_rx    = set.add_port_readable(rx_port as u64).unwrap();
-//! let tok_watch = set.add_root_watch(watch_id).unwrap();
+//! let rx_port = 1u64;
+//! let watch_id = 1u32;
+//! let tok_rx    = set.add_port_readable(rx_port).unwrap();
+//! let tok_watch = set.add_vfs_watch(watch_id).unwrap();
 //!
 //! for event in set.wait(Some(Duration::from_secs(5))).unwrap() {
 //!     if event.token() == tok_rx && event.is_readable() {
 //!         // port has data — call channel_recv
 //!     } else if event.token() == tok_watch {
-//!         // graph event — call root_watch_try_next in a drain loop
+//!         // graph event — call drain loop
 //!     }
 //! }
 //! ```

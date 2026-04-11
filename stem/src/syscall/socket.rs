@@ -16,8 +16,11 @@ use super::arch::raw_syscall6;
 /// Returns the file descriptor on success.
 ///
 /// # Example
-/// ```
-/// let fd = socket(AF_UNIX, SOCK_STREAM, 0)?;
+/// ```no_run
+/// use stem::syscall::socket::socket;
+/// use stem::syscall::socket_domain::AF_UNIX;
+/// use stem::syscall::socket_type::SOCK_STREAM;
+/// let fd = socket(AF_UNIX, SOCK_STREAM, 0).unwrap();
 /// ```
 pub fn socket(domain: u32, type_: u32, protocol: u32) -> SysResult<u32> {
     let ret = unsafe {
@@ -111,10 +114,16 @@ pub fn shutdown(fd: u32, how: u32) -> SysResult<()> {
 /// process.
 ///
 /// # Example
-/// ```
-/// let (a, b) = socketpair(AF_UNIX, SOCK_STREAM, 0)?;
-/// vfs_write(a, b"hello")?;
-/// let n = vfs_read(b, &mut buf)?;
+/// ```no_run
+/// use stem::syscall::socket::socketpair;
+/// use stem::syscall::socket_domain::AF_UNIX;
+/// use stem::syscall::socket_type::SOCK_STREAM;
+/// use stem::syscall::{vfs_write, vfs_read};
+///
+/// let (a, b) = socketpair(AF_UNIX, SOCK_STREAM, 0).unwrap();
+/// let mut buf = [0u8; 32];
+/// vfs_write(a, b"hello").unwrap();
+/// let n = vfs_read(b, &mut buf).unwrap();
 /// ```
 pub fn socketpair(domain: u32, type_: u32, protocol: u32) -> SysResult<(u32, u32)> {
     let mut fds_bytes = [0u8; 8];

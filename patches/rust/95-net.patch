@@ -18,7 +18,7 @@ new file mode 100644
 index 00000000..043c469e
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,893 @@
+@@ -0,0 +1,1026 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -849,10 +849,61 @@ index 00000000..043c469e
 +pub type LookupHost = vec::IntoIter<SocketAddr>;
 +
 +pub fn lookup_host(host: &str, port: u16) -> io::Result<LookupHost> {
++    // Fast path: IPv4 literal.
 +    if let Ok(ip) = host.parse::<Ipv4Addr>() {
 +        return Ok(vec![SocketAddr::new(IpAddr::V4(ip), port)].into_iter());
 +    }
-+    Err(io::Error::from_raw_os_error(ENOTSUP))
++
++    // `host` is the pure hostname (port is a separate argument), so a colon
++    // or leading '[' can only come from an IPv6 literal, which the thingos
++    // network stack does not support.
++    if host.contains(':') || host.starts_with('[') {
++        return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++    }
++
++    // Resolve hostname via netd's /net/dns/lookup VFS interface.
++    // Write the hostname, then poll-read until we get a dotted-decimal reply.
++    let lookup_fd = vfs_open("/net/dns/lookup", O_RDWR)?;
++
++    if let Err(e) = vfs_write(lookup_fd, host.as_bytes()) {
++        let _ = vfs_close(lookup_fd);
++        return Err(e);
++    }
++
++    // 5-second hard deadline for DNS resolution.
++    const DNS_TIMEOUT_NS: u64 = 5_000_000_000;
++    let deadline = monotonic_ns().saturating_add(DNS_TIMEOUT_NS);
++
++    // Buffer large enough for a dotted-decimal IPv4 address (max 15 chars,
++    // e.g. "255.255.255.255") plus a possible trailing newline.
++    const DNS_REPLY_BUF: usize = 32;
++    let mut buf = [0u8; DNS_REPLY_BUF];
++    loop {
++        match vfs_read(lookup_fd, &mut buf) {
++            Ok(n) if n > 0 => {
++                let _ = vfs_close(lookup_fd);
++                let text = crate::str::from_utf8(&buf[..n])
++                    .map_err(|_| io::Error::from_raw_os_error(EINVAL))?
++                    .trim();
++                let ip: Ipv4Addr =
++                    text.parse().map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
++                return Ok(vec![SocketAddr::new(IpAddr::V4(ip), port)].into_iter());
++            }
++            // Ok(0) means the result is not ready yet (netd is still resolving);
++            // treat it the same as EAGAIN and retry after a short sleep.
++            Ok(_) | Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
++                if monotonic_ns() >= deadline {
++                    let _ = vfs_close(lookup_fd);
++                    return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                }
++                sleep_ns(CONNECT_POLL_NS);
++            }
++            Err(e) => {
++                let _ = vfs_close(lookup_fd);
++                return Err(e);
++            }
++        }
++    }
 +}
 +
 +fn allocate_tcp_socket() -> io::Result<u32> {

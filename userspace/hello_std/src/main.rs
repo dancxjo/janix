@@ -2,7 +2,7 @@
 //!
 //! Exercises every implemented std subsystem and reports PASS/FAIL.
 //! Default tests run in <1s. Use flags to enable slow/external tests:
-//!   --net, --dns, --spawn, --stress, --all
+//!   --net, --net-server, --udp, --ipv6, --dns, --spawn, --stress, --all
 
 #![feature(restricted_std)]
 #![no_main]
@@ -73,6 +73,9 @@ fn run_all(tests: &[Test]) -> i32 {
 
 struct Flags {
     net: bool,
+    net_server: bool,
+    udp: bool,
+    ipv6: bool,
     dns: bool,
     spawn: bool,
     stress: bool,
@@ -86,6 +89,9 @@ fn parse_flags() -> Flags {
     let args: Vec<String> = std::env::args().collect();
     let mut f = Flags {
         net: false,
+        net_server: false,
+        udp: false,
+        ipv6: false,
         dns: false,
         spawn: false,
         stress: false,
@@ -96,11 +102,17 @@ fn parse_flags() -> Flags {
     for a in &args[1..] {
         match a.as_str() {
             "--net" => f.net = true,
+            "--net-server" => f.net_server = true,
+            "--udp" => f.udp = true,
+            "--ipv6" => f.ipv6 = true,
             "--dns" => f.dns = true,
             "--spawn" => f.spawn = true,
             "--stress" => f.stress = true,
             "--all" => {
                 f.net = true;
+                f.net_server = true;
+                f.udp = true;
+                f.ipv6 = true;
                 f.dns = true;
                 f.spawn = true;
                 f.stress = true;
@@ -668,7 +680,216 @@ fn test_dns() -> Result<(), String> {
     }
 }
 
-// ── --spawn: process spawn ───────────────────────────────────────────
+// ── --net: TCP listener / server-side accept ─────────────────────────
+
+fn test_net_tcp_listener() -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    // Bind a listener on loopback.
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+    };
+
+    let local_addr = listener
+        .local_addr()
+        .map_err(|e| format!("local_addr: {}", e))?;
+    eprintln!("[test_net_tcp_listener] listening on {}", local_addr);
+
+    // Connect a client.
+    let mut client =
+        TcpStream::connect(local_addr).map_err(|e| format!("client connect: {}", e))?;
+
+    // Accept the connection.
+    let (mut server, peer_addr) = listener
+        .accept()
+        .map_err(|e| format!("accept: {}", e))?;
+    eprintln!("[test_net_tcp_listener] accepted peer {}", peer_addr);
+
+    // Exchange data client→server.
+    client
+        .write_all(b"ping")
+        .map_err(|e| format!("client write: {}", e))?;
+
+    let mut buf = [0u8; 8];
+    let n = server
+        .read(&mut buf)
+        .map_err(|e| format!("server read: {}", e))?;
+    if &buf[..n] != b"ping" {
+        return Err(format!("server read got {:?}, want b\"ping\"", &buf[..n]));
+    }
+
+    // Exchange data server→client.
+    server
+        .write_all(b"pong")
+        .map_err(|e| format!("server write: {}", e))?;
+
+    let n = client
+        .read(&mut buf)
+        .map_err(|e| format!("client read: {}", e))?;
+    if &buf[..n] != b"pong" {
+        return Err(format!("client read got {:?}, want b\"pong\"", &buf[..n]));
+    }
+
+    Ok(())
+}
+
+fn test_net_tcp_accept_multiple() -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+    };
+    let local_addr = listener
+        .local_addr()
+        .map_err(|e| format!("local_addr: {}", e))?;
+
+    // First client.
+    let mut c1 =
+        TcpStream::connect(local_addr).map_err(|e| format!("c1 connect: {}", e))?;
+    let (mut s1, _) = listener.accept().map_err(|e| format!("accept 1: {}", e))?;
+    c1.write_all(b"A").map_err(|e| format!("c1 write: {}", e))?;
+    let mut buf = [0u8; 4];
+    let n = s1.read(&mut buf).map_err(|e| format!("s1 read: {}", e))?;
+    if n == 0 || buf[0] != b'A' {
+        return Err("first accept: payload mismatch".into());
+    }
+    drop(c1);
+    drop(s1);
+
+    // Second client — listener must still be usable.
+    let mut c2 =
+        TcpStream::connect(local_addr).map_err(|e| format!("c2 connect: {}", e))?;
+    let (mut s2, _) = listener.accept().map_err(|e| format!("accept 2: {}", e))?;
+    c2.write_all(b"B").map_err(|e| format!("c2 write: {}", e))?;
+    let n = s2.read(&mut buf).map_err(|e| format!("s2 read: {}", e))?;
+    if n == 0 || buf[0] != b'B' {
+        return Err("second accept: payload mismatch".into());
+    }
+
+    Ok(())
+}
+
+fn test_net_tcp_nonblocking() -> Result<(), String> {
+    use std::io::Read;
+    use std::net::TcpListener;
+
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+    };
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("set_nonblocking: {}", e))?;
+
+    // In nonblocking mode, accept() with no incoming connection must
+    // return WouldBlock / EAGAIN immediately.
+    match listener.accept() {
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+        Err(e) => Err(format!("accept (nonblocking, no peer): unexpected error: {}", e)),
+        Ok((_, addr)) => Err(format!(
+            "accept (nonblocking, no peer): unexpectedly returned peer {}",
+            addr
+        )),
+    }
+}
+
+// ── --udp: UDP loopback send/recv ────────────────────────────────────
+
+fn test_net_udp_loopback() -> Result<(), String> {
+    use std::net::UdpSocket;
+
+    let recv_sock = UdpSocket::bind("127.0.0.1:0")
+        .map_err(|e| format!("recv bind: {}", e))?;
+    let recv_addr = recv_sock
+        .local_addr()
+        .map_err(|e| format!("recv local_addr: {}", e))?;
+
+    let send_sock = UdpSocket::bind("127.0.0.1:0")
+        .map_err(|e| format!("send bind: {}", e))?;
+
+    let msg = b"hello udp";
+    let sent = send_sock
+        .send_to(msg, recv_addr)
+        .map_err(|e| format!("send_to: {}", e))?;
+    if sent != msg.len() {
+        return Err(format!("send_to: sent {} bytes, want {}", sent, msg.len()));
+    }
+
+    let mut buf = [0u8; 64];
+    let (n, src_addr) = recv_sock
+        .recv_from(&mut buf)
+        .map_err(|e| format!("recv_from: {}", e))?;
+
+    if &buf[..n] != msg {
+        return Err(format!(
+            "recv_from: got {:?}, want {:?}",
+            &buf[..n],
+            msg
+        ));
+    }
+
+    eprintln!(
+        "[test_net_udp_loopback] received {} bytes from {}",
+        n, src_addr
+    );
+    Ok(())
+}
+
+// ── --net: IPv6 policy (must reject cleanly) ─────────────────────────
+
+fn test_net_ipv6_policy() -> Result<(), String> {
+    use std::net::{TcpListener, TcpStream, UdpSocket};
+
+    // All IPv6 operations must return EAFNOSUPPORT, not panic.
+    let addrs_to_reject = ["[::1]:8080", "::1", "[::]:0"];
+
+    for addr in addrs_to_reject {
+        // TcpListener::bind
+        match TcpListener::bind(addr) {
+            Err(e) => {
+                eprintln!("[test_net_ipv6_policy] TcpListener::bind({:?}) → {}", addr, e);
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "TcpListener::bind({:?}) succeeded — expected failure",
+                    addr
+                ));
+            }
+        }
+        // TcpStream::connect
+        match TcpStream::connect(addr) {
+            Err(e) => {
+                eprintln!("[test_net_ipv6_policy] TcpStream::connect({:?}) → {}", addr, e);
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "TcpStream::connect({:?}) succeeded — expected failure",
+                    addr
+                ));
+            }
+        }
+        // UdpSocket::bind
+        match UdpSocket::bind(addr) {
+            Err(e) => {
+                eprintln!("[test_net_ipv6_policy] UdpSocket::bind({:?}) → {}", addr, e);
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "UdpSocket::bind({:?}) succeeded — expected failure",
+                    addr
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── --dns: basic DNS lookup (or explicit unsupported error) ──────────
 
 fn test_spawn() -> Result<(), String> {
     use std::process::Command;
@@ -826,10 +1047,46 @@ fn main(_arg: usize) -> ! {
     // Optional tests
     if flags.net {
         tests.push(Test {
-            name: "net: TCP connect",
+            name: "net: TCP connect (client)",
             func: test_net_tcp,
             fatal: false,
             hint: "check PAL net/connection/thingos.rs, netd IPC, smoltcp stack",
+        });
+    }
+    if flags.net_server {
+        tests.push(Test {
+            name: "net: TCP listener/accept (loopback)",
+            func: test_net_tcp_listener,
+            fatal: false,
+            hint: "check TcpListener PAL (tcp_bind/accept), netd listen/accept VFS flow",
+        });
+        tests.push(Test {
+            name: "net: TCP accept multiple clients",
+            func: test_net_tcp_accept_multiple,
+            fatal: false,
+            hint: "check listener reuse after accept, netd backlog pool",
+        });
+        tests.push(Test {
+            name: "net: TCP nonblocking accept (would-block)",
+            func: test_net_tcp_nonblocking,
+            fatal: false,
+            hint: "check set_nonblocking on TcpListener, EAGAIN from netd accept path",
+        });
+    }
+    if flags.udp {
+        tests.push(Test {
+            name: "net: UDP loopback send/recv",
+            func: test_net_udp_loopback,
+            fatal: false,
+            hint: "check UdpSocket PAL (udp_bind/send_to/recv_from), netd UDP VFS flow",
+        });
+    }
+    if flags.ipv6 {
+        tests.push(Test {
+            name: "net: IPv6 policy (must reject)",
+            func: test_net_ipv6_policy,
+            fatal: false,
+            hint: "check reject_ipv6() in PAL net.rs; all IPv6 ops must return EAFNOSUPPORT",
         });
     }
     if flags.dns {

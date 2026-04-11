@@ -27,7 +27,7 @@ build arch=karch:
 
 # Build everything (ISO) - optionally specify architecture
 # Examples: just iso, just iso aarch64
-iso arch=karch:
+iso arch=karch: ensure-rust-patched
     cargo xtask iso --env {{arch}} --profile {{rust_profile}}
 
 # Build HDD image
@@ -205,7 +205,7 @@ test *args:
         {{args}}
 
 # Check everything (compilation + UI split)
-check: check-ui-split fetch-rust
+check: check-ui-split ensure-rust-patched
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p sprout
 
@@ -217,6 +217,32 @@ smoke:
 
 # The commit hash of rust-lang/rust matching our nightly toolchain
 rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
+
+# Ensure the Rust stdlib patches are applied (idempotent).
+# Runs fetch-rust if vendor/rust/ is absent, then applies the patch only if it
+# has not been applied yet (detected via reverse-check).
+ensure-rust-patched: fetch-rust
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -d vendor/rust/.git ]; then
+        echo "ERROR: vendor/rust/ not found after fetch-rust. Run: just fetch-rust" >&2
+        exit 1
+    fi
+    if [ ! -f patches/rust/thingos-pal.patch ]; then
+        echo "No patches found in patches/rust/. Nothing to apply."
+        exit 0
+    fi
+    cd vendor/rust
+    # If the patch can be reversed cleanly it is already applied — skip.
+    if git apply --reverse --check ../../patches/rust/thingos-pal.patch 2>/dev/null; then
+        echo "==> Rust patches already applied, skipping."
+    else
+        git apply ../../patches/rust/thingos-pal.patch \
+            || { echo "ERROR: Failed to apply patches/rust/thingos-pal.patch." \
+                      "The working tree may be dirty or the patch may be incompatible." \
+                      "Try: just rust-reset && just ensure-rust-patched" >&2; exit 1; }
+        echo "==> Applied patches/rust/thingos-pal.patch"
+    fi
 
 # Fetch (shallow clone) the Rust source tree into vendor/rust/
 fetch-rust:

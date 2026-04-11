@@ -829,6 +829,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cwd_test"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1032,6 +1039,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "env_roundtrip"
+version = "0.1.0"
+dependencies = [
+ "stem",
 ]
 
 [[package]]
@@ -1503,6 +1517,13 @@ name = "hello_std"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "stem",
+]
+
+[[package]]
+name = "hello_stdio"
+version = "0.1.0"
+dependencies = [
  "stem",
 ]
 
@@ -3135,6 +3156,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "show_args"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3596,6 +3624,13 @@ name = "time-core"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40868e7c1d2f0b8d73e4a8c7f0ff63af4f6d19be117e90bd73eb1d62cf831c6b"
+
+[[package]]
+name = "time_test"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
 
 [[package]]
 name = "tinystr"

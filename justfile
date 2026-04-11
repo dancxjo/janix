@@ -98,11 +98,11 @@ limine:
 ovmf:
     cargo xtask ovmf-all
 
-# Clean build artifacts
+# Clean build artifacts plus fetched/vendor state
 clean:
     cargo xtask clean
 
-# Clean everything including downloaded dependencies
+# Compatibility alias for clean
 distclean:
     cargo xtask distclean
 
@@ -318,5 +318,4 @@ rust-apply-patches:
     cd vendor/rust
     git apply ../../patches/rust/thingos-pal.patch
     echo "==> Applied patches/rust/thingos-pal.patch"
-
 

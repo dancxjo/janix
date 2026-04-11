@@ -147,9 +147,9 @@ enum Commands {
     },
     /// Download OVMF firmware for all architectures
     OvmfAll,
-    /// Clean build artifacts
+    /// Clean build artifacts plus fetched/vendor state
     Clean,
-    /// Clean everything including downloaded dependencies
+    /// Compatibility alias for clean
     Distclean,
     /// Run BDD tests
     Bdd {

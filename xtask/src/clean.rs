@@ -3,9 +3,9 @@
 use crate::common::Result;
 use xshell::{Shell, cmd};
 
-/// Clean build artifacts.
+/// Clean build artifacts plus fetched/vendor state.
 pub fn clean(sh: &Shell) -> Result<()> {
-    println!("Cleaning build artifacts...");
+    println!("Cleaning build artifacts and fetched state...");
     cmd!(sh, "cargo clean").run()?;
     sh.remove_path("iso_root")?;
 
@@ -27,17 +27,14 @@ pub fn clean(sh: &Shell) -> Result<()> {
     sh.remove_path("bran/bin-aarch64")?;
     sh.remove_path("bran/bin-riscv64")?;
     sh.remove_path("bran/bin-loongarch64")?;
-    // Clean OVMF firmware files (but keep cached archive)
-    sh.remove_path("vendor/ovmf/ovmf-code-x86_64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-vars-x86_64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-code-aarch64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-vars-aarch64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-code-riscv64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-vars-riscv64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-code-loongarch64.fd")?;
-    sh.remove_path("vendor/ovmf/ovmf-vars-loongarch64.fd")?;
+    // Remove fetched/vendor trees outright, including the untracked Rust checkout.
+    println!("Cleaning fetched vendor trees...");
+    sh.remove_path("vendor/rust")?;
+    sh.remove_path("vendor/limine")?;
+    sh.remove_path("vendor/ovmf")?;
+    sh.remove_path("vendor/future-cursors")?;
 
-    // Remove variable (downloaded) assets, preserve static assets (wallpapers)
+    // Remove variable (downloaded) assets, preserve static assets (wallpapers).
     println!("Cleaning downloaded assets (preserving wallpapers)...");
     sh.remove_path("assets/cursors")?;
     sh.remove_path("assets/fonts")?;
@@ -64,12 +61,7 @@ pub fn clean(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-/// Clean everything including downloaded dependencies.
+/// Compatibility alias for `clean`.
 pub fn distclean(sh: &Shell) -> Result<()> {
-    clean(sh)?;
-    println!("Removing downloaded dependencies...");
-    sh.remove_path("vendor/limine")?;
-    sh.remove_path("vendor/ovmf")?;
-    sh.remove_path("vendor/future-cursors")?;
-    Ok(())
+    clean(sh)
 }

@@ -7,11 +7,11 @@
 use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CHMOD, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL,
-    SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_FCHMOD, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_FUTIMES,
-    SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_LINK, SYS_FS_LSTAT, SYS_FS_MKDIR, SYS_FS_MOUNT,
-    SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK,
-    SYS_FS_READV, SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK,
-    SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_UTIMES, SYS_FS_WATCH_FD,
+    SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_FCHMOD, SYS_FS_FCNTL, SYS_FS_FLOCK, SYS_FS_FTRUNCATE,
+    SYS_FS_FUTIMES, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_LINK, SYS_FS_LSTAT, SYS_FS_MKDIR,
+    SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR,
+    SYS_FS_READLINK, SYS_FS_READV, SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT,
+    SYS_FS_SYMLINK, SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_UTIMES, SYS_FS_WATCH_FD,
     SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_FS_WRITEV, SYS_PIPE,
 };
 
@@ -756,5 +756,22 @@ pub fn vfs_futimes(
             0,
         )
     };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+// ── flock ─────────────────────────────────────────────────────────────────────
+
+/// Apply or remove an advisory file lock on the open file `fd`.
+///
+/// `how` is a combination of [`abi::syscall::flock_flags`] constants:
+/// * `LOCK_SH` (1) — acquire a shared (read) lock
+/// * `LOCK_EX` (2) — acquire an exclusive (write) lock
+/// * `LOCK_NB` (4) — non-blocking; return `EWOULDBLOCK` instead of blocking
+/// * `LOCK_UN` (8) — release any lock held on the file
+///
+/// Returns `Ok(())` on success, [`abi::errors::Errno::EWOULDBLOCK`] if the
+/// lock is held and `LOCK_NB` was specified, or another errno on failure.
+pub fn vfs_flock(fd: u32, how: u32) -> SysResult<()> {
+    let ret = unsafe { raw_syscall6(SYS_FS_FLOCK, fd as usize, how as usize, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }

@@ -121,7 +121,26 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
 
 pub fn sys_fs_close(fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+
+    // Before closing, check if this fd has an advisory lock and release it.
+    // We do this before removing the fd so the node is still accessible.
+    let maybe_lock_info: Option<(u64, u32)> = {
+        let lock = pinfo_arc.lock();
+        let pid = lock.pid;
+        lock.fd_table
+            .get(fd as u32)
+            .ok()
+            .and_then(|f| f.node.stat().ok())
+            .map(|s| (s.ino, pid))
+    };
+
     pinfo_arc.lock().fd_table.close(fd as u32)?;
+
+    // Release any advisory lock the process held on this inode.
+    if let Some((ino, pid)) = maybe_lock_info {
+        crate::vfs::flock::release(ino, pid);
+    }
+
     Ok(0)
 }
 
@@ -1491,6 +1510,29 @@ pub fn sys_fs_futimes(fd: usize, times_ptr: usize) -> SysResult<usize> {
         lock.fd_table.get(fd as u32)?.node.clone()
     };
     node.utimes(atime, mtime)?;
+    Ok(0)
+}
+
+/// Advisory file lock or unlock for the file associated with `fd`.
+///
+/// `how` is a combination of [`abi::syscall::flock_flags`] constants:
+/// * `LOCK_SH` (1) — acquire shared lock
+/// * `LOCK_EX` (2) — acquire exclusive lock
+/// * `LOCK_NB` (4) — non-blocking (return `EAGAIN` instead of blocking)
+/// * `LOCK_UN` (8) — release any lock on the file
+///
+/// Returns `Ok(0)` on success.
+pub fn sys_fs_flock(fd: usize, how: usize) -> SysResult<usize> {
+    let (ino, pid) = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let pid = lock.pid;
+        let node = lock.fd_table.get(fd as u32)?.node.clone();
+        // Release the process lock before calling stat() to avoid deadlocks.
+        drop(lock);
+        (node.stat()?.ino, pid)
+    };
+    crate::vfs::flock::flock(ino, pid, how as u32)?;
     Ok(0)
 }
 

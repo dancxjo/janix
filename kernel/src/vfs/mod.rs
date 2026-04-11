@@ -18,6 +18,7 @@
 pub mod bootfs;
 pub mod devfs;
 pub mod fd_table;
+pub mod flock;
 pub mod memfd;
 pub mod mount;
 pub mod path;

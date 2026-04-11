@@ -339,6 +339,148 @@ pub fn sys_fs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     Ok(n)
 }
 
+// ── readv ───────────────────────────────────────────────────────────────────
+
+/// Scatter-gather read: read from `fd` into multiple buffers described by the
+/// `iovec` array at `iovec_ptr` (count = `iovec_count`).
+///
+/// Each element of the array is `abi::syscall::IoVec { base: usize, len: usize }`.
+/// Returns the total number of bytes read across all buffers.
+pub fn sys_fs_readv(fd: usize, iovec_ptr: usize, iovec_count: usize) -> SysResult<usize> {
+    use abi::syscall::IoVec;
+
+    if iovec_count == 0 {
+        return Ok(0);
+    }
+    if iovec_count > 1024 {
+        return Err(Errno::EINVAL);
+    }
+
+    let iov_size = iovec_count
+        .checked_mul(core::mem::size_of::<IoVec>())
+        .ok_or(Errno::EINVAL)?;
+    validate_user_range(iovec_ptr, iov_size, false)?;
+
+    // Copy the iovec array from userspace.
+    let mut iovecs = vec![IoVec::default(); iovec_count];
+    unsafe {
+        copyin(
+            core::slice::from_raw_parts_mut(iovecs.as_mut_ptr() as *mut u8, iov_size),
+            iovec_ptr,
+        )?
+    };
+
+    let (node, offset_cell, status_flags) = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_readable() {
+            return Err(Errno::EBADF);
+        }
+        (file.node.clone(), file.offset.clone(), status_flags)
+    };
+
+    if status_flags.read_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
+
+    let mut total = 0usize;
+    for iov in &iovecs {
+        if iov.len == 0 {
+            continue;
+        }
+        validate_user_range(iov.base, iov.len, true)?;
+
+        let offset = *offset_cell.lock();
+        let mut kbuf = vec![0u8; iov.len];
+        let n = node.read(offset, &mut kbuf)?;
+        if n > 0 {
+            *offset_cell.lock() = offset.saturating_add(n as u64);
+            unsafe { copyout(iov.base, &kbuf[..n])? };
+            total += n;
+        }
+        if n < iov.len {
+            // Short read — stop filling further buffers.
+            break;
+        }
+    }
+
+    Ok(total)
+}
+
+// ── writev ──────────────────────────────────────────────────────────────────
+
+/// Scatter-gather write: write to `fd` from multiple buffers described by the
+/// `iovec` array at `iovec_ptr` (count = `iovec_count`).
+///
+/// Returns the total number of bytes written across all buffers.
+pub fn sys_fs_writev(fd: usize, iovec_ptr: usize, iovec_count: usize) -> SysResult<usize> {
+    use abi::syscall::IoVec;
+
+    if iovec_count == 0 {
+        return Ok(0);
+    }
+    if iovec_count > 1024 {
+        return Err(Errno::EINVAL);
+    }
+
+    let iov_size = iovec_count
+        .checked_mul(core::mem::size_of::<IoVec>())
+        .ok_or(Errno::EINVAL)?;
+    validate_user_range(iovec_ptr, iov_size, false)?;
+
+    // Copy the iovec array from userspace.
+    let mut iovecs = vec![IoVec::default(); iovec_count];
+    unsafe {
+        copyin(
+            core::slice::from_raw_parts_mut(iovecs.as_mut_ptr() as *mut u8, iov_size),
+            iovec_ptr,
+        )?
+    };
+
+    let (node, offset_cell, status_flags) = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let file = lock.fd_table.get(fd as u32)?;
+        let status_flags = *file.status_flags.lock();
+        if !status_flags.is_writable() {
+            return Err(Errno::EBADF);
+        }
+        (file.node.clone(), file.offset.clone(), status_flags)
+    };
+
+    if status_flags.write_would_block(node.poll()) {
+        return Err(Errno::EAGAIN);
+    }
+
+    let mut total = 0usize;
+    for iov in &iovecs {
+        if iov.len == 0 {
+            continue;
+        }
+        validate_user_range(iov.base, iov.len, false)?;
+
+        let mut kbuf = vec![0u8; iov.len];
+        unsafe { copyin(&mut kbuf, iov.base)? };
+
+        let write_offset =
+            status_flags.effective_write_offset(*offset_cell.lock(), node.stat()?.size);
+        let n = node.write(write_offset, &kbuf)?;
+        if n > 0 {
+            *offset_cell.lock() = write_offset.saturating_add(n as u64);
+            crate::vfs::watch::emit_event(&*node, abi::vfs_watch::mask::MODIFY, None, 0);
+            total += n;
+        }
+        if n < iov.len {
+            // Short write — stop filling further buffers.
+            break;
+        }
+    }
+
+    Ok(total)
+}
+
 pub fn sys_fs_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
     if path_len == 0 || path_len > 4096 {

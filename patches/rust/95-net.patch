@@ -35,6 +35,15 @@ index 00000000..043c469e
 +const SYS_VFS_CLOSE: u32 = 0x4001;
 +const SYS_VFS_READ: u32 = 0x4002;
 +const SYS_VFS_WRITE: u32 = 0x4003;
++const SYS_VFS_READV: u32 = 0x4021;
++const SYS_VFS_WRITEV: u32 = 0x4022;
++
++// ── Scatter-gather I/O vector (matches abi::syscall::IoVec / POSIX struct iovec) ──
++#[repr(C)]
++struct KernelIoVec {
++    base: usize,
++    len: usize,
++}
 +
 +const O_RDONLY: u32 = 0x0000;
 +const O_WRONLY: u32 = 0x0001;
@@ -211,11 +220,47 @@ index 00000000..043c469e
 +    }
 +
 +    pub fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
-+        crate::io::default_read_vectored(|buf| self.read(buf), bufs)
++        if bufs.is_empty() {
++            return Ok(0);
++        }
++        let iovecs: vec::Vec<KernelIoVec> = bufs
++            .iter()
++            .map(|b| KernelIoVec { base: b.as_ptr() as usize, len: b.len() })
++            .collect();
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.read_timeout.lock().unwrap();
++        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
++        loop {
++            let ret = unsafe {
++                raw_syscall6(
++                    SYS_VFS_READV,
++                    self.data_fd as usize,
++                    iovecs.as_ptr() as usize,
++                    iovecs.len(),
++                    0,
++                    0,
++                    0,
++                )
++            };
++            match decode_ret(ret) {
++                Ok(n) => return Ok(n),
++                Err(ref err) if err.raw_os_error() == Some(EAGAIN) && nonblocking => {
++                    return Err(io::Error::from_raw_os_error(EAGAIN));
++                }
++                Err(ref err) if err.raw_os_error() == Some(EAGAIN) => {
++                    if deadline_expired(deadline) {
++                        return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(err) => return Err(err),
++            }
++        }
 +    }
 +
 +    pub fn is_read_vectored(&self) -> bool {
-+        false
++        true
 +    }
 +
 +    pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
@@ -247,11 +292,48 @@ index 00000000..043c469e
 +    }
 +
 +    pub fn write_vectored(&self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-+        crate::io::default_write_vectored(|buf| self.write(buf), bufs)
++        if bufs.is_empty() {
++            return Ok(0);
++        }
++        let iovecs: vec::Vec<KernelIoVec> = bufs
++            .iter()
++            .map(|b| KernelIoVec { base: b.as_ptr() as usize, len: b.len() })
++            .collect();
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.write_timeout.lock().unwrap();
++        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
++        loop {
++            let ret = unsafe {
++                raw_syscall6(
++                    SYS_VFS_WRITEV,
++                    self.data_fd as usize,
++                    iovecs.as_ptr() as usize,
++                    iovecs.len(),
++                    0,
++                    0,
++                    0,
++                )
++            };
++            match decode_ret(ret) {
++                Ok(n) if n > 0 => return Ok(n),
++                Ok(_) if nonblocking => return Err(io::Error::from_raw_os_error(EAGAIN)),
++                Ok(_) => {
++                    if self.status_snapshot().state == TcpState::Closed {
++                        return Err(io::Error::from_raw_os_error(EPIPE));
++                    }
++                    if deadline_expired(deadline) {
++                        return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(err) => return Err(err),
++            }
++        }
 +    }
 +
 +    pub fn is_write_vectored(&self) -> bool {
-+        false
++        true
 +    }
 +
 +    pub fn peer_addr(&self) -> io::Result<SocketAddr> {

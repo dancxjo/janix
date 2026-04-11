@@ -160,6 +160,12 @@ pub const SYS_FS_FUTIMES: u32 = 0x401F;
 /// Stat a path without following the final symlink (lstat semantics).
 /// Args: (path_ptr, path_len, stat_ptr) → 0
 pub const SYS_FS_LSTAT: u32 = 0x4020;
+/// Scatter-gather read from an open file descriptor.
+/// Args: (fd, iovec_ptr, iovec_count) → total_bytes_read
+pub const SYS_FS_READV: u32 = 0x4021;
+/// Scatter-gather write to an open file descriptor.
+/// Args: (fd, iovec_ptr, iovec_count) → total_bytes_written
+pub const SYS_FS_WRITEV: u32 = 0x4022;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

@@ -77,6 +77,15 @@ index 00000000..ba7f15ec
 +const SYS_FS_UTIMES: u32 = 0x401E;
 +const SYS_FS_FUTIMES: u32 = 0x401F;
 +const SYS_FS_LSTAT: u32 = 0x4020;
++const SYS_FS_READV: u32 = 0x4021;
++const SYS_FS_WRITEV: u32 = 0x4022;
++
++// ── Scatter-gather I/O vector (matches abi::syscall::IoVec / POSIX struct iovec) ──
++#[repr(C)]
++struct KernelIoVec {
++    base: usize,
++    len: usize,
++}
 +
 +// ── Open flags (abi/src/numbers.rs vfs_flags) ─────────────────────────────────
 +const O_RDONLY: u32 = 0x0000;
@@ -511,16 +520,28 @@ index 00000000..ba7f15ec
 +    }
 +
 +    pub fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
-+        // No scatter-gather on ThingOS; fall back to the first non-empty buffer.
-+        match bufs.iter_mut().find(|b| !b.is_empty()) {
-+            Some(buf) => self.read(buf),
-+            None => Ok(0),
-+        }
++        // Build a kernel-compatible iovec array and dispatch SYS_FS_READV.
++        let iovecs: vec::Vec<KernelIoVec> = bufs
++            .iter()
++            .map(|b| KernelIoVec { base: b.as_ptr() as usize, len: b.len() })
++            .collect();
++        let ret = unsafe {
++            raw_syscall6(
++                SYS_FS_READV,
++                self.0.raw() as usize,
++                iovecs.as_ptr() as usize,
++                iovecs.len(),
++                0,
++                0,
++                0,
++            )
++        };
++        cvt(ret)
 +    }
 +
 +    #[inline]
 +    pub fn is_read_vectored(&self) -> bool {
-+        false
++        true
 +    }
 +
 +    pub fn read_buf(&self, mut cursor: BorrowedCursor<'_>) -> io::Result<()> {
@@ -558,19 +579,28 @@ index 00000000..ba7f15ec
 +    }
 +
 +    pub fn write_vectored(&self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-+        let mut total = 0;
-+        for buf in bufs {
-+            if buf.is_empty() {
-+                continue;
-+            }
-+            total += self.write(buf)?;
-+        }
-+        Ok(total)
++        // Build a kernel-compatible iovec array and dispatch SYS_FS_WRITEV.
++        let iovecs: vec::Vec<KernelIoVec> = bufs
++            .iter()
++            .map(|b| KernelIoVec { base: b.as_ptr() as usize, len: b.len() })
++            .collect();
++        let ret = unsafe {
++            raw_syscall6(
++                SYS_FS_WRITEV,
++                self.0.raw() as usize,
++                iovecs.as_ptr() as usize,
++                iovecs.len(),
++                0,
++                0,
++                0,
++            )
++        };
++        cvt(ret)
 +    }
 +
 +    #[inline]
 +    pub fn is_write_vectored(&self) -> bool {
-+        false
++        true
 +    }
 +
 +    #[inline]

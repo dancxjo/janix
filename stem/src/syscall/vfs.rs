@@ -9,9 +9,10 @@ use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CHMOD, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL,
     SYS_FS_DUP, SYS_FS_DUP2, SYS_FS_FCHMOD, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_FUTIMES,
     SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_LSTAT, SYS_FS_MKDIR, SYS_FS_MOUNT, SYS_FS_NOTIFY,
-    SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK, SYS_FS_REALPATH,
-    SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK, SYS_FS_SYNC, SYS_FS_UMOUNT,
-    SYS_FS_UNLINK, SYS_FS_UTIMES, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK, SYS_FS_READV,
+    SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK, SYS_FS_SYNC,
+    SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_UTIMES, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
+    SYS_FS_WRITE, SYS_FS_WRITEV, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -87,6 +88,49 @@ pub fn vfs_write(fd: u32, buf: &[u8]) -> SysResult<usize> {
             fd as usize,
             buf.as_ptr() as usize,
             buf.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
+/// Read into a scatter-gather buffer list (vectored read).
+///
+/// Each element of `iovecs` describes one buffer: `base` is the buffer pointer
+/// (as `usize`) and `len` is the buffer length.  The kernel reads sequentially
+/// into each buffer and stops on a short read or EOF.
+///
+/// Returns the total number of bytes read across all buffers.
+pub fn vfs_readv(fd: u32, iovecs: &[abi::syscall::IoVec]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_READV,
+            fd as usize,
+            iovecs.as_ptr() as usize,
+            iovecs.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
+/// Write from a scatter-gather buffer list (vectored write).
+///
+/// Each element of `iovecs` describes one buffer.  The kernel writes
+/// sequentially from each buffer and stops on a short write.
+///
+/// Returns the total number of bytes written across all buffers.
+pub fn vfs_writev(fd: u32, iovecs: &[abi::syscall::IoVec]) -> SysResult<usize> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_FS_WRITEV,
+            fd as usize,
+            iovecs.as_ptr() as usize,
+            iovecs.len(),
             0,
             0,
             0,

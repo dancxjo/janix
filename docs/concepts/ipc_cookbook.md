@@ -8,36 +8,78 @@ patterns.  Each recipe is self-contained.  Prerequisites: read
 
 ## Recipe 1 — Parent/child stdio via pipe
 
-**Problem**: spawn a child process and capture its stdout.
+**Problem**: create a pipe and stream data through it.
+
+See `userspace/ipc_pipe_demo/` for the complete compilable example.
+
+### Single-process pipe round-trip
 
 ```rust
-use stem::syscall::vfs::{pipe, vfs_close, vfs_read};
-use stem::syscall::process::spawn_process;
+use stem::syscall::vfs::{pipe, vfs_close, vfs_read, vfs_write};
 
-fn capture_child_stdout() {
+fn pipe_round_trip() {
     let mut pipefds = [0u32; 2];
     pipe(&mut pipefds).expect("pipe");
     let (pr, pw) = (pipefds[0], pipefds[1]);
 
-    // Spawn child; pass write end as its stdout (fd 1).
-    spawn_process("child", &[], &[("STDOUT_FD", &pw.to_string())])
-        .expect("spawn");
+    // Write data to the write-end.
+    vfs_write(pw, b"Hello!\n").expect("write");
 
-    // Close our copy of the write end so we see EOF when child exits.
+    // Close the write-end so the reader sees EOF.
     vfs_close(pw).expect("close write");
 
-    // Read child output.
+    // Drain the read-end.
     let mut buf = [0u8; 256];
     loop {
         match vfs_read(pr, &mut buf) {
             Ok(0) | Err(_) => break,   // EOF or error
             Ok(n) => {
                 let s = core::str::from_utf8(&buf[..n]).unwrap_or("?");
-                stem::print!("{}", s);
+                stem::println!("{}", s);
             }
         }
     }
     vfs_close(pr).unwrap();
+}
+```
+
+### Capturing child stdout via `spawn_process_ex`
+
+To capture a child process's stdout, use `spawn_process_ex` with
+`stdout_mode = PIPE`.  The kernel creates the pipe and gives the parent the
+read end via `resp.stdout_pipe`.
+
+```rust
+use alloc::collections::BTreeMap;
+use abi::types::stdio_mode;
+use stem::syscall::{spawn_process_ex, vfs_read};
+
+fn capture_child_stdout() {
+    let resp = spawn_process_ex(
+        "my_child",
+        &[],
+        &BTreeMap::new(),
+        stdio_mode::INHERIT,  // stdin: inherit
+        stdio_mode::PIPE,     // stdout: pipe — parent gets the read end
+        stdio_mode::INHERIT,  // stderr: inherit
+        0,                    // boot_arg
+        &[],                  // extra handles
+    )
+    .expect("spawn");
+
+    // resp.stdout_pipe is the parent's read end of the child's stdout pipe.
+    let pr = resp.stdout_pipe as u32;
+
+    let mut buf = [0u8; 256];
+    loop {
+        match vfs_read(pr, &mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let s = core::str::from_utf8(&buf[..n]).unwrap_or("?");
+                stem::println!("{}", s);
+            }
+        }
+    }
 }
 ```
 
@@ -215,8 +257,9 @@ use `new_fd` with any `SYS_FS_*` syscall immediately.
 
 **Problem**: expose a virtual directory tree under a mount point.
 
-See `libs/ipc_helpers/src/provider.rs` for the `ProviderLoop` helper, and
-`userspace/iso9660d/` for a complete reference implementation.
+See `userspace/ipc_provider_demo/` for the complete compilable example,
+`libs/ipc_helpers/src/provider.rs` for the `ProviderLoop` helper, and
+`userspace/iso9660d/` for a full-featured reference implementation.
 
 Minimal skeleton:
 
@@ -224,6 +267,18 @@ Minimal skeleton:
 use ipc_helpers::provider::{ProviderLoop, ProviderResponse};
 use abi::vfs_rpc::VfsRpcOp;
 use abi::errors::Errno;
+use stem::syscall::{channel_create, vfs_mount};
+
+fn run_provider_service() {
+    // 1. Create the provider channel pair (write_handle, read_handle).
+    let (write_h, read_h) = channel_create(65536).expect("channel_create");
+
+    // 2. Mount: hand the write-end to the kernel.
+    vfs_mount(write_h, "/run/myprovider").expect("vfs_mount");
+
+    // 3. Serve VFS RPC requests.
+    run_provider(read_h);
+}
 
 fn run_provider(vfs_read: u32) {
     let mut lp = ProviderLoop::new(vfs_read);
@@ -241,7 +296,7 @@ fn run_provider(vfs_read: u32) {
                     ProviderResponse::err(Errno::ENOENT)
                 }
             }
-            VfsRpcOp::Read => ProviderResponse::ok_bytes(b"Hello, world!\n"),
+            VfsRpcOp::Read => ProviderResponse::ok_read(b"Hello, world!\n"),
             VfsRpcOp::Stat => ProviderResponse::ok_stat(0o100644, 14, 1),
             VfsRpcOp::Close => ProviderResponse::ok_empty(),
             _ => ProviderResponse::err(Errno::ENOSYS),
@@ -258,10 +313,12 @@ fn run_provider(vfs_read: u32) {
 **Problem**: transfer a large pixel buffer from a display driver to a compositor
 without copying.
 
+See `userspace/ipc_memfd_demo/` for the complete compilable example.
+
 ```rust
-use stem::syscall::memory::{memfd_create, vm_map, vm_unmap};
-use stem::syscall::channel::{channel_send_handle, channel_recv_handle, channel_send_all, channel_recv};
-use abi::memfd::MemFdRef;
+use stem::syscall::{memfd_create, vm_map, vm_unmap, vfs_close};
+use stem::syscall::channel::{channel_send_msg, channel_recv_msg, channel_recv};
+use abi::memfd::{MemFdRef, MEMFD_REF_WIRE_SIZE};
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 
 const W: usize = 1920;
@@ -271,7 +328,7 @@ const SIZE: usize = W * H * BPP;
 
 // Sender (display driver):
 fn send_frame(channel: u32) {
-    let fd = memfd_create("frame", SIZE as u64).unwrap();
+    let fd = memfd_create("frame", SIZE).unwrap();
     let req = VmMapReq {
         addr_hint: 0,
         len: SIZE,
@@ -284,13 +341,15 @@ fn send_frame(channel: u32) {
         core::slice::from_raw_parts_mut(mapped.addr as *mut u32, W * H)
     };
     // … render into pixels …
+    let _ = pixels; // suppress unused warning
 
+    // Transfer the fd + descriptor in one atomic message.
     let desc = MemFdRef::new(fd, SIZE as u64);
-    channel_send_handle(channel, fd).unwrap();
-    let mut ctrl = [0u8; 1 + abi::memfd::MEMFD_REF_WIRE_SIZE];
+    let handles = [fd];
+    let mut ctrl = [0u8; 1 + MEMFD_REF_WIRE_SIZE];
     ctrl[0] = 0x01; // MSG_PRESENT
     desc.encode_le(&mut ctrl[1..]).unwrap();
-    channel_send_all(channel, &ctrl).unwrap();
+    channel_send_msg(channel, &ctrl, &handles).unwrap();
 
     vm_unmap(mapped.addr, SIZE).unwrap();
     // vfs_close(fd) would free physical pages once receiver also closes
@@ -298,11 +357,13 @@ fn send_frame(channel: u32) {
 
 // Receiver (compositor):
 fn recv_frame(channel: u32) {
-    let new_fd = channel_recv_handle(channel).unwrap();
-    let mut ctrl = [0u8; 1 + abi::memfd::MEMFD_REF_WIRE_SIZE];
-    channel_recv(channel, &mut ctrl).unwrap();
-    let desc = MemFdRef::decode_le(&ctrl[1..]).unwrap();
+    let mut ctrl = [0u8; 1 + MEMFD_REF_WIRE_SIZE];
+    let mut handles = [0u32; 1];
+    let (_, n_handles) = channel_recv_msg(channel, &mut ctrl, &mut handles).unwrap();
+    assert_eq!(n_handles, 1);
+    let new_fd = handles[0];
 
+    let desc = MemFdRef::decode_le(&ctrl[1..]).unwrap();
     let req = VmMapReq {
         addr_hint: 0,
         len: desc.length as usize,
@@ -315,7 +376,9 @@ fn recv_frame(channel: u32) {
         core::slice::from_raw_parts(mapped.addr as *const u32, W * H)
     };
     // … consume pixels …
+    let _ = pixels; // suppress unused warning
     vm_unmap(mapped.addr, desc.length as usize).unwrap();
+    vfs_close(new_fd).unwrap();
 }
 ```
 
@@ -324,6 +387,8 @@ fn recv_frame(channel: u32) {
 ## Recipe 6 — Poll-based event loop
 
 **Problem**: wait on a channel, a pipe read end, and a device file all at once.
+
+See `userspace/poll_mux/` for the complete compilable example.
 
 ```rust
 use stem::syscall::vfs::{vfs_poll, vfs_fd_from_handle};
@@ -402,7 +467,7 @@ fn register_driver(drv_req_read: u32, drv_resp_write: u32, bind_instance_id: u64
             // parse msg_type, check for MSG_BIND_ASSIGNED …
             break;
         }
-        stem::syscall::process::yield_now();
+        stem::syscall::yield_now();
     }
 
     // 4. Serve VFS requests on vfs_read.
@@ -423,3 +488,16 @@ fn register_driver(drv_req_read: u32, drv_resp_write: u32, bind_instance_id: u64
 - `docs/concepts/supervisor_protocol.md` — registration protocol
 - `libs/ipc_helpers/` — userspace helper library
 - `abi/src/rpc.rs` — request/reply header types
+
+## Compilable Example Programs
+
+Each recipe has a dedicated, runnable example that ships with the OS image:
+
+| Recipe | Example binary | Source path |
+|--------|---------------|-------------|
+| 1 — pipe stdio | `ipc_pipe_demo` | `userspace/ipc_pipe_demo/` |
+| 2 — RPC service | `ipc_service_demo` | `userspace/ipc_service_demo/` |
+| 4 — VFS provider | `ipc_provider_demo` | `userspace/ipc_provider_demo/` |
+| 5 — memfd buffer | `ipc_memfd_demo` | `userspace/ipc_memfd_demo/` |
+| 6 — poll event loop | `poll_mux` | `userspace/poll_mux/` |
+| 7 — supervisor handshake | `drivers/display_bootfb` | `drivers/display_bootfb/` |

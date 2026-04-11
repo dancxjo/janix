@@ -281,6 +281,11 @@ fetch-rust:
         cd vendor/rust && git submodule update --init --depth 1 library/backtrace
         cd "$ROOT_DIR"
     fi
+    if [ ! -d vendor/rust/src/llvm-project/llvm ]; then
+        echo "==> Initializing src/llvm-project submodule..."
+        cd vendor/rust && git submodule update --init --depth 1 src/llvm-project
+        cd "$ROOT_DIR"
+    fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
 
 

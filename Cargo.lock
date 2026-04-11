@@ -3556,6 +3556,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_thread_std"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "test_threads"
 version = "0.1.0"
 dependencies = [

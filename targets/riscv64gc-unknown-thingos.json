@@ -17,5 +17,6 @@
     "static-position-independent-executables": false,
     "relocation-model": "static",
     "features": "+m,+a,+f,+d,+c",
-    "executables": true
+    "executables": true,
+    "has-thread-local": true
 }

@@ -179,6 +179,12 @@ bristle arch=karch: fetch-rust
     echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
     RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p bristle
 
+# Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos.
+# Caches the result under target/rustc-thingos/; a second run with no
+# relevant changes is a no-op.  Set SKIP_RUSTC_THINGOS=1 to skip entirely.
+rustc-thingos: fetch-rust
+    cargo xtask rustc-thingos
+
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
     cargo run -p xtask --features svg-cursors -- fetch

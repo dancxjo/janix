@@ -1,6 +1,7 @@
 //! Image creation tasks - ISO and HDD.
 
 use crate::common::{Result, image_name};
+use crate::rustc_thingos::stage_rustc_for_iso;
 use xshell::{Shell, cmd};
 
 use std::path::{Path, PathBuf};
@@ -519,6 +520,7 @@ pub fn build_iso_with_config(
     sh.create_dir(iso_root.join("boot/limine"))?;
     sh.create_dir(iso_root.join("bin"))?;
     sh.create_dir(iso_root.join("etc"))?;
+    sh.create_dir(iso_root.join("usr/lib"))?;
     sh.create_dir(iso_root.join("EFI/BOOT"))?;
 
     cmd!(sh, "cp -r assets {iso_root_name}/share").run()?;
@@ -608,6 +610,11 @@ pub fn build_iso_with_config(
                 .unwrap(),
         )?;
     }
+
+    // Stage the rustc compiler and rustlib into the ISO when available.
+    // This is a no-op when SKIP_RUSTC_THINGOS=1 or when the binary has not
+    // been built yet.
+    stage_rustc_for_iso(sh, iso_root)?;
 
     let limine_conf_content = generate_limine_config(sh, programs, &asset_files, config.resolution);
     println!(

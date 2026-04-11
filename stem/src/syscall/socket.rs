@@ -1,7 +1,7 @@
 //! Userspace syscall wrappers for Unix domain sockets.
 //!
 //! These are thin wrappers around the socket syscalls introduced in
-//! the janix IPC overhaul.  Only `AF_UNIX + SOCK_STREAM` is supported for
+//! the Thing-OS IPC overhaul.  Only `AF_UNIX + SOCK_STREAM` is supported for
 //! now; `SOCK_DGRAM` and other domains will follow.
 
 use abi::errors::SysResult;
@@ -117,17 +117,21 @@ pub fn shutdown(fd: u32, how: u32) -> SysResult<()> {
 /// let n = vfs_read(b, &mut buf)?;
 /// ```
 pub fn socketpair(domain: u32, type_: u32, protocol: u32) -> SysResult<(u32, u32)> {
-    let mut fds = [0u32; 2];
+    let mut fds_bytes = [0u8; 8];
     let ret = unsafe {
         raw_syscall6(
             SYS_SOCKETPAIR,
             domain as usize,
             type_ as usize,
             protocol as usize,
-            fds.as_mut_ptr() as usize,
+            fds_bytes.as_mut_ptr() as usize,
             0,
             0,
         )
     };
-    abi::errors::errno(ret).map(|_| (fds[0], fds[1]))
+    abi::errors::errno(ret).map(|_| {
+        let fd_a = u32::from_le_bytes(fds_bytes[..4].try_into().unwrap());
+        let fd_b = u32::from_le_bytes(fds_bytes[4..].try_into().unwrap());
+        (fd_a, fd_b)
+    })
 }

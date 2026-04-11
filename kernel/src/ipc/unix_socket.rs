@@ -549,7 +549,7 @@ impl VfsNode for UnixSocketNode {
                 }
                 if *shutdown_wr {
                     events |= POLLERR;
-                } else if !shutdown_wr && !tx_buf.is_full() && other_alive {
+                } else if !tx_buf.is_full() && other_alive {
                     events |= POLLOUT;
                 }
                 events

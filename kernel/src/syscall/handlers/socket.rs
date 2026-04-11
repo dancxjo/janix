@@ -202,10 +202,11 @@ pub fn sys_socketpair(
         }
     };
 
-    // Write [fd_a, fd_b] to userspace as two consecutive u32 values (8 bytes).
+    // Write [fd_a, fd_b] to userspace as two consecutive u32 values (8 bytes,
+    // little-endian to keep ABI stable across host endianness).
     let mut fds_bytes = [0u8; 8];
-    fds_bytes[..4].copy_from_slice(&fd_a.to_ne_bytes());
-    fds_bytes[4..].copy_from_slice(&fd_b.to_ne_bytes());
+    fds_bytes[..4].copy_from_slice(&fd_a.to_le_bytes());
+    fds_bytes[4..].copy_from_slice(&fd_b.to_le_bytes());
     unsafe { copyout(fds_ptr, &fds_bytes)? };
     Ok(0)
 }

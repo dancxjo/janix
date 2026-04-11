@@ -1,7 +1,17 @@
-//! Kernel IPC: Channel-based inter-process communication
+//! Kernel IPC: channels and pipes
 //!
-//! Provides capability-gated message queues (channels) and byte streams
-//! (pipes) for userspace communication.
+//! Provides two distinct IPC primitives:
+//! - **Channels** (`port.rs`): capability-gated, message-oriented queues.
+//!   Discrete messages, preserved message boundaries, capability (handle)
+//!   transfer.  Use for commands, events, RPC, capability passing.
+//! - **Pipes** (`pipe.rs`): anonymous byte streams.  No message boundaries,
+//!   no capability transfer.  Use for stdio, shell pipelines, raw data streams.
+//!
+//! # Key Rule
+//!
+//! Do not use a channel as a byte stream (streaming raw PCM, text output, etc.)
+//! and do not use a pipe for structured message exchange (commands, replies,
+//! capability passing).  See `docs/concepts/channels_vs_pipes.md`.
 //!
 //! # Terminology
 //!

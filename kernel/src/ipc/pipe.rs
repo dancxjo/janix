@@ -1,4 +1,12 @@
-//! Anonymous pipe IPC — kernel-resident bounded byte channel.
+//! Anonymous pipe IPC — kernel-resident bounded byte stream.
+//!
+//! A **pipe** is a one-way, anonymous byte stream.  It is **not** a channel:
+//! pipes have no message boundaries and no capability-passing support.  Use a
+//! pipe when you need a raw byte stream (stdio, shell pipelines, producer/consumer
+//! data flows).  Use a channel (`kernel/src/ipc/port.rs`) when you need discrete
+//! messages, metadata, or capability (handle) transfer.
+//!
+//! See `docs/concepts/channels_vs_pipes.md` for the full comparison.
 //!
 //! Each pipe has a ring buffer, reader/writer ref counts, and wait queues.
 //! Blocking uses the scheduler's `block_current_erased()` / `wake_task_erased()`.

@@ -12,9 +12,10 @@ code or unnecessary complexity.
 |----------|---------|------|
 | **Byte model** | Discrete messages | Continuous byte stream |
 | **Message boundaries** | Preserved | Not preserved |
-| **Direction** | Bidirectional pair (one write thing + one read thing) | One-way (read thing + write thing) |
+| **Direction** | Unidirectional pair (one write thing + one read thing) | One-way (read thing + write thing) |
 | **Capacity** | Configurable ring, 64 B – 64 KiB | Fixed kernel ring (4 KiB default) |
 | **Thing passing** | Yes — `channel_send_msg` / `channel_recv_msg` | No |
+| **Plane** | Control plane — commands, ACKs, events, RPC | Data plane — raw byte streams |
 | **Typical use** | Service requests, events, RPC, capability transfer | stdio, process output pipelines |
 | **Poll integration** | Yes — bridge with `SYS_FD_FROM_HANDLE` | Yes — read/write ends are VFS things |
 | **Syscall family** | `SYS_CHANNEL_*` | `SYS_PIPE` + `SYS_FS_*` |
@@ -45,6 +46,10 @@ code or unnecessary complexity.
 
 ## 3. Poll Semantics Differences
 
+The poll event flags for pipes and bridged channels are intentionally identical
+so that the same event-loop code works with both.  However, the _conceptual_
+difference matters:
+
 | Event | Pipe read thing | Channel read thing (bridged) |
 |-------|-----------------|------------------------------|
 | Data available | `POLLIN` | `POLLIN` |
@@ -55,8 +60,16 @@ code or unnecessary complexity.
 | Space available | `POLLOUT` | `POLLOUT` |
 | Reader closed | `POLLERR \| POLLHUP` | `POLLERR \| POLLHUP` |
 
-The semantics are deliberately identical so that the same event-loop code can
-handle both without special-casing.
+**Pipe**: `POLLIN` means "bytes are available in the stream".  The consumer
+does not know where one "message" ends and the next begins — the stream is
+continuous.
+
+**Channel** (bridged): `POLLIN` means "at least one byte of a message is
+available in the ring".  The consumer should call `channel_recv` (or
+`channel_recv_msg`) to retrieve all bytes of the current message before
+polling again.  If the consumer treats channel data as a byte stream (calling
+`vfs_read` on the bridge fd in a loop), it will silently split messages across
+read boundaries.
 
 ---
 
@@ -80,11 +93,22 @@ For small kernel-resident workloads both are comparable.  Channels add the
 overhead of the thing table lookup; pipes add a VFS open-flags check.  Neither
 difference is meaningful at application level.
 
+### "I can use a channel as a transport for my own message framing"
+
+You can — `channel_send` supports partial writes like a byte stream — but you
+**should not**.  Adding your own framing layer on top of a channel is the same
+work as writing a pipe protocol, with extra overhead.  If you find yourself
+writing a `FrameReader` or re-assembling messages from successive `channel_recv`
+calls, consider using `channel_send_msg` / `channel_recv_msg` (which preserves
+your message as a single atomic unit) or switching to a pipe.
+
 ---
 
 ## 5. Migration Guide
 
-If you have existing code that uses a pipe for a message protocol:
+### Pipe used for message protocol → channel
+
+If you have existing code that uses a pipe for a structured message protocol:
 
 1. Replace `SYS_PIPE` with `SYS_CHANNEL_CREATE`.
 2. Replace `SYS_FS_WRITE(write_thing, …)` with `SYS_CHANNEL_SEND_ALL(write_thing, …)`.
@@ -92,9 +116,46 @@ If you have existing code that uses a pipe for a message protocol:
 4. If you bridge the things to VFS things for poll, call `SYS_FD_FROM_HANDLE` on
    each thing after creation.
 
+### Channel used for byte stream → pipe
+
+If you have existing code that uses a channel for raw byte streaming (e.g.
+streaming PCM audio, text output) and you want to migrate to a pipe:
+
+1. Create a pipe with `SYS_PIPE` and retain `(pipe_read_fd, pipe_write_fd)`.
+2. Transfer the write end to the consumer with
+   `SYS_CHANNEL_SEND_HANDLE(ctrl_channel, pipe_write_fd)`.
+3. The consumer retrieves the write fd with
+   `SYS_CHANNEL_RECV_HANDLE(ctrl_channel)` and uses `SYS_FS_WRITE` for data.
+4. The producer uses `SYS_FS_READ(pipe_read_fd, …)` to read the stream.
+
+> **Note**: pipe FDs cannot be shared across processes by embedding them in
+> a file or a plain integer field — they require capability transfer via
+> `channel_send_handle`.  Design your service discovery to use a control channel
+> for the initial connection and capability handoff.
+
 ---
 
-## 6. See Also
+## 6. Known Legacy Deviations
+
+The following areas of the codebase currently use channels for raw byte
+streaming.  This is a known anti-pattern; the code is annotated with FIXME
+comments and tracked in
+[issue #591](https://github.com/dancxjo/thing-os/issues/591).
+
+| Component | File | What it does wrong | Correct approach |
+|-----------|------|--------------------|-----------------|
+| `beeper` | `drivers/beeper/src/main.rs` | Sends raw PCM audio chunks over a channel | Pipe (or memfd ring) for the PCM stream; channel for discovery/control |
+| `hdaudio` | `drivers/hdaudio/src/main.rs` | Receives raw PCM audio chunks via `channel_recv` | Pipe (or memfd ring) for the PCM stream; channel for discovery/control |
+| `virtio_sound` | `drivers/virtio_sound/src/main.rs` | Same as hdaudio | Same |
+
+The root cause is that `AudioInfoPayload` stores a bare channel handle number
+in a VFS file, which makes it readable by any process without a capability
+transfer.  A proper pipe-based design requires a `channel_send_handle` step to
+deliver the pipe write-end to the connecting client.
+
+---
+
+## 7. See Also
 
 - `docs/concepts/ipc.md` — full primitive overview and decision matrix
 - `docs/concepts/channel_semantics.md` — channel specification

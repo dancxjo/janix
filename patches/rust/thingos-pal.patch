@@ -127,10 +127,7 @@ index 00000000..78981fba
 +        self.alloc(layout)
 +    }
 +
-+    unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-+        let _ = ptr;
-+        let _ = old_layout;
-+        let _ = new_size;
++    unsafe fn realloc(&self, _ptr: *mut u8, _old_layout: Layout, _new_size: usize) -> *mut u8 {
 +        core::ptr::null_mut()
 +    }
 +}

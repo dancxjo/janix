@@ -672,6 +672,20 @@ pub fn spawn_process_ex(
     boot_arg: u64,
     handles: &[u64],
 ) -> Result<abi::types::SpawnProcessExResp, Errno> {
+    spawn_process_ex_cwd(name, argv, env, stdin_mode, stdout_mode, stderr_mode, boot_arg, handles, None)
+}
+
+pub fn spawn_process_ex_cwd(
+    name: &str,
+    argv: &[&[u8]],
+    env: &BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin_mode: u32,
+    stdout_mode: u32,
+    stderr_mode: u32,
+    boot_arg: u64,
+    handles: &[u64],
+    cwd: Option<&str>,
+) -> Result<abi::types::SpawnProcessExResp, Errno> {
     let argv_blob = serialize_argv(argv);
     let env_blob = serialize_env(env);
 
@@ -699,7 +713,13 @@ pub fn spawn_process_ex(
         handles_to_inherit: h_to_inherit,
         num_inherited_handles: num_inherited as u32,
         _pad3: 0,
+        cwd_ptr: cwd.map_or(0, |s| s.as_ptr() as u64),
+        cwd_len: cwd.map_or(0, |s| s.len() as u32),
+        _pad4: 0,
     };
+    // SAFETY: `req`, `argv_blob`, `env_blob`, and `cwd` all live on the stack
+    // until after `raw_syscall6` returns.  The kernel copies all pointer fields
+    // synchronously during the syscall, so there is no use-after-free risk.
 
     let mut resp = abi::types::SpawnProcessExResp::default();
     let ret = unsafe {

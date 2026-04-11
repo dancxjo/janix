@@ -814,6 +814,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     stderr_spec: StdioSpec,
     boot_arg: u64,
     inherited_handles: Vec<u64>,
+    cwd: Option<alloc::string::String>,
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
@@ -938,7 +939,9 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
-        cwd: if let Some(parent_pi) = &parent_pinfo {
+        cwd: if let Some(explicit_cwd) = cwd {
+            explicit_cwd
+        } else if let Some(parent_pi) = &parent_pinfo {
             parent_pi.lock().cwd.clone()
         } else {
             alloc::string::String::from("/")

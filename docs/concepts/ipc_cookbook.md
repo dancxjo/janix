@@ -48,41 +48,29 @@ fn capture_child_stdout() {
 **Problem**: expose a service that answers typed requests and sends typed
 replies.
 
+Use the `ipc_helpers::rpc` helpers instead of assembling `RpcHeader` bytes
+by hand.  The helpers manage correlation-ID assignment, encoding, and
+decoding automatically.
+
 ### Server side
 
 ```rust
-use stem::syscall::channel::{channel_create, channel_recv, channel_send_all};
-use abi::rpc::{RpcHeader, RPC_FLAG_REPLY};
+use ipc_helpers::rpc::RpcServer;
 
-fn run_service(capacity: usize) {
-    let (write_h, read_h) = channel_create(capacity).expect("channel_create");
-    // Publish write_h to clients (e.g. via supervisor registration).
-
-    let mut buf = [0u8; 512];
+fn run_service(read_h: u32, write_h: u32) {
+    // read_h  — channel read end (server receives requests)
+    // write_h — channel write end (server sends replies)
+    let mut server = RpcServer::new(read_h);
     loop {
-        let n = channel_recv(read_h, &mut buf).expect("recv");
-        if n < RpcHeader::WIRE_SIZE {
-            continue; // too short, ignore
-        }
-        let hdr = RpcHeader::decode_le(&buf[..RpcHeader::WIRE_SIZE]).unwrap();
-        let payload = &buf[RpcHeader::WIRE_SIZE..n];
-
-        // Dispatch …
-        let reply_payload: &[u8] = b"ok";
-
-        let reply_hdr = RpcHeader {
-            request_id: hdr.request_id,
-            flags: RPC_FLAG_REPLY,
-            _pad: [0; 5],
+        let req = match server.next() {
+            Ok(r) => r,
+            Err(_) => continue, // channel error; yield and retry
         };
-        let mut out = [0u8; 512];
-        reply_hdr.encode_le(&mut out[..RpcHeader::WIRE_SIZE]).unwrap();
-        out[RpcHeader::WIRE_SIZE..RpcHeader::WIRE_SIZE + reply_payload.len()]
-            .copy_from_slice(reply_payload);
-        channel_send_all(
-            write_h,    // use the client's reply thing if passed separately
-            &out[..RpcHeader::WIRE_SIZE + reply_payload.len()],
-        ).ok();
+        // req.request_id — correlation ID to echo back
+        // req.payload    — application payload (after the RpcHeader)
+
+        let reply_payload: &[u8] = b"ok";
+        server.reply(req.request_id, write_h, reply_payload).ok();
     }
 }
 ```
@@ -90,30 +78,70 @@ fn run_service(capacity: usize) {
 ### Client side
 
 ```rust
-use stem::syscall::channel::{channel_recv, channel_send_all};
-use abi::rpc::{RpcHeader, RPC_FLAG_REQUEST};
+use ipc_helpers::rpc::RpcClient;
 
-fn call_service(svc_write: u32, svc_read: u32) {
-    let request_id: u64 = 42;
-    let hdr = RpcHeader {
-        request_id,
-        flags: RPC_FLAG_REQUEST,
-        _pad: [0; 5],
-    };
-    let mut msg = [0u8; 16];
-    hdr.encode_le(&mut msg[..RpcHeader::WIRE_SIZE]).unwrap();
-    msg[RpcHeader::WIRE_SIZE..].copy_from_slice(b"hello\0\0\0");
-    channel_send_all(svc_write, &msg).expect("send");
+fn call_service(req_write_h: u32, rep_read_h: u32) {
+    let client = RpcClient::new(req_write_h, rep_read_h);
 
-    // Wait for reply.
-    let mut reply = [0u8; 512];
-    let n = channel_recv(svc_read, &mut reply).expect("recv");
-    let reply_hdr = RpcHeader::decode_le(&reply[..RpcHeader::WIRE_SIZE]).unwrap();
-    assert_eq!(reply_hdr.request_id, request_id);
-    let reply_payload = &reply[RpcHeader::WIRE_SIZE..n];
-    stem::println!("reply: {:?}", reply_payload);
+    // call() sends the payload as a request and blocks until the matching
+    // reply arrives.  Correlation is handled automatically.
+    let reply = client.call(b"hello").expect("RPC failed");
+    stem::println!("reply: {:?}", reply);
 }
 ```
+
+### Channel setup (in the supervisor / launcher)
+
+```rust
+use stem::syscall::channel::channel_create;
+
+// Create a paired channel:
+//   req_chan: clients write requests → server reads
+//   rep_chan: server writes replies  → clients read
+let req_chan = channel_create(4096).unwrap(); // (req_write, req_read)
+let rep_chan = channel_create(4096).unwrap(); // (rep_write, rep_read)
+
+// Pack both server handles into a single usize for spawn_process:
+//   server receives arg0 = (rep_write << 16) | req_read
+let server_arg = ((rep_chan.0 as usize) << 16) | (req_chan.1 as usize);
+spawn_process("/bin/my_service", server_arg).unwrap();
+
+// Clients use req_chan.0 (write) to send and rep_chan.1 (read) to receive.
+let client = RpcClient::new(req_chan.0, rep_chan.1);
+```
+
+> **Raw API** (for reference / low-level use only): See the golden-bytes
+> example in `abi/src/rpc.rs` tests or the pre-helper pattern shown below.
+
+<details>
+<summary>Raw RpcHeader approach (not recommended for new code)</summary>
+
+```rust
+use stem::syscall::channel::{channel_recv, channel_send_all};
+use abi::rpc::{RpcHeader, RPC_FLAG_REPLY};
+
+fn run_service_raw(read_h: u32, write_h: u32) {
+    let mut buf = [0u8; 512];
+    loop {
+        let n = channel_recv(read_h, &mut buf).expect("recv");
+        if n < RpcHeader::WIRE_SIZE { continue; }
+        let hdr = RpcHeader::decode_le(&buf[..RpcHeader::WIRE_SIZE]).unwrap();
+        let _payload = &buf[RpcHeader::WIRE_SIZE..n];
+
+        let reply_hdr = RpcHeader {
+            request_id: hdr.request_id,
+            flags: RPC_FLAG_REPLY,
+            _pad: [0; 5],
+        };
+        let mut out = [0u8; RpcHeader::WIRE_SIZE + 2];
+        reply_hdr.encode_le(&mut out[..RpcHeader::WIRE_SIZE]).unwrap();
+        out[RpcHeader::WIRE_SIZE..].copy_from_slice(b"ok");
+        channel_send_all(write_h, &out).ok();
+    }
+}
+```
+
+</details>
 
 ---
 

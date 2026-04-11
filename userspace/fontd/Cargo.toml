@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt"] }
+stem = { path = "../../stem", features = ["rt", "global-alloc"] }
 abi = { path = "../../abi" }
+ipc_helpers = { path = "../../libs/ipc_helpers" }
 petals = { path = "../petals" }
 fontdue = { version = "0.7", default-features = false }
 

@@ -4,16 +4,15 @@
 extern crate alloc;
 
 use abi::font_protocol::{
-    decode_request_tag, encode_error, AtlasFormat, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics,
-    FontError, FontRequestTag, FontResponseTag, GetFaceMetrics, GlyphPlacement,
+    decode_request_tag, EnsureGlyphs, EnsureGlyphsResp, FaceMetrics,
+    FontRequestTag, FontResponseTag, GetFaceMetrics, GlyphPlacement,
 };
-use abi::ids::HandleId;
-use abi::wire::ThingId;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
+use ipc_helpers::rpc::RpcServer;
 use petals::font::TextRenderer;
-use stem::syscall::{channel_recv_handle, channel_send_handle};
+use stem::syscall::channel::channel_send_handle;
 use stem::{error, info};
 
 use petals::Atlas;
@@ -26,17 +25,29 @@ struct FontService {
     cache: BTreeMap<(u64, u16, u32), GlyphPlacement>,
 }
 
+/// Unpack the paired channel handles from arg0.
+///
+/// sprout passes `(write_h << 16) | read_h` as the spawn argument so that
+/// fontd has both ends of the request/reply channel pair.
+fn unpack_handles(arg: usize) -> (u32, u32) {
+    let write_h = ((arg >> 16) & 0xFFFF) as u32;
+    let read_h = (arg & 0xFFFF) as u32;
+    (write_h, read_h)
+}
+
 #[stem::main]
 fn main(arg0: usize) -> ! {
     info!("fontd: starting up...");
 
-    let listen_port = arg0 as u32;
-    if listen_port == 0 {
-        error!("fontd: No listen port provided!");
+    if arg0 == 0 {
+        error!("fontd: No channel handles provided!");
         loop {
             stem::yield_now();
         }
     }
+
+    let (write_h, read_h) = unpack_handles(arg0);
+    info!("fontd: Entering RPC loop (read={}, write={})", read_h, write_h);
 
     let mut service = FontService {
         renderer: TextRenderer::load_from_boot("/share/fonts/NotoSans-Regular.ttf")
@@ -45,60 +56,88 @@ fn main(arg0: usize) -> ! {
         cache: BTreeMap::new(),
     };
 
-    info!("fontd: Entering IPC loop on handle {}", listen_port);
+    let mut server = RpcServer::new(read_h);
 
-    let mut buf = [0u8; 4096 * 4];
     loop {
-        match stem::syscall::channel_recv(listen_port, &mut buf) {
-            Ok(n) => {
-                let tag = match decode_request_tag(&buf[..n]) {
-                    Some(tag) => tag,
-                    None => {
-                        error!("fontd: Received invalid request tag");
-                        continue;
-                    }
-                };
-
-                match tag {
-                    FontRequestTag::Ping => {
-                        let mut resp = [0u8; 1];
-                        resp[0] = FontResponseTag::Pong as u8;
-                        let _ = stem::syscall::channel_send(listen_port, &resp);
-                    }
-                    FontRequestTag::GetFaceMetrics => {
-                        if let Some(req) = GetFaceMetrics::decode(&buf[1..n]) {
-                            let font = &service.renderer.font;
-                            let metrics = font
-                                .horizontal_line_metrics(req.px_size as f32)
-                                .unwrap_or_else(|| font.horizontal_line_metrics(16.0).unwrap());
-
-                            let resp = FaceMetrics {
-                                ascent: metrics.ascent as i16,
-                                descent: metrics.descent as i16,
-                                line_gap: metrics.line_gap as i16,
-                                units_per_em: font.units_per_em() as u16,
-                            };
-                            let mut out_buf = [0u8; 10];
-                            if let Some(len) = resp.encode(&mut out_buf) {
-                                let _ = stem::syscall::channel_send(listen_port, &out_buf[..len]);
-                            }
-                        }
-                    }
-                    FontRequestTag::EnsureGlyphs => {
-                        if let Some(req) = EnsureGlyphs::decode(&buf[1..n]) {
-                            handle_ensure_glyphs(&mut service, listen_port, req);
-                        }
-                    }
-                }
-            }
+        let req = match server.next() {
+            Ok(r) => r,
             Err(_) => {
                 stem::yield_now();
+                continue;
+            }
+        };
+
+        let tag = match decode_request_tag(&req.payload) {
+            Some(tag) => tag,
+            None => {
+                error!("fontd: Received invalid request tag");
+                let _ = server.reply_err(
+                    req.request_id,
+                    write_h,
+                    abi::errors::Errno::EINVAL,
+                );
+                continue;
+            }
+        };
+
+        match tag {
+            FontRequestTag::Ping => {
+                let resp = [FontResponseTag::Pong as u8];
+                let _ = server.reply(req.request_id, write_h, &resp);
+            }
+            FontRequestTag::GetFaceMetrics => {
+                if let Some(font_req) = GetFaceMetrics::decode(&req.payload[1..]) {
+                    let font = &service.renderer.font;
+                    let metrics = font
+                        .horizontal_line_metrics(font_req.px_size as f32)
+                        .unwrap_or_else(|| font.horizontal_line_metrics(16.0).unwrap());
+
+                    let resp = FaceMetrics {
+                        ascent: metrics.ascent as i16,
+                        descent: metrics.descent as i16,
+                        line_gap: metrics.line_gap as i16,
+                        units_per_em: font.units_per_em() as u16,
+                    };
+                    let mut out_buf = [0u8; 10];
+                    if let Some(len) = resp.encode(&mut out_buf) {
+                        let _ = server.reply(req.request_id, write_h, &out_buf[..len]);
+                    }
+                } else {
+                    let _ = server.reply_err(
+                        req.request_id,
+                        write_h,
+                        abi::errors::Errno::EINVAL,
+                    );
+                }
+            }
+            FontRequestTag::EnsureGlyphs => {
+                if let Some(font_req) = EnsureGlyphs::decode(&req.payload[1..]) {
+                    handle_ensure_glyphs(
+                        &mut service,
+                        &server,
+                        write_h,
+                        req.request_id,
+                        font_req,
+                    );
+                } else {
+                    let _ = server.reply_err(
+                        req.request_id,
+                        write_h,
+                        abi::errors::Errno::EINVAL,
+                    );
+                }
             }
         }
     }
 }
 
-fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs) {
+fn handle_ensure_glyphs(
+    service: &mut FontService,
+    server: &RpcServer,
+    write_h: u32,
+    request_id: u64,
+    req: EnsureGlyphs,
+) {
     let face_id_u64 = req.face_id.to_u64_lossy();
     let px_size = req.px_size;
 
@@ -173,8 +212,8 @@ fn handle_ensure_glyphs(service: &mut FontService, port: u32, req: EnsureGlyphs)
 
     let mut resp_buf = vec![0u8; 4096 * 4];
     if let Some(len) = resp.encode(&mut resp_buf) {
-        let _ = stem::syscall::channel_send(port, &resp_buf[..len]);
-        // Also send the FD if the protocol expects it via channel_send_handle
-        let _ = stem::syscall::channel_send_handle(port, atlas.texture.fd);
+        // Send atlas fd first, then the encoded response framed with RpcHeader.
+        let _ = channel_send_handle(write_h, atlas.texture.fd);
+        let _ = server.reply(request_id, write_h, &resp_buf[..len]);
     }
 }

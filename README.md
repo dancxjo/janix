@@ -215,6 +215,12 @@ Services communicate over files, not ports. The migration to the janix network m
 - **[just](https://github.com/casey/just)**
 - **xorriso** for ISO building
 - **qemu-system-x86_64**
+- **cmake** & **ninja-build** (required for `rustc-thingos` build)
+- **zlib1g-dev** (required for LLVM build)
+- **python3** and **git**
+
+> [!NOTE]
+> **Rustc on ThingOS**: The automatic build of `rustc` for ThingOS is currently disabled due to upstream LLVM target compatibility issues. See [docs/status/rustc_build.md](docs/status/rustc_build.md) for details.
 
 ### Build & run
 

@@ -100,6 +100,22 @@ pub const SYS_CHANNEL_SEND_MSG: u32 = 0x300A;
 pub const SYS_CHANNEL_RECV_MSG: u32 = 0x300B;
 pub const SYS_PIPE: u32 = 0x3015;
 
+// ── Unix Domain Sockets (0x3020) ─────────────────────────────────────────────
+/// Create a Unix domain socket. Args: (domain, type, protocol) → fd
+pub const SYS_SOCKET: u32 = 0x3020;
+/// Bind a socket to a filesystem path. Args: (fd, path_ptr, path_len)
+pub const SYS_BIND: u32 = 0x3021;
+/// Mark a socket as listening for connections. Args: (fd, backlog)
+pub const SYS_LISTEN: u32 = 0x3022;
+/// Accept an incoming connection. Args: (fd) → new_fd
+pub const SYS_ACCEPT: u32 = 0x3023;
+/// Connect to a listening socket. Args: (fd, path_ptr, path_len)
+pub const SYS_CONNECT: u32 = 0x3024;
+/// Shut down part or all of a socket connection. Args: (fd, how)
+pub const SYS_SHUTDOWN: u32 = 0x3025;
+/// Create a connected socket pair. Args: (domain, type, protocol, fds_ptr) → 0
+pub const SYS_SOCKETPAIR: u32 = 0x3026;
+
 // ============================================================================
 // Virtual File System (VFS) (0x4000)
 // ============================================================================
@@ -163,6 +179,30 @@ pub const SYS_ENTROPY_SEED: u32 = 0x7004;
 pub mod channel_wait {
     pub const READABLE: u32 = 1 << 0;
     pub const WRITABLE: u32 = 1 << 1;
+}
+
+/// Socket address family constants (analogous to POSIX AF_* values).
+pub mod socket_domain {
+    /// Unix domain sockets (local IPC via filesystem paths).
+    pub const AF_UNIX: u32 = 1;
+}
+
+/// Socket type constants (analogous to POSIX SOCK_* values).
+pub mod socket_type {
+    /// Reliable, sequenced, bidirectional byte stream.
+    pub const SOCK_STREAM: u32 = 1;
+    /// Connectionless, unreliable datagrams with message boundaries.
+    pub const SOCK_DGRAM: u32 = 2;
+}
+
+/// Shutdown direction constants for `sys_shutdown`.
+pub mod shutdown_how {
+    /// Shut down the receive direction.
+    pub const SHUT_RD: u32 = 0;
+    /// Shut down the transmit direction.
+    pub const SHUT_WR: u32 = 1;
+    /// Shut down both directions.
+    pub const SHUT_RDWR: u32 = 2;
 }
 
 pub mod pipe_flags {

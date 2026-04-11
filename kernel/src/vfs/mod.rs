@@ -170,6 +170,8 @@ impl VfsStat {
     pub const S_IFIFO: u32 = 0o010000;
     /// Symbolic link.
     pub const S_IFLNK: u32 = 0o120000;
+    /// Unix domain socket.
+    pub const S_IFSOCK: u32 = 0o140000;
 
     /// Encode a major/minor device number pair into a single `rdev` value.
     ///
@@ -283,6 +285,38 @@ pub trait VfsNode: Send + Sync {
     /// If this node is a port, returns the underlying port.
     fn as_port(&self) -> Option<Arc<crate::ipc::Port>> {
         None
+    }
+
+    // ── Unix domain socket operations ────────────────────────────────────────
+    // Default implementations return `ENOTSOCK` so that only `UnixSocketNode`
+    // needs to override them.
+
+    /// Bind this socket to a filesystem path.
+    fn sock_bind(&self, _path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::ENOTSOCK)
+    }
+
+    /// Mark this socket as listening for connections.
+    fn sock_listen(&self, _backlog: usize) -> SysResult<()> {
+        Err(abi::errors::Errno::ENOTSOCK)
+    }
+
+    /// Accept one incoming connection from a listening socket.
+    ///
+    /// Returns a new `Arc<dyn VfsNode>` for the server side of the connection.
+    fn sock_accept(&self) -> SysResult<Arc<dyn VfsNode>> {
+        Err(abi::errors::Errno::ENOTSOCK)
+    }
+
+    /// Connect this socket to a listening socket at the given path.
+    fn sock_connect(&self, _path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::ENOTSOCK)
+    }
+
+    /// Shut down one or both directions of a connected socket.
+    /// `how`: 0 = SHUT_RD, 1 = SHUT_WR, 2 = SHUT_RDWR.
+    fn sock_shutdown(&self, _how: u32) -> SysResult<()> {
+        Err(abi::errors::Errno::ENOTSOCK)
     }
 
     /// Device-specific control call (ioctl).

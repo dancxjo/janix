@@ -1979,6 +1979,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 
 [[package]]
+name = "libdl"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "spin",
+ "stem",
+]
+
+[[package]]
 name = "libfuzzer-sys"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3393,6 +3402,15 @@ checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
 dependencies = [
  "rustix",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "test_dlopen"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libdl",
+ "stem",
 ]
 
 [[package]]

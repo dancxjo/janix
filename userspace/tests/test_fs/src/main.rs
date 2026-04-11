@@ -350,8 +350,8 @@ fn test_truncate() -> Result<(), std::string::String> {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+#[stem::main]
+fn main(_arg: usize) -> ! {
     std::println!("=== test_fs: ThingOS filesystem smoke tests ===");
 
     check!("fs_create_write_read", test_create_write_read());

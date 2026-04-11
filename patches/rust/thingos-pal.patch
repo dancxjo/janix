@@ -1863,25 +1863,56 @@ index 00000000..00000000
 +    Some(Stderr::new())
 +}
 diff --git a/library/std/src/sys/random/mod.rs b/library/std/src/sys/random/mod.rs
-index 91f72d07..24e2f4a3 100644
+index 91f72d07..00000000 100644
 --- a/library/std/src/sys/random/mod.rs
 +++ b/library/std/src/sys/random/mod.rs
-@@ -106,6 +106,7 @@
+@@ -102,6 +102,10 @@
+         mod zkvm;
+         pub use zkvm::fill_bytes;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use thingos::fill_bytes;
++    }
+     any(
          all(target_family = "wasm", target_os = "unknown"),
          target_os = "xous",
-         target_os = "vexos",
-+        target_os = "thingos",
-     ) => {
-         // FIXME: finally remove std support for wasm32-unknown-unknown
-         // FIXME: add random data generation to xous
-@@ -122,6 +123,7 @@
-     all(target_os = "wasi", not(target_env = "p1")),
-     target_os = "xous",
-     target_os = "vexos",
-+    target_os = "thingos",
- )))]
- pub fn hashmap_random_keys() -> (u64, u64) {
-     let mut buf = [0; 16];
+diff --git a/library/std/src/sys/random/thingos.rs b/library/std/src/sys/random/thingos.rs
+new file mode 100644
+index 00000000..00000000
+--- /dev/null
++++ b/library/std/src/sys/random/thingos.rs
+@@ -0,0 +1,28 @@
++//! Random data for ThingOS via the SYS_GETRANDOM syscall (0x7001).
++//!
++//! The kernel entropy pool is seeded from hardware (RDRAND/RDSEED) and
++//! caps each call at 256 bytes.  We loop until the caller's buffer is full.
++use crate::sys::pal::raw_syscall6;
++
++/// Syscall number for SYS_GETRANDOM (defined in `abi/src/numbers.rs`).
++const SYS_GETRANDOM: u32 = 0x7001;
++/// Maximum bytes the kernel fills per SYS_GETRANDOM call.
++const GETRANDOM_MAX: usize = 256;
++
++pub fn fill_bytes(bytes: &mut [u8]) {
++    let mut offset = 0;
++    while offset < bytes.len() {
++        // Pass at most GETRANDOM_MAX bytes per call so the kernel doesn't
++        // reject oversized requests.
++        let chunk_len = (bytes.len() - offset).min(GETRANDOM_MAX);
++        let chunk = &mut bytes[offset..offset + chunk_len];
++        // args: buf_ptr, buf_len, flags (0 = blocking, fill fully)
++        let ret = unsafe {
++            raw_syscall6(SYS_GETRANDOM, chunk.as_mut_ptr() as usize, chunk_len, 0, 0, 0, 0)
++        };
++        // SYS_GETRANDOM returns 0 on success (not byte count); a negative
++        // value encodes an errno-style error code.
++        if ret < 0 {
++            panic!("SYS_GETRANDOM failed: {}", ret);
++        }
++        offset += chunk_len;
++    }
++}
 diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/thread_local/mod.rs
 index e88011aa..1dde5484 100644
 --- a/library/std/src/sys/thread_local/mod.rs

@@ -257,7 +257,7 @@ new file mode 100644
 index 00000000..93bf392d
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,624 @@
+@@ -0,0 +1,767 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -287,6 +287,7 @@ index 00000000..93bf392d
 +const ETIMEDOUT: i32 = 110;
 +const ECONNREFUSED: i32 = 111;
 +const ENOTSUP: i32 = 95;
++const ENOTCONN: i32 = 107;
 +
 +const CONNECT_POLL_NS: u64 = 5_000_000;
 +const IO_POLL_NS: u64 = 1_000_000;
@@ -633,137 +634,265 @@ index 00000000..93bf392d
 +    }
 +}
 +
-+pub struct UdpSocket(!);
++pub struct UdpSocket {
++    id: u32,
++    data_fd: i32,
++    ctl_fd: i32,
++    local_addr: SocketAddr,
++    read_timeout: Arc<Mutex<Option<Duration>>>,
++    write_timeout: Arc<Mutex<Option<Duration>>>,
++    nonblocking: Arc<Mutex<bool>>,
++    connected_remote: Arc<Mutex<Option<SocketAddr>>>,
++}
 +
 +impl UdpSocket {
-+    pub fn bind<A: ToSocketAddrs>(_: A) -> io::Result<UdpSocket> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++    pub fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<UdpSocket> {
++        each_addr(addr, |a| Self::bind_inner(a))
++    }
++
++    fn bind_inner(addr: &SocketAddr) -> io::Result<UdpSocket> {
++        let SocketAddr::V4(local_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++
++        let id = allocate_udp_socket()?;
++        let ctl_path = udp_socket_path(id, "ctl");
++        let ctl_fd = vfs_open(&ctl_path, O_WRONLY)?;
++
++        let port = local_v4.port();
++        let cmd = format!("bind {port}");
++        if let Err(e) = vfs_write(ctl_fd, cmd.as_bytes()) {
++            let _ = vfs_close(ctl_fd);
++            return Err(e);
++        }
++
++        let data_path = udp_socket_path(id, "data");
++        let data_fd = match vfs_open(&data_path, O_RDWR | O_NONBLOCK) {
++            Ok(fd) => fd,
++            Err(e) => {
++                let _ = vfs_write(ctl_fd, b"close");
++                let _ = vfs_close(ctl_fd);
++                return Err(e);
++            }
++        };
++
++        Ok(UdpSocket {
++            id,
++            data_fd,
++            ctl_fd,
++            local_addr: SocketAddr::V4(*local_v4),
++            read_timeout: Arc::new(Mutex::new(None)),
++            write_timeout: Arc::new(Mutex::new(None)),
++            nonblocking: Arc::new(Mutex::new(false)),
++            connected_remote: Arc::new(Mutex::new(None)),
++        })
 +    }
 +
 +    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        self.connected_remote
++            .lock()
++            .unwrap()
++            .ok_or_else(|| io::Error::from_raw_os_error(ENOTCONN))
 +    }
 +
 +    pub fn socket_addr(&self) -> io::Result<SocketAddr> {
-+        self.0
++        Ok(self.local_addr)
 +    }
 +
-+    pub fn recv_from(&self, _: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-+        self.0
++    pub fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
++        let nonblocking = *self.nonblocking.lock().unwrap();
++        let timeout = *self.read_timeout.lock().unwrap();
++        let deadline = timeout.map(|dur| monotonic_ns().saturating_add(duration_to_ns(dur)));
++        // Wire format on read: [4: src_ipv4][2: src_port_le][4: len_le][payload]
++        let header_len: usize = 10;
++        let mut raw = vec![0u8; header_len + buf.len()];
++        loop {
++            match vfs_read(self.data_fd, &mut raw) {
++                Ok(n) if n >= header_len => {
++                    let src_ip: [u8; 4] = raw[..4].try_into().unwrap();
++                    let src_port = u16::from_le_bytes([raw[4], raw[5]]);
++                    let payload_len =
++                        u32::from_le_bytes([raw[6], raw[7], raw[8], raw[9]]) as usize;
++                    let copy_len = payload_len.min(buf.len()).min(n - header_len);
++                    buf[..copy_len].copy_from_slice(&raw[header_len..header_len + copy_len]);
++                    let src_addr =
++                        SocketAddr::new(IpAddr::V4(Ipv4Addr::from(src_ip)), src_port);
++                    return Ok((copy_len, src_addr));
++                }
++                Ok(_) => return Err(io::Error::from_raw_os_error(EINVAL)),
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) && nonblocking => {
++                    return Err(io::Error::from_raw_os_error(EAGAIN));
++                }
++                Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
++                    if deadline_expired(deadline) {
++                        return Err(io::Error::from_raw_os_error(ETIMEDOUT));
++                    }
++                    sleep_ns(IO_POLL_NS);
++                    thread::yield_now();
++                }
++                Err(e) => return Err(e),
++            }
++        }
 +    }
 +
 +    pub fn peek_from(&self, _: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn send_to(&self, _: &[u8], _: &SocketAddr) -> io::Result<usize> {
-+        self.0
++    pub fn send_to(&self, data: &[u8], addr: &SocketAddr) -> io::Result<usize> {
++        let SocketAddr::V4(dest_v4) = addr else {
++            return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++        };
++        let dest_ip = dest_v4.ip().octets();
++        let dest_port = dest_v4.port();
++        // Wire format on write: [4: dest_ipv4][2: dest_port_le][4: len_le][payload]
++        let header_len: usize = 10;
++        let mut pkt = vec![0u8; header_len + data.len()];
++        pkt[..4].copy_from_slice(&dest_ip);
++        pkt[4..6].copy_from_slice(&dest_port.to_le_bytes());
++        pkt[6..10].copy_from_slice(&(data.len() as u32).to_le_bytes());
++        pkt[10..].copy_from_slice(data);
++        vfs_write(self.data_fd, &pkt)?;
++        Ok(data.len())
 +    }
 +
 +    pub fn duplicate(&self) -> io::Result<UdpSocket> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn set_read_timeout(&self, _: Option<Duration>) -> io::Result<()> {
-+        self.0
++    pub fn set_read_timeout(&self, t: Option<Duration>) -> io::Result<()> {
++        *self.read_timeout.lock().unwrap() = t;
++        Ok(())
 +    }
 +
-+    pub fn set_write_timeout(&self, _: Option<Duration>) -> io::Result<()> {
-+        self.0
++    pub fn set_write_timeout(&self, t: Option<Duration>) -> io::Result<()> {
++        *self.write_timeout.lock().unwrap() = t;
++        Ok(())
 +    }
 +
 +    pub fn read_timeout(&self) -> io::Result<Option<Duration>> {
-+        self.0
++        Ok(*self.read_timeout.lock().unwrap())
 +    }
 +
 +    pub fn write_timeout(&self) -> io::Result<Option<Duration>> {
-+        self.0
++        Ok(*self.write_timeout.lock().unwrap())
 +    }
 +
 +    pub fn set_broadcast(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn broadcast(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_loop_v4(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_loop_v4(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_ttl_v4(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_ttl_v4(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_multicast_loop_v6(&self, _: bool) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn multicast_loop_v6(&self) -> io::Result<bool> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn join_multicast_v4(&self, _: &Ipv4Addr, _: &Ipv4Addr) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn join_multicast_v6(&self, _: &Ipv6Addr, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn leave_multicast_v4(&self, _: &Ipv4Addr, _: &Ipv4Addr) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn leave_multicast_v6(&self, _: &Ipv6Addr, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn set_ttl(&self, _: u32) -> io::Result<()> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn ttl(&self) -> io::Result<u32> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
 +    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
-+        self.0
++        Ok(None)
 +    }
 +
-+    pub fn set_nonblocking(&self, _: bool) -> io::Result<()> {
-+        self.0
++    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
++        *self.nonblocking.lock().unwrap() = nonblocking;
++        Ok(())
 +    }
 +
-+    pub fn recv(&self, _: &mut [u8]) -> io::Result<usize> {
-+        self.0
++    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
++        if self.connected_remote.lock().unwrap().is_none() {
++            return Err(io::Error::from_raw_os_error(ENOTCONN));
++        }
++        let (n, _) = self.recv_from(buf)?;
++        Ok(n)
 +    }
 +
 +    pub fn peek(&self, _: &mut [u8]) -> io::Result<usize> {
-+        self.0
++        Err(io::Error::from_raw_os_error(ENOTSUP))
 +    }
 +
-+    pub fn send(&self, _: &[u8]) -> io::Result<usize> {
-+        self.0
++    pub fn send(&self, data: &[u8]) -> io::Result<usize> {
++        let remote = *self.connected_remote.lock().unwrap();
++        let Some(addr) = remote else {
++            return Err(io::Error::from_raw_os_error(ENOTCONN));
++        };
++        self.send_to(data, &addr)
 +    }
 +
-+    pub fn connect<A: ToSocketAddrs>(&self, _: A) -> io::Result<()> {
-+        self.0
++    pub fn connect<A: ToSocketAddrs>(&self, addr: A) -> io::Result<()> {
++        each_addr(addr, |a| {
++            let SocketAddr::V4(v4) = a else {
++                return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
++            };
++            let ip = v4.ip().octets();
++            let port = v4.port();
++            let cmd = format!("connect {}.{}.{}.{} {}", ip[0], ip[1], ip[2], ip[3], port);
++            vfs_write(self.ctl_fd, cmd.as_bytes())?;
++            *self.connected_remote.lock().unwrap() = Some(*a);
++            Ok(())
++        })
++    }
++}
++
++impl Drop for UdpSocket {
++    fn drop(&mut self) {
++        let _ = vfs_write(self.ctl_fd, b"close");
++        let _ = vfs_close(self.data_fd);
++        let _ = vfs_close(self.ctl_fd);
 +    }
 +}
 +
 +impl fmt::Debug for UdpSocket {
-+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-+        self.0
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("UdpSocket")
++            .field("id", &self.id)
++            .field("local", &self.local_addr)
++            .field("remote", &*self.connected_remote.lock().unwrap())
++            .finish()
 +    }
 +}
 +
@@ -788,6 +917,20 @@ index 00000000..93bf392d
 +
 +fn socket_path(id: u32, subpath: &str) -> String {
 +    format!("/net/tcp/{id}/{subpath}")
++}
++
++fn allocate_udp_socket() -> io::Result<u32> {
++    let fd = vfs_open("/net/udp/new", O_RDONLY)?;
++    let mut buf = [0u8; 32];
++    let n = vfs_read(fd, &mut buf)?;
++    vfs_close(fd)?;
++    let text =
++        crate::str::from_utf8(&buf[..n]).map_err(|_| io::Error::from_raw_os_error(EINVAL))?.trim();
++    text.parse::<u32>().map_err(|_| io::Error::from_raw_os_error(EINVAL))
++}
++
++fn udp_socket_path(id: u32, subpath: &str) -> String {
++    format!("/net/udp/{id}/{subpath}")
 +}
 +
 +fn read_status(id: u32) -> io::Result<StatusInfo> {

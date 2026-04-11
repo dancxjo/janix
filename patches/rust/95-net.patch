@@ -37,6 +37,7 @@ index 00000000..043c469e
 +const SYS_VFS_WRITE: u32 = 0x4003;
 +const SYS_VFS_READV: u32 = 0x4021;
 +const SYS_VFS_WRITEV: u32 = 0x4022;
++const SYS_FS_DUP: u32 = 0x400C;
 +
 +// ── Scatter-gather I/O vector (matches abi::syscall::IoVec / POSIX struct iovec) ──
 +#[repr(C)]
@@ -355,7 +356,31 @@ index 00000000..043c469e
 +    }
 +
 +    pub fn duplicate(&self) -> io::Result<TcpStream> {
-+        Err(io::Error::from_raw_os_error(ENOTSUP))
++        let new_data_fd = {
++            let ret =
++                unsafe { raw_syscall6(SYS_FS_DUP, self.data_fd as usize, 0, 0, 0, 0, 0) };
++            decode_ret(ret).map(|fd| fd as i32)?
++        };
++        let new_ctl_fd = {
++            let ret =
++                unsafe { raw_syscall6(SYS_FS_DUP, self.ctl_fd as usize, 0, 0, 0, 0, 0) };
++            match decode_ret(ret).map(|fd| fd as i32) {
++                Ok(fd) => fd,
++                Err(e) => {
++                    let _ = vfs_close(new_data_fd);
++                    return Err(e);
++                }
++            }
++        };
++        Ok(TcpStream {
++            id: self.id,
++            data_fd: new_data_fd,
++            ctl_fd: new_ctl_fd,
++            peer_addr: self.peer_addr,
++            read_timeout: Arc::new(Mutex::new(*self.read_timeout.lock().unwrap())),
++            write_timeout: Arc::new(Mutex::new(*self.write_timeout.lock().unwrap())),
++            nonblocking: Arc::new(Mutex::new(*self.nonblocking.lock().unwrap())),
++        })
 +    }
 +
 +    pub fn set_linger(&self, _: Option<Duration>) -> io::Result<()> {

@@ -59,6 +59,8 @@ members = [
     "userspace/stat",
     "userspace/dirname",
     "userspace/basename",
+    "userspace/sleep",
+    "userspace/env",
     "userspace/clear",
     "userspace/pwd",
     "userspace/true",

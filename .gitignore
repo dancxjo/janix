@@ -15,7 +15,10 @@ temp_*.txt
 /*.py
 
 # Vendor dependencies (fetched by `just fetch`)
-/vendor/
+# vendor/rust/ is tracked as a git submodule — not ignored here
+/vendor/limine/
+/vendor/ovmf/
+/vendor/future-cursors/
 
 # Fetched assets (managed by `just fetch`)
 # NOTE: /assets/wallpapers/ is tracked - must come before the ignore

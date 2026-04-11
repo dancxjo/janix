@@ -215,26 +215,24 @@ smoke:
 
 # --- Vendored Rust Standard Library ---
 
-# The commit hash of rust-lang/rust matching our nightly toolchain
+# The commit hash of rust-lang/rust tracked by the vendor/rust submodule.
+# This is pinned in the git index (see .gitmodules); the variable is kept
+# here only for reference and diagnostic messages.
 rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 
-# Fetch (shallow clone) the Rust source tree into vendor/rust/
+# Initialize (or update) the vendor/rust git submodule and apply our patches.
+# vendor/rust is tracked as a shallow git submodule — see .gitmodules.
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
     ROOT_DIR="$(pwd)"
-    if [ -d vendor/rust/.git ]; then
-        echo "vendor/rust already exists, skipping clone."
-        echo "  To re-fetch, run: just rust-reset  (or rm -rf vendor/rust)"
+    if [ -f vendor/rust/.git ] || [ -d vendor/rust/.git ]; then
+        echo "vendor/rust submodule already initialized."
+        echo "  To reset to the clean upstream state, run: just rust-reset"
     else
-        echo "==> Shallow-cloning rust-lang/rust at {{rust_commit}}..."
-        git clone --depth 1 --filter=blob:none --no-checkout \
-            https://github.com/rust-lang/rust.git vendor/rust
-        cd vendor/rust
-        git fetch --depth 1 origin {{rust_commit}}
-        git checkout {{rust_commit}}
+        echo "==> Initializing vendor/rust submodule (shallow, commit {{rust_commit}})..."
+        git submodule update --init --depth 1 vendor/rust
         echo "==> Rust source ready at vendor/rust/"
-        cd "$ROOT_DIR"
     fi
     # Ensure library submodules needed for std are initialized
     if [ ! -f vendor/rust/library/backtrace/Cargo.toml ]; then
@@ -262,12 +260,12 @@ rust-save-patches:
     echo "  $(wc -l < ../../patches/rust/thingos-pal.patch) lines"
     echo "  Files changed: $(grep -c '^diff' ../../patches/rust/thingos-pal.patch)"
 
-# Hard-reset vendor/rust/ to the pinned commit (discards local changes)
+# Hard-reset vendor/rust/ to the pinned submodule commit (discards local changes / applied patches)
 rust-reset:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d vendor/rust/.git ]; then
-        echo "vendor/rust does not exist. Run: just fetch-rust"
+    if [ ! -f vendor/rust/.git ] && [ ! -d vendor/rust/.git ]; then
+        echo "vendor/rust submodule is not initialized. Run: just fetch-rust"
         exit 1
     fi
     cd vendor/rust
@@ -275,14 +273,14 @@ rust-reset:
     git reset HEAD -- . 2>/dev/null || true
     git checkout -- .
     git clean -fd
-    echo "==> vendor/rust reset to {{rust_commit}}"
+    echo "==> vendor/rust reset to pinned submodule commit ({{rust_commit}})"
 
 # Apply saved patches from patches/rust/ to vendor/rust/
 rust-apply-patches:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d vendor/rust/.git ]; then
-        echo "vendor/rust does not exist. Run: just fetch-rust"
+    if [ ! -f vendor/rust/.git ] && [ ! -d vendor/rust/.git ]; then
+        echo "vendor/rust submodule is not initialized. Run: just fetch-rust"
         exit 1
     fi
     if [ ! -f patches/rust/thingos-pal.patch ]; then

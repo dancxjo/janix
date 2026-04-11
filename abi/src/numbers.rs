@@ -169,6 +169,24 @@ pub const SYS_FS_WRITEV: u32 = 0x4022;
 /// Create a hard link at `dst` pointing to the same inode as `src`.
 /// Args: (src_ptr, src_len, dst_ptr, dst_len) → 0
 pub const SYS_FS_LINK: u32 = 0x4023;
+/// Advisory file lock / unlock (flock semantics).
+/// Args: (fd, how) where `how` is a combination of [`flock_flags`] constants.
+/// Returns 0 on success; EWOULDBLOCK if the lock is held and LOCK_NB was set.
+pub const SYS_FS_FLOCK: u32 = 0x4024;
+
+/// Flags for [`SYS_FS_FLOCK`].
+///
+/// Mirrors the POSIX / Linux `flock(2)` flag values.
+pub mod flock_flags {
+    /// Acquire a shared (read) lock.
+    pub const LOCK_SH: u32 = 1;
+    /// Acquire an exclusive (write) lock.
+    pub const LOCK_EX: u32 = 2;
+    /// Non-blocking: return `EWOULDBLOCK` instead of blocking.
+    pub const LOCK_NB: u32 = 4;
+    /// Release the lock held on the file.
+    pub const LOCK_UN: u32 = 8;
+}
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)

@@ -81,6 +81,13 @@ index 00000000..ba7f15ec
 +const SYS_FS_READV: u32 = 0x4021;
 +const SYS_FS_WRITEV: u32 = 0x4022;
 +const SYS_FS_LINK: u32 = 0x4023;
++const SYS_FS_FLOCK: u32 = 0x4024;
++
++// ── Advisory lock flags (mirror abi::syscall::flock_flags) ───────────────────
++const LOCK_SH: u32 = 1; // shared (read) lock
++const LOCK_EX: u32 = 2; // exclusive (write) lock
++const LOCK_NB: u32 = 4; // non-blocking
++const LOCK_UN: u32 = 8; // unlock
 +
 +// ── Scatter-gather I/O vector (matches abi::syscall::IoVec / POSIX struct iovec) ──
 +#[repr(C)]
@@ -479,24 +486,66 @@ index 00000000..ba7f15ec
 +    }
 +
 +    pub fn lock(&self) -> io::Result<()> {
-+        // File locking not supported on ThingOS.
-+        crate::sys::unsupported()
++        let ret = unsafe {
++            raw_syscall6(SYS_FS_FLOCK, self.0.raw() as usize, LOCK_EX as usize, 0, 0, 0, 0)
++        };
++        cvt(ret).map(|_| ())
 +    }
 +
 +    pub fn lock_shared(&self) -> io::Result<()> {
-+        crate::sys::unsupported()
++        let ret = unsafe {
++            raw_syscall6(SYS_FS_FLOCK, self.0.raw() as usize, LOCK_SH as usize, 0, 0, 0, 0)
++        };
++        cvt(ret).map(|_| ())
 +    }
 +
 +    pub fn try_lock(&self) -> Result<(), TryLockError> {
-+        Err(TryLockError::Error(crate::sys::unsupported_err()))
++        let ret = unsafe {
++            raw_syscall6(
++                SYS_FS_FLOCK,
++                self.0.raw() as usize,
++                (LOCK_EX | LOCK_NB) as usize,
++                0,
++                0,
++                0,
++                0,
++            )
++        };
++        match cvt(ret) {
++            Ok(_) => Ok(()),
++            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
++                Err(TryLockError::WouldBlock)
++            }
++            Err(e) => Err(TryLockError::Error(e)),
++        }
 +    }
 +
 +    pub fn try_lock_shared(&self) -> Result<(), TryLockError> {
-+        Err(TryLockError::Error(crate::sys::unsupported_err()))
++        let ret = unsafe {
++            raw_syscall6(
++                SYS_FS_FLOCK,
++                self.0.raw() as usize,
++                (LOCK_SH | LOCK_NB) as usize,
++                0,
++                0,
++                0,
++                0,
++            )
++        };
++        match cvt(ret) {
++            Ok(_) => Ok(()),
++            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
++                Err(TryLockError::WouldBlock)
++            }
++            Err(e) => Err(TryLockError::Error(e)),
++        }
 +    }
 +
 +    pub fn unlock(&self) -> io::Result<()> {
-+        crate::sys::unsupported()
++        let ret = unsafe {
++            raw_syscall6(SYS_FS_FLOCK, self.0.raw() as usize, LOCK_UN as usize, 0, 0, 0, 0)
++        };
++        cvt(ret).map(|_| ())
 +    }
 +
 +    pub fn truncate(&self, size: u64) -> io::Result<()> {

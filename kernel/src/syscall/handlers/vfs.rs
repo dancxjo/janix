@@ -1494,6 +1494,28 @@ pub fn sys_fs_futimes(fd: usize, times_ptr: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+/// Advisory file lock or unlock for the file associated with `fd`.
+///
+/// `how` is a combination of [`abi::syscall::flock_flags`] constants:
+/// * `LOCK_SH` (1) — acquire shared lock
+/// * `LOCK_EX` (2) — acquire exclusive lock
+/// * `LOCK_NB` (4) — non-blocking (return `EWOULDBLOCK` instead of blocking)
+/// * `LOCK_UN` (8) — release any lock on the file
+///
+/// Returns `Ok(0)` on success.
+pub fn sys_fs_flock(fd: usize, how: usize) -> SysResult<usize> {
+    let ino = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        let node = lock.fd_table.get(fd as u32)?.node.clone();
+        // Release the process lock before calling stat() to avoid deadlocks.
+        drop(lock);
+        node.stat()?.ino
+    };
+    crate::vfs::flock::flock(ino, how as u32)?;
+    Ok(0)
+}
+
 
 #[cfg(test)]
 mod tests {

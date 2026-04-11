@@ -3391,8 +3391,10 @@ index 00000000..00000000
 +//!
 +//! ## cwd override
 +//!
-+//! SYS_SPAWN_PROCESS_EX has no cwd field; kernel inherits parent cwd.
-+//! Setting .current_dir() stores the value but has no effect.
++//! When `Command::current_dir()` is set, the cwd bytes are forwarded via the
++//! `cwd_ptr`/`cwd_len` fields of `SpawnProcessExReq`.  The kernel sets the
++//! child's working directory atomically at spawn time.  If cwd is not set,
++//! the child inherits the parent's cwd.
 +//!
 +//! ## From<ChildPipe> for Stdio
 +//!
@@ -3452,6 +3454,12 @@ index 00000000..00000000
 +    handles_to_inherit: [u64; 8],
 +    num_inherited_handles: u32,
 +    _pad3: u32,
++    /// Pointer to desired working directory bytes (NOT null-terminated).
++    /// Set to 0 to inherit the parent's cwd.
++    cwd_ptr: u64,
++    /// Length of the cwd bytes (0 = inherit parent cwd).
++    cwd_len: u32,
++    _pad4: u32,
 +}
 +
 +#[repr(C)]
@@ -3568,7 +3576,6 @@ index 00000000..00000000
 +    pub fn env_mut(&mut self) -> &mut CommandEnv { &mut self.env }
 +
 +    pub fn cwd(&mut self, dir: &OsStr) {
-+        // Note: kernel inherits parent cwd; this is stored but not forwarded.
 +        self.cwd = Some(dir.to_owned());
 +    }
 +
@@ -3606,6 +3613,9 @@ index 00000000..00000000
 +        let env_blob = serialize_env(&full_env);
 +        let name_bytes = self.program.as_encoded_bytes();
 +
++        // Encode optional cwd override.
++        let cwd_bytes = self.cwd.as_ref().map(|c| c.as_encoded_bytes());
++
 +        let req = SpawnProcessExReq {
 +            name_ptr: name_bytes.as_ptr() as u64,
 +            name_len: name_bytes.len() as u32,
@@ -3616,6 +3626,8 @@ index 00000000..00000000
 +            stdin_mode,
 +            stdout_mode,
 +            stderr_mode,
++            cwd_ptr: cwd_bytes.map_or(0, |b| b.as_ptr() as u64),
++            cwd_len: cwd_bytes.map_or(0, |b| b.len() as u32),
 +            ..Default::default()
 +        };
 +

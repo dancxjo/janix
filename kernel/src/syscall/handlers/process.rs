@@ -511,6 +511,24 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         }
     }
 
+    // Decode optional cwd override
+    let cwd = if req.cwd_len > 0 && req.cwd_ptr != 0 {
+        let clen = req.cwd_len as usize;
+        if clen > 4096 {
+            return Err(Errno::EINVAL);
+        }
+        validate_user_range(req.cwd_ptr as usize, clen, false)?;
+        let mut cwd_bytes = alloc::vec![0u8; clen];
+        unsafe {
+            copyin(&mut cwd_bytes, req.cwd_ptr as usize)?;
+        }
+        Some(
+            alloc::string::String::from_utf8(cwd_bytes).map_err(|_| Errno::EINVAL)?,
+        )
+    } else {
+        None
+    };
+
     let result = unsafe {
         scheduler::spawn_process_ex_current(
             name,
@@ -521,6 +539,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
             stderr_spec,
             boot_arg,
             inherited_handles,
+            cwd,
         )
     }?;
 

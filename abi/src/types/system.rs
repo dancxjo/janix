@@ -270,6 +270,12 @@ pub struct SpawnProcessExReq {
     /// Number of handles in the array to inherit.
     pub num_inherited_handles: u32,
     pub _pad3: u32,
+    /// Pointer to the desired working directory bytes (NOT null-terminated).
+    /// Set to 0 to inherit the parent's cwd.
+    pub cwd_ptr: u64,
+    /// Length of the cwd bytes (0 = inherit parent cwd).
+    pub cwd_len: u32,
+    pub _pad4: u32,
 }
 
 /// Response payload for SYS_SPAWN_PROCESS_EX.

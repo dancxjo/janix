@@ -329,6 +329,7 @@ pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
         StdioSpec,
         u64,
         Vec<u64>,
+        Option<alloc::string::String>,
     ) -> Result<SpawnExResult, abi::errors::Errno>,
 > = None;
 
@@ -341,6 +342,7 @@ pub unsafe fn spawn_process_ex_current(
     stderr_spec: StdioSpec,
     boot_arg: u64,
     inherited_handles: Vec<u64>,
+    cwd: Option<alloc::string::String>,
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     if let Some(hook) = SPAWN_PROCESS_EX_HOOK {
         hook(
@@ -352,6 +354,7 @@ pub unsafe fn spawn_process_ex_current(
             stderr_spec,
             boot_arg,
             inherited_handles,
+            cwd,
         )
     } else {
         Err(abi::errors::Errno::ENOSYS)

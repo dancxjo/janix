@@ -1,3 +1,23 @@
+//! Beeper — generates a PCM tone and sends it to the sound driver.
+//!
+//! # IPC note (legacy deviation)
+//!
+//! This driver sends raw PCM audio data over a **channel** handle published in
+//! `AudioInfoPayload`.  Raw PCM is a continuous byte stream with no message
+//! boundaries — according to the IPC doctrine (`docs/concepts/channels_vs_pipes.md`)
+//! it should be transported via a **pipe** (or a memfd-backed ring for
+//! zero-copy).  Channels are used here only because `AudioInfoPayload` embeds a
+//! bare channel handle number that any process can copy from a VFS file; plain
+//! pipe FDs cannot be shared cross-process without a prior `channel_send_handle`
+//! capability transfer.
+//!
+//! A future version should use:
+//! 1. A discovery channel at `/services/sound/connect`.
+//! 2. `channel_send_handle` to pass a pipe write-end to the connecting client.
+//! 3. `vfs_write` / `vfs_read` for the PCM byte stream.
+//!
+//! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
+
 #![feature(restricted_std)]
 #![no_main]
 

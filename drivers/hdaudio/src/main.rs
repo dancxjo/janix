@@ -1,3 +1,23 @@
+//! Intel HDA sound driver.
+//!
+//! # IPC note (legacy deviation)
+//!
+//! This driver receives raw PCM audio data via `channel_recv` on a channel
+//! handle published in `AudioInfoPayload`.  Raw PCM is a continuous byte
+//! stream with no message boundaries — according to the IPC doctrine
+//! (`docs/concepts/channels_vs_pipes.md`) it should arrive over a **pipe**
+//! (or a memfd-backed ring for zero-copy).  The channel is used here only
+//! because `AudioInfoPayload` embeds a bare channel handle number that any
+//! process can read from a VFS file; plain pipe FDs cannot be shared
+//! cross-process without a prior `channel_send_handle` capability transfer.
+//!
+//! The correct long-term architecture is:
+//! 1. A discovery channel at `/services/sound/connect`.
+//! 2. `channel_send_handle` to pass a pipe write-end to each connecting client.
+//! 3. `vfs_write` / `vfs_read` for the raw PCM byte stream.
+//!
+//! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
+
 #![feature(restricted_std)]
 #![no_main]
 extern crate alloc;

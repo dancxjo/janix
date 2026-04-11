@@ -205,7 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
-            // rustc_thingos::build_rustc_thingos(&sh, &env)?;
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
 
@@ -225,6 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Hdd { env, profile, init } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let path = build_hdd(&sh, &env, &programs)?;
@@ -242,7 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
-            // rustc_thingos::build_rustc_thingos(&sh, &env)?;
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let iso_path = build_iso(&sh, &env, &programs)?;
@@ -271,7 +272,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
-            // rustc_thingos::build_rustc_thingos(&sh, &env)?;
+            rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let hdd_path = build_hdd(&sh, &env, &programs)?;

@@ -36,7 +36,7 @@ hdd arch=karch:
 
 # Run with QEMU (UEFI mode)
 # Examples: just run, just run aarch64, just run -i, just run x86_64 -i
-run *args:
+run *args: ensure-rust-patched
     #!/usr/bin/env bash
     set -e
     ARCH="{{karch}}"
@@ -219,8 +219,7 @@ smoke:
 rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 
 # Ensure the Rust stdlib patches are applied (idempotent).
-# Runs fetch-rust if vendor/rust/ is absent, then applies the patch only if it
-# has not been applied yet (detected via reverse-check).
+# Uses a hash of all patches to detect changes.
 ensure-rust-patched: fetch-rust
     #!/usr/bin/env bash
     set -euo pipefail
@@ -234,20 +233,28 @@ ensure-rust-patched: fetch-rust
         echo "No patches found in patches/rust/. Nothing to apply."
         exit 0
     fi
+    # Compute current hash of all patches
+    # Sort by filename so numbered patches apply in order
     IFS=$'\n' sorted=($(printf '%s\n' "${patches[@]}" | sort))
-    # Check if the first patch is already applied by trying to reverse it.
-    first="../../${sorted[0]}"
-    cd vendor/rust
-    if git apply --reverse --check "$first" 2>/dev/null; then
-        echo "==> Rust patches already applied, skipping."
-    else
+    current_hash=$(sha256sum "${sorted[@]}" | sha256sum | cut -d' ' -f1)
+
+    stored_hash=""
+    if [ -f vendor/rust/.patches_hash ]; then
+        stored_hash=$(cat vendor/rust/.patches_hash)
+    fi
+
+    if [ "$current_hash" != "$stored_hash" ]; then
+        echo "==> Rust patches changed or missing. Re-applying..."
+        just rust-reset
+        cd vendor/rust
         for p in "${sorted[@]}"; do
-            git apply "../../$p" \
-                || { echo "ERROR: Failed to apply $p." \
-                          "The working tree may be dirty or incompatible." \
-                          "Try: just rust-reset && just ensure-rust-patched" >&2; exit 1; }
+            echo "  Applying $p..."
+            git apply "../../$p" || { echo "ERROR: Failed to apply $p" >&2; exit 1; }
         done
+        echo "$current_hash" > .patches_hash
         echo "==> Applied ${#sorted[@]} patch file(s) from patches/rust/"
+    else
+        echo "==> Rust patches already up-to-date."
     fi
 
 # Fetch (shallow clone) the Rust source tree into vendor/rust/

@@ -584,21 +584,10 @@ index e88011aa..48340e53 100644
          ) => {
              // `std` is the only runtime, so it just calls the destructor functions
              // itself when the time comes.
-@@ -162,6 +163,17 @@ pub(crate) mod key {
+@@ -162,6 +163,6 @@ pub(crate) mod key {
              pub(super) use unix::get;
              use unix::{create, destroy};
          }
-+        any(
-+            target_os = "uefi",
-+            target_os = "zkvm",
-+            target_os = "trusty",
-+            target_os = "vexos",
-+        ) => {
-+            mod racy;
-+            #[cfg(test)]
-+            mod tests;
-+            pub(super) use racy::LazyKey;
-+        }
          all(not(target_thread_local), target_os = "windows") => {
              #[cfg(test)]
              mod tests;

@@ -468,8 +468,11 @@ pub fn sys_channel_send_msg(
     const MAX_MSG_DATA: usize = 4096;
     const MAX_MSG_HANDLES: usize = 64;
 
+    // Enforce hard limits rather than silently truncating.
+    if handles_count > MAX_MSG_HANDLES {
+        return Err(Errno::EINVAL);
+    }
     let data_len = data_len.min(MAX_MSG_DATA);
-    let handles_count = handles_count.min(MAX_MSG_HANDLES);
 
     // Validate userspace ranges up-front
     if data_len > 0 {

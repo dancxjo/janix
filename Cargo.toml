@@ -80,7 +80,9 @@ members = [
     "userspace/tests/test_exec_env",
     "userspace/tests/test_threads",
     "userspace/ld_so",
+    "userspace/libdl",
     "userspace/tests/test_dyn_loader",
+    "userspace/tests/test_dlopen",
 ]
 
 # Exclude wasm32 theme crates (different target)

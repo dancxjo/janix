@@ -21,10 +21,8 @@ pub static mut CONN_TX: [[u8; 32768]; 256] = [[0; 32768]; 256];
 // Response types
 pub const RESP_OK: u16 = 0x0000;
 pub const RESP_ERROR: u16 = 0x0001;
-#[allow(dead_code)]
 pub const RESP_HANDLE: u16 = 0x0002;
 pub const RESP_DATA: u16 = 0x0003;
-#[allow(dead_code)]
 pub const RESP_ACCEPT: u16 = 0x0004;
 pub const RESP_EMPTY: u16 = 0x0005;
 pub const RESP_CLOSED: u16 = 0x0006;
@@ -408,7 +406,10 @@ impl SocketApi {
         format!("local: {}\nremote: {}\n", local_str, remote_str)
     }
 
-    /// Return the stored remote endpoint for a UDP socket (used by write_udp in provider).
+    /// Return the stored remote endpoint for a UDP socket.
+    ///
+    /// May be used for diagnostic or future "connected UDP" fast-path.
+    #[allow(dead_code)]
     pub fn udp_remote(&self, api_handle: u32) -> Option<(Ipv4Address, u16)> {
         let managed = self.sockets.get(&api_handle)?;
         let remote = managed.remote?;
@@ -417,9 +418,10 @@ impl SocketApi {
 
     /// Check poll readiness for a TCP socket's sub-file.
     pub fn tcp_poll_ready(&self, api_handle: u32, sf: u8, socket_set: &mut SocketSet) -> u32 {
-        // SF constants: DIR=0, CTL=1, DATA=2, STATUS=3, EVENTS=4
+        // SF constants: DIR=0, CTL=1, DATA=2, STATUS=3, EVENTS=4, ACCEPT=5
         const SF_DATA: u8 = 2;
         const SF_EVENTS: u8 = 4;
+        const SF_ACCEPT: u8 = 5;
         let managed = match self.sockets.get(&api_handle) {
             Some(s) if s.kind == SocketType::Tcp => s,
             _ => return 0,
@@ -446,6 +448,26 @@ impl SocketApi {
                 } else {
                     0
                 }
+            }
+            SF_ACCEPT => {
+                // Check if any connection is established on listener or pool
+                if socket.state() == TcpState::Established {
+                    return 0x0001; // POLLIN
+                }
+                for &(pool_handle, _) in &managed.listen_pool {
+                    if socket_set.get_mut::<TcpSocket>(pool_handle).state()
+                        == TcpState::Established
+                    {
+                        return 0x0001; // POLLIN
+                    }
+                }
+                // Also check pending_accepts
+                if let Some(pending) = self.pending_accepts.get(&api_handle) {
+                    if !pending.is_empty() {
+                        return 0x0001;
+                    }
+                }
+                0
             }
             _ => 0x0001, // status/ctl always readable/writable
         }
@@ -818,6 +840,117 @@ impl SocketApi {
 
         // No connection ready
         encode_empty()
+    }
+
+    /// Put an already-allocated TCP socket into listening mode.
+    ///
+    /// Used by the VFS provider when the client writes `"listen PORT [BACKLOG]"`
+    /// to `/net/tcp/<id>/ctl`.  The socket must have been previously allocated
+    /// via `alloc_socket_raw`.
+    ///
+    /// Returns `true` on success, `false` if the socket was not found or the
+    /// listen call failed.
+    pub fn handle_listen_existing<'a>(
+        &mut self,
+        socket_set: &mut SocketSet<'a>,
+        api_handle: u32,
+        port: u16,
+        backlog: u16,
+    ) -> bool {
+        let managed = match self.sockets.get_mut(&api_handle) {
+            Some(s) if s.kind == SocketType::Tcp => s,
+            _ => return false,
+        };
+
+        let endpoint = IpListenEndpoint::from(port);
+        let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+        if let Err(e) = socket.listen(endpoint) {
+            warn!(
+                "SOCKET_API: handle_listen_existing: listen failed on port {}: {:?}",
+                port, e
+            );
+            return false;
+        }
+
+        managed.is_listener = true;
+        if let Some(local) = managed.local.as_mut() {
+            local.port = port;
+        } else {
+            managed.local = Some(EndpointV4 {
+                ip: Ipv4Address::new(0, 0, 0, 0),
+                port,
+            });
+        }
+
+        // Fill the backlog pool with additional listener sockets.
+        let fill_backlog = core::cmp::min(core::cmp::max(backlog, 1), 16).saturating_sub(1);
+        for _ in 0..fill_backlog {
+            let Some(b_idx) = self.alloc_buffer() else {
+                break;
+            };
+            let rx_buf = SocketBuffer::new(unsafe { &mut CONN_RX[b_idx][..] });
+            let tx_buf = SocketBuffer::new(unsafe { &mut CONN_TX[b_idx][..] });
+            let mut sock = TcpSocket::new(rx_buf, tx_buf);
+            if sock.listen(endpoint).is_ok() {
+                if let Some(m) = self.sockets.get_mut(&api_handle) {
+                    m.listen_pool.push((socket_set.add(sock), b_idx));
+                } else {
+                    self.free_buffer(b_idx);
+                    break;
+                }
+            } else {
+                self.free_buffer(b_idx);
+            }
+        }
+
+        self.pending_accepts.insert(api_handle, Vec::new());
+
+        info!(
+            "SOCKET_API: Listening on port {}, handle={} (backlog={})",
+            port, api_handle, backlog
+        );
+        true
+    }
+
+    /// Bind an already-allocated UDP socket to a local port.
+    ///
+    /// Used by the VFS provider when the client writes `"bind PORT"` to
+    /// `/net/udp/<id>/ctl`.  The socket must have been previously allocated
+    /// via `alloc_udp_socket_raw`.
+    ///
+    /// Returns `true` on success, `false` if the socket was not found or
+    /// the bind call failed.
+    pub fn handle_udp_bind_port<'a>(
+        &mut self,
+        socket_set: &mut SocketSet<'a>,
+        api_handle: u32,
+        port: u16,
+    ) -> bool {
+        let managed = match self.sockets.get_mut(&api_handle) {
+            Some(s) if s.kind == SocketType::Udp => s,
+            _ => return false,
+        };
+
+        let socket =
+            socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
+        if let Err(e) = socket.bind(port) {
+            warn!(
+                "SOCKET_API: handle_udp_bind_port: bind failed on port {}: {:?}",
+                port, e
+            );
+            return false;
+        }
+
+        managed.local = Some(EndpointV4 {
+            ip: Ipv4Address::new(0, 0, 0, 0),
+            port,
+        });
+
+        info!(
+            "SOCKET_API: Bound UDP on port {}, handle={}",
+            port, api_handle
+        );
+        true
     }
 
     /// Handle a UDP_BIND request

@@ -18,16 +18,20 @@
 //! ├── tcp/
 //! │   ├── new           ← read:  allocates socket, returns id
 //! │   └── <id>/
-//! │       ├── ctl       ← write: "connect IP PORT"
+//! │       ├── ctl       ← write: "connect IP PORT" / "listen PORT [BACKLOG]" / "close"
 //! │       ├── data      ← read/write: TCP byte stream
+//! │       ├── accept    ← read:  "<conn_id> <ip> <port>\n" (listener sockets only)
 //! │       ├── status    ← read:  state text
 //! │       └── events    ← pollable connection events
-//! └── udp/
-//!     ├── new           ← read:  allocates socket, returns id
-//!     └── <id>/
-//!         ├── ctl       ← write: "connect IP PORT" / "bind PORT"
-//!         ├── data      ← read/write: length-prefixed datagrams
-//!         └── status    ← read:  state text
+//! ├── udp/
+//! │   ├── new           ← read:  allocates socket, returns id
+//! │   └── <id>/
+//! │       ├── ctl       ← write: "bind PORT" / "connect IP PORT" / "close"
+//! │       ├── data      ← write: [4: dest_ipv4][2: dest_port_le][4: len_le][payload]
+//! │       │               read:  [4: src_ipv4][2: src_port_le][4: len_le][payload]
+//! │       └── status    ← read:  state text
+//! └── dns/
+//!     └── lookup        ← write: hostname; read: dotted-decimal IPv4 address
 //! ```
 
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
@@ -82,7 +86,8 @@ const HANDLE_TCP_NEW: u64 = 12;
 const HANDLE_UDP_DIR: u64 = 13;
 const HANDLE_UDP_NEW: u64 = 14;
 const HANDLE_DNS_DIR: u64 = 15;
-const HANDLE_DNS_SERVER: u64 = 16;
+const HANDLE_DNS_LOOKUP: u64 = 16;
+const HANDLE_DNS_SERVER: u64 = 17;
 
 /// Dynamic handle base for TCP socket sub-files.
 /// Handle = TCP_DYN_BASE | ((api_handle as u64) << 8) | subfile_id
@@ -95,6 +100,8 @@ const SF_CTL: u8 = 1;
 const SF_DATA: u8 = 2;
 const SF_STATUS: u8 = 3;
 const SF_EVENTS: u8 = 4;
+/// Listener-only: returns accepted connection id on read.
+const SF_ACCEPT: u8 = 5;
 
 // ── IP config ────────────────────────────────────────────────────────────────
 
@@ -130,6 +137,10 @@ pub struct NetVfsProvider {
     pub tx_packets: u64,
     /// RPC request staging buffer.
     req_buf: Vec<u8>,
+    /// Pending DNS hostname to resolve (written by op_write to HANDLE_DNS_LOOKUP).
+    dns_pending: Option<alloc::string::String>,
+    /// Resolved DNS result (dotted-decimal IPv4 or error text).
+    dns_result: Option<alloc::string::String>,
 }
 
 impl NetVfsProvider {
@@ -169,6 +180,8 @@ impl NetVfsProvider {
             rx_packets: 0,
             tx_packets: 0,
             req_buf: alloc::vec![0u8; VFS_RPC_MAX_REQ],
+            dns_pending: None,
+            dns_result: None,
         })
     }
 
@@ -197,6 +210,9 @@ impl NetVfsProvider {
     ///
     /// `socket_api` and `socket_set` are borrowed so that socket operations
     /// (open/connect/send/recv) can be dispatched inline without locking.
+    ///
+    /// Also performs any pending DNS resolution synchronously when a hostname
+    /// has been written to `/net/dns/lookup`.
     pub fn drain_rpcs<D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
@@ -215,6 +231,28 @@ impl NetVfsProvider {
                     self.handle_one(iface, device, socket_set, socket_api, buf);
                 }
                 _ => break,
+            }
+        }
+
+        // If a DNS lookup was requested, resolve it now (synchronously in netd).
+        if self.dns_result.is_none() {
+            if let Some(hostname) = self.dns_pending.take() {
+                if let Some(dns_ip) = self.ip_config.as_ref().map(|c| c.gateway) {
+                    // Use gateway as DNS server if not configured separately.
+                    match crate::dns::lookup_a(iface, device, dns_ip, &hostname) {
+                        Ok(ip) => {
+                            let b = ip.as_bytes();
+                            self.dns_result =
+                                Some(alloc::format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]));
+                        }
+                        Err(e) => {
+                            warn!("DNS lookup for '{}' failed: {:?}", hostname, e);
+                            self.dns_result = Some("error".into());
+                        }
+                    }
+                } else {
+                    self.dns_result = Some("error".into());
+                }
             }
         }
     }
@@ -485,6 +523,7 @@ impl NetVfsProvider {
             "udp" => Some(HANDLE_UDP_DIR),
             "udp/new" => Some(HANDLE_UDP_NEW),
             "dns" => Some(HANDLE_DNS_DIR),
+            "dns/lookup" => Some(HANDLE_DNS_LOOKUP),
             "dns/server" => Some(HANDLE_DNS_SERVER),
             other => self.resolve_dynamic_path(other),
         }
@@ -504,6 +543,7 @@ impl NetVfsProvider {
                 "data" => SF_DATA,
                 "status" => SF_STATUS,
                 "events" => SF_EVENTS,
+                "accept" => SF_ACCEPT,
                 _ => return None,
             };
             return Some(TCP_DYN_BASE | ((id as u64) << 8) | sf as u64);
@@ -613,6 +653,26 @@ impl NetVfsProvider {
             | HANDLE_TCP_DIR
             | HANDLE_UDP_DIR
             | HANDLE_DNS_DIR => ReadResult::NotSupported,
+            // dns/lookup: returns the resolved IP (EAGAIN if not yet resolved)
+            HANDLE_DNS_LOOKUP => {
+                if offset > 0 {
+                    return ReadResult::EOF;
+                }
+                match &self.dns_result {
+                    Some(result) if result != "error" => {
+                        let text = result.clone() + "\n";
+                        self.dns_result = None; // consume result
+                        self.dns_pending = None;
+                        ReadResult::Data(text.into_bytes())
+                    }
+                    Some(_) => {
+                        self.dns_result = None;
+                        self.dns_pending = None;
+                        ReadResult::Error
+                    }
+                    None => ReadResult::Again, // EAGAIN: resolution in progress
+                }
+            }
             _ => ReadResult::Error,
         }
     }
@@ -651,6 +711,37 @@ impl NetVfsProvider {
             SF_EVENTS => {
                 ReadResult::text_offset(&socket_api.tcp_events_text(api_handle, socket_set), offset)
             }
+            SF_ACCEPT => {
+                // Listener sockets: returns "<conn_id> <ip> <port>\n" when a
+                // connection is ready, or EAGAIN when none is queued.
+                let Some(buf_idx) = socket_api.alloc_buffer() else {
+                    return ReadResult::Error;
+                };
+                let result = socket_api.handle_accept(socket_set, api_handle, 0, buf_idx);
+                if result.len() < 2 {
+                    socket_api.free_buffer(buf_idx);
+                    return ReadResult::Error;
+                }
+                let resp_type = u16::from_le_bytes([result[0], result[1]]);
+                match resp_type {
+                    crate::socket_api::RESP_ACCEPT => {
+                        // [2: RESP_ACCEPT][4: conn_handle][4: remote_ip][2: remote_port]
+                        if result.len() < 12 {
+                            return ReadResult::Error;
+                        }
+                        let conn_handle = u32::from_le_bytes(result[2..6].try_into().unwrap());
+                        let ip = &result[6..10];
+                        let port = u16::from_le_bytes(result[10..12].try_into().unwrap());
+                        let text = format!(
+                            "{} {}.{}.{}.{} {}\n",
+                            conn_handle, ip[0], ip[1], ip[2], ip[3], port
+                        );
+                        ReadResult::Data(text.into_bytes())
+                    }
+                    crate::socket_api::RESP_EMPTY => ReadResult::Again,
+                    _ => ReadResult::Error,
+                }
+            }
             _ => ReadResult::Error,
         }
     }
@@ -674,13 +765,21 @@ impl NetVfsProvider {
                 let resp_type = u16::from_le_bytes([recv[0], recv[1]]);
                 match resp_type {
                     crate::socket_api::RESP_DATA => {
-                        self.rx_bytes += (recv.len() - 2) as u64;
+                        // encode_udp_data format: [2: RESP_DATA][4: src_ip][2: src_port][payload]
+                        // New wire format: [4: src_ip][2: src_port][4: payload_len][payload]
+                        if recv.len() < 8 {
+                            return ReadResult::Error;
+                        }
+                        let src_ip = &recv[2..6];
+                        let src_port = u16::from_le_bytes([recv[6], recv[7]]);
+                        let payload = &recv[8..];
+                        self.rx_bytes += payload.len() as u64;
                         self.rx_packets += 1;
-                        // Prefix with 4-byte length for datagram framing
-                        let raw = &recv[2..];
-                        let mut out = alloc::vec![0u8; 4 + raw.len()];
-                        out[..4].copy_from_slice(&(raw.len() as u32).to_le_bytes());
-                        out[4..].copy_from_slice(raw);
+                        let mut out = alloc::vec![0u8; 4 + 2 + 4 + payload.len()];
+                        out[..4].copy_from_slice(src_ip);
+                        out[4..6].copy_from_slice(&src_port.to_le_bytes());
+                        out[6..10].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+                        out[10..].copy_from_slice(payload);
                         ReadResult::Data(out)
                     }
                     crate::socket_api::RESP_EMPTY => ReadResult::Again,
@@ -721,6 +820,16 @@ impl NetVfsProvider {
             HANDLE_ROUTES => self.write_routes(text, iface),
             // Read-only files
             HANDLE_ETH0_STATUS | HANDLE_ETH0_STATS | HANDLE_ETH0_EVENTS => WriteResult::ReadOnly,
+            // dns/lookup: write hostname, clear any previous result
+            HANDLE_DNS_LOOKUP => {
+                let hostname = text.trim().to_string();
+                if hostname.is_empty() {
+                    return WriteResult::Error;
+                }
+                self.dns_pending = Some(hostname);
+                self.dns_result = None;
+                WriteResult::Ok(data.len())
+            }
             // Dynamic TCP
             h if h >= TCP_DYN_BASE && h < UDP_DYN_BASE => {
                 let sf = (h & 0xFF) as u8;
@@ -808,7 +917,7 @@ impl NetVfsProvider {
     ) -> WriteResult {
         match sf {
             SF_CTL => {
-                // "connect IP PORT" or "close"
+                // "connect IP PORT", "listen PORT [BACKLOG]", or "close"
                 if let Some(rest) = text.strip_prefix("connect ") {
                     let parts: Vec<&str> = rest.split_whitespace().collect();
                     if parts.len() >= 2 {
@@ -817,6 +926,25 @@ impl NetVfsProvider {
                         {
                             let r = socket_api
                                 .handle_connect_existing(iface, socket_set, api_handle, ip, port);
+                            return if r {
+                                WriteResult::Ok(text.len())
+                            } else {
+                                WriteResult::Error
+                            };
+                        }
+                    }
+                } else if let Some(rest) = text.strip_prefix("listen ") {
+                    // "listen PORT [BACKLOG]"
+                    let mut parts = rest.split_whitespace();
+                    if let Some(port_str) = parts.next() {
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            let backlog: u16 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(4);
+                            let r = socket_api.handle_listen_existing(
+                                socket_set,
+                                api_handle,
+                                port,
+                                backlog,
+                            );
                             return if r {
                                 WriteResult::Ok(text.len())
                             } else {
@@ -856,8 +984,17 @@ impl NetVfsProvider {
     ) -> WriteResult {
         match sf {
             SF_CTL => {
-                // "connect IP PORT" or "bind PORT"
-                if let Some(rest) = text.strip_prefix("connect ") {
+                // "bind PORT", "connect IP PORT", or "close"
+                if let Some(rest) = text.strip_prefix("bind ") {
+                    if let Ok(port) = rest.trim().parse::<u16>() {
+                        let r = socket_api.handle_udp_bind_port(socket_set, api_handle, port);
+                        return if r {
+                            WriteResult::Ok(text.len())
+                        } else {
+                            WriteResult::Error
+                        };
+                    }
+                } else if let Some(rest) = text.strip_prefix("connect ") {
                     let parts: Vec<&str> = rest.split_whitespace().collect();
                     if parts.len() >= 2 {
                         if let (Some(ip), Ok(port)) =
@@ -871,31 +1008,35 @@ impl NetVfsProvider {
                             };
                         }
                     }
+                } else if text == "close" {
+                    socket_api.handle_close(socket_set, api_handle);
+                    return WriteResult::Ok(5);
                 }
                 WriteResult::Error
             }
             SF_DATA => {
-                // Length-prefixed datagram: [4: len][data]
-                if raw.len() < 4 {
+                // New wire format: [4: dest_ip][2: dest_port_le][4: payload_len_le][payload]
+                if raw.len() < 10 {
                     return WriteResult::Error;
                 }
-                let dlen = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
-                if raw.len() < 4 + dlen {
+                let dest_ip = Ipv4Address::from_bytes(&raw[..4]);
+                let dest_port = u16::from_le_bytes([raw[4], raw[5]]);
+                let payload_len = u32::from_le_bytes([raw[6], raw[7], raw[8], raw[9]]) as usize;
+                if raw.len() < 10 + payload_len {
                     return WriteResult::Error;
                 }
-                let payload = &raw[4..4 + dlen];
-                // For connected UDP sockets, use the stored remote endpoint.
-                if let Some((ip, port)) = socket_api.udp_remote(api_handle) {
-                    let r =
-                        socket_api.handle_udp_send_to(socket_set, api_handle, ip, port, payload);
-                    if r.len() >= 4 {
-                        let sent = u16::from_le_bytes([r[2], r[3]]) as usize;
-                        self.tx_bytes += sent as u64;
-                        self.tx_packets += 1;
-                        return WriteResult::Ok(4 + sent);
-                    }
+                let payload = &raw[10..10 + payload_len];
+                let r = socket_api.handle_udp_send_to(
+                    socket_set, api_handle, dest_ip, dest_port, payload,
+                );
+                if r.len() >= 4 {
+                    let sent = u16::from_le_bytes([r[2], r[3]]) as usize;
+                    self.tx_bytes += sent as u64;
+                    self.tx_packets += 1;
+                    WriteResult::Ok(10 + sent)
+                } else {
+                    WriteResult::Error
                 }
-                WriteResult::Error
             }
             _ => WriteResult::ReadOnly,
         }
@@ -948,6 +1089,7 @@ impl NetVfsProvider {
                 vec![
                     ("ctl".into(), bid | SF_CTL as u64, 8),
                     ("data".into(), bid | SF_DATA as u64, 8),
+                    ("accept".into(), bid | SF_ACCEPT as u64, 8),
                     ("status".into(), bid | SF_STATUS as u64, 8),
                     ("events".into(), bid | SF_EVENTS as u64, 8),
                 ]
@@ -961,6 +1103,7 @@ impl NetVfsProvider {
                     ("status".into(), bid | SF_STATUS as u64, 8),
                 ]
             }
+            HANDLE_DNS_DIR => vec![("lookup".into(), HANDLE_DNS_LOOKUP, 8)],
             _ => vec![],
         }
     }
@@ -981,6 +1124,7 @@ impl NetVfsProvider {
             HANDLE_ETH0_EVENTS => (S_IFREG | 0o444, 0),
             HANDLE_ROUTES => (S_IFREG | 0o644, 0),
             HANDLE_TCP_NEW | HANDLE_UDP_NEW => (S_IFREG | 0o444, 0),
+            HANDLE_DNS_LOOKUP => (S_IFREG | 0o644, 0),
             HANDLE_DNS_SERVER => (S_IFREG | 0o444, self.dns_server_text().len()),
             h if h >= TCP_DYN_BASE && h < UDP_DYN_BASE => {
                 let sf = (h & 0xFF) as u8;
@@ -1026,6 +1170,14 @@ impl NetVfsProvider {
                 let sf = (h & 0xFF) as u8;
                 let api_handle = ((h - UDP_DYN_BASE) >> 8) as u32;
                 socket_api.udp_poll_ready(api_handle, sf, socket_set)
+            }
+            // dns/lookup is readable when a result is available
+            HANDLE_DNS_LOOKUP => {
+                if self.dns_result.is_some() {
+                    POLLIN
+                } else {
+                    0
+                }
             }
             _ => 0,
         }

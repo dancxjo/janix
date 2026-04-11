@@ -84,7 +84,7 @@ fn format_mode(mode: u32) -> String {
 }
 
 fn list_path(path: &str, flags: &Flags, is_nested: bool) {
-    stem::info!("ls: listing path '{}'", path);
+    stem::debug!("ls: listing path '{}'", path);
     if flags.recursive || is_nested {
         print(&format!("{}:\n", path));
     }

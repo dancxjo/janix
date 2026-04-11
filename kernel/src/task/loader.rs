@@ -116,7 +116,7 @@ pub fn load_module_at<R: BootRuntime>(
             ..Default::default()
         };
 
-        crate::kinfo!(
+        crate::kdebug!(
             "LOADER: ELF info: entry={:x}, min_vaddr={:x}, bias={:x}, entry_pc={:x}",
             elf.entry,
             elf.min_vaddr,
@@ -192,7 +192,7 @@ pub fn load_module_at<R: BootRuntime>(
                     page_perms = match merge_perms(last_perms, perms) {
                         Ok(p) => p,
                         Err(e) => {
-                            crate::kinfo!("ERROR: {} at {:x}", e, virt);
+                            crate::kerror!("ERROR: {} at {:x}", e, virt);
                             return None;
                         }
                     };
@@ -280,7 +280,7 @@ pub fn load_module_at<R: BootRuntime>(
                 aux_info.tls_memsz = tls.memsz;
                 aux_info.tls_align = tls.align;
                 aux_info.tls_tp = tp;
-                crate::kinfo!(
+                crate::kdebug!(
                     "LOADER: TLS block: tp={:#x} filesz={} memsz={} align={}",
                     tp,
                     tls.filesz,

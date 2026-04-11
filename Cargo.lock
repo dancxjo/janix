@@ -2618,6 +2618,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc_smoke"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "profiling"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"

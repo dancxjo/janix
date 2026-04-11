@@ -500,10 +500,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
     // Translate stdio modes
     let stdin_spec = mode_to_spec(req.stdin_mode)?;
     let stdout_spec = mode_to_spec(req.stdout_mode)?;
-    let stderr_spec = match req.stderr_mode {
-        1 => scheduler::StdioSpec::Inherit,
-        _ => scheduler::StdioSpec::Null,
-    };
+    let stderr_spec = mode_to_spec(req.stderr_mode)?;
 
     let boot_arg = req.boot_arg;
 

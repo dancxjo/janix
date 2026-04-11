@@ -283,11 +283,10 @@ pub struct SpawnProcessExResp {
     /// Child process ID (for waitpid).
     pub child_pid: u32,
     pub _pad: u32,
-    /// Pipe IDs for piped stdio (0 = not piped).
-    /// stdin_pipe: parent's WRITE end.
+    /// Parent's fd for piped stdin (parent writes to this fd); 0 = not piped.
     pub stdin_pipe: u64,
-    /// stdout_pipe: parent's READ end.
+    /// Parent's fd for piped stdout (parent reads from this fd); 0 = not piped.
     pub stdout_pipe: u64,
-    /// stderr_pipe: parent's READ end.
+    /// Parent's fd for piped stderr (parent reads from this fd); 0 = not piped.
     pub stderr_pipe: u64,
 }

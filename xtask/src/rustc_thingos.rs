@@ -9,8 +9,9 @@
 //! The build is considered up-to-date when both of these conditions hold:
 //! 1. `target/rustc-thingos/rustc` exists.
 //! 2. `target/rustc-thingos/.cache-key` contains a hash derived from the
-//!    content of `targets/x86_64-unknown-thingos.json` and
-//!    `rust-toolchain.toml`.  Changing either file invalidates the cache.
+//!    content of `targets/x86_64-unknown-thingos.json`, `rust-toolchain.toml`,
+//!    and all patch files under `patches/rust/`.  Changing any of these files
+//!    invalidates the cache.
 
 use crate::common::Result;
 use std::collections::hash_map::DefaultHasher;
@@ -34,6 +35,27 @@ fn compute_cache_key() -> String {
     for path in &["targets/x86_64-unknown-thingos.json", "rust-toolchain.toml"] {
         if let Ok(content) = std::fs::read_to_string(path) {
             content.hash(&mut hasher);
+        }
+    }
+    // Hash all patch files in patches/rust/ so that edits to any patch
+    // invalidate the cached compiler.
+    if let Ok(entries) = std::fs::read_dir("patches/rust") {
+        let mut paths: Vec<_> = entries
+            .flatten()
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("patch")
+            })
+            .map(|e| e.path())
+            .collect();
+        // Sort for determinism.
+        paths.sort();
+        for patch_path in paths {
+            if let Ok(content) = std::fs::read_to_string(&patch_path) {
+                content.hash(&mut hasher);
+            }
         }
     }
     format!("{:016x}", hasher.finish())

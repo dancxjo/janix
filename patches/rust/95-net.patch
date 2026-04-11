@@ -18,7 +18,7 @@ new file mode 100644
 index 00000000..043c469e
 --- /dev/null
 +++ b/library/std/src/sys/net/connection/thingos.rs
-@@ -0,0 +1,1019 @@
+@@ -0,0 +1,1026 @@
 +use super::each_addr;
 +use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 +use crate::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, ToSocketAddrs};
@@ -854,7 +854,9 @@ index 00000000..043c469e
 +        return Ok(vec![SocketAddr::new(IpAddr::V4(ip), port)].into_iter());
 +    }
 +
-+    // IPv6 literals are not supported by the thingos network stack.
++    // `host` is the pure hostname (port is a separate argument), so a colon
++    // or leading '[' can only come from an IPv6 literal, which the thingos
++    // network stack does not support.
 +    if host.contains(':') || host.starts_with('[') {
 +        return Err(io::Error::from_raw_os_error(EAFNOSUPPORT));
 +    }
@@ -872,7 +874,10 @@ index 00000000..043c469e
 +    const DNS_TIMEOUT_NS: u64 = 5_000_000_000;
 +    let deadline = monotonic_ns().saturating_add(DNS_TIMEOUT_NS);
 +
-+    let mut buf = [0u8; 64];
++    // Buffer large enough for a dotted-decimal IPv4 address (max 15 chars,
++    // e.g. "255.255.255.255") plus a possible trailing newline.
++    const DNS_REPLY_BUF: usize = 32;
++    let mut buf = [0u8; DNS_REPLY_BUF];
 +    loop {
 +        match vfs_read(lookup_fd, &mut buf) {
 +            Ok(n) if n > 0 => {
@@ -884,6 +889,8 @@ index 00000000..043c469e
 +                    text.parse().map_err(|_| io::Error::from_raw_os_error(EINVAL))?;
 +                return Ok(vec![SocketAddr::new(IpAddr::V4(ip), port)].into_iter());
 +            }
++            // Ok(0) means the result is not ready yet (netd is still resolving);
++            // treat it the same as EAGAIN and retry after a short sleep.
 +            Ok(_) | Err(ref e) if e.raw_os_error() == Some(EAGAIN) => {
 +                if monotonic_ns() >= deadline {
 +                    let _ = vfs_close(lookup_fd);

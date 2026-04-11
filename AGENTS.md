@@ -13,6 +13,9 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Run BDD tests: `just behave` (see `tools/bdd`)
 - Clean: `just clean`
 - Audit platform boundary: `python3 scripts/audit_platform_boundary.py`
+- Rust source checkout: `just fetch-rust`
+- Apply committed Rust patches locally: `just rust-apply-patches`
+- Save `vendor/rust/` edits back to the repo patch: `just rust-save-patches`
 
 ## Top-level layout (what's what)
 - `abi/`: shared ABI types and syscalls between kernel/userspace.
@@ -56,6 +59,31 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Run `python3 scripts/audit_platform_boundary.py` to verify compliance
 
 **See `docs/platform.md` for the complete platform layer contract.**
+
+## Rust patch source of truth
+
+When working on Rust std or `stem::pal` integration, treat `vendor/rust/` as ephemeral local state.
+
+- `vendor/rust/` is not committed to the repository.
+- `just fetch-rust` populates `vendor/rust/` with the pinned upstream Rust tree only.
+- `patches/rust/thingos-pal.patch` is the committed source of truth for Thing-OS Rust source modifications.
+- `just rust-apply-patches` must be run before you inspect or edit `vendor/rust/` for Thing-OS-specific behavior.
+- `just rust-save-patches` must be run after any change under `vendor/rust/`, or those edits are invisible to the repo and can be lost.
+
+Expected workflow:
+
+1. `just fetch-rust`
+2. `just rust-apply-patches`
+3. edit `vendor/rust/...`
+4. `just rust-save-patches`
+
+Important implications:
+
+- Fresh checkouts do not have `vendor/rust/`.
+- A machine that only ran `just fetch-rust` is on unpatched upstream std.
+- `git status` in the main repo does not track whether `vendor/rust/` is patched or dirty.
+- If `vendor/rust/` is manually edited and the patch is not saved, another fetch/reset can silently discard the work.
+- CI and developer environments only converge when `patches/rust/thingos-pal.patch` is updated and committed.
 
 ## Notes
 - Workspace members are listed in `Cargo.toml`.

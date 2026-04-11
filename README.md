@@ -248,6 +248,48 @@ KARCH=aarch64 just run
 | `just clean` | Clean build artifacts |
 | `just die` | Kill running QEMU |
 
+### Rust std patch workflow
+
+Thing-OS carries local changes to the Rust source tree used for `std`-adjacent work, but `vendor/rust/` is intentionally **not** committed. That has two important consequences:
+
+- `patches/rust/thingos-pal.patch` is the only committed source of truth for Rust std changes.
+- The contents of `vendor/rust/` are disposable checkout state and can differ across machines unless you apply the patch.
+
+Current behavior by state:
+
+- Fresh checkout: `vendor/rust/` does not exist.
+- After `just fetch-rust`: you have the pinned upstream Rust tree, still unpatched.
+- After `just rust-apply-patches`: your local `vendor/rust/` matches the committed patch set.
+- After editing `vendor/rust/`: nothing in the main repo shows that state unless you save the patch.
+
+Required workflow when touching Rust std sources:
+
+```bash
+# Get the pinned upstream tree
+just fetch-rust
+
+# Apply the committed Thing-OS patch set before making changes
+just rust-apply-patches
+
+# ...edit files under vendor/rust/...
+
+# Persist your changes back into the repo's source of truth
+just rust-save-patches
+```
+
+Rules:
+
+- Always run `just rust-apply-patches` before inspecting or editing `vendor/rust/` for Thing-OS work.
+- Always run `just rust-save-patches` after changing anything under `vendor/rust/`.
+- Do not assume `git status` in the main repository will tell you whether `vendor/rust/` is patched.
+- Do not assume another developer or CI machine has the same local `vendor/rust/` state unless the patch file was saved and committed.
+- If you re-run `just fetch-rust` or otherwise replace `vendor/rust/` without saving, unsaved local std changes are lost.
+
+If you are reviewing or debugging `stem::pal`, `std` shims, or other Rust source changes, verify both of these before drawing conclusions:
+
+- `vendor/rust/` exists and is at the pinned commit.
+- `just rust-apply-patches` has been run for that checkout.
+
 ---
 
 ## Project structure

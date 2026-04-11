@@ -51,6 +51,7 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
     let open_flags = OpenFlags::from_open_call(flags as u32);
     let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
     let want_trunc = (flags as u32) & vfs_flags::O_TRUNC != 0;
+    let want_excl = (flags as u32) & vfs_flags::O_EXCL != 0;
 
     let abs_path = resolve_path(path)?;
 
@@ -59,6 +60,10 @@ pub fn sys_fs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult<
         // Try lookup first; fall back to create if the file doesn't exist.
         match vfs::mount::lookup(&abs_path) {
             Ok(existing) => {
+                if want_excl {
+                    // O_CREAT | O_EXCL: file must not pre-exist.
+                    return Err(Errno::EEXIST);
+                }
                 if want_trunc {
                     // Truncate the file to zero length.
                     let _ = existing.truncate(0);
@@ -133,6 +138,21 @@ pub fn sys_fs_sync(fd: usize) -> SysResult<usize> {
         lock.fd_table.get(fd as u32)?.node.clone()
     };
     node.sync()?;
+    Ok(0)
+}
+
+/// Truncate the file associated with `fd` to exactly `size` bytes (ftruncate).
+///
+/// If `size` is greater than the current file length, the file is extended with
+/// zero bytes.  If `size` is smaller, the excess data is discarded.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_ftruncate(fd: usize, size: usize) -> SysResult<usize> {
+    let node = {
+        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+        let lock = pinfo_arc.lock();
+        lock.fd_table.get(fd as u32)?.node.clone()
+    };
+    node.truncate(size as u64)?;
     Ok(0)
 }
 

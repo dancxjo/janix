@@ -7,10 +7,11 @@
 use abi::errors::SysResult;
 use abi::syscall::{
     PollFd, SYS_FD_FROM_HANDLE, SYS_FS_CHDIR, SYS_FS_CLOSE, SYS_FS_DEVICE_CALL, SYS_FS_DUP,
-    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_MKDIR, SYS_FS_MOUNT,
-    SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR, SYS_FS_READLINK,
-    SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK, SYS_FS_SYNC,
-    SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH, SYS_FS_WRITE, SYS_PIPE,
+    SYS_FS_DUP2, SYS_FS_FCNTL, SYS_FS_FTRUNCATE, SYS_FS_GETCWD, SYS_FS_ISATTY, SYS_FS_MKDIR,
+    SYS_FS_MOUNT, SYS_FS_NOTIFY, SYS_FS_OPEN, SYS_FS_POLL, SYS_FS_READ, SYS_FS_READDIR,
+    SYS_FS_READLINK, SYS_FS_REALPATH, SYS_FS_RENAME, SYS_FS_SEEK, SYS_FS_STAT, SYS_FS_SYMLINK,
+    SYS_FS_SYNC, SYS_FS_UMOUNT, SYS_FS_UNLINK, SYS_FS_WATCH_FD, SYS_FS_WATCH_PATH,
+    SYS_FS_WRITE, SYS_PIPE,
 };
 
 use super::arch::raw_syscall6;
@@ -453,6 +454,17 @@ pub fn vfs_realpath(path: &str, buf: &mut [u8]) -> SysResult<usize> {
 /// Returns `Ok(())` on success, or an [`Errno`] on failure.
 pub fn vfs_fsync(fd: u32) -> SysResult<()> {
     let ret = unsafe { raw_syscall6(SYS_FS_SYNC, fd as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Truncate the file associated with `fd` to exactly `size` bytes.
+///
+/// If `size` is greater than the current file length the file is extended with
+/// zero bytes.  If `size` is smaller, the excess data is discarded.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_ftruncate(fd: u32, size: u64) -> SysResult<()> {
+    let ret = unsafe { raw_syscall6(SYS_FS_FTRUNCATE, fd as usize, size as usize, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 

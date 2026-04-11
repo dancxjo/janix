@@ -147,6 +147,8 @@ pub const SYS_FS_SYNC: u32 = 0x4017;
 pub const SYS_FS_FCNTL: u32 = 0x4018;
 pub const SYS_FS_SYMLINK: u32 = 0x4019;
 pub const SYS_FS_READLINK: u32 = 0x401A;
+/// Truncate an open file to `size` bytes (ftruncate semantics).
+pub const SYS_FS_FTRUNCATE: u32 = 0x401B;
 
 // ============================================================================
 // Hardware & Device Interfaces (0x5000)
@@ -215,6 +217,8 @@ pub mod vfs_flags {
     pub const O_WRONLY: u32 = 0x0001;
     pub const O_RDWR: u32 = 0x0002;
     pub const O_CREAT: u32 = 0x0040;
+    /// Fail if the file already exists (used with O_CREAT for create_new semantics).
+    pub const O_EXCL: u32 = 0x0080;
     pub const O_TRUNC: u32 = 0x0200;
     pub const O_APPEND: u32 = 0x0400;
     pub const O_NONBLOCK: u32 = 0x0800;

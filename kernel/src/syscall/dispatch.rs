@@ -123,6 +123,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_FS_ISATTY => handlers::vfs::sys_fs_isatty(args[0]),
         SYS_FS_REALPATH => handlers::vfs::sys_fs_realpath(args[0], args[1], args[2], args[3]),
         SYS_FS_SYNC => handlers::vfs::sys_fs_sync(args[0]),
+        SYS_FS_FTRUNCATE => handlers::vfs::sys_fs_ftruncate(args[0], args[1]),
         SYS_FS_FCNTL => handlers::vfs::sys_fs_fcntl(args[0], args[1], args[2]),
         SYS_FS_SYMLINK => handlers::vfs::sys_fs_symlink(args[0], args[1], args[2], args[3]),
         SYS_FS_READLINK => handlers::vfs::sys_fs_readlink(args[0], args[1], args[2], args[3]),

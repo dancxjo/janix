@@ -94,6 +94,7 @@ members = [
     "userspace/libdl",
     "userspace/tests/test_dyn_loader",
     "userspace/tests/test_dlopen",
+    "userspace/tests/test_fs",
 ]
 
 # Exclude wasm32 theme crates (different target)

@@ -1072,9 +1072,48 @@ pub fn sys_fs_realpath(
     Ok(needed)
 }
 
-// ── symlink ──────────────────────────────────────────────────────────────────
+// ── lstat ────────────────────────────────────────────────────────────────────
 
-/// Create a symbolic link at `link_path` pointing to `target`.
+/// Stat a path without following the final symlink (`lstat` semantics).
+///
+/// Signature: `SYS_FS_LSTAT(path_ptr, path_len, stat_ptr) → 0`
+///
+/// - Resolves `path` without following the final path component if it is a
+///   symlink, so symlink metadata (mode `S_IFLNK`, size = target length, etc.)
+///   is returned instead of the target's metadata.
+/// - Returns `ENOENT` if the path does not exist.
+pub fn sys_fs_lstat(path_ptr: usize, path_len: usize, stat_ptr: usize) -> SysResult<usize> {
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let stat_size = core::mem::size_of::<abi::fs::FileStat>();
+    validate_user_range(path_ptr, path_len, false)?;
+    validate_user_range(stat_ptr, stat_size, true)?;
+
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    let abs_path = resolve_path(path)?;
+
+    // Use no-follow lookup so the symlink node itself is returned.
+    let node = vfs::path::resolve_no_follow(&abs_path)?;
+
+    let stat = node.stat()?;
+    let file_stat = stat.to_abi_stat();
+    // SAFETY: `file_stat` is a plain repr(C) struct on the stack; we read it as bytes.
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            &file_stat as *const abi::fs::FileStat as *const u8,
+            stat_size,
+        )
+    };
+    unsafe { copyout(stat_ptr, bytes)? };
+
+    Ok(0)
+}
+
+// ── symlink ──────────────────────────────────────────────────────────────────
 ///
 /// Signature: `SYS_FS_SYMLINK(target_ptr, target_len, link_ptr, link_len) → 0`
 ///
@@ -1464,4 +1503,21 @@ mod tests {
             "AlwaysReadyNode → ready"
         );
     }
+
+    // ── sys_fs_lstat input validation ─────────────────────────────────────────
+
+    /// Zero-length path must return EINVAL immediately.
+    #[test]
+    fn lstat_zero_path_len_returns_einval() {
+        let result = sys_fs_lstat(0x1000, 0, 0x2000);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    /// Path length exceeding 4096 bytes must return EINVAL immediately.
+    #[test]
+    fn lstat_path_too_long_returns_einval() {
+        let result = sys_fs_lstat(0x1000, 4097, 0x2000);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
 }
+

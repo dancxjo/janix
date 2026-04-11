@@ -2373,9 +2373,11 @@ index 00000000..00000000
 +//! the ThingOS kernel (see `abi/src/numbers.rs`).
 +//!
 +//! # Symlink support
-+//! ThingOS VFS has basic symlink support (`SYS_FS_SYMLINK`, `SYS_FS_READLINK`).
-+//! The `stat` implementation does **not** follow symlinks (same as `lstat` on
-+//! POSIX), because `SYS_FS_OPEN` + `SYS_FS_STAT` resolves via the open node.
++//! ThingOS VFS has basic symlink support (`SYS_FS_SYMLINK`, `SYS_FS_READLINK`,
++//! `SYS_FS_LSTAT`).  `stat` opens the path via `SYS_FS_OPEN` (which follows
++//! symlinks) and then calls `SYS_FS_STAT` on the resulting fd.  `lstat` uses
++//! `SYS_FS_LSTAT`, a dedicated path-based syscall that resolves the final
++//! path component without following it, returning symlink metadata directly.
 +//! Hard links are not supported and return `Unsupported`.
 +//!
 +//! # Permissions
@@ -2416,6 +2418,7 @@ index 00000000..00000000
 +const SYS_FS_SYMLINK: u32 = 0x4019;
 +const SYS_FS_READLINK: u32 = 0x401A;
 +const SYS_FS_FTRUNCATE: u32 = 0x401B;
++const SYS_FS_LSTAT: u32 = 0x401C;
 +
 +// ── Open flags (abi/src/numbers.rs vfs_flags) ─────────────────────────────────
 +const O_RDONLY: u32 = 0x0000;
@@ -3030,10 +3033,21 @@ index 00000000..00000000
 +}
 +
 +pub fn lstat(path: &Path) -> io::Result<FileAttr> {
-+    // ThingOS does not have a separate lstat syscall; treat the same as stat.
-+    // Symlink metadata can still be obtained via SYS_FS_STAT on an opened
-+    // symlink node.
-+    stat(path)
++    let path_str = path_to_str(path)?;
++    let mut s = AbiFileStat::default();
++    let ret = unsafe {
++        raw_syscall6(
++            SYS_FS_LSTAT,
++            path_str.as_ptr() as usize,
++            path_str.len(),
++            &mut s as *mut AbiFileStat as usize,
++            0,
++            0,
++            0,
++        )
++    };
++    cvt(ret)?;
++    Ok(FileAttr { stat: s })
 +}
 +
 +pub fn readdir(path: &Path) -> io::Result<ReadDir> {

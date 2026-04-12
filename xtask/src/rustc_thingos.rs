@@ -151,10 +151,10 @@ fn locate_stage1_rustc(cwd: &Path, rust_src: &Path) -> Option<PathBuf> {
 fn locate_thingos_rustc(cwd: &Path, rust_src: &Path) -> Option<PathBuf> {
     let root_build = xpy_build_root(cwd);
     let candidates = [
+        // Cargo build artifact produced by a Canadian-cross x.py run.
         root_build
             .join("stage1-rustc/x86_64-unknown-thingos/release/rustc-main"),
-        // Installed stage-1 tree for the ThingOS host.
-        cwd.join("build/x86_64-unknown-thingos/stage1/bin/rustc"),
+        // Installed stage-1 tree inside the vendor/rust build directory.
         rust_src
             .join("build/x86_64-unknown-linux-gnu/stage1-rustc/x86_64-unknown-thingos/release/rustc-main"),
         rust_src.join("build/x86_64-unknown-thingos/stage1/bin/rustc"),
@@ -231,7 +231,6 @@ fn cache_rustlib_tree(sh: &Shell, cwd: &Path) -> Result<()> {
 /// plus the ThingOS target rlibs from `stage1-std`.  We do *not* copy Linux
 /// shared libraries here – the ThingOS binary is statically linked.
 fn cache_thingos_rustc_tree(sh: &Shell, cwd: &Path, thingos_rustc: &Path) -> Result<()> {
-    let build_root = xpy_build_root(cwd);
     let cached_dir = cwd.join(THINGOS_RUSTLIB_CACHE_DIR);
 
     sh.remove_path(&cached_dir)?;
@@ -255,6 +254,7 @@ fn cache_thingos_rustc_tree(sh: &Shell, cwd: &Path, thingos_rustc: &Path) -> Res
     sh.create_dir(thingos_rlibs_dst.parent().unwrap())?;
     sh.create_dir(&thingos_rlibs_dst)?;
 
+    let build_root = xpy_build_root(cwd);
     let thingos_std = build_root.join("stage1-std/x86_64-unknown-thingos/release/deps");
     if thingos_std.exists() {
         for entry in std::fs::read_dir(&thingos_std)? {

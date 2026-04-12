@@ -179,9 +179,10 @@ bristle arch=karch: fetch-rust
     echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
     RUSTFLAGS="-Awarnings" cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p bristle
 
-# Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos.
-# Caches the result under target/rustc-thingos/; a second run with no
-# relevant changes is a no-op. Set BUILD_RUSTC=1 to enable.
+# Build and cache the current stage-1 Rust bootstrap output.
+# Today this produces a Linux-hosted cross-compiler for x86_64-unknown-thingos
+# plus a cached rustlib tree under target/rustc-thingos/. Set BUILD_RUSTC=1
+# to enable.
 rustc-thingos: fetch-rust rust-apply-patches
     cargo xtask rustc-thingos
 

@@ -1,5 +1,5 @@
 //! Build and package a stage-1 `rustc` cross-compiler for `x86_64-unknown-thingos`
-//! (runs on linux-gnu, targets ThingOS) then stage it into the ISO root.
+//! (runs on linux-gnu, targets ThingOS).
 //!
 //! # Environment variables
 //! * `BUILD_RUSTC=1` – enable the build (off by default).
@@ -11,6 +11,10 @@
 //!    content of `targets/x86_64-unknown-thingos.json`, `rust-toolchain.toml`,
 //!    and the git revision of `vendor/rust/`. Changing any of these
 //!    invalidates the cache.
+//!
+//! The current bootstrap produces a Linux-hosted stage-1 compiler plus a
+//! ThingOS target sysroot. That compiler is cached for local development but
+//! is not yet staged into the ISO because it is not runnable on ThingOS.
 
 use crate::common::Result;
 use std::collections::hash_map::DefaultHasher;
@@ -24,6 +28,8 @@ const RUSTC_BINARY: &str = "target/rustc-thingos/rustc";
 const CACHE_KEY_FILE: &str = "target/rustc-thingos/.cache-key";
 /// Output directory for all rustc-thingos build artifacts.
 const OUTPUT_DIR: &str = "target/rustc-thingos";
+/// Cached rustlib directory containing host and ThingOS target libraries.
+const RUSTLIB_CACHE_DIR: &str = "target/rustc-thingos/rustlib";
 
 // ---------------------------------------------------------------------------
 // Cache-key helpers
@@ -64,6 +70,64 @@ fn is_cache_valid() -> bool {
 
 fn write_cache_key() -> std::io::Result<()> {
     std::fs::write(CACHE_KEY_FILE, compute_cache_key())
+}
+
+fn xpy_build_root(cwd: &Path) -> PathBuf {
+    cwd.join("build/x86_64-unknown-linux-gnu")
+}
+
+fn locate_stage1_rustc(cwd: &Path, rust_src: &Path) -> Option<PathBuf> {
+    let root_build = xpy_build_root(cwd);
+    let candidates = [
+        root_build.join("stage1/bin/rustc"),
+        root_build.join("stage1-rustc/x86_64-unknown-linux-gnu/release/rustc-main"),
+        rust_src.join("build/x86_64-unknown-linux-gnu/stage1/bin/rustc"),
+        rust_src.join(
+            "build/x86_64-unknown-linux-gnu/stage1-tools/x86_64-unknown-thingos/release/rustc",
+        ),
+    ];
+
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn cache_rustlib_tree(sh: &Shell, cwd: &Path) -> Result<()> {
+    let build_root = xpy_build_root(cwd);
+    let cached_rustlib = cwd.join(RUSTLIB_CACHE_DIR);
+
+    sh.remove_path(&cached_rustlib)?;
+    sh.create_dir(&cached_rustlib)?;
+
+    // Stage the host sysroot that the cached rustc itself needs.
+    let host_rustlib = build_root.join("stage1/lib/rustlib");
+    if host_rustlib.exists() {
+        let host_src = host_rustlib.to_str().unwrap();
+        let host_dst = cached_rustlib.to_str().unwrap();
+        cmd!(sh, "cp -r {host_src}/. {host_dst}").run()?;
+    }
+
+    // x.py leaves the ThingOS target libraries under stage1-std cargo output.
+    // Mirror the standard rustlib layout so the cached compiler can target
+    // ThingOS without a custom sysroot path.
+    let thingos_lib = build_root.join("stage1-std/x86_64-unknown-thingos/release/deps");
+    if thingos_lib.exists() {
+        let thingos_dst = cached_rustlib.join("x86_64-unknown-thingos/lib");
+        sh.create_dir(thingos_dst.parent().unwrap())?;
+        sh.create_dir(&thingos_dst)?;
+        for entry in std::fs::read_dir(&thingos_lib)? {
+            let entry = entry?;
+            let path = entry.path();
+            let keep = matches!(
+                path.extension().and_then(|ext| ext.to_str()),
+                Some("rlib") | Some("rmeta")
+            );
+            if keep {
+                let file_name = path.file_name().unwrap();
+                std::fs::copy(&path, thingos_dst.join(file_name))?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +199,8 @@ download-ci-llvm = true
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Build a stage-1 `rustc` cross-compiled to run on `x86_64-unknown-thingos`
-/// and cache the result under `target/rustc-thingos/`.
+/// Build a Linux-hosted stage-1 `rustc` cross-compiler targeting
+/// `x86_64-unknown-thingos` and cache the result under `target/rustc-thingos/`.
 ///
 /// Returns `Ok(None)` when the step is intentionally skipped (either via the
 /// `SKIP_RUSTC_THINGOS=1` env-var or because the build is not yet supported
@@ -197,78 +261,39 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     .env("RUST_TARGET_PATH", target_dir_str)
     .run()?;
 
-    // Locate the cross-compiler rustc binary.  With host=linux-gnu, x.py places
-    // the stage-1 compiler at: build/<build_triple>/stage1/bin/rustc
-    // That binary is a linux-gnu ELF that can cross-compile for ThingOS.
-    let stage1_rustc = rust_src.join("build/x86_64-unknown-linux-gnu/stage1/bin/rustc");
+    // Recent bootstrap layouts place the resulting binary under the repository
+    // root's `build/` tree as `stage1-rustc/.../release/rustc-main` rather than
+    // under `vendor/rust/build/.../stage1/bin/rustc`. Accept both layouts.
+    let stage1_rustc = locate_stage1_rustc(&cwd, &rust_src).ok_or_else(|| {
+        let root_build = xpy_build_root(&cwd);
+        format!(
+            "stage-1 rustc binary not found after bootstrap.\n\
+                 Looked for common paths under:\n  {:?}\n  {:?}",
+            root_build,
+            rust_src.join("build/x86_64-unknown-linux-gnu")
+        )
+    })?;
 
-    if !stage1_rustc.exists() {
-        // Fallback: search common stage-1 paths.
-        let alt = rust_src
-            .join("build")
-            .join("x86_64-unknown-linux-gnu")
-            .join("stage1-tools")
-            .join("x86_64-unknown-thingos")
-            .join("release")
-            .join("rustc");
-        if alt.exists() {
-            sh.copy_file(&alt, RUSTC_BINARY)?;
-        } else {
-            return Err(format!(
-                "stage-1 rustc binary not found after bootstrap.\n\
-                     Looked in:\n  {:?}\n  {:?}",
-                stage1_rustc, alt
-            )
-            .into());
-        }
-    } else {
-        sh.copy_file(&stage1_rustc, RUSTC_BINARY)?;
-    }
+    sh.copy_file(&stage1_rustc, RUSTC_BINARY)?;
+    cache_rustlib_tree(sh, &cwd)?;
 
     write_cache_key()?;
     println!("rustc-thingos: binary cached at {}", RUSTC_BINARY);
     Ok(Some(PathBuf::from(RUSTC_BINARY)))
 }
 
-/// Copy the cached `rustc` binary (and the `rustlib` standard-library
-/// artifacts) into the ISO root so they are available at runtime.
+/// Staging a cached compiler into the ISO is currently disabled.
 ///
-/// Placement:
-/// * `/bin/rustc`            – the compiler binary
-/// * `/usr/lib/rustlib/`     – standard-library rlibs for the thingos target
-///
-/// This is a no-op when `SKIP_RUSTC_THINGOS=1` is set or when no cached
-/// binary is present (the ISO will simply not contain a compiler).
+/// The bootstrap configuration used here produces a Linux-hosted cross-compiler
+/// plus a ThingOS target sysroot. That artifact is useful on the developer
+/// machine but not yet runnable inside the ThingOS image.
 pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
+    let _ = (sh, iso_root);
     if std::env::var("BUILD_RUSTC").as_deref() != Ok("1") {
         return Ok(());
     }
-
-    let rustc_binary = Path::new(RUSTC_BINARY);
-    if !rustc_binary.exists() {
-        println!("rustc-thingos: no binary found, skipping ISO staging.");
-        return Ok(());
-    }
-
-    // Stage the compiler binary at /bin/rustc.
-    sh.copy_file(rustc_binary, iso_root.join("bin/rustc"))?;
-    println!("  Staged /bin/rustc");
-
-    // Stage the rustlib directory (contains rlibs needed to compile Rust
-    // programs on the device) at /usr/lib/rustlib if it was produced.
-    let cwd = std::env::current_dir()?;
-    let rustlib_src = cwd.join("vendor/rust/build/x86_64-unknown-linux-gnu/stage1/lib/rustlib");
-    if rustlib_src.exists() {
-        sh.create_dir(iso_root.join("usr/lib"))?;
-        let rustlib_src_str = rustlib_src.to_str().unwrap();
-        let rustlib_dest_str = iso_root
-            .join("usr/lib/rustlib")
-            .to_str()
-            .unwrap()
-            .to_string();
-        cmd!(sh, "cp -r {rustlib_src_str} {rustlib_dest_str}").run()?;
-        println!("  Staged /usr/lib/rustlib");
-    }
-
+    println!(
+        "rustc-thingos: cached compiler is a Linux-hosted cross-compiler; skipping ISO staging."
+    );
     Ok(())
 }

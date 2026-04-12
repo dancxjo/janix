@@ -257,6 +257,9 @@ Thing-OS uses a fork of the Rust compiler and standard library to support its cu
 - **Modifications**: The source of truth remains the `rust-thingos` fork. Local snapshots for in-flight Rust/LLVM changes may also live under `patches/rust/` and can be replayed with `just rust-apply-patches`.
 - **Submodules**: Manual changes to submodules (like LLVM) should be documented alongside the corresponding patch snapshot.
 
+Current bootstrap note:
+- `BUILD_RUSTC=1 cargo xtask rustc-thingos` currently produces a Linux-hosted cross-compiler plus a ThingOS target sysroot cache. It does not yet produce a ThingOS-hosted `/bin/rustc` for ISO staging.
+
 Workflow:
 1. `just fetch-rust` (clones the fork)
 2. If needed, replay local snapshots with `just rust-apply-patches`.

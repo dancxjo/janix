@@ -1462,16 +1462,28 @@ fn waitpid_for_pid<R: BootRuntime>(
 
         // Fast path: look for a dead child without registering.
         for &child_tid in &children {
-            if let Some(task) = crate::task::registry::get_task::<R>(child_tid) {
-                if task.state == TaskState::Dead {
-                    let code = task.exit_code.unwrap_or(0);
-                    let child_pid = task
-                        .process_info
-                        .as_ref()
-                        .map(|pi| pi.lock().pid as u64)
-                        .unwrap_or(child_tid);
-                    return Ok((child_pid, code));
-                }
+            // Collect exit info without holding the registry guard across the reap call.
+            let dead_info = {
+                crate::task::registry::get_task::<R>(child_tid).and_then(|task| {
+                    if task.state == TaskState::Dead {
+                        let code = task.exit_code.unwrap_or(0);
+                        let child_pid = task
+                            .process_info
+                            .as_ref()
+                            .map(|pi| pi.lock().pid as u64)
+                            .unwrap_or(child_tid);
+                        Some((child_pid, code))
+                    } else {
+                        None
+                    }
+                })
+            }; // ThreadRef (registry guard) dropped here.
+
+            if let Some((child_pid, code)) = dead_info {
+                // Reap: remove the dead child's record from the registry so it
+                // does not remain as an orphaned (zombie) entry indefinitely.
+                crate::task::registry::get_registry::<R>().remove(child_tid);
+                return Ok((child_pid, code));
             }
         }
 
@@ -1485,6 +1497,7 @@ fn waitpid_for_pid<R: BootRuntime>(
         // `register_task_exit_waiter` returns `Some(code)` immediately.
         let mut registered: alloc::vec::Vec<TaskId> = alloc::vec::Vec::new();
         let mut early_result: Option<(u64, i32)> = None;
+        let mut early_reap_tid: Option<TaskId> = None;
 
         for &child_tid in &children {
             match register_task_exit_waiter::<R>(child_tid, our_tid) {
@@ -1494,6 +1507,7 @@ fn waitpid_for_pid<R: BootRuntime>(
                         .and_then(|t| t.process_info.as_ref().map(|pi| pi.lock().pid as u64))
                         .unwrap_or(child_tid);
                     early_result = Some((child_pid, code));
+                    early_reap_tid = Some(child_tid);
                     break;
                 }
                 Ok(None) => registered.push(child_tid),
@@ -1505,6 +1519,10 @@ fn waitpid_for_pid<R: BootRuntime>(
             // Clean up any waiters we already registered before finding the dead child.
             for &child_tid in &registered {
                 let _ = unregister_task_exit_waiter::<R>(child_tid, our_tid);
+            }
+            // Reap the dead child.
+            if let Some(reap_tid) = early_reap_tid {
+                crate::task::registry::get_registry::<R>().remove(reap_tid);
             }
             return Ok(result);
         }
@@ -1733,12 +1751,12 @@ mod tests {
 
     // Mock types for testing - copy from spawn.rs tests
     #[derive(Default, Copy, Clone)]
-    struct MockContext(usize);
+    pub(crate) struct MockContext(pub(crate) usize);
     #[derive(Clone, Copy, Default)]
-    struct MockAddressSpace(u64);
+    pub(crate) struct MockAddressSpace(pub(crate) u64);
 
-    static MOCK_RUNTIME: MockRuntime = MockRuntime;
-    struct MockRuntime;
+    pub(crate) static MOCK_RUNTIME: MockRuntime = MockRuntime;
+    pub(crate) struct MockRuntime;
     impl BootRuntimeBase for MockRuntime {
         fn putchar(&self, _c: u8) {}
         fn mono_ticks(&self) -> u64 {
@@ -1845,11 +1863,19 @@ mod tests {
         }
     }
 
-    fn init_test_env() {
+    /// Serialises sched tests that mutate shared globals (REGISTRY, SCHEDULER,
+    /// TICK_COUNT).  Any test that calls `init_test_env` should hold the
+    /// returned guard for its entire duration to prevent races with concurrent
+    /// tests that reinitialise the registry.
+    pub(crate) static SCHED_TEST_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+
+    pub(crate) fn init_test_env() -> spin::MutexGuard<'static, ()> {
+        let guard = SCHED_TEST_GUARD.lock();
         init_mock_runtime();
         crate::task::registry::init::<MockRuntime>();
         *SCHEDULER.lock() = None;
         TICK_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
+        guard
     }
 
     fn make_task(
@@ -1891,11 +1917,29 @@ mod tests {
 
     #[test]
     fn test_priority_aging_boost() {
-        init_test_env();
+        let _g = init_test_env();
         // Test that tasks waiting too long get priority boost when scheduling
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
         sched.state.per_cpu[0].current = Some(0); // Dummy current task
+
+        // The dummy current task must be in BOTH the global registry and the
+        // scheduler's local sched-state so that `do_context_switch` can index
+        // into both consistently (both vectors are sorted by TID).
+        let dummy_current = make_task(0, TaskState::Running, TaskPriority::Normal);
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(dummy_current));
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 0,
+            state: crate::sched::state::ThreadState::Running,
+            priority: crate::sched::state::ThreadPriority::Normal,
+            base_priority: crate::sched::state::ThreadPriority::Normal,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
 
         // Create a normal-priority task enqueued recently
         let task_normal = crate::task::Task {
@@ -1903,7 +1947,7 @@ mod tests {
             state: TaskState::Runnable,
             priority: TaskPriority::Normal,
             base_priority: TaskPriority::Normal,
-            enqueued_at_tick: 500, // Recent
+            enqueued_at_tick: 600, // Recent (now - 600 = 400 < AGING_THRESHOLD, so no boost)
             exit_code: None,
             exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
@@ -1966,6 +2010,30 @@ mod tests {
         crate::task::registry::get_registry::<MockRuntime>()
             .insert(alloc::boxed::Box::new(task_low));
 
+        // Scheduler state entries are separate from the global registry and must
+        // be inserted explicitly so `prepare_schedule` can locate them.
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 1001,
+            state: crate::sched::state::ThreadState::Runnable,
+            priority: crate::sched::state::ThreadPriority::Normal,
+            base_priority: crate::sched::state::ThreadPriority::Normal,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 600,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 1002,
+            state: crate::sched::state::ThreadState::Runnable,
+            priority: crate::sched::state::ThreadPriority::Low,
+            base_priority: crate::sched::state::ThreadPriority::Low,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
         sched
             .state
             .enqueue_task(0, TaskPriority::Normal as usize, 1001);
@@ -1973,7 +2041,8 @@ mod tests {
             .state
             .enqueue_task(0, TaskPriority::Low as usize, 1002);
 
-        // Simulate time advancing enough to give the Low task a boost of +2 (effective priority 3 = High)
+        // Simulate time advancing enough to give the Low task a boost of +2 (eff = High=3),
+        // while the Normal task, enqueued at tick 600, only waits 400 ticks → no boost (eff = Normal=2).
         let now = types::AGING_THRESHOLD_TICKS * 2;
         TICK_COUNT.store(now, core::sync::atomic::Ordering::Relaxed);
 
@@ -1992,7 +2061,7 @@ mod tests {
 
     #[test]
     fn test_reset_priority_aging_on_schedule() {
-        init_test_env();
+        let _g = init_test_env();
         // Test that enqueued_at_tick resets when task is preempted/yields
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2065,6 +2134,29 @@ mod tests {
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task2));
 
         sched.state.per_cpu[0].current = Some(2001);
+        // Scheduler state entries for both tasks.
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 2001,
+            state: crate::sched::state::ThreadState::Running,
+            priority: crate::sched::state::ThreadPriority::Normal,
+            base_priority: crate::sched::state::ThreadPriority::Normal,
+            timeslice_remaining: 0,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 2002,
+            state: crate::sched::state::ThreadState::Runnable,
+            priority: crate::sched::state::ThreadPriority::Normal,
+            base_priority: crate::sched::state::ThreadPriority::Normal,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 500,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
         sched
             .state
             .enqueue_task(0, TaskPriority::Normal as usize, 2002);
@@ -2084,7 +2176,7 @@ mod tests {
 
     #[test]
     fn test_wake_preempts_lower_priority() {
-        init_test_env();
+        let _g = init_test_env();
         crate::task::registry::init::<MockRuntime>();
         use core::sync::atomic::Ordering;
 
@@ -2160,6 +2252,29 @@ mod tests {
         crate::task::registry::get_registry::<MockRuntime>()
             .insert(alloc::boxed::Box::new(rt_task));
         sched.state.per_cpu[0].current = Some(3001); // Normal task is running
+        // Scheduler state entries for both tasks.
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 3001,
+            state: crate::sched::state::ThreadState::Running,
+            priority: crate::sched::state::ThreadPriority::Normal,
+            base_priority: crate::sched::state::ThreadPriority::Normal,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
+        sched.state.insert_task(crate::sched::state::ThreadSchedFields {
+            tid: 3002,
+            state: crate::sched::state::ThreadState::Runnable,
+            priority: crate::sched::state::ThreadPriority::Realtime,
+            base_priority: crate::sched::state::ThreadPriority::Realtime,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        });
 
         // Put RT task in sleep queue with wake_tick in the past
         TICK_COUNT.store(100, Ordering::Relaxed);
@@ -2205,7 +2320,7 @@ mod tests {
 
     #[test]
     fn test_sorted_insertion() {
-        init_test_env();
+        let _g = init_test_env();
         crate::task::registry::init::<MockRuntime>();
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2285,7 +2400,7 @@ mod tests {
 
     #[test]
     fn test_block_and_wake_state_transitions() {
-        init_test_env();
+        let _g = init_test_env();
         crate::task::registry::init::<MockRuntime>();
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2380,7 +2495,7 @@ mod tests {
 
     #[test]
     fn test_wake_task_removes_sleep_queue_entry() {
-        init_test_env();
+        let _g = init_test_env();
         crate::task::registry::init::<MockRuntime>();
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
@@ -2476,7 +2591,7 @@ mod tests {
 
     #[test]
     fn test_kill_by_tid_removes_wait_queue_entry() {
-        init_test_env();
+        let _g = init_test_env();
         crate::task::registry::init::<MockRuntime>();
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
@@ -2570,7 +2685,7 @@ mod tests {
 
     #[test]
     fn test_wait_task_returns_immediately_for_dead_target() {
-        init_test_env();
+        let _g = init_test_env();
 
         let dead_task = crate::task::Task {
             id: 8001,
@@ -2611,7 +2726,7 @@ mod tests {
 
     #[test]
     fn test_wait_task_returns_echild_for_missing_target() {
-        init_test_env();
+        let _g = init_test_env();
 
         assert_eq!(
             wait_task::<MockRuntime>(8999).unwrap_err(),
@@ -2621,7 +2736,7 @@ mod tests {
 
     #[test]
     fn test_register_task_exit_waiter_tracks_live_target() {
-        init_test_env();
+        let _g = init_test_env();
 
         let live_task = crate::task::Task {
             id: 8101,
@@ -2671,7 +2786,7 @@ mod tests {
 
     #[test]
     fn test_kill_by_tid_wakes_registered_exit_waiter() {
-        init_test_env();
+        let _g = init_test_env();
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2830,7 +2945,7 @@ mod tests {
 
     #[test]
     fn test_poll_task_exit_reports_pending_dead_and_missing_targets() {
-        init_test_env();
+        let _g = init_test_env();
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
             make_task(8301, TaskState::Runnable, TaskPriority::Normal),
@@ -2850,7 +2965,7 @@ mod tests {
 
     #[test]
     fn test_unregister_task_exit_waiter_removes_only_requested_waiter() {
-        init_test_env();
+        let _g = init_test_env();
 
         let target = make_task(8401, TaskState::Runnable, TaskPriority::Normal);
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(target));
@@ -2868,7 +2983,7 @@ mod tests {
 
     #[test]
     fn test_register_timeout_wake_deduplicates_task_ids() {
-        init_test_env();
+        let _g = init_test_env();
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2893,7 +3008,7 @@ mod tests {
 
     #[test]
     fn test_unregister_timeout_wake_removes_task_from_all_buckets() {
-        init_test_env();
+        let _g = init_test_env();
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2925,7 +3040,7 @@ mod tests {
 
     #[test]
     fn test_interrupt_task_marks_and_consumes_pending_interrupt() {
-        init_test_env();
+        let _g = init_test_env();
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
             make_task(0, TaskState::Runnable, TaskPriority::Normal),
@@ -2943,7 +3058,7 @@ mod tests {
 
     #[test]
     fn test_interrupt_task_returns_esrch_for_missing_task() {
-        init_test_env();
+        let _g = init_test_env();
         assert_eq!(
             interrupt_task::<MockRuntime>(9999).unwrap_err(),
             abi::errors::Errno::ESRCH
@@ -3012,7 +3127,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_returns_exit_code_for_dead_specific_child() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Child task: pid=1001, ppid=1000, exit_code=42.
         // Tests call waitpid_for_pid directly so no parent task is needed.
@@ -3028,7 +3143,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_returns_exit_code_for_any_dead_child() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Child: pid=2001, ppid=2000, exit_code=7
         let child = make_process_task(9201, TaskState::Dead, 2001, 2000, Some(7));
@@ -3044,7 +3159,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_echild_when_no_children_exist() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Registry is empty; no children for pid=3000
         let err = waitpid_for_pid::<MockRuntime>(3000, -1, 0).unwrap_err();
@@ -3053,7 +3168,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_echild_when_specific_child_not_found() {
-        init_test_env();
+        let _g = init_test_env();
 
         // A child with a *different* ppid — should not be found for pid=4000
         let unrelated = make_process_task(9401, TaskState::Dead, 9999, 5000, Some(0));
@@ -3067,7 +3182,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_wnohang_returns_zero_when_child_alive() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Live child — not yet exited
         let child = make_process_task(9501, TaskState::Runnable, 5001, 5000, None);
@@ -3083,7 +3198,7 @@ mod tests {
 
     #[test]
     fn test_waitpid_multiple_children_returns_first_dead() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Two children under parent pid=6000: first alive, second dead
         let child_alive = make_process_task(9601, TaskState::Runnable, 6001, 6000, None);
@@ -3100,7 +3215,99 @@ mod tests {
         assert_eq!(code, 99);
     }
 
-    // ── Thread-group tests ────────────────────────────────────────────────────
+    /// After `waitpid` successfully returns a dead child's exit code the child's
+    /// registry entry must be removed (reaped).  Without reaping, dead process
+    /// records accumulate indefinitely ("zombie" leak).
+    #[test]
+    fn test_waitpid_reaps_dead_child() {
+        let _g = init_test_env();
+
+        let child = make_process_task(9701, TaskState::Dead, 7001, 7000, Some(55));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        // The child is still in the registry before the wait.
+        assert!(
+            crate::task::registry::get_task::<MockRuntime>(9701).is_some(),
+            "child must be in registry before waitpid"
+        );
+
+        let (child_pid, code) =
+            waitpid_for_pid::<MockRuntime>(7000, 7001, 0).expect("waitpid reap");
+        assert_eq!(child_pid, 7001);
+        assert_eq!(code, 55);
+
+        // After a successful wait the child record must have been reaped.
+        assert!(
+            crate::task::registry::get_task::<MockRuntime>(9701).is_none(),
+            "child record must be removed from registry after reaping"
+        );
+    }
+
+    /// Once a child has been reaped, a second `waitpid` for the same child must
+    /// return `ECHILD` — the record no longer exists.
+    #[test]
+    fn test_waitpid_echild_after_reaping() {
+        let _g = init_test_env();
+
+        let child = make_process_task(9702, TaskState::Dead, 7002, 7003, Some(0));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        // First wait reaps the child.
+        waitpid_for_pid::<MockRuntime>(7003, 7002, 0).expect("first waitpid");
+
+        // Second wait must fail because the record was removed.
+        let err = waitpid_for_pid::<MockRuntime>(7003, 7002, 0).unwrap_err();
+        assert_eq!(
+            err,
+            abi::errors::Errno::ECHILD,
+            "second waitpid after reaping must return ECHILD"
+        );
+    }
+
+    /// A dead child whose parent has NOT yet called `waitpid` must remain in
+    /// the registry (zombie semantics: exit status preserved until collected).
+    #[test]
+    fn test_dead_child_stays_in_registry_until_reaped() {
+        let _g = init_test_env();
+
+        let child = make_process_task(9703, TaskState::Dead, 7010, 7011, Some(3));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        // No waitpid called yet — record must still be present.
+        assert!(
+            crate::task::registry::get_task::<MockRuntime>(9703).is_some(),
+            "dead child must remain in registry until reaped"
+        );
+
+        // Verify state and exit code are accessible while zombie.
+        let task = crate::task::registry::get_task::<MockRuntime>(9703).unwrap();
+        assert_eq!(task.state, TaskState::Dead);
+        assert_eq!(task.exit_code, Some(3));
+    }
+
+    /// `waitpid` with WNOHANG must not reap any child when no child has exited.
+    #[test]
+    fn test_waitpid_wnohang_does_not_reap_live_child() {
+        let _g = init_test_env();
+
+        let child = make_process_task(9704, TaskState::Runnable, 7020, 7021, None);
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(child));
+
+        let (returned_pid, _) =
+            waitpid_for_pid::<MockRuntime>(7021, -1, abi::types::waitpid_flags::WNOHANG)
+                .expect("wnohang on live child");
+        assert_eq!(returned_pid, 0, "wnohang returns 0 when no child exited");
+
+        // Live child must still be in registry.
+        assert!(
+            crate::task::registry::get_task::<MockRuntime>(9704).is_some(),
+            "live child must remain in registry after WNOHANG poll"
+        );
+    }
 
     /// Helper: create a task + ProcessInfo with `tgid` populated and a shared
     /// thread_ids list for multi-thread tests.
@@ -3147,7 +3354,7 @@ mod tests {
     /// same ProcessInfo Arc.
     #[test]
     fn test_thread_ids_tracked_in_process_info() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Build a shared ProcessInfo for a 2-thread group.
         // pid = 7000 (thread-group leader), thread_ids = [7000, 7001].
@@ -3182,7 +3389,7 @@ mod tests {
     /// thread_ids list and their scheduler state is set to Dead.
     #[test]
     fn test_mark_task_exited_removes_tid_from_thread_ids() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Shared ProcessInfo for a 2-thread group: leader 8700, sibling 8701.
         let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
@@ -3237,7 +3444,7 @@ mod tests {
     /// threads are also killed (thread-group exit).
     #[test]
     fn test_thread_group_leader_exit_kills_siblings() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Shared ProcessInfo for a 2-thread group: leader 8800, sibling 8801.
         let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
@@ -3294,7 +3501,7 @@ mod tests {
     /// TIDs from thread_ids, leaving only the exec-calling thread.
     #[test]
     fn test_exec_collapse_kills_siblings_and_updates_thread_ids() {
-        init_test_env();
+        let _g = init_test_env();
 
         // Shared ProcessInfo for a 3-thread group: leader 9100, siblings 9101, 9102.
         let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
@@ -3382,7 +3589,7 @@ mod tests {
     /// exec_in_progress blocks additional thread creation at the process level.
     #[test]
     fn test_exec_in_progress_rejects_new_threads() {
-        init_test_env();
+        let _g = init_test_env();
 
         let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
             pid: 9300,
@@ -3429,7 +3636,7 @@ mod tests {
     /// writes it to hardware (FS_BASE) on the first context switch.
     #[test]
     fn test_tls_base_stored_in_task_user_fs_base() {
-        init_test_env();
+        let _g = init_test_env();
 
         let tls_base: u64 = 0xDEAD_CAFE_0000_0000;
 
@@ -3476,7 +3683,7 @@ mod tests {
     /// Joining a detached thread must return `EINVAL`.
     #[test]
     fn test_detached_thread_cannot_be_joined() {
-        init_test_env();
+        let _g = init_test_env();
 
         let task = crate::task::Task {
             id: 9801,
@@ -3523,7 +3730,7 @@ mod tests {
     /// `register_task_exit_waiter`, returning `None` (not yet exited).
     #[test]
     fn test_joinable_thread_can_be_waited_on() {
-        init_test_env();
+        let _g = init_test_env();
 
         let task = crate::task::Task {
             id: 9803,

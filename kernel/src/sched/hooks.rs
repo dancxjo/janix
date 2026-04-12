@@ -342,7 +342,7 @@ pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
 /// General-purpose runtime hook: spawn a process by opening an executable
 /// from the VFS at the given path.
 ///
-/// Installed during scheduler initialisation and called by `SYS_SPAWN_PROCESS_EX`
+/// Installed during scheduler initialization and called by `SYS_SPAWN_PROCESS_EX`
 /// at runtime.
 pub(crate) static mut SPAWN_PROCESS_FROM_PATH_HOOK: Option<
     unsafe fn(

@@ -1685,7 +1685,7 @@ mod tests {
     /// The runtime hook `SPAWN_PROCESS_FROM_PATH_HOOK` is a separate static
     /// from the boot hook `SPAWN_PROCESS_EX_HOOK`.
     ///
-    /// Before the scheduler is initialised the hook is `None`, so calling
+    /// Before the scheduler is initialized the hook is `None`, so calling
     /// `spawn_process_from_path_current` returns `ENOSYS`.  This verifies
     /// the hook plumbing and its independence from the boot path.
     #[test]

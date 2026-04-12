@@ -17,11 +17,13 @@
 //! Full end-to-end tests (loading an actual `.so` file, calling a symbol)
 //! require a populated `/lib` directory at runtime and are exercised by the
 //! BDD suite.
-
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use libdl::{RTLD_DEFAULT, RTLD_LAZY, dlclose, dlerror, dlopen_str, dlsym_bytes};
 use stem::println;

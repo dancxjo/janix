@@ -1,4 +1,8 @@
 //! Virtqueue implementation for virtio devices
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use crate::constants::{VIRTQ_DESC_F_NEXT, VIRTQ_DESC_F_WRITE};
 use core::ptr::{read_volatile, write_volatile};

@@ -24,11 +24,13 @@
 //! - `Close`  — no-op (handles are stateless in this implementation)
 //! - `Write`  — returns `EROFS` (ISO9660 is read-only)
 //! - `Poll`   — returns `POLLIN` always
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use abi::block_device_protocol::{
     BlockDeviceError, BlockDeviceRequest, BlockDeviceResponse, ReadRequest, ReadResponse,

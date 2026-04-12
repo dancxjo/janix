@@ -1,9 +1,10 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
 
-use alloc::format;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::syscall::{argv_get, exit, vfs_close, vfs_open, vfs_stat, vfs_write};
@@ -44,7 +45,7 @@ fn file_type(mode: u32) -> &'static str {
 }
 
 fn print_timespec(label: &str, ts: stem::abi::fs::Timespec) {
-    print(&format!("{}: {}.{:09}\n", label, ts.sec, ts.nsec));
+    print(&alloc::format!("{}: {}.{:09}\n", label, ts.sec, ts.nsec));
 }
 
 fn print_stat(path: &str) -> Result<(), ()> {
@@ -58,17 +59,17 @@ fn print_stat(path: &str) -> Result<(), ()> {
     };
     let _ = vfs_close(fd);
 
-    print(&format!("  File: {}\n", path));
-    print(&format!("  Type: {}\n", file_type(stat.mode)));
-    print(&format!("  Mode: {:o}\n", stat.mode));
-    print(&format!("   Ino: {}\n", stat.ino));
-    print(&format!("  Size: {}\n", stat.size));
-    print(&format!(" Links: {}\n", stat.nlink));
-    print(&format!("   UID: {}\n", stat.uid));
-    print(&format!("   GID: {}\n", stat.gid));
-    print(&format!("  Rdev: {}\n", stat.rdev));
-    print(&format!("Blksz: {}\n", stat.blksize));
-    print(&format!("Blocks: {}\n", stat.blocks));
+    print(&alloc::format!("  File: {}\n", path));
+    print(&alloc::format!("  Type: {}\n", file_type(stat.mode)));
+    print(&alloc::format!("  Mode: {:o}\n", stat.mode));
+    print(&alloc::format!("   Ino: {}\n", stat.ino));
+    print(&alloc::format!("  Size: {}\n", stat.size));
+    print(&alloc::format!(" Links: {}\n", stat.nlink));
+    print(&alloc::format!("   UID: {}\n", stat.uid));
+    print(&alloc::format!("   GID: {}\n", stat.gid));
+    print(&alloc::format!("  Rdev: {}\n", stat.rdev));
+    print(&alloc::format!("Blksz: {}\n", stat.blksize));
+    print(&alloc::format!("Blocks: {}\n", stat.blocks));
     print_timespec(" Access", stat.atime);
     print_timespec(" Modify", stat.mtime);
     print_timespec(" Change", stat.ctime);
@@ -89,7 +90,7 @@ fn main(_arg: usize) -> ! {
             print("\n");
         }
         if print_stat(path).is_err() {
-            print(&format!("stat: cannot stat '{}'\n", path));
+            print(&alloc::format!("stat: cannot stat '{}'\n", path));
             had_error = true;
         }
     }

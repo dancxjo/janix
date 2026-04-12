@@ -1,11 +1,5 @@
-// When targeting the kernel (bare x86_64-unknown-none), stem is no_std.
-// When targeting userspace (any(target_os = "thingos", target_env = "thingos")), stem uses std.
-#![cfg_attr(not(any(target_os = "thingos", target_env = "thingos")), no_std)]
-#![cfg_attr(
-    any(target_os = "thingos", target_env = "thingos"),
-    feature(restricted_std)
-)]
-#![allow(unexpected_cfgs)]
+#![no_std]
+#![no_std]
 extern crate alloc;
 
 pub use abi;
@@ -28,7 +22,12 @@ pub mod memory;
 
 /// Platform Abstraction Layer - explicit platform contract
 pub mod pal;
-pub mod panic;
+#[cfg(not(feature = "std"))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    crate::error!("PANIC: {}", info);
+    crate::syscall::exit(101);
+}
 pub mod pci;
 pub mod perf;
 pub mod rt;

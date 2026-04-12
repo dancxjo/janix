@@ -29,11 +29,13 @@
 //!
 //! `docs/concepts/ipc_cookbook.md` Recipe 5 — memfd-backed shared buffer.
 //! `docs/concepts/memfd.md` — memfd deep-dive.
-
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use stem::syscall::{memfd_create, vm_map, vm_unmap, vfs_close};

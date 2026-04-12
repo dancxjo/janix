@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use dirs::home_dir;
 use std::env::current_dir;
 use std::env::set_current_dir;

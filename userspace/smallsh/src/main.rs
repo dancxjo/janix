@@ -1,5 +1,8 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 extern crate std;
 

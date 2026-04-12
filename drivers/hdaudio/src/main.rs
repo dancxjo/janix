@@ -17,10 +17,12 @@
 //! 3. `vfs_write` / `vfs_read` for the raw PCM byte stream.
 //!
 //! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 use abi::schema::{keys, kinds};
 use core::ptr::{read_volatile, write_volatile};

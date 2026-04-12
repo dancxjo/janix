@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use crate::blit::PixelBuffer;
 use crate::geometry::{FillRule, Path2D, PathVerb, PointF, Rect, Transform2D};
 use alloc::vec;

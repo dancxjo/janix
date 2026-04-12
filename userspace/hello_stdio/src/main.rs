@@ -4,7 +4,11 @@
 //!   - `println!("hi")` shows up on stdout (fd 1)
 //!   - `eprintln!("oops")` shows up on stderr (fd 2)
 //!   - stdin read_line works
-#![feature(restricted_std)]
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 fn main() {
     println!("[hello_stdio] stdout: hello from ThingOS!");

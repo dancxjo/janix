@@ -1,6 +1,10 @@
 //! VirtIO-NET userspace driver
 //!
 //! Provides a userspace VirtIO network device driver using the virtio library.
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use abi::errors::Errno;
 use stem::syscall::{device_alloc_dma, device_dma_phys};

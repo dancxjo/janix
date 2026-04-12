@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use std::path::PathBuf;
 use crate::process_pool::ProcessPool;
 pub fn status(cwd: &PathBuf, pool: &ProcessPool) {

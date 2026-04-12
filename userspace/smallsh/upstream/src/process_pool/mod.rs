@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use std::fs::File;
 use std::io::{self, Write};
 use std::process::{id, Child, Command, Stdio};
@@ -114,7 +118,7 @@ impl ProcessPool {
         args.iter().map(|arg| {
 
             if arg == &"$$" {
-                format!("{}", id())
+                alloc::format!("{}", id())
             } else {
                 arg.to_string()
             }

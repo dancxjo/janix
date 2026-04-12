@@ -2,11 +2,13 @@
 //!
 //! Scans boot CD-ROM for ISO9660 filesystem and publishes discovered files
 //! to the System Graph with the same schema as Limine modules.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

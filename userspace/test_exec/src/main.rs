@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 use alloc::collections::BTreeMap;
 use stem::println;
 use stem::syscall::{execv, execve, getpid, vfs_close, vfs_mkdir, vfs_open, vfs_unlink, vfs_write};

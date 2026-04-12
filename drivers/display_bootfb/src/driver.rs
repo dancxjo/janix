@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 pub const FB_INFO_PAYLOAD_SIZE: usize = 24;
 use abi::display::{BufferId, CommitRequest, DisplayInfo, PlaneCommit, PlaneId};
 use abi::errors::{Errno, SysResult};

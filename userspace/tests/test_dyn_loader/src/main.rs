@@ -18,11 +18,13 @@
 //! Those tests are covered by the BDD feature suite.  The unit-level tests
 //! here focus on the parsing and auxv logic that can be validated without a
 //! live shared library.
-
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use stem::println;
 use stem::syscall::{auxv_get, vfs_open, vfs_close};

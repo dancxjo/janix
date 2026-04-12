@@ -1,8 +1,9 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
-use alloc::format;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::syscall::{argv_get, exit, vfs_close, vfs_open, vfs_readdir, vfs_stat, vfs_write};
@@ -91,7 +92,7 @@ const COLOR_RESET: &str = "\x1B[0m";
 fn list_path(path: &str, flags: &Flags, is_nested: bool) {
     stem::debug!("ls: listing path '{}'", path);
     if flags.recursive || is_nested {
-        print(&format!("{}:\n", path));
+        print(&alloc::format!("{}:\n", path));
     }
 
     let fd = match vfs_open(path, 0) {
@@ -99,7 +100,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         Ok(fd) => fd,
         Err(e) => {
             stem::error!("ls: failed to open '{}': {:?}", path, e);
-            print(&format!(
+            print(&alloc::format!(
                 "ls: cannot access '{}': No such file or directory\n",
                 path
             ));
@@ -133,7 +134,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
     if (stat.mode & 0o170000) != 0o040000 {
         // Not a directory, just print the file itself
         if flags.long {
-            print(&format!(
+            print(&alloc::format!(
                 "{} {:8} {}{}{}\n",
                 format_mode(stat.mode),
                 stat.size,
@@ -142,7 +143,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
                 if color.is_empty() { "" } else { COLOR_RESET }
             ));
         } else {
-            print(&format!("{}{}{}\n", color, path, if color.is_empty() { "" } else { COLOR_RESET }));
+            print(&alloc::format!("{}{}{}\n", color, path, if color.is_empty() { "" } else { COLOR_RESET }));
         }
         let _ = vfs_close(fd);
         return;
@@ -205,7 +206,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
                     };
 
                     if flags.long {
-                        print(&format!(
+                        print(&alloc::format!(
                             "{} {:8} {}{}{}\n",
                             format_mode(child_stat.mode),
                             child_stat.size,
@@ -214,7 +215,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
                             if c_color.is_empty() { "" } else { COLOR_RESET }
                         ));
                     } else {
-                        print(&format!("{}{}{}  ", c_color, name, if c_color.is_empty() { "" } else { COLOR_RESET }));
+                        print(&alloc::format!("{}{}{}  ", c_color, name, if c_color.is_empty() { "" } else { COLOR_RESET }));
                     }
 
                     if flags.recursive
@@ -229,9 +230,9 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
             }
             Err(_) => {
                 if flags.long {
-                    print(&format!("?--------- ?        {}\n", name));
+                    print(&alloc::format!("?--------- ?        {}\n", name));
                 } else {
-                    print(&format!("{}  ", name));
+                    print(&alloc::format!("{}  ", name));
                 }
             }
         }

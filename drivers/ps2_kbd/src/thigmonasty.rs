@@ -5,6 +5,10 @@
 //! - Maintains modifier state
 //! - Generates repeat events
 //! - Emits KeyDown/KeyUp edges
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use crate::normalizer::ps2_to_key;
 use abi::hid::{Key, Mods};

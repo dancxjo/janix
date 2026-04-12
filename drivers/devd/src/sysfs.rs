@@ -1,6 +1,9 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use abi::errors::Errno;
 use abi::syscall::vfs_flags::O_RDONLY;
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
@@ -22,11 +25,11 @@ pub fn scan_devices() -> Result<Vec<SysDevice>, Errno> {
             continue;
         }
 
-        let base = format!("/sys/devices/{}", slot);
-        let vendor_id = read_hex_u16(&format!("{}/vendor", base))?;
-        let device_id = read_hex_u16(&format!("{}/device", base))?;
-        let class_triplet = read_hex_u32(&format!("{}/class", base))?;
-        let status = read_string(&format!("{}/status", base))?;
+        let base = alloc::format!("/sys/devices/{}", slot);
+        let vendor_id = read_hex_u16(&alloc::format!("{}/vendor", base))?;
+        let device_id = read_hex_u16(&alloc::format!("{}/device", base))?;
+        let class_triplet = read_hex_u32(&alloc::format!("{}/class", base))?;
+        let status = read_string(&alloc::format!("{}/status", base))?;
 
         devices.push(SysDevice {
             slot,
@@ -40,7 +43,7 @@ pub fn scan_devices() -> Result<Vec<SysDevice>, Errno> {
 }
 
 pub fn device_present(slot: &str) -> bool {
-    let path = format!("/sys/devices/{}/status", slot);
+    let path = alloc::format!("/sys/devices/{}/status", slot);
     matches!(read_string(&path), Ok(status) if status == "present")
 }
 

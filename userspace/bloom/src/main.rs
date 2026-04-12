@@ -1,7 +1,9 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 use abi::device::DeviceKind;
 use abi::display::{
@@ -11,7 +13,6 @@ use abi::display::{
 use abi::display_protocol::Rect;
 use abi::pixel::PixelFormat;
 use abi::syscall::vfs_flags::O_RDONLY;
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use petals::bmp::load_bmp;
@@ -164,7 +165,7 @@ fn find_display_card() -> Option<String> {
 
         if let Ok(name) = core::str::from_utf8(&buf[offset..offset + len]) {
             if name.starts_with("card") {
-                return Some(format!("/dev/display/{}", name));
+                return Some(alloc::format!("/dev/display/{}", name));
             }
         }
         offset += len + 1;

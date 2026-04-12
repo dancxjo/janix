@@ -5,7 +5,11 @@
 //!   - Two successive `Instant::now()` calls are non-decreasing
 //!   - `Instant::elapsed()` returns a non-negative duration
 //!   - `SystemTime::now()` returns a value >= UNIX_EPOCH (once RTC is set)
-#![feature(restricted_std)]
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use std::time::{Duration, Instant, SystemTime};
 

@@ -1,10 +1,11 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
 
+
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
@@ -28,14 +29,14 @@ struct Font {
 impl Font {
     fn load(path: &str) -> Result<Self, String> {
         let fd =
-            vfs_open(path, O_RDONLY).map_err(|e| format!("failed to open font file: {:?}", e))?;
-        let stat = vfs_stat(fd).map_err(|e| format!("failed to stat font file: {:?}", e))?;
+            vfs_open(path, O_RDONLY).map_err(|e| alloc::format!("failed to open font file: {:?}", e))?;
+        let stat = vfs_stat(fd).map_err(|e| alloc::format!("failed to stat font file: {:?}", e))?;
         let size = stat.size;
 
         let mut data = Vec::with_capacity(size as usize);
         data.resize(size as usize, 0);
         let n =
-            vfs_read(fd, &mut data).map_err(|e| format!("failed to read font file: {:?}", e))?;
+            vfs_read(fd, &mut data).map_err(|e| alloc::format!("failed to read font file: {:?}", e))?;
         data.truncate(n);
         let _ = vfs_close(fd);
 

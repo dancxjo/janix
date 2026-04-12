@@ -12,8 +12,12 @@
 //! # North star
 //! You can debug janix with `cat` and `ls`.
 //! This program is the first step towards that world.
-
 #![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
+
 #[stem::main]
 fn main() -> ! {
     use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};

@@ -1,4 +1,8 @@
 //! Simple DNS client for A record lookups.
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use alloc::vec::Vec;
 use smoltcp::iface::{Interface, SocketSet, SocketStorage};

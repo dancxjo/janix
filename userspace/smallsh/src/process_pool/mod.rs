@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};

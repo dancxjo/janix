@@ -1,7 +1,9 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 use stem::abi::driver_ctx::DriverCtx;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::{debug, error, info, warn};
@@ -136,7 +138,7 @@ fn main(arg: usize) -> ! {
         id
     } else {
         debug!("Starting without explicit context (phased boot mode).");
-        stem::thing::ThingId::default()
+        Default::default()
     };
 
     // Read RTC and anchor system clock

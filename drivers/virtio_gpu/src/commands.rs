@@ -1,5 +1,8 @@
 //! Virtio-GPU command structures
-#![allow(dead_code)]
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 // Command types
 pub const VIRTIO_GPU_CMD_GET_DISPLAY_INFO: u32 = 0x0100;

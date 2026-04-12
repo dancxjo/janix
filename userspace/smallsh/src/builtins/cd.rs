@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -12,7 +16,7 @@ pub fn change_directory(current: &Path, dir: Option<&str>) -> io::Result<PathBuf
         Ok(meta) if meta.is_dir() => Ok(target),
         Ok(_) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("not a directory: {}", target.display()),
+            alloc::format!("not a directory: {}", target.display()),
         )),
         Err(err) => Err(err),
     }

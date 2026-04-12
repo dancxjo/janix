@@ -1,5 +1,7 @@
+#![no_std]
 #![no_main]
-#![feature(restricted_std)]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
 
 use abi::ids::HandleId;

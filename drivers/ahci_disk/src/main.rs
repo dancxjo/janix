@@ -8,11 +8,13 @@
 //! - SATA Disk Registration as Block Devices
 //! - SATAPI (CD-ROM) support via PACKET commands
 //! - Block Device RPC Service (port-based, headless operation)
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use alloc::vec::Vec;
 use core::time::Duration;

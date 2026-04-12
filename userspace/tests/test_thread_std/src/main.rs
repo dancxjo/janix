@@ -15,11 +15,13 @@
 //! | `thread_many_increments`   | Mutex-protected counter across N threads            |
 //! | `thread_local_basic`       | `thread_local!` value differs per thread            |
 //! | `thread_panic_join`        | Panicking thread aborts (panic = "abort" model)     |
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 extern crate std;
 
 use std::sync::atomic::{AtomicU32, Ordering};

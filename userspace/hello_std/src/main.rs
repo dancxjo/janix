@@ -3,11 +3,13 @@
 //! Exercises every implemented std subsystem and reports PASS/FAIL.
 //! Default tests run in <1s. Use flags to enable slow/external tests:
 //!   --net, --net-server, --udp, --ipv6, --dns, --spawn, --stress, --all
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 extern crate std;
 
 use std::collections::{HashMap, VecDeque};
@@ -190,9 +192,9 @@ fn test_stdio() -> Result<(), String> {
     // Test write! to stdout explicitly
     use std::io::Write;
     let mut stdout = std::io::stdout();
-    write!(stdout, "[test_stdio] explicit write!... ").map_err(|e| format!("{}", e))?;
-    writeln!(stdout, "ok").map_err(|e| format!("{}", e))?;
-    stdout.flush().map_err(|e| format!("flush failed: {}", e))?;
+    write!(stdout, "[test_stdio] explicit write!... ").map_err(|e| alloc::format!("{}", e))?;
+    writeln!(stdout, "ok").map_err(|e| alloc::format!("{}", e))?;
+    stdout.flush().map_err(|e| alloc::format!("flush failed: {}", e))?;
 
     Ok(())
 }
@@ -207,21 +209,21 @@ fn test_alloc() -> Result<(), String> {
         v.push((i & 0xFF) as u8);
     }
     if v.len() != size {
-        return Err(format!("Vec len {} != expected {}", v.len(), size));
+        return Err(alloc::format!("Vec len {} != expected {}", v.len(), size));
     }
     // Simple checksum — sum of all bytes
     let checksum: u64 = v.iter().map(|b| *b as u64).sum();
     // Expected: 0+1+...+255 repeated 4096 times = (255*256/2)*4096 = 133_693_440
     let expected: u64 = (255u64 * 256 / 2) * (size as u64 / 256);
     if checksum != expected {
-        return Err(format!("checksum {} != expected {}", checksum, expected));
+        return Err(alloc::format!("checksum {} != expected {}", checksum, expected));
     }
 
     // String concat
     let mut s = String::from("hello");
     s.push_str(", world");
     if s != "hello, world" {
-        return Err(format!("String concat: got '{}'", s));
+        return Err(alloc::format!("String concat: got '{}'", s));
     }
 
     // HashMap
@@ -233,7 +235,7 @@ fn test_alloc() -> Result<(), String> {
         return Err("HashMap lookup failed".into());
     }
     if map.len() != 3 {
-        return Err(format!("HashMap len {} != 3", map.len()));
+        return Err(alloc::format!("HashMap len {} != 3", map.len()));
     }
 
     // VecDeque
@@ -245,7 +247,7 @@ fn test_alloc() -> Result<(), String> {
         return Err("VecDeque::pop_front failed".into());
     }
     if dq.len() != 2 {
-        return Err(format!("VecDeque len {} != 2", dq.len()));
+        return Err(alloc::format!("VecDeque len {} != 2", dq.len()));
     }
 
     Ok(())
@@ -255,14 +257,14 @@ fn test_alloc() -> Result<(), String> {
 
 fn test_time() -> Result<(), String> {
     let mono0 = stem::syscall::time_now(abi::time::ClockId::Monotonic)
-        .map_err(|e| format!("monotonic clock read failed: {:?}", e))?;
+        .map_err(|e| alloc::format!("monotonic clock read failed: {:?}", e))?;
     let mono0_ns = mono0
         .as_nanos()
         .ok_or_else(|| "monotonic timespec was invalid".to_string())?;
 
     if let Err(e) = stem::syscall::time_now_raw(0) {
         if e != abi::errors::Errno::EINVAL {
-            return Err(format!(
+            return Err(alloc::format!(
                 "invalid clock id returned {:?}, expected EINVAL",
                 e
             ));
@@ -278,19 +280,19 @@ fn test_time() -> Result<(), String> {
     let elapsed = t1.duration_since(t0);
     // Tolerate jitter — just check it advanced at all (>= 1ms)
     if elapsed < Duration::from_millis(1) {
-        return Err(format!(
+        return Err(alloc::format!(
             "Instant elapsed {:?} < 1ms after 10ms sleep",
             elapsed
         ));
     }
 
     let mono1 = stem::syscall::time_now(abi::time::ClockId::Monotonic)
-        .map_err(|e| format!("second monotonic clock read failed: {:?}", e))?;
+        .map_err(|e| alloc::format!("second monotonic clock read failed: {:?}", e))?;
     let mono1_ns = mono1
         .as_nanos()
         .ok_or_else(|| "second monotonic timespec was invalid".to_string())?;
     if mono1_ns < mono0_ns {
-        return Err(format!(
+        return Err(alloc::format!(
             "monotonic clock moved backwards: {} -> {}",
             mono0_ns, mono1_ns
         ));
@@ -300,13 +302,13 @@ fn test_time() -> Result<(), String> {
     stem::syscall::sleep_ns(15_000_000);
     let sleep_elapsed = sleep_start.elapsed();
     if sleep_elapsed < Duration::from_millis(5) {
-        return Err(format!(
+        return Err(alloc::format!(
             "sleep_ns woke too early: {:?} after 15ms request",
             sleep_elapsed
         ));
     }
     if sleep_elapsed > Duration::from_millis(250) {
-        return Err(format!(
+        return Err(alloc::format!(
             "sleep_ns overslept too much: {:?} after 15ms request",
             sleep_elapsed
         ));
@@ -334,7 +336,7 @@ fn test_time() -> Result<(), String> {
             }
         }
         Err(abi::errors::Errno::EAGAIN) => {}
-        Err(e) => return Err(format!("realtime clock read failed: {:?}", e)),
+        Err(e) => return Err(alloc::format!("realtime clock read failed: {:?}", e)),
     }
 
     Ok(())
@@ -355,16 +357,16 @@ fn test_env_args() -> Result<(), String> {
     match std::env::var(key) {
         Ok(v) if v == "smoke_test_value" => {}
         Ok(v) => {
-            return Err(format!(
+            return Err(alloc::format!(
                 "var({}) = '{}', expected 'smoke_test_value'",
                 key, v
             ))
         }
-        Err(e) => return Err(format!("var({}) missing after set_var: {}", key, e)),
+        Err(e) => return Err(alloc::format!("var({}) missing after set_var: {}", key, e)),
     }
     std::env::remove_var(key);
     if std::env::var(key).is_ok() {
-        return Err(format!("var({}) still present after remove_var", key));
+        return Err(alloc::format!("var({}) still present after remove_var", key));
     }
 
     Ok(())
@@ -379,26 +381,26 @@ fn test_fs() -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&base);
 
     // create_dir_all
-    std::fs::create_dir_all(&base).map_err(|e| format!("create_dir_all: {}", e))?;
+    std::fs::create_dir_all(&base).map_err(|e| alloc::format!("create_dir_all: {}", e))?;
 
     // Write a file
     let file_path = base.join("test.txt");
     let content = b"Hello from hello_std fs test!\n";
     {
         let mut f =
-            std::fs::File::create(&file_path).map_err(|e| format!("File::create: {}", e))?;
+            std::fs::File::create(&file_path).map_err(|e| alloc::format!("File::create: {}", e))?;
         f.write_all(content)
-            .map_err(|e| format!("write_all: {}", e))?;
+            .map_err(|e| alloc::format!("write_all: {}", e))?;
     }
 
     // Read it back
     {
-        let mut f = std::fs::File::open(&file_path).map_err(|e| format!("File::open: {}", e))?;
+        let mut f = std::fs::File::open(&file_path).map_err(|e| alloc::format!("File::open: {}", e))?;
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)
-            .map_err(|e| format!("read_to_end: {}", e))?;
+            .map_err(|e| alloc::format!("read_to_end: {}", e))?;
         if buf != content {
-            return Err(format!(
+            return Err(alloc::format!(
                 "read-back mismatch: got {} bytes, expected {}",
                 buf.len(),
                 content.len()
@@ -409,14 +411,14 @@ fn test_fs() -> Result<(), String> {
     // Seek test
     {
         let mut f =
-            std::fs::File::open(&file_path).map_err(|e| format!("File::open for seek: {}", e))?;
+            std::fs::File::open(&file_path).map_err(|e| alloc::format!("File::open for seek: {}", e))?;
         f.seek(SeekFrom::Start(6))
-            .map_err(|e| format!("seek: {}", e))?;
+            .map_err(|e| alloc::format!("seek: {}", e))?;
         let mut partial = [0u8; 4];
         f.read_exact(&mut partial)
-            .map_err(|e| format!("read_exact after seek: {}", e))?;
+            .map_err(|e| alloc::format!("read_exact after seek: {}", e))?;
         if &partial != b"from" {
-            return Err(format!(
+            return Err(alloc::format!(
                 "seek+read: expected 'from', got '{}'",
                 String::from_utf8_lossy(&partial)
             ));
@@ -424,9 +426,9 @@ fn test_fs() -> Result<(), String> {
     }
 
     // Metadata — check file length
-    let meta = std::fs::metadata(&file_path).map_err(|e| format!("metadata: {}", e))?;
+    let meta = std::fs::metadata(&file_path).map_err(|e| alloc::format!("metadata: {}", e))?;
     if meta.len() != content.len() as u64 {
-        return Err(format!(
+        return Err(alloc::format!(
             "metadata.len() = {}, expected {}",
             meta.len(),
             content.len()
@@ -435,7 +437,7 @@ fn test_fs() -> Result<(), String> {
 
     // read_dir — should list test.txt
     let entries: Vec<_> = std::fs::read_dir(&base)
-        .map_err(|e| format!("read_dir: {}", e))?
+        .map_err(|e| alloc::format!("read_dir: {}", e))?
         .filter_map(|e| e.ok())
         .collect();
     let found = entries
@@ -446,12 +448,12 @@ fn test_fs() -> Result<(), String> {
             .iter()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        return Err(format!("read_dir: 'test.txt' not found in {:?}", names));
+        return Err(alloc::format!("read_dir: 'test.txt' not found in {:?}", names));
     }
 
     // Rename
     let renamed = base.join("renamed.txt");
-    std::fs::rename(&file_path, &renamed).map_err(|e| format!("rename: {}", e))?;
+    std::fs::rename(&file_path, &renamed).map_err(|e| alloc::format!("rename: {}", e))?;
     if file_path.exists() {
         return Err("rename: old file still exists".into());
     }
@@ -460,7 +462,7 @@ fn test_fs() -> Result<(), String> {
     }
 
     // Clean up
-    std::fs::remove_dir_all(&base).map_err(|e| format!("remove_dir_all: {}", e))?;
+    std::fs::remove_dir_all(&base).map_err(|e| alloc::format!("remove_dir_all: {}", e))?;
     if base.exists() {
         return Err("remove_dir_all: directory still exists".into());
     }
@@ -491,7 +493,7 @@ fn test_threads() -> Result<(), String> {
     let total = counter.load(Ordering::SeqCst);
     let expected = nthreads * iters;
     if total != expected {
-        return Err(format!("atomic total {} != expected {}", total, expected));
+        return Err(alloc::format!("atomic total {} != expected {}", total, expected));
     }
 
     // Mutex test
@@ -512,7 +514,7 @@ fn test_threads() -> Result<(), String> {
     }
     let mx_total = *mx.lock().unwrap();
     if mx_total != (nthreads as u64) * 1000 {
-        return Err(format!(
+        return Err(alloc::format!(
             "Mutex total {} != expected {}",
             mx_total,
             nthreads * 1000
@@ -553,12 +555,12 @@ fn test_threads() -> Result<(), String> {
 
 fn test_pipes() -> Result<(), String> {
     // Basic pipe: write, read to EOF
-    let (reader, writer) = std::io::pipe().map_err(|e| format!("io::pipe(): {}", e))?;
+    let (reader, writer) = std::io::pipe().map_err(|e| alloc::format!("io::pipe(): {}", e))?;
 
     let msg = b"hello pipe\n";
     let writer_handle = std::thread::spawn(move || -> Result<(), String> {
         let mut w = writer;
-        w.write_all(msg).map_err(|e| format!("pipe write: {}", e))?;
+        w.write_all(msg).map_err(|e| alloc::format!("pipe write: {}", e))?;
         drop(w); // Close writer → EOF for reader
         Ok(())
     });
@@ -566,9 +568,9 @@ fn test_pipes() -> Result<(), String> {
     let mut r = reader;
     let mut buf = Vec::new();
     r.read_to_end(&mut buf)
-        .map_err(|e| format!("pipe read_to_end: {}", e))?;
+        .map_err(|e| alloc::format!("pipe read_to_end: {}", e))?;
     if buf != msg {
-        return Err(format!(
+        return Err(alloc::format!(
             "pipe: read '{}', expected '{}'",
             String::from_utf8_lossy(&buf),
             String::from_utf8_lossy(msg)
@@ -580,7 +582,7 @@ fn test_pipes() -> Result<(), String> {
         .map_err(|_| "pipe writer panicked".to_string())??;
 
     // Broken pipe test: drop reader, then writer should get error
-    let (reader2, writer2) = std::io::pipe().map_err(|e| format!("io::pipe() #2: {}", e))?;
+    let (reader2, writer2) = std::io::pipe().map_err(|e| alloc::format!("io::pipe() #2: {}", e))?;
     drop(reader2);
     let mut w2 = writer2;
     match w2.write_all(b"should fail") {
@@ -618,25 +620,25 @@ fn test_net_tcp() -> Result<(), String> {
         Ok(mut stream) => {
             let peer = stream
                 .peer_addr()
-                .map_err(|e| format!("peer_addr: {}", e))?;
+                .map_err(|e| alloc::format!("peer_addr: {}", e))?;
             eprintln!("[test_net_tcp] connected to {} (peer={:?})", addr, peer);
 
             let req = b"GET /?url=http://example.com/ HTTP/1.1\r\nHost: 10.0.2.2\r\nConnection: close\r\n\r\n";
             stream
                 .write_all(req)
-                .map_err(|e| format!("write_all HTTP request: {}", e))?;
+                .map_err(|e| alloc::format!("write_all HTTP request: {}", e))?;
 
             let mut buf = [0u8; 256];
             let n = stream
                 .read(&mut buf)
-                .map_err(|e| format!("read HTTP response: {}", e))?;
+                .map_err(|e| alloc::format!("read HTTP response: {}", e))?;
             if n == 0 {
                 return Err("HTTP GET returned EOF without response bytes".into());
             }
 
             let head = String::from_utf8_lossy(&buf[..n]);
             if !head.starts_with("HTTP/1.1 ") && !head.starts_with("HTTP/1.0 ") {
-                return Err(format!("HTTP GET returned non-HTTP prefix: {:?}", head));
+                return Err(alloc::format!("HTTP GET returned non-HTTP prefix: {:?}", head));
             }
 
             drop(stream);
@@ -645,9 +647,9 @@ fn test_net_tcp() -> Result<(), String> {
         Err(e) => {
             // Connection refused is acceptable here because the shim still
             // reached the host TCP stack. The proxy may simply not be running.
-            if format!("{}", e).contains("refused")
-                || format!("{}", e).contains("failed")
-                || format!("{}", e).contains("timed out")
+            if alloc::format!("{}", e).contains("refused")
+                || alloc::format!("{}", e).contains("failed")
+                || alloc::format!("{}", e).contains("timed out")
             {
                 eprintln!(
                     "[test_net_tcp] connect/write path to {} returned: {}",
@@ -655,7 +657,7 @@ fn test_net_tcp() -> Result<(), String> {
                 );
                 Ok(())
             } else {
-                Err(format!("TcpStream::connect({}): {}", addr, e))
+                Err(alloc::format!("TcpStream::connect({}): {}", addr, e))
             }
         }
     }
@@ -676,7 +678,7 @@ fn test_dns() -> Result<(), String> {
             eprintln!("[test_dns] {} resolved to {:?}", host, addrs);
             Ok(())
         }
-        Err(e) => Err(format!("DNS lookup for {}: {}", host, e)),
+        Err(e) => Err(alloc::format!("DNS lookup for {}: {}", host, e)),
     }
 }
 
@@ -689,47 +691,47 @@ fn test_net_tcp_listener() -> Result<(), String> {
     // Bind a listener on loopback.
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
-        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+        Err(e) => return Err(alloc::format!("TcpListener::bind: {}", e)),
     };
 
     let local_addr = listener
         .local_addr()
-        .map_err(|e| format!("local_addr: {}", e))?;
+        .map_err(|e| alloc::format!("local_addr: {}", e))?;
     eprintln!("[test_net_tcp_listener] listening on {}", local_addr);
 
     // Connect a client.
     let mut client =
-        TcpStream::connect(local_addr).map_err(|e| format!("client connect: {}", e))?;
+        TcpStream::connect(local_addr).map_err(|e| alloc::format!("client connect: {}", e))?;
 
     // Accept the connection.
     let (mut server, peer_addr) = listener
         .accept()
-        .map_err(|e| format!("accept: {}", e))?;
+        .map_err(|e| alloc::format!("accept: {}", e))?;
     eprintln!("[test_net_tcp_listener] accepted peer {}", peer_addr);
 
     // Exchange data client→server.
     client
         .write_all(b"ping")
-        .map_err(|e| format!("client write: {}", e))?;
+        .map_err(|e| alloc::format!("client write: {}", e))?;
 
     let mut buf = [0u8; 8];
     let n = server
         .read(&mut buf)
-        .map_err(|e| format!("server read: {}", e))?;
+        .map_err(|e| alloc::format!("server read: {}", e))?;
     if &buf[..n] != b"ping" {
-        return Err(format!("server read got {:?}, want b\"ping\"", &buf[..n]));
+        return Err(alloc::format!("server read got {:?}, want b\"ping\"", &buf[..n]));
     }
 
     // Exchange data server→client.
     server
         .write_all(b"pong")
-        .map_err(|e| format!("server write: {}", e))?;
+        .map_err(|e| alloc::format!("server write: {}", e))?;
 
     let n = client
         .read(&mut buf)
-        .map_err(|e| format!("client read: {}", e))?;
+        .map_err(|e| alloc::format!("client read: {}", e))?;
     if &buf[..n] != b"pong" {
-        return Err(format!("client read got {:?}, want b\"pong\"", &buf[..n]));
+        return Err(alloc::format!("client read got {:?}, want b\"pong\"", &buf[..n]));
     }
 
     Ok(())
@@ -741,19 +743,19 @@ fn test_net_tcp_accept_multiple() -> Result<(), String> {
 
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
-        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+        Err(e) => return Err(alloc::format!("TcpListener::bind: {}", e)),
     };
     let local_addr = listener
         .local_addr()
-        .map_err(|e| format!("local_addr: {}", e))?;
+        .map_err(|e| alloc::format!("local_addr: {}", e))?;
 
     // First client.
     let mut c1 =
-        TcpStream::connect(local_addr).map_err(|e| format!("c1 connect: {}", e))?;
-    let (mut s1, _) = listener.accept().map_err(|e| format!("accept 1: {}", e))?;
-    c1.write_all(b"A").map_err(|e| format!("c1 write: {}", e))?;
+        TcpStream::connect(local_addr).map_err(|e| alloc::format!("c1 connect: {}", e))?;
+    let (mut s1, _) = listener.accept().map_err(|e| alloc::format!("accept 1: {}", e))?;
+    c1.write_all(b"A").map_err(|e| alloc::format!("c1 write: {}", e))?;
     let mut buf = [0u8; 4];
-    let n = s1.read(&mut buf).map_err(|e| format!("s1 read: {}", e))?;
+    let n = s1.read(&mut buf).map_err(|e| alloc::format!("s1 read: {}", e))?;
     if n == 0 || buf[0] != b'A' {
         return Err("first accept: payload mismatch".into());
     }
@@ -762,10 +764,10 @@ fn test_net_tcp_accept_multiple() -> Result<(), String> {
 
     // Second client — listener must still be usable.
     let mut c2 =
-        TcpStream::connect(local_addr).map_err(|e| format!("c2 connect: {}", e))?;
-    let (mut s2, _) = listener.accept().map_err(|e| format!("accept 2: {}", e))?;
-    c2.write_all(b"B").map_err(|e| format!("c2 write: {}", e))?;
-    let n = s2.read(&mut buf).map_err(|e| format!("s2 read: {}", e))?;
+        TcpStream::connect(local_addr).map_err(|e| alloc::format!("c2 connect: {}", e))?;
+    let (mut s2, _) = listener.accept().map_err(|e| alloc::format!("accept 2: {}", e))?;
+    c2.write_all(b"B").map_err(|e| alloc::format!("c2 write: {}", e))?;
+    let n = s2.read(&mut buf).map_err(|e| alloc::format!("s2 read: {}", e))?;
     if n == 0 || buf[0] != b'B' {
         return Err("second accept: payload mismatch".into());
     }
@@ -779,18 +781,18 @@ fn test_net_tcp_nonblocking() -> Result<(), String> {
 
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
-        Err(e) => return Err(format!("TcpListener::bind: {}", e)),
+        Err(e) => return Err(alloc::format!("TcpListener::bind: {}", e)),
     };
     listener
         .set_nonblocking(true)
-        .map_err(|e| format!("set_nonblocking: {}", e))?;
+        .map_err(|e| alloc::format!("set_nonblocking: {}", e))?;
 
     // In nonblocking mode, accept() with no incoming connection must
     // return WouldBlock / EAGAIN immediately.
     match listener.accept() {
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
-        Err(e) => Err(format!("accept (nonblocking, no peer): unexpected error: {}", e)),
-        Ok((_, addr)) => Err(format!(
+        Err(e) => Err(alloc::format!("accept (nonblocking, no peer): unexpected error: {}", e)),
+        Ok((_, addr)) => Err(alloc::format!(
             "accept (nonblocking, no peer): unexpectedly returned peer {}",
             addr
         )),
@@ -803,29 +805,29 @@ fn test_net_udp_loopback() -> Result<(), String> {
     use std::net::UdpSocket;
 
     let recv_sock = UdpSocket::bind("127.0.0.1:0")
-        .map_err(|e| format!("recv bind: {}", e))?;
+        .map_err(|e| alloc::format!("recv bind: {}", e))?;
     let recv_addr = recv_sock
         .local_addr()
-        .map_err(|e| format!("recv local_addr: {}", e))?;
+        .map_err(|e| alloc::format!("recv local_addr: {}", e))?;
 
     let send_sock = UdpSocket::bind("127.0.0.1:0")
-        .map_err(|e| format!("send bind: {}", e))?;
+        .map_err(|e| alloc::format!("send bind: {}", e))?;
 
     let msg = b"hello udp";
     let sent = send_sock
         .send_to(msg, recv_addr)
-        .map_err(|e| format!("send_to: {}", e))?;
+        .map_err(|e| alloc::format!("send_to: {}", e))?;
     if sent != msg.len() {
-        return Err(format!("send_to: sent {} bytes, want {}", sent, msg.len()));
+        return Err(alloc::format!("send_to: sent {} bytes, want {}", sent, msg.len()));
     }
 
     let mut buf = [0u8; 64];
     let (n, src_addr) = recv_sock
         .recv_from(&mut buf)
-        .map_err(|e| format!("recv_from: {}", e))?;
+        .map_err(|e| alloc::format!("recv_from: {}", e))?;
 
     if &buf[..n] != msg {
-        return Err(format!(
+        return Err(alloc::format!(
             "recv_from: got {:?}, want {:?}",
             &buf[..n],
             msg
@@ -854,7 +856,7 @@ fn test_net_ipv6_policy() -> Result<(), String> {
                 eprintln!("[test_net_ipv6_policy] TcpListener::bind({:?}) → {}", addr, e);
             }
             Ok(_) => {
-                return Err(format!(
+                return Err(alloc::format!(
                     "TcpListener::bind({:?}) succeeded — expected failure",
                     addr
                 ));
@@ -866,7 +868,7 @@ fn test_net_ipv6_policy() -> Result<(), String> {
                 eprintln!("[test_net_ipv6_policy] TcpStream::connect({:?}) → {}", addr, e);
             }
             Ok(_) => {
-                return Err(format!(
+                return Err(alloc::format!(
                     "TcpStream::connect({:?}) succeeded — expected failure",
                     addr
                 ));
@@ -878,7 +880,7 @@ fn test_net_ipv6_policy() -> Result<(), String> {
                 eprintln!("[test_net_ipv6_policy] UdpSocket::bind({:?}) → {}", addr, e);
             }
             Ok(_) => {
-                return Err(format!(
+                return Err(alloc::format!(
                     "UdpSocket::bind({:?}) succeeded — expected failure",
                     addr
                 ));
@@ -905,11 +907,11 @@ fn test_spawn() -> Result<(), String> {
         .arg("hello")
         .arg("world")
         .output()
-        .map_err(|e| format!("spawn echo child: {}", e))?;
+        .map_err(|e| alloc::format!("spawn echo child: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.contains("hello") || !stdout.contains("world") {
-        return Err(format!(
+        return Err(alloc::format!(
             "echo child: expected 'hello' and 'world' in output, got: '{}'",
             stdout.trim()
         ));
@@ -920,11 +922,11 @@ fn test_spawn() -> Result<(), String> {
         .arg("--child-exit")
         .arg("--exit-code=42")
         .status()
-        .map_err(|e| format!("spawn exit child: {}", e))?;
+        .map_err(|e| alloc::format!("spawn exit child: {}", e))?;
 
     match status.code() {
         Some(42) => {}
-        Some(c) => return Err(format!("exit child: expected code 42, got {}", c)),
+        Some(c) => return Err(alloc::format!("exit child: expected code 42, got {}", c)),
         None => return Err("exit child: no exit code".into()),
     }
 
@@ -950,16 +952,16 @@ fn test_stress() -> Result<(), String> {
         }
         for h in handles {
             h.join()
-                .map_err(|_| format!("stress iter {}: thread panicked", i))?;
+                .map_err(|_| alloc::format!("stress iter {}: thread panicked", i))?;
         }
         let total = counter.load(Ordering::SeqCst);
         if total != 4000 {
-            return Err(format!("stress iter {}: atomic total {} != 4000", i, total));
+            return Err(alloc::format!("stress iter {}: atomic total {} != 4000", i, total));
         }
 
         // Pipe stress
         let (reader, writer) =
-            std::io::pipe().map_err(|e| format!("stress iter {}: pipe: {}", i, e))?;
+            std::io::pipe().map_err(|e| alloc::format!("stress iter {}: pipe: {}", i, e))?;
         let wh = std::thread::spawn(move || {
             let mut w = writer;
             let _ = w.write_all(b"stress");
@@ -968,11 +970,11 @@ fn test_stress() -> Result<(), String> {
         let mut r = reader;
         let mut buf = Vec::new();
         r.read_to_end(&mut buf)
-            .map_err(|e| format!("stress iter {}: read: {}", i, e))?;
+            .map_err(|e| alloc::format!("stress iter {}: read: {}", i, e))?;
         wh.join()
-            .map_err(|_| format!("stress iter {}: writer panicked", i))?;
+            .map_err(|_| alloc::format!("stress iter {}: writer panicked", i))?;
         if buf != b"stress" {
-            return Err(format!("stress iter {}: data mismatch", i));
+            return Err(alloc::format!("stress iter {}: data mismatch", i));
         }
     }
 

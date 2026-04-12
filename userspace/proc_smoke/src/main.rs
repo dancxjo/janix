@@ -13,8 +13,12 @@
 //!   proc_smoke --list        — list test names
 //!
 //! Each test prints PASS or FAIL and a description.
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
-#![feature(restricted_std)]
 
 use std::process::Command;
 
@@ -78,9 +82,9 @@ fn test_proc_status(exe: &str) -> Result<(), String> {
         .arg("--child-exit")
         .arg("0")
         .status()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     if !status.success() {
-        return Err(format!("expected success, got {:?}", status.code()));
+        return Err(alloc::format!("expected success, got {:?}", status.code()));
     }
     Ok(())
 }
@@ -91,10 +95,10 @@ fn test_proc_exit_code(exe: &str) -> Result<(), String> {
         .arg("--child-exit")
         .arg("7")
         .status()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     match status.code() {
         Some(7) => Ok(()),
-        other => Err(format!("expected code 7, got {:?}", other)),
+        other => Err(alloc::format!("expected code 7, got {:?}", other)),
     }
 }
 
@@ -105,16 +109,16 @@ fn test_proc_args(exe: &str) -> Result<(), String> {
         .arg("hello")
         .arg("world")
         .output()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     if !output.status.success() {
-        return Err(format!("child exited {:?}", output.status.code()));
+        return Err(alloc::format!("child exited {:?}", output.status.code()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.contains("hello") {
-        return Err(format!("missing 'hello' in output: {:?}", stdout));
+        return Err(alloc::format!("missing 'hello' in output: {:?}", stdout));
     }
     if !stdout.contains("world") {
-        return Err(format!("missing 'world' in output: {:?}", stdout));
+        return Err(alloc::format!("missing 'world' in output: {:?}", stdout));
     }
     Ok(())
 }
@@ -126,13 +130,13 @@ fn test_proc_env(exe: &str) -> Result<(), String> {
         .arg("SMOKE_TEST_VAR")
         .env("SMOKE_TEST_VAR", "thingos_rocks")
         .output()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     if !output.status.success() {
-        return Err(format!("child exited {:?}", output.status.code()));
+        return Err(alloc::format!("child exited {:?}", output.status.code()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.trim().contains("thingos_rocks") {
-        return Err(format!("expected 'thingos_rocks' in output, got: {:?}", stdout));
+        return Err(alloc::format!("expected 'thingos_rocks' in output, got: {:?}", stdout));
     }
     Ok(())
 }
@@ -143,13 +147,13 @@ fn test_proc_stdout_pipe(exe: &str) -> Result<(), String> {
         .arg("--child-echo")
         .arg("piped_output")
         .output()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     if !output.status.success() {
-        return Err(format!("child exited {:?}", output.status.code()));
+        return Err(alloc::format!("child exited {:?}", output.status.code()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.contains("piped_output") {
-        return Err(format!("expected 'piped_output', got: {:?}", stdout));
+        return Err(alloc::format!("expected 'piped_output', got: {:?}", stdout));
     }
     Ok(())
 }
@@ -164,23 +168,23 @@ fn test_proc_stdin_pipe(exe: &str) -> Result<(), String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
 
     // Write to child stdin then close it so the child sees EOF.
     {
         let stdin = child.stdin.take().ok_or("no stdin pipe")?;
         let mut stdin = stdin;
-        stdin.write_all(b"hello from parent").map_err(|e| format!("write: {}", e))?;
+        stdin.write_all(b"hello from parent").map_err(|e| alloc::format!("write: {}", e))?;
         // Drop to close the write end, signalling EOF to the child.
     }
 
-    let output = child.wait_with_output().map_err(|e| format!("wait: {}", e))?;
+    let output = child.wait_with_output().map_err(|e| alloc::format!("wait: {}", e))?;
     if !output.status.success() {
-        return Err(format!("child exited {:?}", output.status.code()));
+        return Err(alloc::format!("child exited {:?}", output.status.code()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.contains("hello from parent") {
-        return Err(format!("expected echo, got: {:?}", stdout));
+        return Err(alloc::format!("expected echo, got: {:?}", stdout));
     }
     Ok(())
 }
@@ -191,9 +195,9 @@ fn test_proc_inherit_stdio(exe: &str) -> Result<(), String> {
         .arg("--child-echo")
         .arg("inherited_stdio_ok")
         .status()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
     if !status.success() {
-        return Err(format!("child exited {:?}", status.code()));
+        return Err(alloc::format!("child exited {:?}", status.code()));
     }
     // Output appears on the console naturally — no capture needed.
     Ok(())
@@ -205,11 +209,11 @@ fn test_proc_try_wait(exe: &str) -> Result<(), String> {
         .arg("--child-exit")
         .arg("3")
         .spawn()
-        .map_err(|e| format!("spawn failed: {}", e))?;
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
 
     // Poll a few times then fall back to blocking wait.
     let status = loop {
-        match child.try_wait().map_err(|e| format!("try_wait: {}", e))? {
+        match child.try_wait().map_err(|e| alloc::format!("try_wait: {}", e))? {
             Some(s) => break s,
             None => {
                 // Child still running; yield and retry.
@@ -219,7 +223,7 @@ fn test_proc_try_wait(exe: &str) -> Result<(), String> {
     };
     match status.code() {
         Some(3) => Ok(()),
-        other => Err(format!("expected code 3, got {:?}", other)),
+        other => Err(alloc::format!("expected code 3, got {:?}", other)),
     }
 }
 

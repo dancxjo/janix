@@ -163,6 +163,18 @@ enum Commands {
         #[arg(long, short = 'a', num_args = 1.., default_values_t = ["x86_64".to_string(), "aarch64".to_string(), "riscv64".to_string(), "loongarch64".to_string()])]
         arch: Vec<String>,
     },
+    /// Kill running QEMU instances
+    Kill,
+    /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
+    Fetch,
+    /// Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos
+    ///
+    /// Set BUILD_RUSTC=1 to enable this step.
+    /// The result is cached under target/rustc-thingos/ and keyed on the
+    /// target JSON spec plus rust-toolchain.toml.
+    RustcThingos,
+    /// Run HTTP proxy for guest internet access (Guest -> Host -> Internet)
+    GuestProxy {
         /// Listen port
         #[arg(long, default_value = "8080")]
         port: u16,

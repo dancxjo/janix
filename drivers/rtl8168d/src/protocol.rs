@@ -1,6 +1,10 @@
 //! RTL8168 driver protocol messages
 //!
 //! Defines the IPC message format between rtl8168d and netd.
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use alloc::vec::Vec;
 

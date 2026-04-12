@@ -1,8 +1,9 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
-use alloc::format;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::syscall::{exit, vfs_close, vfs_open, vfs_read, vfs_readdir, vfs_write};
@@ -45,7 +46,7 @@ fn main(_arg: usize) -> ! {
                     if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
                         if !name.is_empty() && name.chars().all(|c| c.is_ascii_digit()) {
                             // It's a PID directory
-                            let status_path = format!("/proc/{}/status", name);
+                            let status_path = alloc::format!("/proc/{}/status", name);
                             if let Some(status) = read_file(&status_path) {
                                 let mut pid = "";
                                 let mut ppid = "";
@@ -65,7 +66,7 @@ fn main(_arg: usize) -> ! {
                                 }
 
                                 // Try to get cmdline for a better command name
-                                let cmdline_path = format!("/proc/{}/cmdline", name);
+                                let cmdline_path = alloc::format!("/proc/{}/cmdline", name);
                                 let cmd_display = if let Some(cmdline) = read_file(&cmdline_path) {
                                     if cmdline.is_empty() {
                                         name_val.to_string()
@@ -77,7 +78,7 @@ fn main(_arg: usize) -> ! {
                                     name_val.to_string()
                                 };
 
-                                print(&format!(
+                                print(&alloc::format!(
                                     "{:>5} {:>5} {:<4} {}\n",
                                     pid, ppid, stat, cmd_display
                                 ));

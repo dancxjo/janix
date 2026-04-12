@@ -1,6 +1,10 @@
 //! Mouse Packet Processing
 //!
 //! Parses PS/2 mouse packets and emits pointer events.
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 /// Mouse button state
 #[derive(Clone, Copy, Default)]

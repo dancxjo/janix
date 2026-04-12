@@ -1,11 +1,9 @@
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(
-    any(target_os = "thingos", target_env = "thingos"),
-    feature(restricted_std)
-)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 use abi::device::PCI_IRQ_MODE_MSIX;
 use core::ptr::write_volatile;

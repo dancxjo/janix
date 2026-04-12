@@ -30,10 +30,12 @@
 //! - O(N × M) → O(N) complexity for path lookups (N = segments, M = entries)
 //! - Order-of-magnitude improvement in asset scan time
 //! - Zero heap allocations during filename matching
-
-#![feature(restricted_std)]
-
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

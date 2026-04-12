@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 pub mod aarch64;
 pub mod loongarch64;
 pub mod riscv64;

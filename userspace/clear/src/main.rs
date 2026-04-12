@@ -1,7 +1,9 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 use stem::syscall::vfs_write;
 
 #[stem::main]

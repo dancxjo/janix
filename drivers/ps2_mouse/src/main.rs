@@ -1,9 +1,12 @@
 //! PS/2 Mouse Driver (Interrupt-driven)
 //!
 //! Subscribes to IRQ12 via IOAPIC, reads mouse packets on interrupt, sends to Bristle.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
+
 
 use stem::syscall::{ChannelHandle, channel_send_all, ioport_read, ioport_write, irq_subscribe};
 use stem::{debug, info};

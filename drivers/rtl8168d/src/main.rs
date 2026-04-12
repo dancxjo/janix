@@ -1,12 +1,13 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 mod driver;
 mod protocol;
 
-use alloc::format;
 use driver::Rtl8168Driver;
 use protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_MAC_REQ, MSG_MAC_RESP};
 use stem::syscall::{channel_create, channel_recv, channel_send};
@@ -97,11 +98,11 @@ fn main(boot_fd: usize) -> ! {
     let _ = vfs_mkdir("/services/net/rtl8168");
 
     if let Ok(fd) = vfs_open("/services/net/rtl8168/tx", O_CREAT | O_RDWR) {
-        let _ = vfs_write(fd, format!("{}", tx_write).as_bytes());
+        let _ = vfs_write(fd, alloc::format!("{}", tx_write).as_bytes());
         let _ = vfs_close(fd);
     }
     if let Ok(fd) = vfs_open("/services/net/rtl8168/rx", O_CREAT | O_RDWR) {
-        let _ = vfs_write(fd, format!("{}", rx_read).as_bytes());
+        let _ = vfs_write(fd, alloc::format!("{}", rx_read).as_bytes());
         let _ = vfs_close(fd);
     }
     if let Ok(fd) = vfs_open("/services/net/rtl8168/mac", O_CREAT | O_RDWR) {
@@ -111,7 +112,7 @@ fn main(boot_fd: usize) -> ! {
             | ((mac[3] as u64) << 24)
             | ((mac[4] as u64) << 32)
             | ((mac[5] as u64) << 40);
-        let _ = vfs_write(fd, format!("0x{:x}", mac_packed).as_bytes());
+        let _ = vfs_write(fd, alloc::format!("0x{:x}", mac_packed).as_bytes());
         let _ = vfs_close(fd);
     }
 

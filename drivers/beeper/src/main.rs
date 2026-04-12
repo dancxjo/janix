@@ -16,11 +16,13 @@
 //! 3. `vfs_write` / `vfs_read` for the PCM byte stream.
 //!
 //! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 mod chime;
 mod tone;

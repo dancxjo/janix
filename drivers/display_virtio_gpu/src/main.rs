@@ -1,13 +1,9 @@
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(
-    any(target_os = "thingos", target_env = "thingos"),
-    feature(restricted_std)
-)]
+#![no_std]
 #![no_main]
-
-extern crate alloc;
-use alloc::format;
 use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
+
 
 use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;
@@ -190,10 +186,10 @@ fn find_gpu() -> Option<alloc::string::String> {
         }
         if end > offset {
             if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
-                let path = format!("/sys/devices/{}", name);
-                let vendor = read_sys_u32(&format!("{}/vendor", path)).unwrap_or(0);
-                let device = read_sys_u32(&format!("{}/device", path)).unwrap_or(0);
-                let class = read_sys_u32(&format!("{}/class", path)).unwrap_or(0);
+                let path = alloc::format!("/sys/devices/{}", name);
+                let vendor = read_sys_u32(&alloc::format!("{}/vendor", path)).unwrap_or(0);
+                let device = read_sys_u32(&alloc::format!("{}/device", path)).unwrap_or(0);
+                let class = read_sys_u32(&alloc::format!("{}/class", path)).unwrap_or(0);
 
                 // VirtIO Vendor = 0x1af4, Display Class = 0x0300xx,
                 // or specifically device 0x1050 or 0x1011

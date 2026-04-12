@@ -35,16 +35,17 @@
 //!
 //! ## Design notes
 //!
-//! - `#![no_std]` — relies on `stem` for PAL primitives.
 //! - No heap is used for the global symbol table; a fixed-capacity open-addressing
 //!   hash table backed by a static array provides O(1) lookups without
 //!   dynamic allocation.
 //! - Library search path is `/lib` followed by `/usr/lib`.
-
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use alloc::vec::Vec;
 use abi::auxv;

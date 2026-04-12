@@ -12,10 +12,12 @@
 //! dev.setup_queue(0, 128)?;
 //! dev.driver_ok();
 //! ```
-
-#![feature(restricted_std)]
-
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 pub mod constants;
 pub mod device;

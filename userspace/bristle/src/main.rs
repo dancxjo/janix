@@ -2,17 +2,18 @@
 //!
 //! The sole input authority. Drivers send raw reports, apps receive
 //! normalized events. Apps never see scancodes, drivers never see apps.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
     KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use abi::syscall::vfs_flags::{O_CREAT, O_RDWR, O_TRUNC};
-use alloc::format;
 use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
 use stem::syscall::{ChannelHandle, channel_recv, channel_send_all};
 use stem::{debug, info};

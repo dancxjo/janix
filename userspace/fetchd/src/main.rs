@@ -1,11 +1,12 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 use abi::syscall::vfs_flags::{O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY};
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
-use alloc::format;
 use core::time::Duration;
 use stem::info;
 use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_stat, vfs_write};
@@ -59,74 +60,74 @@ fn ensure_session_objects() {
     ensure_dir(WINDOWS_ROOT);
     ensure_dir(SURFACES_ROOT);
 
-    let window_root = format!("{}/{}", WINDOWS_ROOT, WINDOW_ID);
-    let surface_root = format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
+    let window_root = alloc::format!("{}/{}", WINDOWS_ROOT, WINDOW_ID);
+    let surface_root = alloc::format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
 
     ensure_dir(&window_root);
-    ensure_dir(&format!("{}/shell", window_root));
-    ensure_dir(&format!("{}/shell/requested", window_root));
-    ensure_dir(&format!("{}/shell/current", window_root));
-    ensure_dir(&format!("{}/bind", window_root));
-    ensure_dir(&format!("{}/status", window_root));
+    ensure_dir(&alloc::format!("{}/shell", window_root));
+    ensure_dir(&alloc::format!("{}/shell/requested", window_root));
+    ensure_dir(&alloc::format!("{}/shell/current", window_root));
+    ensure_dir(&alloc::format!("{}/bind", window_root));
+    ensure_dir(&alloc::format!("{}/status", window_root));
 
     ensure_dir(&surface_root);
-    ensure_dir(&format!("{}/status", surface_root));
+    ensure_dir(&alloc::format!("{}/status", surface_root));
 
-    write_text(&format!("{}/shell/role", window_root), "toplevel\n");
-    write_text(&format!("{}/shell/title", window_root), "Network\n");
-    write_text(&format!("{}/shell/app_id", window_root), "fetchd\n");
-    write_text(&format!("{}/shell/current/x", window_root), "20\n");
-    write_text(&format!("{}/shell/current/y", window_root), "20\n");
+    write_text(&alloc::format!("{}/shell/role", window_root), "toplevel\n");
+    write_text(&alloc::format!("{}/shell/title", window_root), "Network\n");
+    write_text(&alloc::format!("{}/shell/app_id", window_root), "fetchd\n");
+    write_text(&alloc::format!("{}/shell/current/x", window_root), "20\n");
+    write_text(&alloc::format!("{}/shell/current/y", window_root), "20\n");
     write_text(
-        &format!("{}/shell/current/width", window_root),
-        &format!("{}\n", WIDTH),
+        &alloc::format!("{}/shell/current/width", window_root),
+        &alloc::format!("{}\n", WIDTH),
     );
     write_text(
-        &format!("{}/shell/current/height", window_root),
-        &format!("{}\n", HEIGHT),
+        &alloc::format!("{}/shell/current/height", window_root),
+        &alloc::format!("{}\n", HEIGHT),
     );
-    write_text(&format!("{}/shell/current/z", window_root), "10\n");
-    write_text(&format!("{}/shell/current/activated", window_root), "0\n");
-    write_text(&format!("{}/shell/current/maximized", window_root), "0\n");
-    write_text(&format!("{}/shell/current/fullscreen", window_root), "0\n");
-    write_text(&format!("{}/shell/current/resizing", window_root), "0\n");
-    write_text(&format!("{}/shell/requested/maximize", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/current/z", window_root), "10\n");
+    write_text(&alloc::format!("{}/shell/current/activated", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/current/maximized", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/current/fullscreen", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/current/resizing", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/requested/maximize", window_root), "0\n");
     write_text(
-        &format!("{}/shell/requested/fullscreen", window_root),
+        &alloc::format!("{}/shell/requested/fullscreen", window_root),
         "0\n",
     );
-    write_text(&format!("{}/shell/requested/minimize", window_root), "0\n");
+    write_text(&alloc::format!("{}/shell/requested/minimize", window_root), "0\n");
     write_text(
-        &format!("{}/bind/surface", window_root),
-        &format!("{}\n", SURFACE_ID),
+        &alloc::format!("{}/bind/surface", window_root),
+        &alloc::format!("{}\n", SURFACE_ID),
     );
-    write_text(&format!("{}/events", window_root), "");
-    write_text(&format!("{}/status/mapped", window_root), "0\n");
-    write_text(&format!("{}/status/focused", window_root), "0\n");
+    write_text(&alloc::format!("{}/events", window_root), "");
+    write_text(&alloc::format!("{}/status/mapped", window_root), "0\n");
+    write_text(&alloc::format!("{}/status/focused", window_root), "0\n");
     write_text(
-        &format!("{}/status/last_configure_serial", window_root),
+        &alloc::format!("{}/status/last_configure_serial", window_root),
         "0\n",
     );
-    write_text(&format!("{}/status/client_pid", window_root), "0\n");
-    write_text(&format!("{}/status/closing", window_root), "0\n");
+    write_text(&alloc::format!("{}/status/client_pid", window_root), "0\n");
+    write_text(&alloc::format!("{}/status/closing", window_root), "0\n");
 
-    write_text(&format!("{}/attach", surface_root), "");
-    write_text(&format!("{}/damage", surface_root), "");
-    write_text(&format!("{}/commit", surface_root), "0\n");
-    write_text(&format!("{}/input_region", surface_root), "");
-    write_text(&format!("{}/opaque_region", surface_root), "");
-    write_text(&format!("{}/status/mapped", surface_root), "0\n");
-    write_text(&format!("{}/status/last_commit", surface_root), "0\n");
-    write_text(&format!("{}/status/configured_serial", surface_root), "0\n");
+    write_text(&alloc::format!("{}/attach", surface_root), "");
+    write_text(&alloc::format!("{}/damage", surface_root), "");
+    write_text(&alloc::format!("{}/commit", surface_root), "0\n");
+    write_text(&alloc::format!("{}/input_region", surface_root), "");
+    write_text(&alloc::format!("{}/opaque_region", surface_root), "");
+    write_text(&alloc::format!("{}/status/mapped", surface_root), "0\n");
+    write_text(&alloc::format!("{}/status/last_commit", surface_root), "0\n");
+    write_text(&alloc::format!("{}/status/configured_serial", surface_root), "0\n");
     write_text(
-        &format!("{}/status/width", surface_root),
-        &format!("{}\n", WIDTH),
+        &alloc::format!("{}/status/width", surface_root),
+        &alloc::format!("{}\n", WIDTH),
     );
     write_text(
-        &format!("{}/status/height", surface_root),
-        &format!("{}\n", HEIGHT),
+        &alloc::format!("{}/status/height", surface_root),
+        &alloc::format!("{}\n", HEIGHT),
     );
-    write_text(&format!("{}/status/buffer_attached", surface_root), "0\n");
+    write_text(&alloc::format!("{}/status/buffer_attached", surface_root), "0\n");
 }
 
 fn create_buffer() -> BufferState {
@@ -147,30 +148,30 @@ fn create_buffer() -> BufferState {
 }
 
 fn publish_surface(buffer: &BufferState, commit: u64) {
-    let surface_root = format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
-    let attach = format!(
+    let surface_root = alloc::format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
+    let attach = alloc::format!(
         "fd={}\nwidth={}\nheight={}\nstride={}\nformat=1\n",
         buffer.fd, WIDTH, HEIGHT, STRIDE
     );
-    write_text(&format!("{}/attach", surface_root), &attach);
+    write_text(&alloc::format!("{}/attach", surface_root), &attach);
     write_text(
-        &format!("{}/damage", surface_root),
-        &format!("0 0 {} {}\n", WIDTH, HEIGHT),
+        &alloc::format!("{}/damage", surface_root),
+        &alloc::format!("0 0 {} {}\n", WIDTH, HEIGHT),
     );
     write_text(
-        &format!("{}/commit", surface_root),
-        &format!("{}\n", commit),
+        &alloc::format!("{}/commit", surface_root),
+        &alloc::format!("{}\n", commit),
     );
 }
 
 fn sync_configure_status() {
-    let window_root = format!("{}/{}", WINDOWS_ROOT, WINDOW_ID);
-    let surface_root = format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
-    let serial = read_text(&format!("{}/status/last_configure_serial", window_root));
+    let window_root = alloc::format!("{}/{}", WINDOWS_ROOT, WINDOW_ID);
+    let surface_root = alloc::format!("{}/{}", SURFACES_ROOT, SURFACE_ID);
+    let serial = read_text(&alloc::format!("{}/status/last_configure_serial", window_root));
     if !serial.is_empty() {
         write_text(
-            &format!("{}/status/configured_serial", surface_root),
-            &format!("{}\n", serial),
+            &alloc::format!("{}/status/configured_serial", surface_root),
+            &alloc::format!("{}\n", serial),
         );
     }
 }
@@ -180,7 +181,7 @@ fn ip_to_string(packed: u64) -> alloc::string::String {
     let b = ((packed >> 8) & 0xFF) as u8;
     let c = ((packed >> 16) & 0xFF) as u8;
     let d = ((packed >> 24) & 0xFF) as u8;
-    format!("{}.{}.{}.{}", a, b, c, d)
+    alloc::format!("{}.{}.{}.{}", a, b, c, d)
 }
 
 fn fill(pixels: &mut [u32], color: u32) {

@@ -1,15 +1,18 @@
-#![feature(restricted_std)]
-#![cfg_attr(not(test), no_main)]
-
 //! # Network Service (netd) — Phase 3: /net/ VFS provider
 //!
 //! Replaces the graph-based driver IPC and port-based socket API with:
 //! - Driver access via `/dev/net/virtio0/{rx,tx,mac,mtu}` VFS files (issue #540)
 //! - Application socket API via `/net/` VFS tree (issue #541)
 //! Provides networking capabilities using smoltcp TCP/IP stack.
+#![no_std]
+#![no_main]
+extern crate alloc;
+use alloc::string::ToString;
+use alloc::vec;
+use core::default::Default;
+
 
 #[macro_use]
-extern crate alloc;
 extern crate stem;
 
 mod dhcp;

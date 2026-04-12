@@ -4,6 +4,10 @@
 //! requests and return typed [`ProviderResponse`] values.  The caller is
 //! responsible for creating a [`ProviderLoop`] and forwarding its decoded
 //! requests here.
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use crate::driver::BootFbDriver;
 use abi::device::DeviceCall;

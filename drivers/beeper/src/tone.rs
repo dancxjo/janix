@@ -1,4 +1,8 @@
 //! Tone generation logic
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 pub struct ToneGenerator {
     frequency: f64,

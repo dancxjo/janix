@@ -5,11 +5,13 @@
 //!
 //! Each test prints "PASS: <name>" on success or "FAIL: <name>: <reason>" on
 //! failure and exits with a non-zero code if any test fails.
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 extern crate std;
 
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -39,20 +41,20 @@ fn test_create_write_read() -> Result<(), std::string::String> {
     // Create and write.
     {
         let mut f = std::fs::File::create(path)
-            .map_err(|e| std::format!("create: {}", e))?;
+            .map_err(|e| std::alloc::format!("create: {}", e))?;
         f.write_all(content)
-            .map_err(|e| std::format!("write_all: {}", e))?;
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
     }
 
     // Reopen and read back.
     {
         let mut f = std::fs::File::open(path)
-            .map_err(|e| std::format!("open: {}", e))?;
+            .map_err(|e| std::alloc::format!("open: {}", e))?;
         let mut buf = std::vec::Vec::new();
         f.read_to_end(&mut buf)
-            .map_err(|e| std::format!("read_to_end: {}", e))?;
+            .map_err(|e| std::alloc::format!("read_to_end: {}", e))?;
         if buf != content {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "content mismatch: got {:?}, expected {:?}",
                 buf, content
             ));
@@ -61,7 +63,7 @@ fn test_create_write_read() -> Result<(), std::string::String> {
 
     // Cleanup.
     std::fs::remove_file(path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
 
     Ok(())
 }
@@ -74,54 +76,54 @@ fn test_seek() -> Result<(), std::string::String> {
 
     {
         let mut f = std::fs::File::create(path)
-            .map_err(|e| std::format!("create: {}", e))?;
+            .map_err(|e| std::alloc::format!("create: {}", e))?;
         f.write_all(content)
-            .map_err(|e| std::format!("write_all: {}", e))?;
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
     }
 
     {
         let mut f = std::fs::File::open(path)
-            .map_err(|e| std::format!("open: {}", e))?;
+            .map_err(|e| std::alloc::format!("open: {}", e))?;
 
         // Seek to offset 4 and read 4 bytes.
         f.seek(SeekFrom::Start(4))
-            .map_err(|e| std::format!("seek(Start,4): {}", e))?;
+            .map_err(|e| std::alloc::format!("seek(Start,4): {}", e))?;
         let mut buf = [0u8; 4];
         f.read_exact(&mut buf)
-            .map_err(|e| std::format!("read_exact after seek: {}", e))?;
+            .map_err(|e| std::alloc::format!("read_exact after seek: {}", e))?;
         if &buf != b"4567" {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "seek+read mismatch: got {:?}, expected b\"4567\"", buf
             ));
         }
 
         // Seek from current: go back 2 bytes, read 2.
         f.seek(SeekFrom::Current(-2))
-            .map_err(|e| std::format!("seek(Current,-2): {}", e))?;
+            .map_err(|e| std::alloc::format!("seek(Current,-2): {}", e))?;
         let mut buf2 = [0u8; 2];
         f.read_exact(&mut buf2)
-            .map_err(|e| std::format!("read_exact after seek(Current): {}", e))?;
+            .map_err(|e| std::alloc::format!("read_exact after seek(Current): {}", e))?;
         if &buf2 != b"67" {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "seek(Current)+read mismatch: got {:?}, expected b\"67\"", buf2
             ));
         }
 
         // Seek from end: last 4 bytes.
         f.seek(SeekFrom::End(-4))
-            .map_err(|e| std::format!("seek(End,-4): {}", e))?;
+            .map_err(|e| std::alloc::format!("seek(End,-4): {}", e))?;
         let mut buf3 = [0u8; 4];
         f.read_exact(&mut buf3)
-            .map_err(|e| std::format!("read_exact after seek(End): {}", e))?;
+            .map_err(|e| std::alloc::format!("read_exact after seek(End): {}", e))?;
         if &buf3 != b"cdef" {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "seek(End)+read mismatch: got {:?}, expected b\"cdef\"", buf3
             ));
         }
     }
 
     std::fs::remove_file(path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
 
     Ok(())
 }
@@ -135,37 +137,37 @@ fn test_readdir() -> Result<(), std::string::String> {
     let _ = std::fs::remove_dir(dir);
 
     std::fs::create_dir(dir)
-        .map_err(|e| std::format!("create_dir: {}", e))?;
+        .map_err(|e| std::alloc::format!("create_dir: {}", e))?;
 
     // Create two files inside.
-    let file_a = std::format!("{}/alpha.txt", dir);
-    let file_b = std::format!("{}/beta.txt", dir);
+    let file_a = std::alloc::format!("{}/alpha.txt", dir);
+    let file_b = std::alloc::format!("{}/beta.txt", dir);
     std::fs::File::create(&file_a)
-        .map_err(|e| std::format!("create alpha.txt: {}", e))?;
+        .map_err(|e| std::alloc::format!("create alpha.txt: {}", e))?;
     std::fs::File::create(&file_b)
-        .map_err(|e| std::format!("create beta.txt: {}", e))?;
+        .map_err(|e| std::alloc::format!("create beta.txt: {}", e))?;
 
     // Collect directory entries.
     let entries: std::vec::Vec<std::string::String> = std::fs::read_dir(dir)
-        .map_err(|e| std::format!("read_dir: {}", e))?
+        .map_err(|e| std::alloc::format!("read_dir: {}", e))?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
     if !entries.iter().any(|n| n == "alpha.txt") {
-        return Err(std::format!("alpha.txt not found in {:?}", entries));
+        return Err(std::alloc::format!("alpha.txt not found in {:?}", entries));
     }
     if !entries.iter().any(|n| n == "beta.txt") {
-        return Err(std::format!("beta.txt not found in {:?}", entries));
+        return Err(std::alloc::format!("beta.txt not found in {:?}", entries));
     }
 
     // Cleanup.
     std::fs::remove_file(&file_a)
-        .map_err(|e| std::format!("remove alpha.txt: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove alpha.txt: {}", e))?;
     std::fs::remove_file(&file_b)
-        .map_err(|e| std::format!("remove beta.txt: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove beta.txt: {}", e))?;
     std::fs::remove_dir(dir)
-        .map_err(|e| std::format!("remove_dir: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_dir: {}", e))?;
 
     Ok(())
 }
@@ -180,14 +182,14 @@ fn test_metadata() -> Result<(), std::string::String> {
     // Create a file.
     {
         let mut f = std::fs::File::create(file_path)
-            .map_err(|e| std::format!("create: {}", e))?;
+            .map_err(|e| std::alloc::format!("create: {}", e))?;
         f.write_all(content)
-            .map_err(|e| std::format!("write_all: {}", e))?;
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
     }
 
     // Verify file metadata.
     let meta = std::fs::metadata(file_path)
-        .map_err(|e| std::format!("metadata(file): {}", e))?;
+        .map_err(|e| std::alloc::format!("metadata(file): {}", e))?;
     if !meta.is_file() {
         return Err("is_file() returned false for a regular file".into());
     }
@@ -195,18 +197,18 @@ fn test_metadata() -> Result<(), std::string::String> {
         return Err("is_dir() returned true for a regular file".into());
     }
     if meta.len() != content.len() as u64 {
-        return Err(std::format!(
+        return Err(std::alloc::format!(
             "len mismatch: got {}, expected {}", meta.len(), content.len()
         ));
     }
 
     // Create a directory.
     std::fs::create_dir(dir_path)
-        .map_err(|e| std::format!("create_dir: {}", e))?;
+        .map_err(|e| std::alloc::format!("create_dir: {}", e))?;
 
     // Verify directory metadata.
     let dir_meta = std::fs::metadata(dir_path)
-        .map_err(|e| std::format!("metadata(dir): {}", e))?;
+        .map_err(|e| std::alloc::format!("metadata(dir): {}", e))?;
     if !dir_meta.is_dir() {
         return Err("is_dir() returned false for a directory".into());
     }
@@ -216,9 +218,9 @@ fn test_metadata() -> Result<(), std::string::String> {
 
     // Cleanup.
     std::fs::remove_file(file_path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
     std::fs::remove_dir(dir_path)
-        .map_err(|e| std::format!("remove_dir: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_dir: {}", e))?;
 
     Ok(())
 }
@@ -233,29 +235,29 @@ fn test_rename_remove() -> Result<(), std::string::String> {
     // Create the original file.
     {
         let mut f = std::fs::File::create(old_path)
-            .map_err(|e| std::format!("create: {}", e))?;
+            .map_err(|e| std::alloc::format!("create: {}", e))?;
         f.write_all(content)
-            .map_err(|e| std::format!("write_all: {}", e))?;
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
     }
 
     // Rename.
     std::fs::rename(old_path, new_path)
-        .map_err(|e| std::format!("rename: {}", e))?;
+        .map_err(|e| std::alloc::format!("rename: {}", e))?;
 
     // Old path should not exist.
     if std::path::Path::new(old_path).exists() {
-        return Err(std::format!("old path '{}' still exists after rename", old_path));
+        return Err(std::alloc::format!("old path '{}' still exists after rename", old_path));
     }
 
     // New path should exist with correct content.
     {
         let mut f = std::fs::File::open(new_path)
-            .map_err(|e| std::format!("open after rename: {}", e))?;
+            .map_err(|e| std::alloc::format!("open after rename: {}", e))?;
         let mut buf = std::vec::Vec::new();
         f.read_to_end(&mut buf)
-            .map_err(|e| std::format!("read after rename: {}", e))?;
+            .map_err(|e| std::alloc::format!("read after rename: {}", e))?;
         if buf != content {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "content after rename mismatch: got {:?}", buf
             ));
         }
@@ -263,11 +265,11 @@ fn test_rename_remove() -> Result<(), std::string::String> {
 
     // Delete the new file.
     std::fs::remove_file(new_path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
 
     // Verify it's gone.
     if std::path::Path::new(new_path).exists() {
-        return Err(std::format!("'{}' still exists after remove_file", new_path));
+        return Err(std::alloc::format!("'{}' still exists after remove_file", new_path));
     }
 
     Ok(())
@@ -286,7 +288,7 @@ fn test_create_new() -> Result<(), std::string::String> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|e| std::format!("create_new (first): {}", e))?;
+        .map_err(|e| std::alloc::format!("create_new (first): {}", e))?;
 
     // Second create_new on the same path should fail with AlreadyExists.
     match std::fs::OpenOptions::new()
@@ -295,12 +297,12 @@ fn test_create_new() -> Result<(), std::string::String> {
         .open(path)
     {
         Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-        Err(e) => return Err(std::format!("create_new (second): unexpected error: {}", e)),
+        Err(e) => return Err(std::alloc::format!("create_new (second): unexpected error: {}", e)),
         Ok(_) => return Err("create_new (second): should have failed but succeeded".into()),
     }
 
     std::fs::remove_file(path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
 
     Ok(())
 }
@@ -313,9 +315,9 @@ fn test_truncate() -> Result<(), std::string::String> {
     // Write 16 bytes.
     {
         let mut f = std::fs::File::create(path)
-            .map_err(|e| std::format!("create: {}", e))?;
+            .map_err(|e| std::alloc::format!("create: {}", e))?;
         f.write_all(b"Hello, truncate!")
-            .map_err(|e| std::format!("write_all: {}", e))?;
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
     }
 
     // Open for writing and truncate to 5 bytes.
@@ -323,27 +325,27 @@ fn test_truncate() -> Result<(), std::string::String> {
         let f = std::fs::OpenOptions::new()
             .write(true)
             .open(path)
-            .map_err(|e| std::format!("open for truncate: {}", e))?;
+            .map_err(|e| std::alloc::format!("open for truncate: {}", e))?;
         f.set_len(5)
-            .map_err(|e| std::format!("set_len(5): {}", e))?;
+            .map_err(|e| std::alloc::format!("set_len(5): {}", e))?;
     }
 
     // Read back and verify.
     {
         let mut f = std::fs::File::open(path)
-            .map_err(|e| std::format!("open after truncate: {}", e))?;
+            .map_err(|e| std::alloc::format!("open after truncate: {}", e))?;
         let mut buf = std::vec::Vec::new();
         f.read_to_end(&mut buf)
-            .map_err(|e| std::format!("read_to_end: {}", e))?;
+            .map_err(|e| std::alloc::format!("read_to_end: {}", e))?;
         if buf != b"Hello" {
-            return Err(std::format!(
+            return Err(std::alloc::format!(
                 "truncate: got {:?}, expected b\"Hello\"", buf
             ));
         }
     }
 
     std::fs::remove_file(path)
-        .map_err(|e| std::format!("remove_file: {}", e))?;
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
 
     Ok(())
 }

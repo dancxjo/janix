@@ -1,9 +1,12 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use crate::task::{ManagedTask, TaskKind};
 use abi::display_driver_protocol::{FbInfoPayload, FB_INFO_PAYLOAD_SIZE};
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::syscall::vfs_flags::O_RDONLY;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;

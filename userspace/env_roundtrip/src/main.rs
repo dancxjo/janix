@@ -1,59 +1,104 @@
 //! Smoke test: set / get / list / unset env vars via SYS_ENV_*.
 //!
 //! Acceptance criteria:
-//!   - `std::env::set_var` stores a value
-//!   - `std::env::var` retrieves it
-//!   - `std::env::vars()` includes the new variable
-//!   - `std::env::remove_var` removes it
-//!   - subsequent `std::env::var` returns Err
-#![feature(restricted_std)]
+//!   - stem::syscall::env_set stores a value
+//!   - stem::syscall::env_get retrieves it
+//!   - stem::syscall::env_list includes the new variable
+//!   - stem::syscall::env_unset removes it
+#![no_std]
+#![no_main]
+extern crate alloc;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::default::Default;
 
-fn main() {
+#[stem::main]
+fn main() -> ! {
     let key = "THINGOS_TEST_VAR";
     let value = "roundtrip_ok";
 
     // set
-    // SAFETY: single-threaded, no concurrent env access
-    unsafe { std::env::set_var(key, value) };
-    println!("[env_roundtrip] set {}={:?}", key, value);
+    match stem::syscall::env_set(key.as_bytes(), value.as_bytes()) {
+        Ok(_) => stem::println!("[env_roundtrip] set {}={:?}", key, value),
+        Err(e) => {
+            stem::println!("[env_roundtrip] FAIL: could not set var: {:?}", e);
+            loop { stem::syscall::exit(1); }
+        }
+    }
 
     // get
-    match std::env::var(key) {
-        Ok(v) if v == value => println!("[env_roundtrip] get OK: {:?}", v),
-        Ok(v) => {
-            eprintln!("[env_roundtrip] FAIL: expected {:?} got {:?}", value, v);
-            std::process::exit(1);
+    let mut buf = [0u8; 128];
+    match stem::syscall::env_get(key.as_bytes(), &mut buf) {
+        Ok(len) => {
+            let v = core::str::from_utf8(&buf[..len]).unwrap_or("");
+            if v == value {
+                stem::println!("[env_roundtrip] get OK: {:?}", v);
+            } else {
+                stem::println!("[env_roundtrip] FAIL: expected {:?} got {:?}", value, v);
+                loop { stem::syscall::exit(1); }
+            }
         }
         Err(e) => {
-            eprintln!("[env_roundtrip] FAIL: var not found: {}", e);
-            std::process::exit(1);
+            stem::println!("[env_roundtrip] FAIL: var not found: {:?}", e);
+            loop { stem::syscall::exit(1); }
         }
     }
 
     // list
-    let vars: Vec<_> = std::env::vars().collect();
-    let found = vars.iter().any(|(k, v)| k == key && v == value);
-    if found {
-        println!("[env_roundtrip] list OK: found key in {} vars", vars.len());
-    } else {
-        eprintln!("[env_roundtrip] FAIL: key not found in vars() (total: {})", vars.len());
-        for (k, v) in &vars {
-            eprintln!("  {}={:?}", k, v);
+    let mut list_buf = [0u8; 1024];
+    match stem::syscall::env_list(&mut list_buf) {
+        Ok(n) => {
+            // env_list format: count:u32, then keylen:u32, key, vallen:u32, val
+            let count = u32::from_le_bytes(list_buf[0..4].try_into().unwrap()) as usize;
+            let mut found = false;
+            let mut offset = 4;
+            for _ in 0..count {
+                let k_len = u32::from_le_bytes(list_buf[offset..offset+4].try_into().unwrap()) as usize;
+                offset += 4;
+                let k = core::str::from_utf8(&list_buf[offset..offset+k_len]).unwrap_or("");
+                offset += k_len;
+                let v_len = u32::from_le_bytes(list_buf[offset..offset+4].try_into().unwrap()) as usize;
+                offset += 4;
+                let v = core::str::from_utf8(&list_buf[offset..offset+v_len]).unwrap_or("");
+                offset += v_len;
+
+                if k == key && v == value {
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                stem::println!("[env_roundtrip] list OK: found key in {} vars", count);
+            } else {
+                stem::println!("[env_roundtrip] FAIL: key not found in vars() (total: {})", count);
+                loop { stem::syscall::exit(1); }
+            }
         }
-        std::process::exit(1);
+        Err(e) => {
+            stem::println!("[env_roundtrip] FAIL: could not list vars: {:?}", e);
+            loop { stem::syscall::exit(1); }
+        }
     }
 
     // unset
-    // SAFETY: single-threaded
-    unsafe { std::env::remove_var(key) };
-    match std::env::var(key) {
-        Err(_) => println!("[env_roundtrip] unset OK"),
-        Ok(v) => {
-            eprintln!("[env_roundtrip] FAIL: var still present after remove: {:?}", v);
-            std::process::exit(1);
+    match stem::syscall::env_unset(key.as_bytes()) {
+        Ok(_) => stem::println!("[env_roundtrip] unset OK"),
+        Err(e) => {
+            stem::println!("[env_roundtrip] FAIL: could not unset var: {:?}", e);
+            loop { stem::syscall::exit(1); }
         }
     }
 
-    println!("[env_roundtrip] PASS");
-    std::process::exit(0);
+    // verify unset
+    match stem::syscall::env_get(key.as_bytes(), &mut buf) {
+        Err(_) => stem::println!("[env_roundtrip] verify unset OK"),
+        Ok(_) => {
+            stem::println!("[env_roundtrip] FAIL: var still present after remove");
+            loop { stem::syscall::exit(1); }
+        }
+    }
+
+    stem::println!("[env_roundtrip] PASS");
+    loop { stem::syscall::exit(0); }
 }

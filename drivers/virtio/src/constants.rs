@@ -1,5 +1,8 @@
 //! Virtio constants and register offsets
-#![allow(dead_code)]
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 // Virtio PCI common configuration offsets (VirtIO 1.0+ spec)
 pub const VIRTIO_COMMON_DEVICE_FEATURE_SELECT: u32 = 0x00;

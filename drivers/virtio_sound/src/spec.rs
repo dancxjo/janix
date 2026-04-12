@@ -1,5 +1,9 @@
 //! VirtIO Sound Device Specification (v1.2)
 //! https://docs.oasis-open.org/virtio/virtio/v1.2/csd01/virtio-v1.2-csd01.pdf
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use alloc::vec::Vec;
 use core::mem::size_of;

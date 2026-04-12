@@ -33,11 +33,14 @@
 //! └── dns/
 //!     └── lookup        ← write: hostname; read: dotted-decimal IPv4 address
 //! ```
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
-use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer};
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
@@ -582,7 +585,7 @@ impl NetVfsProvider {
         match handle {
             HANDLE_ETH0_STATUS => ReadResult::text_offset(&self.eth0_status(), offset),
             HANDLE_ETH0_ADDR => ReadResult::text_offset(&self.eth0_addr_text(), offset),
-            HANDLE_ETH0_MTU => ReadResult::text_offset(&format!("{}\n", self.mtu), offset),
+            HANDLE_ETH0_MTU => ReadResult::text_offset(&alloc::format!("{}\n", self.mtu), offset),
             HANDLE_ETH0_STATS => ReadResult::text_offset(&self.eth0_stats(), offset),
             HANDLE_ETH0_EVENTS => {
                 // Events are single-shot; subsequent reads return EOF until next event.
@@ -613,7 +616,7 @@ impl NetVfsProvider {
                 let socket = TcpSocket::new(rx_buf, tx_buf);
                 let shdl = socket_set.add(socket);
                 let api_handle = socket_api.alloc_socket_raw(shdl, buf_idx, false, 0);
-                let text = format!("{}\n", api_handle);
+                let text = alloc::format!("{}\n", api_handle);
                 ReadResult::Data(text.into_bytes())
             }
             // udp/new: allocate a new UDP socket
@@ -628,7 +631,7 @@ impl NetVfsProvider {
                 let api_handle = socket_api.alloc_udp_socket_raw(socket_set, buf_idx);
                 match api_handle {
                     Some(id) => {
-                        let text = format!("{}\n", id);
+                        let text = alloc::format!("{}\n", id);
                         ReadResult::Data(text.into_bytes())
                     }
                     None => ReadResult::Error,
@@ -732,7 +735,7 @@ impl NetVfsProvider {
                         let conn_handle = u32::from_le_bytes(result[2..6].try_into().unwrap());
                         let ip = &result[6..10];
                         let port = u16::from_le_bytes(result[10..12].try_into().unwrap());
-                        let text = format!(
+                        let text = alloc::format!(
                             "{} {}.{}.{}.{} {}\n",
                             conn_handle, ip[0], ip[1], ip[2], ip[3], port
                         );
@@ -1068,7 +1071,7 @@ impl NetVfsProvider {
                 let mut entries = vec![("new".into(), HANDLE_TCP_NEW, 8)];
                 for id in socket_api.tcp_socket_ids() {
                     let dh = TCP_DYN_BASE | ((id as u64) << 8) | SF_DIR as u64;
-                    entries.push((format!("{}", id), dh, 4));
+                    entries.push((alloc::format!("{}", id), dh, 4));
                 }
                 entries
             }
@@ -1076,7 +1079,7 @@ impl NetVfsProvider {
                 let mut entries = vec![("new".into(), HANDLE_UDP_NEW, 8)];
                 for id in socket_api.udp_socket_ids() {
                     let dh = UDP_DYN_BASE | ((id as u64) << 8) | SF_DIR as u64;
-                    entries.push((format!("{}", id), dh, 4));
+                    entries.push((alloc::format!("{}", id), dh, 4));
                 }
                 entries
             }
@@ -1119,7 +1122,7 @@ impl NetVfsProvider {
             HANDLE_ETH0_STATUS => (S_IFREG | 0o444, self.eth0_status().len()),
             HANDLE_ETH0_ADDR => (S_IFREG | 0o644, self.eth0_addr_text().len()),
             HANDLE_ETH0_FLAGS => (S_IFREG | 0o222, 0),
-            HANDLE_ETH0_MTU => (S_IFREG | 0o644, format!("{}\n", self.mtu).len()),
+            HANDLE_ETH0_MTU => (S_IFREG | 0o644, alloc::format!("{}\n", self.mtu).len()),
             HANDLE_ETH0_STATS => (S_IFREG | 0o444, self.eth0_stats().len()),
             HANDLE_ETH0_EVENTS => (S_IFREG | 0o444, 0),
             HANDLE_ROUTES => (S_IFREG | 0o644, 0),
@@ -1192,14 +1195,14 @@ impl NetVfsProvider {
         let ip_line = match &self.ip_config {
             Some(c) => {
                 let b = c.ip.as_bytes();
-                format!(
+                alloc::format!(
                     "ipv4: {}.{}.{}.{}/{}\n",
                     b[0], b[1], b[2], b[3], c.prefix_len
                 )
             }
             None => "ipv4: unassigned\n".into(),
         };
-        format!(
+        alloc::format!(
             "state: {}\nlink: {}\nmac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\nmtu: {}\n{}",
             state, link, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], self.mtu, ip_line
         )
@@ -1209,14 +1212,14 @@ impl NetVfsProvider {
         match &self.ip_config {
             Some(c) => {
                 let b = c.ip.as_bytes();
-                format!("{}.{}.{}.{}/{}\n", b[0], b[1], b[2], b[3], c.prefix_len)
+                alloc::format!("{}.{}.{}.{}/{}\n", b[0], b[1], b[2], b[3], c.prefix_len)
             }
             None => "0.0.0.0/0\n".into(),
         }
     }
 
     fn eth0_stats(&self) -> String {
-        format!(
+        alloc::format!(
             "rx_bytes: {}\ntx_bytes: {}\nrx_packets: {}\ntx_packets: {}\n",
             self.rx_bytes, self.tx_bytes, self.rx_packets, self.tx_packets
         )
@@ -1228,7 +1231,7 @@ impl NetVfsProvider {
                 let gw = c.gateway.as_bytes();
                 let net_b = c.ip.as_bytes();
                 // Derive network address by masking
-                format!(
+                alloc::format!(
                     "default via {}.{}.{}.{} dev eth0\n{}.{}.{}.0/{} dev eth0\n",
                     gw[0], gw[1], gw[2], gw[3], net_b[0], net_b[1], net_b[2], c.prefix_len
                 )
@@ -1241,7 +1244,7 @@ impl NetVfsProvider {
         match &self.ip_config {
             Some(c) => {
                 let d = c.dns_server.as_bytes();
-                format!("{}.{}.{}.{}\n", d[0], d[1], d[2], d[3])
+                alloc::format!("{}.{}.{}.{}\n", d[0], d[1], d[2], d[3])
             }
             None => "0.0.0.0\n".into(),
         }

@@ -1,6 +1,10 @@
 //! PS/2 Scancode to HID Key Normalization
 //!
 //! Converts PS/2 Set 1 scancodes to normalized Key values.
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use abi::hid::Key;
 

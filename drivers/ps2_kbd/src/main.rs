@@ -1,5 +1,8 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 use stem::syscall::{channel_send_all, ioport_read, irq_subscribe, ChannelHandle};
 use stem::{info, warn};

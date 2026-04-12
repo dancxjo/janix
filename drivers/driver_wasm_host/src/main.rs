@@ -1,3 +1,8 @@
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use anyhow::{Context, Result};
 use std::env;
 use std::fs;
@@ -54,7 +59,7 @@ fn main() -> Result<()> {
 
     if let Some(path) = &trace_replay_path {
         let file =
-            fs::File::open(path).with_context(|| format!("Failed to open trace file: {}", path))?;
+            fs::File::open(path).with_context(|| alloc::format!("Failed to open trace file: {}", path))?;
         let entries: Vec<crate::trace::TraceEntry> = serde_json::from_reader(file)?;
         trace_mode = crate::trace::TraceMode::Replay(entries.into_iter());
         println!("Replay mode enabled using: {}", path);
@@ -64,7 +69,7 @@ fn main() -> Result<()> {
     }
 
     let wasm_bytes =
-        fs::read(&wasm_path).with_context(|| format!("Failed to read wasm file: {}", wasm_path))?;
+        fs::read(&wasm_path).with_context(|| alloc::format!("Failed to read wasm file: {}", wasm_path))?;
 
     let engine = Engine::default();
     let module = Module::new(&engine, &wasm_bytes)?;

@@ -1,14 +1,16 @@
-#![feature(restricted_std)]
-#![no_main]
-
 //! Simple ping utility.
 //!
 //! Since ICMP raw sockets are not yet available through the /net/ VFS,
 //! this implementation probes connectivity by opening TCP connections to
 //! the target host (default port 80) and measuring the round-trip time.
 //! Usage: ping [-c count] [-p port] <host>
-
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use abi::syscall::vfs_flags::{O_RDONLY, O_WRONLY};

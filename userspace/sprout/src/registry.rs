@@ -1,8 +1,12 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use abi::ids::HandleId;
 use abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC, SECTION_NAME};
 use abi::schema::kinds;
 use alloc::collections::BTreeMap;
-use alloc::string::{String, ToString};
+use alloc::string::{String};
 use stem::info;
 use stem::syscall::vfs::{vfs_close, vfs_open};
 use stem::thing::sys as thingsys;
@@ -62,7 +66,7 @@ impl Registry {
     }
 
     fn scan_module_name(&mut self, mod_name: &str) {
-        let path = format!("/bin/{}", mod_name);
+        let path = alloc::format!("/bin/{}", mod_name);
         if let Ok(fd) = vfs_open(&path, abi::syscall::vfs_flags::O_RDONLY) {
             if let Some(header) = self.read_manifest(fd) {
                 if let ModuleKind::Driver = header.kind {

@@ -18,10 +18,13 @@
 //! ```text
 //! [4 bytes: frame_length_le][frame_length bytes: raw Ethernet frame]
 //! ```
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
 use alloc::collections::VecDeque;
-use alloc::format;
 use alloc::vec::Vec;
 use stem::info;
 use stem::syscall::{channel_send, ChannelHandle};
@@ -369,7 +372,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
         HANDLE_STATUS => {
             info!("VIRTIO_NETD: read status");
             let text =
-                format!(
+                alloc::format!(
                 "state: {}\nlink: {}\nmac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\nmtu: {}\n",
                 if state.link_up { "up" } else { "down" },
                 if state.link_up { "up" } else { "down" },
@@ -381,7 +384,7 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
         }
         HANDLE_MAC => {
             info!("VIRTIO_NETD: read mac");
-            let text = format!(
+            let text = alloc::format!(
                 "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
                 state.mac[0], state.mac[1], state.mac[2], state.mac[3], state.mac[4], state.mac[5],
             );
@@ -389,12 +392,12 @@ fn handle_read(state: &mut NetVfsState, resp_port: ChannelHandle, payload: &[u8]
         }
         HANDLE_MTU => {
             info!("VIRTIO_NETD: read mtu");
-            let text = format!("{}\n", state.mtu);
+            let text = alloc::format!("{}\n", state.mtu);
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_FEATURES => {
             info!("VIRTIO_NETD: read features");
-            let text = format!("0x{:08x}\n", state.features);
+            let text = alloc::format!("0x{:08x}\n", state.features);
             send_text_slice(resp_port, text.as_bytes(), offset, len);
         }
         HANDLE_RX => {

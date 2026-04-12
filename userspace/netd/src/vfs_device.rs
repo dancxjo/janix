@@ -3,6 +3,10 @@
 //! Frames are exchanged over `/dev/net/virtio0/{rx,tx,events}` using a
 //! length-prefixed wire format:
 //! `[4 bytes little-endian frame length][raw Ethernet frame bytes...]`
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use abi::syscall::vfs_flags;
 use alloc::collections::VecDeque;

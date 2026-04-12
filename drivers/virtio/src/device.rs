@@ -5,8 +5,11 @@
 //! - Feature negotiation  
 //! - Virtqueue setup
 //! - Command/response communication
-
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 use abi::errors::Errno;
 use abi::ids::HandleId;
@@ -55,11 +58,11 @@ impl VirtioDevice {
         stem::debug!("VirtIO: claimed, handle={}", claim_handle);
 
         // Read VirtIO capability offsets from sysfs
-        let common_bar = read_sys_u32(&format!("{}/virtio/common_bar", sys_path))? as usize;
-        let common_offset = read_sys_u32(&format!("{}/virtio/common_offset", sys_path))? as u64;
-        let notify_bar = read_sys_u32(&format!("{}/virtio/notify_bar", sys_path))? as usize;
-        let notify_offset = read_sys_u32(&format!("{}/virtio/notify_offset", sys_path))? as u64;
-        let notify_multiplier = read_sys_u32(&format!("{}/virtio/notify_multiplier", sys_path))?;
+        let common_bar = read_sys_u32(&alloc::format!("{}/virtio/common_bar", sys_path))? as usize;
+        let common_offset = read_sys_u32(&alloc::format!("{}/virtio/common_offset", sys_path))? as u64;
+        let notify_bar = read_sys_u32(&alloc::format!("{}/virtio/notify_bar", sys_path))? as usize;
+        let notify_offset = read_sys_u32(&alloc::format!("{}/virtio/notify_offset", sys_path))? as u64;
+        let notify_multiplier = read_sys_u32(&alloc::format!("{}/virtio/notify_multiplier", sys_path))?;
 
         stem::debug!(
             "VirtIO: common_bar={} common_off=0x{:x} notify_bar={} notify_off=0x{:x} mult={}",
@@ -71,9 +74,9 @@ impl VirtioDevice {
         );
 
         // Device config is optional (0xFF if not present)
-        let device_bar = read_sys_u32(&format!("{}/virtio/device_bar", sys_path)).unwrap_or(0xFF);
+        let device_bar = read_sys_u32(&alloc::format!("{}/virtio/device_bar", sys_path)).unwrap_or(0xFF);
         let device_offset =
-            read_sys_u32(&format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
+            read_sys_u32(&alloc::format!("{}/virtio/device_offset", sys_path)).unwrap_or(0);
 
         // Map the BAR containing common config
         stem::debug!("VirtIO: mapping common BAR{}...", common_bar);

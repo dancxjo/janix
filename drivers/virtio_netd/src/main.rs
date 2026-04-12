@@ -7,15 +7,18 @@
 //! - virtio_netd: Hardware driver (RX/TX queues, DMA buffers, interrupts)
 //!   Exposes files: ctl, status, mac, mtu, rx, tx, features, events
 //! - netd / other consumers: talk to the driver purely through file paths
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
 extern crate alloc;
+use alloc::string::{String, ToString};
+use core::default::Default;
+
+
 
 mod driver;
 mod vfs_provider;
 
+use abi::errors::Errno;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::VirtioNetDriver;
@@ -75,7 +78,7 @@ fn main(arg: usize) -> ! {
     stem::debug!("VIRTIO_NETD: Initializing hardware driver...");
 
     // Initialize VirtIO-NET driver.
-    let mut driver = match if !claimed_path.is_empty() {
+    let mut driver: VirtioNetDriver = match if !claimed_path.is_empty() {
         VirtioNetDriver::claim_device(&claimed_path)
     } else {
         VirtioNetDriver::find_and_claim()
@@ -237,7 +240,7 @@ fn main(arg: usize) -> ! {
 
         // 2. Poll hardware for received frames and buffer them.
         if let Some(frame) = driver.poll_rx() {
-            let frame_vec = frame.to_vec();
+            let frame_vec: alloc::vec::Vec<u8> = frame.to_vec();
             state.push_rx_frame(frame_vec);
         }
 

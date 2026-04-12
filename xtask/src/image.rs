@@ -54,12 +54,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "smallsh",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "ls",
             is_init: true,
             boot_module: true,
@@ -299,31 +293,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-        ProgramConfig {
-            name: "hello_std",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "proc_smoke",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "stdio_demo",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "hello_stdio",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
+          ProgramConfig {
             name: "vfs_hello",
             is_init: false,
             boot_module: true,
@@ -343,18 +313,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "cwd_test",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "time_test",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "test_fs",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -451,12 +409,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "test_futex",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "test_thread_std",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -808,7 +760,6 @@ fn build_userspace_app_with_features(
         vec![]
     };
 
-    let build_std_crates = "core,alloc,std,panic_abort";
 
     let cwd = std::env::current_dir().unwrap();
     let std_src = cwd.join("vendor/rust/library");
@@ -827,14 +778,20 @@ fn build_userspace_app_with_features(
     let stage1_lib = stage1_dir.join("lib");
     let use_fork_rustc = target.ends_with(".json")
         && target.contains("thingos")
-        && stage1_rustc.exists();
+        && stage1_rustc.exists()
+        && std::env::var("BUILD_RUSTC").as_deref() == Ok("1");
 
-    let mut cmd = cmd!(
+    let build_std_crates = if std::env::var("BUILD_RUSTC").as_deref() == Ok("1") {
+        "core,alloc,std,panic_abort"
+    } else {
+        "core,alloc,panic_abort"
+    };
+
+    let mut cmd_obj = cmd!(
         sh,
         "cargo -Z build-std={build_std_crates} -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"
     )
-    .env("RUSTFLAGS", "-Awarnings")
-    .env("__CARGO_TESTS_ONLY_SRC_ROOT", std_src.to_str().unwrap());
+    .env("RUSTFLAGS", "-Awarnings");
 
     if use_fork_rustc {
         let ld_lib_path = match std::env::var("LD_LIBRARY_PATH") {
@@ -844,19 +801,21 @@ fn build_userspace_app_with_features(
             _ => stage1_lib.display().to_string(),
         };
         let target_path = cwd.join("targets");
-        cmd = cmd
+        cmd_obj = cmd_obj
             .env("RUSTC", &stage1_rustc)
             .env("LD_LIBRARY_PATH", ld_lib_path)
+            .env("__CARGO_TESTS_ONLY_SRC_ROOT", std_src.to_str().unwrap())
             .env("RUST_TARGET_PATH", target_path);
     }
 
     for f in features {
-        cmd = cmd.arg("--features").arg(f);
+        cmd_obj = cmd_obj.arg("--features").arg(f);
     }
 
-    cmd.run()?;
+    cmd_obj.run()?;
     Ok(())
 }
+
 
 /// Copy and objcopy a userspace binary
 fn copy_userspace_binary(
@@ -877,7 +836,6 @@ fn copy_userspace_binary(
     Ok(())
 }
 
-/// Build an HDD image for the target architecture.
 pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<PathBuf> {
     let name = image_name(arch);
     let hdd = format!("{}.hdd", name);

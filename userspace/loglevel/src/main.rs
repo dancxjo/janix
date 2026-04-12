@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 use stem::syscall::{argv_get, log_set_level};
 use stem::{info, println};
 

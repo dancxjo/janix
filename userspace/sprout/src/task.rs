@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use alloc::string::String;
 
 #[derive(Debug, PartialEq, Default)]

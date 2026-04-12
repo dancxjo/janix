@@ -1,4 +1,8 @@
 //! DHCPv4 client using smoltcp.
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use smoltcp::iface::{Interface, SocketSet, SocketStorage};
 use smoltcp::phy::Device;

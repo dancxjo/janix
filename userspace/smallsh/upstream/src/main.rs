@@ -1,4 +1,8 @@
-#![feature(drain_filter)]
+#![no_std]
+#![no_main]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 
 extern crate dirs;
 
@@ -69,7 +73,7 @@ fn prompt() -> Option<String> {
     //Read input from the user
     handle.read_line(&mut buffer).unwrap();
 
-    buffer = buffer.replace("$$", &format!("{}", std::process::id()));
+    buffer = buffer.replace("$$", &alloc::format!("{}", std::process::id()));
 
     //Trim buffer to take whitespace off of the right-side of a string
     let buffer = buffer.trim_right();

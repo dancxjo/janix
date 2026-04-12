@@ -1,8 +1,11 @@
 //! HTTP/1.1 client with redirect support
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::format;
 use smoltcp::iface::Interface;
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer};
 use smoltcp::time::Duration;
@@ -112,7 +115,7 @@ fn http_get_internal(
         }
 
         if connected && !request_sent && socket.can_send() {
-            let request = format!(
+            let request = alloc::format!(
                 "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
                 path, host
             );
@@ -229,7 +232,7 @@ fn follow_redirect(
         (String::from(current_host), String::from(location))
     } else {
         // Relative path without leading slash
-        (String::from(current_host), format!("/{}", location))
+        (String::from(current_host), alloc::format!("/{}", location))
     };
 
     stem::info!("HTTP: Redirect target: host={} path={}", new_host, new_path);
@@ -290,7 +293,7 @@ fn fetch_via_proxy(
         }
     }
 
-    let proxy_path = format!("/?url={}", encoded_url);
+    let proxy_path = alloc::format!("/?url={}", encoded_url);
     stem::info!("HTTP: Proxy request: GET http://{}:{}{}", PROXY_HOST, PROXY_PORT, proxy_path);
 
     let mut rx_data = [0u8; 32768]; // Larger buffer for proxied content
@@ -342,7 +345,7 @@ fn fetch_via_proxy(
         }
 
         if connected && !request_sent && socket.can_send() {
-            let request = format!(
+            let request = alloc::format!(
                 "GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
                 proxy_path, PROXY_HOST, PROXY_PORT
             );

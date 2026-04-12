@@ -19,16 +19,17 @@
 //!
 //! ## Design constraints
 //!
-//! - `#![no_std]` — relies on `stem` for PAL primitives and `alloc` for
 //!   heap allocation.
 //! - No dependency on the kernel-level `ld.so` interpreter; this library
 //!   implements its own ELF parsing and loading so it can be linked
 //!   statically into any userspace binary.
 //! - Kernel role: none beyond `mmap`/file access (as per the issue spec).
-
 #![no_std]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use alloc::vec::Vec;
 use abi::vm::{VmBacking, VmMapFlags, VmProt};

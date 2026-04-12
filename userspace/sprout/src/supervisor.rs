@@ -5,11 +5,11 @@
 //! 2. Sovereign registration handshake (receiving handles from drivers).
 //! 3. Graphics stack bring-up (coordinating display + fonts + bloom).
 //! 4. Monitoring device arrivals and spawning dependent services.
-
-#![feature(restricted_std)]
-#![no_main]
-
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 
 // Modules are now declared in main.rs
 use crate::ledger::DeviceLedger;
@@ -18,8 +18,6 @@ use crate::pipelines::{
     DisplayHandles,
 };
 use crate::task::{ManagedTask, TaskKind};
-use alloc::format;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -359,7 +357,7 @@ impl Supervisor {
                                 let mut ledger = self.ledger.lock();
                                 let unit = ledger.get(class_name).cloned().unwrap_or(0);
                                 ledger.insert(class_name.to_string(), unit + 1);
-                                let path = format!("{}{}", root, unit);
+                                let path = alloc::format!("{}{}", root, unit);
 
                                 // 3. Mount
                                 match vfs_mount(provider_port, &path) {

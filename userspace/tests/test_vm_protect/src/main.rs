@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
 use abi::vm::{VmMapFlags, VmProt};
 use stem::println;
 use stem::vm::*;

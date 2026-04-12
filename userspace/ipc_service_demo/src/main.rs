@@ -35,11 +35,13 @@
 //!     server.reply(req.request_id, write_h, &req.payload)?;  // echo
 //! }
 //! ```
-
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
-
+use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
+
+
 
 use abi::syscall::vfs_flags::{O_CREAT, O_WRONLY};
 use ipc_helpers::channel::OwnedChannel;

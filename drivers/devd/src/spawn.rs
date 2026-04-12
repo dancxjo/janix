@@ -1,3 +1,7 @@
+#![no_std]
+use alloc::string::ToString;
+use core::default::Default;
+extern crate alloc;
 use abi::types::TaskStatus;
 use alloc::string::String;
 use stem::syscall::{spawn_process, task_poll, vfs_umount};
@@ -43,7 +47,7 @@ impl ManagedDriver {
         }
 
         // Create bootstrap memfd
-        let full_path = format!("/sys/devices/{}", self.slot);
+        let full_path = alloc::format!("/sys/devices/{}", self.slot);
         let boot_size = 4096;
         let boot_fd = stem::syscall::memfd_create("driver.boot", boot_size).unwrap_or(0);
 
@@ -57,10 +61,10 @@ impl ManagedDriver {
         let driver_path = if self.driver.starts_with('/') {
             self.driver.to_string()
         } else {
-            format!("/bin/{}", self.driver)
+            alloc::format!("/bin/{}", self.driver)
         };
 
-        let boot_fd_str = format!("{}", boot_fd);
+        let boot_fd_str = alloc::format!("{}", boot_fd);
         let argv: &[&[u8]] = &[driver_path.as_bytes(), boot_fd_str.as_bytes()];
 
         let spawn_res = stem::syscall::spawn_process_ex(

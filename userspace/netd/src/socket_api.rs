@@ -2,11 +2,14 @@
 //!
 //! Provides a high-level socket management API used by the VFS provider
 //! to implement the `/net/` tree with smoltcp TCP/UDP sockets.
+#![no_std]
+extern crate alloc;
+use alloc::string::ToString;
+use core::default::Default;
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer, State as TcpState};
 use smoltcp::time::Instant;
@@ -133,7 +136,7 @@ impl SocketApi {
     #[allow(dead_code)]
     fn endpoint_ip_string(ep: EndpointV4) -> alloc::string::String {
         let b = ep.ip.as_bytes();
-        format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
+        alloc::format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
     }
 
     fn tcp_state_label(state: TcpState) -> &'static str {
@@ -352,14 +355,14 @@ impl SocketApi {
         let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
         let state = socket.state();
         let local = match socket.local_endpoint() {
-            Some(ep) => format!("{}:{}", ep.addr, ep.port),
+            Some(ep) => alloc::format!("{}:{}", ep.addr, ep.port),
             None => "none".into(),
         };
         let remote = match socket.remote_endpoint() {
-            Some(ep) => format!("{}:{}", ep.addr, ep.port),
+            Some(ep) => alloc::format!("{}:{}", ep.addr, ep.port),
             None => "none".into(),
         };
-        format!(
+        alloc::format!(
             "state: {}\nlocal: {}\nremote: {}\n",
             Self::tcp_state_label(state),
             local,
@@ -392,18 +395,18 @@ impl SocketApi {
         let local_str = match managed.local {
             Some(ep) => {
                 let b = ep.ip.as_bytes();
-                format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
+                alloc::format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
             }
             None => "unbound".into(),
         };
         let remote_str = match managed.remote {
             Some(ep) => {
                 let b = ep.ip.as_bytes();
-                format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
+                alloc::format!("{}.{}.{}.{}:{}", b[0], b[1], b[2], b[3], ep.port)
             }
             None => "none".into(),
         };
-        format!("local: {}\nremote: {}\n", local_str, remote_str)
+        alloc::format!("local: {}\nremote: {}\n", local_str, remote_str)
     }
 
     /// Return the stored remote endpoint for a UDP socket.
@@ -1106,7 +1109,7 @@ impl SocketApi {
             Err(e) => {
                 warn!("SOCKET_API: UDP_RECV_FROM error: {:?}", e);
                 if let Some(m) = self.sockets.get_mut(&handle) {
-                    Self::set_last_error(m, &format!("udp_recv:{:?}", e));
+                    Self::set_last_error(m, &alloc::format!("udp_recv:{:?}", e));
                 }
                 encode_empty()
             }

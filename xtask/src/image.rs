@@ -293,7 +293,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-          ProgramConfig {
+        ProgramConfig {
             name: "vfs_hello",
             is_init: false,
             boot_module: true,
@@ -772,7 +772,6 @@ fn build_userspace_app_with_features(
         vec![]
     };
 
-
     let cwd = std::env::current_dir().unwrap();
     let std_src = cwd.join("vendor/rust/library");
 
@@ -781,13 +780,12 @@ fn build_userspace_app_with_features(
         cmd!(sh, "just fetch-rust").run()?;
     }
 
-    // When building for a ThingOS JSON target, use the fork's stage-1 rustc
-    // so that fork-specific attributes (e.g. #[rustc_do_not_implement_via_object])
-    // are accepted.  The stage-1 compiler's sysroot symlinks to vendor/rust/ so
-    // cargo's -Z build-std finds the correct library sources automatically.
-    let stage1_dir = cwd.join("vendor/rust/build/x86_64-unknown-linux-gnu/stage1");
-    let stage1_rustc = stage1_dir.join("bin/rustc");
-    let stage1_lib = stage1_dir.join("lib");
+    // When building for a ThingOS JSON target, use the cached bootstrap
+    // compiler produced by `cargo xtask rustc-thingos`. The current bootstrap
+    // yields a Linux-hosted cross-compiler plus a cached sysroot rooted at
+    // target/rustc-thingos/.
+    let stage1_rustc = cwd.join("target/rustc-thingos/rustc");
+    let stage1_sysroot = cwd.join("target/rustc-thingos");
     let use_fork_rustc = target.ends_with(".json")
         && target.contains("thingos")
         && stage1_rustc.exists()
@@ -799,23 +797,19 @@ fn build_userspace_app_with_features(
         "core,alloc,panic_abort"
     };
 
+    let mut rustflags = String::from("-Awarnings");
     let mut cmd_obj = cmd!(
         sh,
         "cargo -Z build-std={build_std_crates} -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"
     )
-    .env("RUSTFLAGS", "-Awarnings");
+    .env("RUSTFLAGS", &rustflags);
 
     if use_fork_rustc {
-        let ld_lib_path = match std::env::var("LD_LIBRARY_PATH") {
-            Ok(existing) if !existing.is_empty() => {
-                format!("{}:{}", stage1_lib.display(), existing)
-            }
-            _ => stage1_lib.display().to_string(),
-        };
         let target_path = cwd.join("targets");
+        rustflags = format!("-Awarnings --sysroot {}", stage1_sysroot.display());
         cmd_obj = cmd_obj
             .env("RUSTC", &stage1_rustc)
-            .env("LD_LIBRARY_PATH", ld_lib_path)
+            .env("RUSTFLAGS", &rustflags)
             .env("__CARGO_TESTS_ONLY_SRC_ROOT", std_src.to_str().unwrap())
             .env("RUST_TARGET_PATH", target_path);
     }
@@ -827,7 +821,6 @@ fn build_userspace_app_with_features(
     cmd_obj.run()?;
     Ok(())
 }
-
 
 /// Copy and objcopy a userspace binary
 fn copy_userspace_binary(

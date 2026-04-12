@@ -92,6 +92,26 @@ The cached `rustlib/` tree includes:
 
 This is enough for the cached compiler to be reused on the developer machine.
 
+## Important Build Invocation Detail
+
+Raw commands like:
+
+```bash
+cargo -Z build-std=core,alloc,std,panic_abort ...
+```
+
+still use the active rustup toolchain unless the caller also points Cargo at
+the cached bootstrap compiler and sysroot.
+
+In practice:
+
+- `BUILD_RUSTC=1 cargo xtask ...` uses the cached compiler path
+- plain `cargo ...` does not
+
+If plain Cargo is used directly, it may try to compile the patched ThingOS
+`std` against rustup's source/sysroot layout and fail with errors such as
+missing `abi` or mismatched `std/sys/net` module wiring.
+
 ## ISO Staging
 
 ISO staging is currently disabled.

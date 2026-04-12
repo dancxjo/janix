@@ -29,7 +29,7 @@ const CACHE_KEY_FILE: &str = "target/rustc-thingos/.cache-key";
 /// Output directory for all rustc-thingos build artifacts.
 const OUTPUT_DIR: &str = "target/rustc-thingos";
 /// Cached rustlib directory containing host and ThingOS target libraries.
-const RUSTLIB_CACHE_DIR: &str = "target/rustc-thingos/rustlib";
+const RUSTLIB_CACHE_DIR: &str = "target/rustc-thingos/lib/rustlib";
 
 // ---------------------------------------------------------------------------
 // Cache-key helpers

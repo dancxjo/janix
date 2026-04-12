@@ -35,19 +35,22 @@ pub enum ThreadState {
 /// Backward-compatible alias — prefer `ThreadState` in new code.
 pub type TaskState = ThreadState;
 
-/// The scheduler-side fields for a single kernel thread.
+/// Scheduler-side metadata for a single kernel thread.
 ///
-/// Kept separate from the full `Thread<R>` so the scheduler can operate on
-/// a compact, runtime-independent representation.
+/// This is the **single source of truth** for scheduler-internal queue
+/// tracking.  All other scheduling fields (`state`, `priority`,
+/// `base_priority`, `timeslice_remaining`, `affinity`, `enqueued_at_tick`,
+/// `last_cpu`) live exclusively in `Thread<R>` (the registry entry).
+///
+/// `ThreadSchedFields` only carries the two fields that have no equivalent
+/// in `Thread<R>`:
+/// - `tid` — needed to keep the scheduler's sorted `Vec` indexed in the same
+///   order as `ThreadRegistry::threads` so that a single binary-search index
+///   addresses both collections.
+/// - `runq_location` — tracks which `(cpu, priority)` run-queue slot currently
+///   holds this thread; there is no corresponding field in `Thread<R>`.
 pub struct ThreadSchedFields {
     pub tid: ThreadId,
-    pub state: ThreadState,
-    pub priority: ThreadPriority,
-    pub base_priority: ThreadPriority,
-    pub timeslice_remaining: u32,
-    pub affinity: Affinity,
-    pub enqueued_at_tick: u64,
-    pub last_cpu: Option<usize>,
     pub runq_location: Option<(usize, usize)>,
 }
 /// Backward-compatible alias — prefer `ThreadSchedFields` in new code.
@@ -130,8 +133,6 @@ impl SchedState {
         }
         if let Some(t) = self.get_thread_mut(tid) {
             t.runq_location = Some((cpu, prio));
-            t.enqueued_at_tick =
-                crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
         }
     }
 

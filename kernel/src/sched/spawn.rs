@@ -205,13 +205,6 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let sched_fields = crate::sched::state::TaskSchedFields {
             tid: task.id,
-            state: task.state,
-            priority: task.priority,
-            base_priority: task.base_priority,
-            timeslice_remaining: task.timeslice_remaining,
-            affinity: task.affinity,
-            enqueued_at_tick: task.enqueued_at_tick,
-            last_cpu: task.last_cpu,
             runq_location: None,
         };
         self.state.insert_task(sched_fields);
@@ -357,13 +350,6 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let sched_fields = crate::sched::state::TaskSchedFields {
             tid: task.id,
-            state: task.state,
-            priority: task.priority,
-            base_priority: task.base_priority,
-            timeslice_remaining: task.timeslice_remaining,
-            affinity: task.affinity,
-            enqueued_at_tick: task.enqueued_at_tick,
-            last_cpu: task.last_cpu,
             runq_location: None,
         };
         self.state.insert_task(sched_fields);
@@ -469,13 +455,6 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let sched_fields = crate::sched::state::TaskSchedFields {
             tid: task.id,
-            state: task.state,
-            priority: task.priority,
-            base_priority: task.base_priority,
-            timeslice_remaining: task.timeslice_remaining,
-            affinity: task.affinity,
-            enqueued_at_tick: task.enqueued_at_tick,
-            last_cpu: task.last_cpu,
             runq_location: None,
         };
         self.state.insert_task(sched_fields);

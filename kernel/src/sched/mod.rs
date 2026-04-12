@@ -826,7 +826,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 crate::kerror!(
                     "SchedTasks: {:?}",
                     self.state
-                        .tasks
+                        .threads
                         .iter()
                         .map(|f| f.tid)
                         .collect::<alloc::vec::Vec<_>>()
@@ -834,7 +834,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 panic!("failed to find current_id {} in get_task_index", current_id)
             });
             let mut reg = crate::task::registry::get_registry::<R>();
-            reg.tasks[idx].state = TaskState::Running;
+            reg.threads[idx].state = TaskState::Running;
             return None;
         }
 
@@ -844,7 +844,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             crate::kerror!(
                 "SchedTasks: {:?}",
                 self.state
-                    .tasks
+                    .threads
                     .iter()
                     .map(|f| f.tid)
                     .collect::<alloc::vec::Vec<_>>()
@@ -855,7 +855,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             crate::kerror!(
                 "SchedTasks: {:?}",
                 self.state
-                    .tasks
+                    .threads
                     .iter()
                     .map(|f| f.tid)
                     .collect::<alloc::vec::Vec<_>>()
@@ -865,10 +865,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         let mut reg = crate::task::registry::get_registry::<R>();
         let (old_task, new_task) = if old_idx < new_idx {
-            let (left, right) = reg.tasks.split_at_mut(new_idx);
+            let (left, right) = reg.threads.split_at_mut(new_idx);
             (&mut left[old_idx], &mut right[0])
         } else {
-            let (left, right) = reg.tasks.split_at_mut(old_idx);
+            let (left, right) = reg.threads.split_at_mut(old_idx);
             (&mut right[0], &mut left[new_idx])
         };
 
@@ -949,12 +949,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
     pub fn set_priority(&mut self, id: TaskId, priority: TaskPriority) {
         if let Some(idx) = self.state.get_task_index(id) {
-            let old_priority = crate::task::registry::get_registry::<R>().tasks[idx].priority;
-            crate::task::registry::get_registry::<R>().tasks[idx].priority = priority;
-            crate::task::registry::get_registry::<R>().tasks[idx].base_priority = priority; // Update base priority for anti-starvation
+            let old_priority = crate::task::registry::get_registry::<R>().threads[idx].priority;
+            crate::task::registry::get_registry::<R>().threads[idx].priority = priority;
+            crate::task::registry::get_registry::<R>().threads[idx].base_priority = priority; // Update base priority for anti-starvation
 
             // If it's runnable and in a runq, move it to the new runq
-            if crate::task::registry::get_registry::<R>().tasks[idx].state == TaskState::Runnable {
+            if crate::task::registry::get_registry::<R>().threads[idx].state == TaskState::Runnable {
                 let loc = self.state.get_task(id).and_then(|t| t.runq_location);
                 if let Some((cpu, _)) = loc {
                     self.state.remove_task_from_runq(id);
@@ -1153,7 +1153,7 @@ pub fn list_processes<R: BootRuntime>() -> alloc::vec::Vec<hooks::ProcessSnapsho
     let mut out = alloc::vec::Vec::new();
     {
         let reg = crate::task::registry::get_registry::<R>();
-        for task in reg.tasks.iter() {
+        for task in reg.threads.iter() {
             if let Some(pi_arc) = &task.process_info {
                 let pi = pi_arc.lock();
                 let name_bytes = &task.name[..task.name_len as usize];
@@ -1421,7 +1421,7 @@ pub fn wait_task<R: BootRuntime>(tid: TaskId) -> Result<i32, abi::errors::Errno>
 /// Otherwise, all direct children are returned.
 fn collect_child_tids<R: BootRuntime>(our_pid: u32, target_pid: i64) -> alloc::vec::Vec<TaskId> {
     let reg = crate::task::registry::get_registry::<R>();
-    reg.tasks
+    reg.threads
         .iter()
         .filter_map(|task| {
             task.process_info.as_ref().and_then(|pi| {
@@ -1617,7 +1617,7 @@ pub fn dump_stats<R: BootRuntime>() {
     );
 
     let mut runnable_count = 0u32;
-    for task in crate::task::registry::get_registry::<R>().tasks.iter() {
+    for task in crate::task::registry::get_registry::<R>().threads.iter() {
         let state_str = match task.state {
             TaskState::Runnable => {
                 runnable_count += 1;
@@ -1684,7 +1684,7 @@ pub fn dump_stats<R: BootRuntime>() {
     crate::kprint!("Sleep queue: {} tasks\n", sched.state.sleep_queue.len());
     crate::kprint!(
         "=== {} tasks, {} runnable ===\n\n",
-        crate::task::registry::get_registry::<R>().tasks.len(),
+        crate::task::registry::get_registry::<R>().threads.len(),
         runnable_count
     );
 
@@ -2255,24 +2255,24 @@ mod tests {
         // Verify sorted order internally
         assert_eq!(
             crate::task::registry::get_registry::<MockRuntime>()
-                .tasks
+                .threads
                 .len(),
             4
         );
         assert_eq!(
-            crate::task::registry::get_registry::<MockRuntime>().tasks[0].id,
+            crate::task::registry::get_registry::<MockRuntime>().threads[0].id,
             4001
         );
         assert_eq!(
-            crate::task::registry::get_registry::<MockRuntime>().tasks[1].id,
+            crate::task::registry::get_registry::<MockRuntime>().threads[1].id,
             4005
         );
         assert_eq!(
-            crate::task::registry::get_registry::<MockRuntime>().tasks[2].id,
+            crate::task::registry::get_registry::<MockRuntime>().threads[2].id,
             4010
         );
         assert_eq!(
-            crate::task::registry::get_registry::<MockRuntime>().tasks[3].id,
+            crate::task::registry::get_registry::<MockRuntime>().threads[3].id,
             4020
         );
 
@@ -2999,6 +2999,9 @@ mod tests {
                     thread_ids: alloc::vec![pid as TaskId],
                     exec_in_progress: false,
                     exec_path: alloc::string::String::new(),
+                    mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                        crate::memory::mappings::MappingList::new(),
+                    )),
                 },
             ))),
             user_fs_base: 0,
@@ -3159,6 +3162,9 @@ mod tests {
             thread_ids: alloc::vec![7000, 7001],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         {
@@ -3189,6 +3195,9 @@ mod tests {
             thread_ids: alloc::vec![8700, 8701],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         // Register both tasks.
@@ -3240,6 +3249,9 @@ mod tests {
             thread_ids: alloc::vec![8800, 8801],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3293,6 +3305,9 @@ mod tests {
             thread_ids: alloc::vec![9100, 9101, 9102],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3376,6 +3391,9 @@ mod tests {
             thread_ids: alloc::vec![9300],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         // Before exec: flag is clear — new threads would be accepted.

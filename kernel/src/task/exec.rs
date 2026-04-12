@@ -489,6 +489,9 @@ mod tests {
             thread_ids: alloc::vec![tid_leader, tid_sibling],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }))
     }
 
@@ -550,6 +553,9 @@ mod tests {
             thread_ids: alloc::vec![9230, 9231, 9232],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         let caller_tid: crate::task::TaskId = 9230;
@@ -583,6 +589,9 @@ mod tests {
             thread_ids: alloc::vec![9240],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         let caller_tid: crate::task::TaskId = 9240;
@@ -707,6 +716,9 @@ mod tests {
             thread_ids: alloc::vec![9300],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         // Set up: fd 0 survives, fd 1 has FD_CLOEXEC.
@@ -757,6 +769,9 @@ mod tests {
             thread_ids: alloc::vec![9310],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
         }));
 
         {

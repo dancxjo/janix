@@ -32,7 +32,11 @@ fn current_parent_pid<R: BootRuntime>(sched: &Scheduler<R>) -> u32 {
         .unwrap_or(0)
 }
 
-fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
+fn default_process_info(
+    pid: u32,
+    ppid: u32,
+    mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
+) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
     let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
         alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
     let mut fd_table = crate::vfs::fd_table::FdTable::new();
@@ -66,12 +70,14 @@ fn default_process_info(pid: u32, ppid: u32) -> alloc::sync::Arc<spin::Mutex<Pro
         thread_ids: alloc::vec![pid as TaskId],
         exec_in_progress: false,
         exec_path: alloc::string::String::new(),
+        mappings,
     }))
 }
 
 fn inherit_process_info<R: BootRuntime>(
     pid: u32,
     ppid: u32,
+    mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
 ) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
     let tid = crate::runtime::<R>().current_tid();
     let current_pinfo =
@@ -91,9 +97,10 @@ fn inherit_process_info<R: BootRuntime>(
             thread_ids: alloc::vec![pid as TaskId],
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
+            mappings,
         }))
     } else {
-        default_process_info(pid, ppid)
+        default_process_info(pid, ppid, mappings)
     }
 }
 
@@ -411,7 +418,11 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let mapping_list = crate::memory::mappings::MappingList { regions };
         let ppid = current_parent_pid::<R>(self);
-        let pinfo = default_process_info(id as u32, ppid);
+        // Create the mappings Arc once — both the Process and the Thread hold a
+        // clone of the same Arc so the scheduler's per-CPU CURRENT_MAPPINGS cache
+        // works without locking the Process mutex on every context switch.
+        let mappings_arc = alloc::sync::Arc::new(spin::Mutex::new(mapping_list));
+        let pinfo = default_process_info(id as u32, ppid, mappings_arc.clone());
 
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
         // Push to target CPU's run queue
@@ -438,7 +449,7 @@ impl<R: BootRuntime> Scheduler<R> {
             wake_pending: false,
             pending_interrupt: false,
             stack_info: Some(stack_info),
-            mappings: alloc::sync::Arc::new(spin::Mutex::new(mapping_list)),
+            mappings: mappings_arc,
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
             last_cpu: Some(safe_cpu),
@@ -624,8 +635,18 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     // Determine parent PID from the current task's ProcessInfo
     let ppid = current_parent_pid::<R>(sched);
 
+    // Retrieve the mappings Arc from the task that was just created so the
+    // Process and Thread share the same underlying MappingList.
+    let task_mappings = crate::task::registry::get_task::<R>(id)
+        .map(|t| t.mappings.clone())
+        .unwrap_or_else(|| {
+            alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            ))
+        });
+
     // Create per-process identity
-    let pinfo = inherit_process_info::<R>(id as u32, ppid);
+    let pinfo = inherit_process_info::<R>(id as u32, ppid, task_mappings);
     {
         let page_size = rt.page_size() as u64;
         let mut lock = pinfo.lock();
@@ -932,6 +953,16 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         }
     }
 
+    // Retrieve the mappings Arc from the task so Process and Thread share the
+    // same underlying MappingList.
+    let task_mappings = crate::task::registry::get_task::<R>(id)
+        .map(|t| t.mappings.clone())
+        .unwrap_or_else(|| {
+            alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            ))
+        });
+
     // Create per-process identity with provided argv & env
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
@@ -952,6 +983,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         thread_ids: alloc::vec![id],
         exec_in_progress: false,
         exec_path: alloc::format!("/boot/{}", module.name),
+        mappings: task_mappings,
     }));
 
     // Store name, process_info, and initial TLS thread pointer on the task struct.

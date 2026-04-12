@@ -1,5 +1,6 @@
 pub mod arch;
 pub mod channel;
+pub mod signal;
 pub mod socket;
 pub mod vfs;
 pub mod wait;

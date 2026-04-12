@@ -201,6 +201,17 @@ syscall_entry:
     mov %rsi, %r13 // Temp save Arg1 (RSI)
     mov %rdx, %r14 // Temp save Arg2 (RDX) - Fix: Preserve RDX before overwrite
     
+    // Check for SYS_SIGRETURN (0x1505) before shuffling args.
+    // If this is sigreturn, call kernel_sigreturn(frame_ptr=rsp) directly.
+    cmp $0x1505, %rax
+    jne 0f
+    mov %rsp, %rdi      // frame_ptr = trap frame on stack
+    call kernel_sigreturn
+    // RAX = new syscall return value (normally 0); write into frame and restore.
+    mov %rax, 112(%rsp)
+    jmp .Lrestore_regs
+0:
+    
     mov %rax, %rdi // 1st Arg: n
     
     mov %r12, %rsi // 2nd Arg: a0
@@ -245,6 +256,12 @@ syscall_entry:
     // We pushed %r9 (8 bytes) AND sub $8 (8 bytes) = 16 bytes total.
     add $16, %rsp
     
+    // Call signal check before returning to user mode.
+    // kernel_signal_check(frame_ptr=rsp, syscall_ret=rax) -> modified_ret
+    mov %rsp, %rdi      // frame_ptr
+    mov %rax, %rsi      // syscall return value
+    call kernel_signal_check
+    
     // RAX has return value (isize).
     // We need to put it into UserTrapFrame's RAX slot so it gets restored.
     // TrapFrame layout: ... rbx, rax, error_code ...
@@ -255,6 +272,8 @@ syscall_entry:
     // RBP (64), RDI (72), RSI (80), RDX (88), RCX (96), RBX (104), RAX (112).
     // So [rsp + 112] is RAX.
     mov %rax, 112(%rsp)
+    
+.Lrestore_regs:
     
     // Restore
     popq %r15
@@ -291,3 +310,144 @@ syscall_entry:
     user_ss = const crate::arch::x86_64::gdt::USER_DATA_SEL,
     user_cs = const crate::arch::x86_64::gdt::USER_CODE_SEL,
 );
+
+// ─── Signal frame support ──────────────────────────────────────────────────
+
+use super::trap::UserTrapFrame;
+use abi::signal::{SigFrame, SigSet, SIGFRAME_MAGIC};
+
+/// Validate that a user-space address range is canonical (non-null, below kernel space).
+#[inline(always)]
+fn check_user_range(addr: usize, size: usize) -> bool {
+    if addr == 0 {
+        return false;
+    }
+    let end = match addr.checked_add(size) {
+        Some(e) => e,
+        None => return false,
+    };
+    end < 0x0000_8000_0000_0000
+}
+
+/// x86_64 signal frame injection (called via INJECT_FRAME_HOOK).
+///
+/// Pushes a SigFrame onto the user stack and redirects the trap frame
+/// so that sysretq will enter the signal handler.
+unsafe fn x86_64_inject_signal_frame(
+    frame_ptr: *mut u8,
+    signum: u32,
+    handler: usize,
+    saved_mask: SigSet,
+) -> bool {
+    let tf = unsafe { &mut *(frame_ptr as *mut UserTrapFrame) };
+    let user_rsp = tf.rsp;
+
+    let frame_size = core::mem::size_of::<SigFrame>();
+    // Layout (stack grows down): [SigFrame][return_addr(8)]
+    let new_rsp_raw = user_rsp.wrapping_sub(frame_size + 8);
+    let new_rsp = new_rsp_raw & !0xF_usize; // 16-byte align
+
+    if !check_user_range(new_rsp, frame_size + 16) {
+        return false;
+    }
+
+    // Trampoline: movq $SYS_SIGRETURN, %rax; syscall; nop*7
+    let mut trampoline = [0u8; 16];
+    let sysno = abi::syscall::SYS_SIGRETURN;
+    trampoline[0] = 0x48; trampoline[1] = 0xC7; trampoline[2] = 0xC0;
+    trampoline[3] = (sysno & 0xFF) as u8;
+    trampoline[4] = ((sysno >> 8) & 0xFF) as u8;
+    trampoline[5] = ((sysno >> 16) & 0xFF) as u8;
+    trampoline[6] = ((sysno >> 24) & 0xFF) as u8;
+    trampoline[7] = 0x0F; trampoline[8] = 0x05;
+    for b in &mut trampoline[9..] { *b = 0x90; }
+
+    let trampoline_addr = new_rsp + core::mem::offset_of!(SigFrame, trampoline);
+
+    // Write return address above SigFrame.
+    unsafe { ((new_rsp + frame_size) as *mut usize).write_volatile(trampoline_addr) };
+
+    // Build and write SigFrame.
+    let sig_frame = SigFrame {
+        magic: SIGFRAME_MAGIC,
+        saved_rip: tf.rip as u64,
+        saved_rsp: tf.rsp as u64,
+        saved_rflags: tf.rflags as u64,
+        saved_r15: tf.r15 as u64, saved_r14: tf.r14 as u64,
+        saved_r13: tf.r13 as u64, saved_r12: tf.r12 as u64,
+        saved_r11: tf.r11 as u64, saved_r10: tf.r10 as u64,
+        saved_r9: tf.r9 as u64,   saved_r8: tf.r8 as u64,
+        saved_rbp: tf.rbp as u64, saved_rdi: tf.rdi as u64,
+        saved_rsi: tf.rsi as u64, saved_rdx: tf.rdx as u64,
+        saved_rcx: tf.rcx as u64, saved_rbx: tf.rbx as u64,
+        saved_rax: tf.rax as u64,
+        saved_mask,
+        signum,
+        _pad: 0,
+        trampoline,
+    };
+    unsafe { (new_rsp as *mut SigFrame).write_volatile(sig_frame) };
+
+    // Redirect trap frame to handler.
+    tf.rip = handler;
+    tf.rsp = new_rsp + frame_size; // RSP at the return-address slot
+    tf.rdi = signum as usize;      // first handler argument
+    tf.rflags &= !(1 << 10);       // clear DF
+
+    true
+}
+
+/// Restore register state from a SigFrame during SYS_SIGRETURN.
+///
+/// Called directly from the x86_64 syscall stub (not through dispatch).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kernel_sigreturn(frame_ptr: *mut u8) -> isize {
+    let tf = unsafe { &mut *(frame_ptr as *mut UserTrapFrame) };
+    let user_rsp = tf.rsp;
+
+    // After `ret` in the handler: RSP advanced by 8 (popped return addr).
+    // Then trampoline `syscall` was executed with RSP still at that value.
+    // So: SigFrame is at user_rsp - size_of::<SigFrame>() - 8
+    let frame_size = core::mem::size_of::<SigFrame>();
+    let frame_base = match user_rsp.checked_sub(frame_size + 8) {
+        Some(b) => b,
+        None => return -(abi::errors::Errno::EFAULT as isize),
+    };
+
+    if !check_user_range(frame_base, frame_size) {
+        return -(abi::errors::Errno::EFAULT as isize);
+    }
+
+    let saved = unsafe { (frame_base as *const SigFrame).read_volatile() };
+    if saved.magic != SIGFRAME_MAGIC {
+        unsafe { kernel::sched::exit_current(128 + abi::signal::SIGSEGV as i32) };
+    }
+
+    tf.rip    = saved.saved_rip as usize;
+    tf.rsp    = saved.saved_rsp as usize;
+    tf.rflags = saved.saved_rflags as usize;
+    tf.r15    = saved.saved_r15 as usize;  tf.r14 = saved.saved_r14 as usize;
+    tf.r13    = saved.saved_r13 as usize;  tf.r12 = saved.saved_r12 as usize;
+    tf.r11    = saved.saved_r11 as usize;  tf.r10 = saved.saved_r10 as usize;
+    tf.r9     = saved.saved_r9 as usize;   tf.r8  = saved.saved_r8 as usize;
+    tf.rbp    = saved.saved_rbp as usize;  tf.rdi = saved.saved_rdi as usize;
+    tf.rsi    = saved.saved_rsi as usize;  tf.rdx = saved.saved_rdx as usize;
+    tf.rcx    = saved.saved_rcx as usize;  tf.rbx = saved.saved_rbx as usize;
+    tf.rax    = saved.saved_rax as usize;
+
+    kernel::sched::hooks::set_thread_blocked_current(saved.saved_mask);
+
+    // Clear sigsuspend state if we were inside sigsuspend.
+    if let Some(mask) = kernel::sched::hooks::get_sigsuspend_mask_current() {
+        kernel::sched::hooks::clear_sigsuspend_current(mask);
+    }
+
+    saved.saved_rax as isize
+}
+
+/// Register x86_64 signal frame hooks during scheduler init.
+pub fn init_signal_hooks() {
+    unsafe {
+        kernel::signal::deliver::INJECT_FRAME_HOOK = Some(x86_64_inject_signal_frame);
+    }
+}

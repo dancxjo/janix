@@ -303,3 +303,72 @@ pub mod poll_flags {
     pub const POLLHUP: u16 = 0x0010;
     pub const POLLNVAL: u16 = 0x0020;
 }
+
+// ============================================================================
+// Signals (0x1500)
+// ============================================================================
+
+/// Send a signal to a process.
+///
+/// Args: `(pid: i32, sig: u32, 0, 0, 0, 0) -> i32`
+///
+/// - `pid > 0`: deliver to the process with that PID.
+/// - `pid == 0`: deliver to every process in the caller's process group
+///   (not yet implemented; returns `ESRCH`).
+/// - `pid == -1`: deliver to every process the caller has permission to
+///   signal (not yet implemented; returns `ESRCH`).
+/// - `sig == 0`: existence/permission check only; no signal is sent.
+pub const SYS_KILL: u32 = 0x1500;
+
+/// Examine and change a signal action.
+///
+/// Args: `(sig: u32, act_ptr: usize, oldact_ptr: usize, 0, 0, 0) -> i32`
+///
+/// `act_ptr` and `oldact_ptr` are pointers to [`abi::signal::SigAction`]; either
+/// may be null.
+pub const SYS_SIGACTION: u32 = 0x1501;
+
+/// Examine and change the signal mask of the calling thread.
+///
+/// Args: `(how: u32, set_ptr: usize, oldset_ptr: usize, 0, 0, 0) -> i32`
+///
+/// `how` is one of [`abi::signal::sig_how`].  `set_ptr` and `oldset_ptr` are
+/// pointers to [`abi::signal::SigSet`]; either may be null.
+pub const SYS_SIGPROCMASK: u32 = 0x1502;
+
+/// Return the set of signals that are pending for the calling thread.
+///
+/// Args: `(set_ptr: usize, 0, 0, 0, 0, 0) -> i32`
+pub const SYS_SIGPENDING: u32 = 0x1503;
+
+/// Atomically replace the signal mask and wait for a signal.
+///
+/// Args: `(mask_ptr: usize, 0, 0, 0, 0, 0) -> i32`
+///
+/// Returns `EINTR` when a signal whose disposition is not `SIG_IGN` is
+/// delivered.  The original mask is restored before return.
+pub const SYS_SIGSUSPEND: u32 = 0x1504;
+
+/// Return from a signal handler, restoring the pre-signal register state.
+///
+/// Args: `(0, 0, 0, 0, 0, 0)` — this syscall does not return normally.
+///
+/// The kernel locates the [`abi::signal::SigFrame`] at the top of the user
+/// stack (or rather at the address implied by the saved RSP) and restores the
+/// register state saved there.
+pub const SYS_SIGRETURN: u32 = 0x1505;
+
+/// Schedule delivery of `SIGALRM` after `seconds` seconds.
+///
+/// Args: `(seconds: u32, 0, 0, 0, 0, 0) -> u32`
+///
+/// Returns the number of seconds remaining on any previously set alarm.
+pub const SYS_ALARM: u32 = 0x1506;
+
+/// Wait for a signal.
+///
+/// Args: `(0, 0, 0, 0, 0, 0) -> i32`
+///
+/// Suspends the caller until a signal whose disposition is not `SIG_IGN` is
+/// delivered.  Always returns `EINTR`.
+pub const SYS_PAUSE: u32 = 0x1507;

@@ -96,6 +96,10 @@ fn write_cache_key() -> std::io::Result<()> {
     std::fs::write(CACHE_KEY_FILE, compute_cache_key())
 }
 
+fn should_attempt_native_recovery() -> bool {
+    std::env::var("BUILD_THINGOS_NATIVE_RUSTC").as_deref() == Ok("1")
+}
+
 fn write_rustc_wrapper(cwd: &Path) -> Result<()> {
     let wrapper_path = cwd.join(RUSTC_WRAPPER);
     let compiler_path = cwd.join(RUSTC_BINARY);
@@ -460,7 +464,7 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
 
         let cwd = std::env::current_dir()?;
         let rust_src = cwd.join("vendor/rust");
-        if !Path::new(THINGOS_RUSTC_BINARY).exists() {
+        if !Path::new(THINGOS_RUSTC_BINARY).exists() && should_attempt_native_recovery() {
             println!(
                 "rustc-thingos: ThingOS-native rustc missing from cache; attempting a recovery build..."
             );
@@ -519,8 +523,15 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     cache_rustlib_tree(sh, &cwd)?;
     write_rustc_wrapper(&cwd)?;
 
-    // Try to (re)build and cache the ThingOS-native stage-1 compiler.
-    let _ = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
+    // Optional recovery path for producing a ThingOS-native rustc.
+    if should_attempt_native_recovery() {
+        let _ = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
+    } else {
+        println!(
+            "rustc-thingos: ThingOS-native rustc recovery disabled; set BUILD_THINGOS_NATIVE_RUSTC=1 to attempt building {}",
+            THINGOS_RUSTC_BINARY
+        );
+    }
 
     write_cache_key()?;
     println!(

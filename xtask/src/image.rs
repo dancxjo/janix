@@ -785,10 +785,11 @@ fn build_userspace_app_with_features(
     // yields a Linux-hosted cross-compiler plus a cached sysroot rooted at
     // target/rustc-thingos/.
     let stage1_rustc = cwd.join("target/rustc-thingos/rustc");
-    let stage1_sysroot = cwd.join("target/rustc-thingos");
+    let stage1_rustc_wrapper = cwd.join("target/rustc-thingos/rustc-wrapper");
     let use_fork_rustc = target.ends_with(".json")
         && target.contains("thingos")
         && stage1_rustc.exists()
+        && stage1_rustc_wrapper.exists()
         && std::env::var("BUILD_RUSTC").as_deref() == Ok("1");
 
     let build_std_crates = if std::env::var("BUILD_RUSTC").as_deref() == Ok("1") {
@@ -806,9 +807,8 @@ fn build_userspace_app_with_features(
 
     if use_fork_rustc {
         let target_path = cwd.join("targets");
-        rustflags = format!("-Awarnings --sysroot {}", stage1_sysroot.display());
         cmd_obj = cmd_obj
-            .env("RUSTC", &stage1_rustc)
+            .env("RUSTC", &stage1_rustc_wrapper)
             .env("RUSTFLAGS", &rustflags)
             .env("__CARGO_TESTS_ONLY_SRC_ROOT", std_src.to_str().unwrap())
             .env("RUST_TARGET_PATH", target_path);

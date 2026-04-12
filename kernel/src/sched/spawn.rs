@@ -115,9 +115,10 @@ pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 ///
 /// This is the **single, mandatory** registration point for every thread that
 /// belongs to a user process.  All spawn paths (`spawn_user_thread`,
-/// `spawn_user_task`, `spawn_process`, `spawn_process_ex`) call this function
-/// so that exec-collapse and thread-group exit can reliably enumerate every
-/// live thread via `ProcessInfo::thread_ids`.
+/// `spawn_user_task`, `boot_spawn_process`, `boot_spawn_process_ex`,
+/// `spawn_process_from_path`) call this function so that exec-collapse and
+/// thread-group exit can reliably enumerate every live thread via
+/// `ProcessInfo::thread_ids`.
 ///
 /// Duplicate-safe: the TID is only appended if not already present, so calling
 /// this more than once for the same TID is harmless.
@@ -597,11 +598,21 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     id
 }
 
-pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: StartupArg) -> Option<TaskId> {
-    unsafe { spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal) }
+/// Boot-only helper: spawn a process from a boot module by name at normal priority.
+///
+/// This is a **boot-time convenience**.  It locates the named module in the
+/// static boot module table (`BootRuntime::modules`) and launches it.  It must
+/// **not** be used for runtime process creation; call
+/// [`spawn_process_from_path`] instead.
+pub unsafe fn boot_spawn_process<R: BootRuntime>(name: &str, arg: StartupArg) -> Option<TaskId> {
+    unsafe { boot_spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal) }
 }
 
-pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
+/// Boot-only helper: spawn a process from a boot module at a given priority.
+///
+/// Same as [`boot_spawn_process`] but with an explicit priority.  Scoped to
+/// boot use; runtime callers should use [`spawn_process_from_path`].
+pub unsafe fn boot_spawn_process_with_priority<R: BootRuntime>(
     name: &str,
     arg: StartupArg,
     priority: crate::task::TaskPriority,
@@ -838,11 +849,16 @@ pub struct SpawnExResult {
     pub stderr_pipe: u64,
 }
 
-/// Enhanced process spawn with explicit argv, env, and stdio piping.
+/// Boot-only helper: enhanced process spawn from a boot module with explicit
+/// argv, env, and stdio piping.
+///
+/// This function looks up the executable in the boot module table.  It is
+/// scoped to boot/module-launch use only.  For runtime process creation use
+/// [`spawn_process_from_path`] instead.
 ///
 /// # Safety
 /// Must be called with scheduler lock expectations satisfied.
-pub unsafe fn spawn_process_ex<R: BootRuntime>(
+pub unsafe fn boot_spawn_process_ex<R: BootRuntime>(
     name: &str,
     argv: Vec<Vec<u8>>,
     env: BTreeMap<Vec<u8>, Vec<u8>>,
@@ -1013,6 +1029,225 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         // Apply initial TLS base (FS_BASE on x86_64) for the new process's main thread.
         task.user_fs_base = aux_info.tls_tp;
     }
+
+    rt.irq_restore(_irq);
+
+    Ok(SpawnExResult {
+        child_tid: id,
+        child_pid: id as u32,
+        stdin_pipe: parent_stdin_fd,
+        stdout_pipe: parent_stdout_fd,
+        stderr_pipe: parent_stderr_fd,
+    })
+}
+
+/// General-purpose runtime process creation from a VFS path.
+///
+/// This is the **standard runtime process creation path** that follows the
+/// Janix process model:
+///
+/// 1. Open the executable from the VFS (e.g. `/usr/bin/ls`).
+/// 2. Build a new process object and initial thread.
+/// 3. Apply inheritance/replacement for stdio, fds, cwd, and env.
+/// 4. Schedule the new thread for execution.
+///
+/// Unlike the boot helpers ([`boot_spawn_process`], [`boot_spawn_process_ex`]),
+/// this function does **not** consult the boot module table and has no
+/// boot-specific assumptions.  It is the correct function to call for any
+/// runtime `SYS_SPAWN_PROCESS_EX` invocation.
+///
+/// # Safety
+/// Must be called with scheduler lock expectations satisfied.
+pub unsafe fn spawn_process_from_path<R: BootRuntime>(
+    path: &str,
+    argv: Vec<Vec<u8>>,
+    env: BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin_spec: StdioSpec,
+    stdout_spec: StdioSpec,
+    stderr_spec: StdioSpec,
+    _boot_arg: u64,
+    inherited_handles: Vec<u64>,
+    cwd: Option<alloc::string::String>,
+) -> Result<SpawnExResult, abi::errors::Errno> {
+    // Step 1: Open the executable from the VFS.
+    let node = crate::vfs::mount::lookup(path).map_err(|_| abi::errors::Errno::ENOENT)?;
+
+    let stat = node.stat().map_err(|e| e)?;
+    if !stat.is_reg() {
+        return Err(abi::errors::Errno::EACCES);
+    }
+
+    let size = stat.size as usize;
+    if size > 64 * 1024 * 1024 {
+        return Err(abi::errors::Errno::EFBIG);
+    }
+
+    // Step 2: Read the ELF bytes into kernel memory.
+    let mut buffer = alloc::vec![0u8; size];
+    let mut read_pos = 0;
+    while read_pos < size {
+        let n = node
+            .read(read_pos as u64, &mut buffer[read_pos..])
+            .map_err(|e| e)?;
+        if n == 0 {
+            break;
+        }
+        read_pos += n;
+    }
+    if read_pos < size {
+        return Err(abi::errors::Errno::EIO);
+    }
+
+    // Step 3: Load the ELF into a fresh address space.
+    let rt = crate::runtime::<R>();
+    let aspace = rt.tasking().make_user_address_space();
+
+    // SAFETY: `load_module` is synchronous and does not retain the reference.
+    let static_bytes: &'static [u8] = unsafe { core::mem::transmute(buffer.as_slice()) };
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    // SAFETY: `load_module` is synchronous; `basename` outlives the call.
+    let static_name: &'static str = unsafe { core::mem::transmute(basename) };
+    let module_desc = crate::BootModuleDesc {
+        name: static_name,
+        cmdline: "",
+        bytes: static_bytes,
+        phys_start: 0,
+        phys_end: 0,
+        kind: crate::BootModuleKind::Elf,
+    };
+
+    let (entry, stack_info, regions, aux_info) =
+        crate::task::loader::load_module(rt, aspace, &module_desc)
+            .ok_or(abi::errors::Errno::ENOEXEC)?;
+
+    // Step 4: Create the scheduler task for the new process's initial thread.
+    let _irq = rt.irq_disable();
+
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut super::types::Scheduler<R>) };
+
+    let id = sched
+        .spawn_user_task(
+            entry,
+            aspace,
+            stack_info,
+            regions,
+            crate::task::TaskPriority::Normal,
+            crate::task::Affinity::Any,
+        )
+        .ok_or(abi::errors::Errno::EAGAIN)?;
+
+    // Determine parent PID from the running task.
+    let ppid = current_parent_pid::<R>(sched);
+
+    // Step 5: Resolve argv — fall back to the executable basename.
+    let final_argv = if argv.is_empty() {
+        alloc::vec![basename.as_bytes().to_vec()]
+    } else {
+        argv
+    };
+
+    // Step 6: Inherit and set up stdio fds in the child's fd_table.
+    let parent_tid = rt.current_tid();
+    let parent_pinfo =
+        crate::task::registry::get_task::<R>(parent_tid).and_then(|t| t.process_info.clone());
+
+    let mut fd_table = if let Some(parent_pi) = &parent_pinfo {
+        parent_pi.lock().fd_table.clone()
+    } else {
+        crate::vfs::fd_table::FdTable::new()
+    };
+
+    let (stdin_pipe_id, stdout_pipe_id, stderr_pipe_id) =
+        setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
+
+    // Open the parent-side pipe ends in the parent's fd_table.
+    let mut parent_stdin_fd: u64 = 0;
+    let mut parent_stdout_fd: u64 = 0;
+    let mut parent_stderr_fd: u64 = 0;
+    if let Some(parent_pi) = &parent_pinfo {
+        let mut plk = parent_pi.lock();
+        if stdin_pipe_id != 0 {
+            if let Some(write_node) = crate::ipc::pipe::write_node_for_id(stdin_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    write_node,
+                    crate::vfs::OpenFlags::write_only(),
+                    alloc::format!("pipe:{}", stdin_pipe_id),
+                ) {
+                    parent_stdin_fd = fd as u64;
+                }
+            }
+        }
+        if stdout_pipe_id != 0 {
+            if let Some(read_node) = crate::ipc::pipe::read_node_for_id(stdout_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    read_node,
+                    crate::vfs::OpenFlags::read_only(),
+                    alloc::format!("pipe:{}", stdout_pipe_id),
+                ) {
+                    parent_stdout_fd = fd as u64;
+                }
+            }
+        }
+        if stderr_pipe_id != 0 {
+            if let Some(read_node) = crate::ipc::pipe::read_node_for_id(stderr_pipe_id) {
+                if let Ok(fd) = plk.fd_table.open(
+                    read_node,
+                    crate::vfs::OpenFlags::read_only(),
+                    alloc::format!("pipe:{}", stderr_pipe_id),
+                ) {
+                    parent_stderr_fd = fd as u64;
+                }
+            }
+        }
+    }
+
+    // Share the mapping list between the Thread and the Process.
+    let task_mappings = crate::task::registry::get_task::<R>(id)
+        .map(|t| t.mappings.clone())
+        .unwrap_or_else(|| {
+            alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            ))
+        });
+
+    let aspace_raw = rt.tasking().aspace_to_raw(aspace);
+
+    // Step 7: Build the ProcessInfo for the new process.
+    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
+        pid: id as u32,
+        ppid,
+        argv: final_argv,
+        env,
+        auxv: crate::task::exec::build_auxv(&aux_info, rt.page_size() as u64),
+        fd_table,
+        namespace: crate::vfs::NamespaceRef::global(),
+        cwd: if let Some(explicit_cwd) = cwd {
+            explicit_cwd
+        } else if let Some(parent_pi) = &parent_pinfo {
+            parent_pi.lock().cwd.clone()
+        } else {
+            alloc::string::String::from("/")
+        },
+        thread_ids: alloc::vec![id],
+        exec_in_progress: false,
+        exec_path: alloc::string::String::from(path),
+        mappings: task_mappings,
+        aspace_raw,
+    }));
+
+    // Step 8: Attach the ProcessInfo to the new task and record its TLS base.
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
+        let len = basename.len().min(32);
+        task.name[..len].copy_from_slice(&basename.as_bytes()[..len]);
+        task.name_len = len as u8;
+        task.process_info = Some(pinfo);
+        task.user_fs_base = aux_info.tls_tp;
+    }
+
+    // `inherited_handles` is reserved for future fd-inheritance; not yet wired.
+    let _ = inherited_handles;
 
     rt.irq_restore(_irq);
 
@@ -1340,5 +1575,141 @@ mod tests {
                 cid
             );
         }
+    }
+
+    // ── Runtime spawn path tests ──────────────────────────────────────────
+
+    /// `spawn_process_from_path` must return `ENOENT` immediately when the
+    /// requested path has no matching VFS mount.
+    ///
+    /// This verifies the first step of the runtime process creation model:
+    /// "open executable" from the VFS.  If the path does not resolve, no
+    /// scheduler or runtime interactions occur.
+    #[test]
+    fn test_spawn_process_from_path_returns_enoent_for_missing_vfs_path() {
+        let _g = init_test_env();
+
+        // Use a path that will not match any mount that might already be present.
+        let result = unsafe {
+            spawn_process_from_path::<MockRuntime>(
+                "/totally/nonexistent/binary_9f3a1b",
+                alloc::vec![],
+                alloc::collections::BTreeMap::new(),
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                0,
+                alloc::vec![],
+                None,
+            )
+        };
+
+        assert!(
+            matches!(result, Err(abi::errors::Errno::ENOENT)),
+            "expected ENOENT for a path not present in the VFS, got {:?}",
+            result
+        );
+    }
+
+    /// `spawn_process_from_path` must return `EACCES` when the VFS node exists
+    /// but is not a regular file (e.g. a directory).
+    ///
+    /// This verifies the runtime path's validation step before it ever touches
+    /// the scheduler or ELF loader.
+    #[test]
+    fn test_spawn_process_from_path_returns_eacces_for_directory_node() {
+        let _g = init_test_env();
+
+        // A VFS node that pretends to be a directory.
+        struct DirNode;
+        impl crate::vfs::VfsNode for DirNode {
+            fn read(&self, _: u64, _: &mut [u8]) -> abi::errors::SysResult<usize> {
+                Ok(0)
+            }
+            fn write(&self, _: u64, _: &[u8]) -> abi::errors::SysResult<usize> {
+                Ok(0)
+            }
+            fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
+                Ok(crate::vfs::VfsStat {
+                    mode: crate::vfs::VfsStat::S_IFDIR | 0o755,
+                    size: 0,
+                    ino: 1,
+                    ..Default::default()
+                })
+            }
+        }
+
+        struct DirFs;
+        impl crate::vfs::VfsDriver for DirFs {
+            fn lookup(
+                &self,
+                path: &str,
+            ) -> abi::errors::SysResult<alloc::sync::Arc<dyn crate::vfs::VfsNode>> {
+                if path == "notafile" {
+                    Ok(alloc::sync::Arc::new(DirNode))
+                } else {
+                    Err(abi::errors::Errno::ENOENT)
+                }
+            }
+        }
+
+        crate::vfs::mount::init();
+        crate::vfs::mount::mount(
+            "/spawn_test_dir",
+            alloc::sync::Arc::new(DirFs),
+        );
+
+        let result = unsafe {
+            spawn_process_from_path::<MockRuntime>(
+                "/spawn_test_dir/notafile",
+                alloc::vec![],
+                alloc::collections::BTreeMap::new(),
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                0,
+                alloc::vec![],
+                None,
+            )
+        };
+
+        let _ = crate::vfs::mount::umount("/spawn_test_dir");
+
+        assert!(
+            matches!(result, Err(abi::errors::Errno::EACCES)),
+            "expected EACCES for a directory node, got {:?}",
+            result
+        );
+    }
+
+    /// The runtime hook `SPAWN_PROCESS_FROM_PATH_HOOK` is a separate static
+    /// from the boot hook `SPAWN_PROCESS_EX_HOOK`.
+    ///
+    /// Before the scheduler is initialized the hook is `None`, so calling
+    /// `spawn_process_from_path_current` returns `ENOSYS`.  This verifies
+    /// the hook plumbing and its independence from the boot path.
+    #[test]
+    fn test_spawn_process_from_path_current_returns_enosys_without_scheduler() {
+        let _g = init_test_env();
+        // `init_test_env` sets SCHEDULER to None, so hooks are not installed.
+        let result = unsafe {
+            crate::sched::hooks::spawn_process_from_path_current(
+                "/usr/bin/ls",
+                alloc::vec![],
+                alloc::collections::BTreeMap::new(),
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                StdioSpec::Inherit,
+                0,
+                alloc::vec![],
+                None,
+            )
+        };
+
+        assert!(
+            matches!(result, Err(abi::errors::Errno::ENOSYS)),
+            "expected ENOSYS when SPAWN_PROCESS_FROM_PATH_HOOK is not installed, got {:?}",
+            result
+        );
     }
 }

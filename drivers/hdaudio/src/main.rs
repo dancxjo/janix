@@ -303,7 +303,12 @@ fn main(boot_fd: usize) -> ! {
             if n > 0 {
                 hda.feed_pcm(&tmp[..n]);
                 total_bytes = total_bytes.saturating_add(n as u64);
-                card.app_frame += n as u64;
+                let bpf = {
+                    let fmt = AudioSampleFormat::from_u32(card.params.sample_format)
+                        .unwrap_or(AudioSampleFormat::S16LE);
+                    (fmt.bytes_per_sample() * card.params.channels) as usize
+                };
+                card.app_frame += (n / bpf.max(1)) as u64;
                 let now = stem::time::monotonic_ns();
                 if now.saturating_sub(last_log_ns) > 1_000_000_000 {
                     debug!("HDAUDIO: streamed {} bytes", total_bytes);

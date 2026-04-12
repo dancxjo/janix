@@ -7,4 +7,3 @@ edition = "2021"
 stem = { path = "../../stem", features = ["rt", "global-alloc"] }
 abi = { path = "../../abi" }
 virtio = { path = "../virtio" }
-ipc_helpers = { path = "../../libs/ipc_helpers" }

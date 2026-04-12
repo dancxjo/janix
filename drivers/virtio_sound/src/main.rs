@@ -144,6 +144,13 @@ impl AudioCard {
         }
     }
 
+    /// Bytes per interleaved frame given the current params.
+    fn bytes_per_frame(&self) -> usize {
+        let fmt = AudioSampleFormat::from_u32(self.params.sample_format)
+            .unwrap_or(AudioSampleFormat::S16LE);
+        (fmt.bytes_per_sample() * self.params.channels) as usize
+    }
+
     fn stream_info(&self) -> AudioStreamInfo {
         AudioStreamInfo {
             supported_formats: format_bit(AudioSampleFormat::S16LE)
@@ -160,16 +167,8 @@ impl AudioCard {
     }
 
     fn status(&self) -> AudioStatus {
-        let bytes_per_frame = {
-            let fmt = AudioSampleFormat::from_u32(self.params.sample_format)
-                .unwrap_or(AudioSampleFormat::S16LE);
-            (fmt.bytes_per_sample() * self.params.channels) as usize
-        };
-        let avail = if bytes_per_frame > 0 {
-            (self.ring.free_space() / bytes_per_frame) as u32
-        } else {
-            0
-        };
+        let bpf = self.bytes_per_frame();
+        let avail = if bpf > 0 { (self.ring.free_space() / bpf) as u32 } else { 0 };
         AudioStatus {
             state: self.state,
             hw_frame: self.hw_frame,
@@ -378,7 +377,8 @@ fn dispatch_rpc(
                 &payload[20..]
             };
             let n = card.ring.enqueue(data);
-            card.app_frame += n as u64;
+            let bpf = card.bytes_per_frame().max(1);
+            card.app_frame += (n / bpf) as u64;
             let changed = n > 0;
             (resp_ok_written(n as u32), changed)
         }
@@ -668,11 +668,14 @@ fn main(boot_fd: usize) -> ! {
                     };
                     let payload = &rpc_buf[hdr_size..n];
                     let prev_free = card.ring.free_space();
-                    let (resp, _) = dispatch_rpc(op, payload, &mut card);
+                    let (resp, ring_changed) = dispatch_rpc(op, payload, &mut card);
                     let _ = channel_send_all(hdr.resp_port, &resp);
 
-                    // Notify waiting writers if space freed up (ring consumed by HW).
-                    if card.out0_subscribed && card.ring.free_space() > prev_free {
+                    // Notify waiting writers on ring change (e.g. Write enqueued data,
+                    // freeing up space for the next writer if partially consumed by HW).
+                    if card.out0_subscribed
+                        && (ring_changed || card.ring.free_space() > prev_free)
+                    {
                         let _ = stem::syscall::vfs::vfs_notify(
                             req_write,
                             HANDLE_OUT0,
@@ -716,7 +719,8 @@ fn main(boot_fd: usize) -> ! {
                 };
                 let n = card.ring.dequeue(data_slice);
                 if n > 0 {
-                    card.hw_frame += n as u64;
+                    let bpf = card.bytes_per_frame().max(1);
+                    card.hw_frame += (n / bpf) as u64;
                     loop {
                         let added = {
                             let q = driver.queue_mut(VIRTIO_SND_VQ_TX).unwrap();

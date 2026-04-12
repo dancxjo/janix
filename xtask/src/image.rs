@@ -545,6 +545,7 @@ pub fn build_iso_with_config(
     sh.create_dir(iso_root.join("bin"))?;
     sh.create_dir(iso_root.join("etc"))?;
     sh.create_dir(iso_root.join("usr/lib"))?;
+    sh.create_dir(iso_root.join("lib"))?;
     sh.create_dir(iso_root.join("EFI/BOOT"))?;
 
     cmd!(sh, "cp -r assets {iso_root_name}/share").run()?;

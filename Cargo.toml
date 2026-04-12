@@ -10,6 +10,7 @@ members = [
     "tools/pciids",
     "abi-macros",
     "tools/display_proto_tests",
+    "tools/janix_guardrail_tests",
     "bulb",
     "libs/fb_common",
     "libs/ipc_helpers",

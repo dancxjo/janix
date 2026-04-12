@@ -97,6 +97,7 @@ optimize = true
 debug-assertions = false
 codegen-units = 1
 lto = "off"
+deny-warnings = false
 
 [llvm]
 download-ci-llvm = true

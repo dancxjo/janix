@@ -835,7 +835,109 @@ fn spawn_ui_service(
     }
 }
 
-// Audio and beeper are now handled by devd or disabled
+/// Maximum time to wait for the audio VFS node to appear after spawning the driver.
+const AUDIO_DEVICE_TIMEOUT_NS: u64 = 5_000_000_000; // 5 seconds
+
+/// Poll interval while waiting for `/dev/audio/card0/out0` to appear.
+const AUDIO_POLL_INTERVAL_MS: u64 = 100;
+
+/// Probe for an audio device, spawn the right driver, wait for the VFS node
+/// to appear, then launch the beeper to play the start-up chime.
+///
+/// Detection order (first match wins):
+///   1. VirtIO sound — PCI class 0x0401xx **and** vendor 0x1af4
+///   2. Intel HDA    — PCI class 0x0403xx
+pub fn setup_audio_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
+    debug!("SPROUT: setup_audio_stack: probing for audio hardware...");
+
+    // Pick the driver binary that matches the detected hardware.
+    let driver: Option<&'static str> =
+        if find_sys_device_with_vendor("0x0401", "0x1af4").is_some() {
+            info!("SPROUT: Found VirtIO sound device");
+            Some("/bin/virtio_sound")
+        } else if find_sys_device("0x0403").is_some() {
+            info!("SPROUT: Found HDA controller (class 0x0403)");
+            Some("/bin/hdaudio")
+        } else {
+            info!("SPROUT: No audio hardware detected; skipping audio stack");
+            None
+        };
+
+    let driver_path = match driver {
+        Some(p) => p,
+        None => return,
+    };
+
+    // Spawn the audio driver.
+    match stem::syscall::spawn_process(driver_path, 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned audio driver '{}' (PID={})", driver_path, pid);
+            let _ = stem::thread::set_priority(pid, 3);
+            let mut tasks = shared_tasks.lock();
+            tasks.push(ManagedTask {
+                name: driver_path.to_string(),
+                kind: TaskKind::Driver("dev.audio".to_string()),
+                module_path: driver_path.to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn audio driver '{}': {:?}", driver_path, e);
+            return;
+        }
+    }
+
+    // Wait for the audio output stream to appear in the VFS.
+    let deadline_ns = stem::monotonic_ns() + AUDIO_DEVICE_TIMEOUT_NS;
+    loop {
+        use abi::syscall::vfs_flags::O_RDWR;
+        match stem::syscall::vfs::vfs_open("/dev/audio/card0/out0", O_RDWR) {
+            Ok(fd) => {
+                let _ = stem::syscall::vfs::vfs_close(fd);
+                info!("SPROUT: /dev/audio/card0/out0 is ready");
+                break;
+            }
+            Err(_) => {
+                if stem::monotonic_ns() >= deadline_ns {
+                    warn!("SPROUT: Timeout waiting for /dev/audio/card0/out0; beeper will not start");
+                    return;
+                }
+                stem::time::sleep_ms(AUDIO_POLL_INTERVAL_MS);
+            }
+        }
+    }
+
+    // Spawn the beeper to play the start-up chime.
+    match stem::syscall::spawn_process("/bin/beeper", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned beeper (PID={})", pid);
+            let mut tasks = shared_tasks.lock();
+            tasks.push(ManagedTask {
+                name: "beeper".to_string(),
+                kind: TaskKind::App,
+                module_path: "/bin/beeper".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn beeper: {:?}", e);
+        }
+    }
+}
 
 pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up Graphics Stack (Bloom + fontd)...");

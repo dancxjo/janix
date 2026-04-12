@@ -13,8 +13,8 @@ extern crate alloc;
 // Modules are now declared in main.rs
 use crate::ledger::DeviceLedger;
 use crate::pipelines::{
-    setup_display_pipeline, setup_graphics_stack, setup_input_broker, setup_serial_shell,
-    DisplayHandles,
+    setup_audio_stack, setup_display_pipeline, setup_graphics_stack, setup_input_broker,
+    setup_serial_shell, DisplayHandles,
 };
 use crate::task::{ManagedTask, TaskKind};
 use abi::display_driver_protocol;
@@ -76,6 +76,11 @@ impl Supervisor {
         let tasks_for_input = self.tasks.clone();
         let _ = stem::thread::spawn_task(move || {
             setup_input_broker(tasks_for_input);
+        });
+
+        let tasks_for_audio = self.tasks.clone();
+        let _ = stem::thread::spawn_task(move || {
+            setup_audio_stack(tasks_for_audio);
         });
 
         // Stage 8: Run Readiness Model Verification Test

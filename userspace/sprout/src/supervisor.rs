@@ -181,7 +181,7 @@ impl Supervisor {
         for (pid, name) in pids {
             match stem::syscall::task_poll(pid) {
                 Ok((status, code)) => {
-                    stem::debug!("SPROUT: Polling task '{}' (PID {}): status={:?}, code={}", name, pid, status, code);
+                    stem::info!("SPROUT: Polling task '{}' (PID {}): status={:?}, code={}", name, pid, status, code);
                     if status == stem::abi::types::TaskStatus::Dead {
                         info!("SPROUT: Task '{}' (PID {}) is Dead (code {})", name, pid, code);
                         
@@ -257,12 +257,22 @@ impl Supervisor {
         for (drv_resp_read, drv_req_write, task_name) in poll_set {
             let mut msg_data = [0u8; 1024];
             let mut msg_fds = [0u32; 1];
+            let mut process_count = 0;
 
             while let Ok((n, n_fds)) = stem::syscall::channel::channel_recv_msg(
                 drv_resp_read,
                 &mut msg_data,
                 &mut msg_fds,
             ) {
+                if n == 0 && n_fds == 0 {
+                    break;
+                }
+                
+                process_count += 1;
+                if process_count > 32 {
+                    stem::warn!("SPROUT: Throttling registration processing for task '{}'", task_name);
+                    break;
+                }
                 let bundled_fd = if n_fds > 0 { msg_fds[0] } else { 0 };
                 
                 if let Some((header, payload)) =

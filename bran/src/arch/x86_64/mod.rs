@@ -622,6 +622,10 @@ impl ArchRuntime for X86_64Runtime {
         paging::tlb_flush_page(virt)
     }
 
+    fn aspace_to_raw(&self, aspace: Self::AddressSpace) -> u64 {
+        aspace.0
+    }
+
     fn setup_preemption_timer(&self, hz: u32) {
         let (init_cnt, ticks_per_sec) = ioapic::calibrate_lapic_timer(hz);
 

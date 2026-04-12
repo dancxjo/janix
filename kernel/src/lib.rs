@@ -354,6 +354,21 @@ pub trait BootTasking {
     ) -> Result<(), ()>;
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64>;
     fn tlb_flush_page(&self, virt: u64);
+
+    /// Convert an address space handle to a raw `u64` token suitable for
+    /// storage in the architecture-independent [`crate::task::Process`] struct.
+    ///
+    /// For single-register architectures (x86-64 CR3, RISC-V SATP, AArch64
+    /// TTBR0) this returns the register value directly.  For dual-register
+    /// architectures (LoongArch64 PGDL/PGDH) this returns the user-half
+    /// register (PGDL); the kernel-half is shared across all processes and
+    /// does not need per-process storage.
+    ///
+    /// The default implementation returns 0; architectures that require
+    /// process-scoped address-space tracking must override this.
+    fn aspace_to_raw(&self, _aspace: Self::AddressSpace) -> u64 {
+        0
+    }
 }
 
 pub trait BootRuntimeBase: 'static {

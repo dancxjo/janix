@@ -203,17 +203,14 @@ impl ArchRuntime for LoongArch64Runtime {
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }
-}
 
-struct DumbKernelAlloc;
-impl FrameAllocatorHook for DumbKernelAlloc {
-    fn alloc_frame(&self) -> Option<u64> {
-        None
+    /// For LoongArch64 the address space is split across two registers (PGDL
+    /// for user space, PGDH for kernel space).  Only the user-half (PGDL)
+    /// varies per process; PGDH is shared across all processes.
+    fn aspace_to_raw(&self, aspace: Self::AddressSpace) -> u64 {
+        aspace.pgdl
     }
 }
-
-pub fn hcf() -> ! {
-    loop {
         unsafe {
             asm!("idle 0");
         }

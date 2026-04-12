@@ -36,6 +36,7 @@ fn default_process_info(
     pid: u32,
     ppid: u32,
     mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
+    aspace_raw: u64,
 ) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
     let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
         alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
@@ -71,6 +72,7 @@ fn default_process_info(
         exec_in_progress: false,
         exec_path: alloc::string::String::new(),
         mappings,
+        aspace_raw,
     }))
 }
 
@@ -78,6 +80,7 @@ fn inherit_process_info<R: BootRuntime>(
     pid: u32,
     ppid: u32,
     mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
+    aspace_raw: u64,
 ) -> alloc::sync::Arc<spin::Mutex<ProcessInfo>> {
     let tid = crate::runtime::<R>().current_tid();
     let current_pinfo =
@@ -98,9 +101,10 @@ fn inherit_process_info<R: BootRuntime>(
             exec_in_progress: false,
             exec_path: alloc::string::String::new(),
             mappings,
+            aspace_raw,
         }))
     } else {
-        default_process_info(pid, ppid, mappings)
+        default_process_info(pid, ppid, mappings, aspace_raw)
     }
 }
 
@@ -261,27 +265,28 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let aspace = rt.tasking().active_address_space();
 
-        // Inherit mappings and process_info from current task
-        let (mappings, parent_pinfo) =
+        // Inherit mappings and process_info from the current process (not the
+        // current task) so that the canonical VM state is always sourced from
+        // Process rather than from an arbitrary thread's cached copy.
+        let parent_pinfo =
             if let Some(current_id) = self.state.per_cpu[super::current_cpu_index::<R>()].current {
-                if let Some(parent) = crate::task::registry::get_task::<R>(current_id) {
-                    (parent.mappings.clone(), parent.process_info.clone())
-                } else {
-                    (
-                        alloc::sync::Arc::new(spin::Mutex::new(
-                            crate::memory::mappings::MappingList::new(),
-                        )),
-                        None,
-                    )
-                }
+                crate::task::registry::get_task::<R>(current_id)
+                    .and_then(|parent| parent.process_info.clone())
             } else {
-                (
-                    alloc::sync::Arc::new(spin::Mutex::new(
-                        crate::memory::mappings::MappingList::new(),
-                    )),
-                    None,
-                )
+                None
             };
+
+        // Clone the mappings Arc from the parent process (same underlying
+        // MappingList object).  Fall back to an empty list only when there is
+        // no parent process (should not happen for user threads).
+        let mappings = parent_pinfo
+            .as_ref()
+            .map(|pi| pi.lock().mappings.clone())
+            .unwrap_or_else(|| {
+                alloc::sync::Arc::new(spin::Mutex::new(
+                    crate::memory::mappings::MappingList::new(),
+                ))
+            });
 
         let spec = crate::UserTaskSpec {
             entry: entry as u64,
@@ -339,16 +344,14 @@ impl<R: BootRuntime> Scheduler<R> {
             detached,
         };
 
-        // If a non-zero TLS base was requested, register it in the ProcessInfo
-        // thread list before the thread can run.  The actual hardware register
-        // write happens on the first context switch into this thread via
-        // `switch_with_tls`.
-        if tls_base != 0 {
-            if let Some(pinfo) = task.process_info.as_ref() {
-                let mut pi = pinfo.lock();
-                if !pi.thread_ids.contains(&id) {
-                    pi.thread_ids.push(id);
-                }
+        // Register this thread's TID in the owning process so exec and exit
+        // can enumerate all threads.  This must happen unconditionally —
+        // previously the registration was gated on `tls_base != 0` which was
+        // a bug: threads spawned without a TLS base were invisible to exec.
+        if let Some(pinfo) = task.process_info.as_ref() {
+            let mut pi = pinfo.lock();
+            if !pi.thread_ids.contains(&id) {
+                pi.thread_ids.push(id);
             }
         }
 
@@ -422,7 +425,9 @@ impl<R: BootRuntime> Scheduler<R> {
         // clone of the same Arc so the scheduler's per-CPU CURRENT_MAPPINGS cache
         // works without locking the Process mutex on every context switch.
         let mappings_arc = alloc::sync::Arc::new(spin::Mutex::new(mapping_list));
-        let pinfo = default_process_info(id as u32, ppid, mappings_arc.clone());
+        // Derive the process-owned address-space token from the typed aspace handle.
+        let aspace_raw = rt.tasking().aspace_to_raw(aspace);
+        let pinfo = default_process_info(id as u32, ppid, mappings_arc.clone(), aspace_raw);
 
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
         // Push to target CPU's run queue
@@ -645,8 +650,11 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
             ))
         });
 
+    // Derive the process-owned address-space token (raw u64) from the handle.
+    let aspace_raw = rt.tasking().aspace_to_raw(aspace);
+
     // Create per-process identity
-    let pinfo = inherit_process_info::<R>(id as u32, ppid, task_mappings);
+    let pinfo = inherit_process_info::<R>(id as u32, ppid, task_mappings, aspace_raw);
     {
         let page_size = rt.page_size() as u64;
         let mut lock = pinfo.lock();
@@ -963,6 +971,9 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
             ))
         });
 
+    // Derive the process-owned address-space token (raw u64) from the handle.
+    let aspace_raw = rt.tasking().aspace_to_raw(aspace);
+
     // Create per-process identity with provided argv & env
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
@@ -984,6 +995,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         exec_in_progress: false,
         exec_path: alloc::format!("/boot/{}", module.name),
         mappings: task_mappings,
+        aspace_raw,
     }));
 
     // Store name, process_info, and initial TLS thread pointer on the task struct.

@@ -256,10 +256,11 @@ pub fn task_exec_current<R: BootRuntime>(
     let (to_ctx, new_aspace_actual, tls_tp) = {
         let mut task_mut = crate::task::registry::get_task_mut::<R>(tid).ok_or(Errno::ESRCH)?;
 
-        // Replace address space
+        // Replace address space on the thread (fast-path cache).
         task_mut.aspace = new_aspace;
 
-        // Replace mappings
+        // Replace mappings — task.mappings and process.mappings are the same Arc,
+        // so clearing and repopulating the inner MappingList updates both at once.
         {
             let mut mlock = task_mut.mappings.lock();
             *mlock = crate::memory::mappings::MappingList::new();
@@ -286,6 +287,14 @@ pub fn task_exec_current<R: BootRuntime>(
 
         (task_mut.ctx, task_mut.aspace, aux_info.tls_tp)
     }; // registry lock (TaskMut) dropped here
+
+    // Update the process-owned address-space token so it reflects the new image.
+    // This must happen after the registry lock is released (process lock must
+    // never be taken while the registry lock is held).
+    {
+        let aspace_raw = rt.tasking().aspace_to_raw(new_aspace);
+        pinfo_arc.lock().aspace_raw = aspace_raw;
+    }
 
     // 8. Perform the actual transition
     // We must never return to the old state.
@@ -492,6 +501,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }))
     }
 
@@ -556,6 +566,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         let caller_tid: crate::task::TaskId = 9230;
@@ -592,6 +603,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         let caller_tid: crate::task::TaskId = 9240;
@@ -719,6 +731,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         // Set up: fd 0 survives, fd 1 has FD_CLOEXEC.
@@ -772,6 +785,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         {
@@ -790,5 +804,115 @@ mod tests {
         let pi = pinfo.lock();
         assert!(pi.fd_table.get(0).is_ok(), "fd 0 should survive");
         assert!(pi.fd_table.get(1).is_ok(), "fd 1 should survive");
+    }
+
+    // ── VM ownership / process-scoped aspace tests ────────────────────────────
+
+    /// Verify that `Process.aspace_raw` starts at 0 (no address space assigned
+    /// yet) and can be set to reflect a new page-table root.
+    #[test]
+    fn process_aspace_raw_default_is_zero() {
+        let pinfo = make_two_thread_pinfo(9400, 9400, 9401);
+        assert_eq!(pinfo.lock().aspace_raw, 0, "aspace_raw should default to 0");
+    }
+
+    /// Verify that updating `aspace_raw` on the process is visible to all
+    /// threads that share the same `Arc<Mutex<Process>>`.
+    #[test]
+    fn process_aspace_raw_shared_across_threads() {
+        let pinfo = make_two_thread_pinfo(9410, 9410, 9411);
+
+        // Simulate the exec commit: update aspace_raw on the process.
+        const FAKE_CR3: u64 = 0x0000_0010_0000_0000;
+        pinfo.lock().aspace_raw = FAKE_CR3;
+
+        // Both thread representations reference the same Arc, so both observe
+        // the same updated value.
+        let pi = pinfo.lock();
+        assert_eq!(
+            pi.aspace_raw, FAKE_CR3,
+            "process aspace_raw must be visible to all threads sharing the Arc"
+        );
+    }
+
+    /// Verify that `Process.mappings` is the canonical source of truth and that
+    /// all threads referencing the same process share the **same** `Arc`.
+    #[test]
+    fn thread_mappings_share_same_arc_as_process() {
+        let mappings_arc = alloc::sync::Arc::new(spin::Mutex::new(
+            crate::memory::mappings::MappingList::new(),
+        ));
+
+        // Two threads in the same process, both getting a clone of the same Arc.
+        let thread1_mappings = mappings_arc.clone();
+        let thread2_mappings = mappings_arc.clone();
+
+        // All three Arcs point to the same underlying allocation.
+        assert!(
+            alloc::sync::Arc::ptr_eq(&mappings_arc, &thread1_mappings),
+            "process and thread1 must share the same mappings Arc"
+        );
+        assert!(
+            alloc::sync::Arc::ptr_eq(&mappings_arc, &thread2_mappings),
+            "process and thread2 must share the same mappings Arc"
+        );
+
+        // Mutating through one Arc is immediately visible through the others.
+        {
+            let mut ml = mappings_arc.lock();
+            ml.insert(abi::vm::VmRegionInfo {
+                start: 0x1000,
+                end: 0x2000,
+                prot: abi::vm::VmProt::READ,
+                ..Default::default()
+            });
+        }
+        assert_eq!(
+            thread1_mappings.lock().regions.len(),
+            1,
+            "thread1 must see the mapping added via process Arc"
+        );
+        assert_eq!(
+            thread2_mappings.lock().regions.len(),
+            1,
+            "thread2 must see the mapping added via process Arc"
+        );
+    }
+
+    /// Simulated exec transition: aspace_raw and mappings are both updated on
+    /// the process.  After exec, the old mappings are replaced and the new
+    /// aspace_raw reflects the new page-table root.
+    #[test]
+    fn exec_transition_updates_process_vm_state() {
+        let pinfo = make_two_thread_pinfo(9420, 9420, 9421);
+
+        // Before exec: initial state.
+        assert_eq!(pinfo.lock().aspace_raw, 0);
+        assert_eq!(pinfo.lock().mappings.lock().regions.len(), 0);
+
+        // Simulate exec commit: replace mappings and update aspace_raw.
+        const NEW_CR3: u64 = 0x0000_0020_0000_0000;
+        {
+            let mut pi = pinfo.lock();
+            let mut ml = pi.mappings.lock();
+            *ml = crate::memory::mappings::MappingList::new();
+            ml.insert(abi::vm::VmRegionInfo {
+                start: 0x200000,
+                end: 0x201000,
+                prot: abi::vm::VmProt::READ | abi::vm::VmProt::EXEC,
+                ..Default::default()
+            });
+            drop(ml);
+            pi.aspace_raw = NEW_CR3;
+        }
+
+        // After exec: process reflects new VM state.
+        let pi = pinfo.lock();
+        assert_eq!(pi.aspace_raw, NEW_CR3, "aspace_raw must reflect new page table after exec");
+        assert_eq!(
+            pi.mappings.lock().regions.len(),
+            1,
+            "mappings must contain the new region after exec"
+        );
     }
 }

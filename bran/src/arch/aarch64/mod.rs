@@ -243,10 +243,11 @@ impl ArchRuntime for AArch64Runtime {
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }
-}
 
-// ProxyAllocator delegates to kernel::memory::alloc_frame()
-struct ProxyAllocator;
+    fn aspace_to_raw(&self, aspace: Self::AddressSpace) -> u64 {
+        aspace.0
+    }
+}
 impl FrameAllocatorHook for ProxyAllocator {
     fn alloc_frame(&self) -> Option<u64> {
         kernel::memory::alloc_frame()

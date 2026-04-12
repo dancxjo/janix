@@ -168,6 +168,15 @@ pub trait ArchRuntime {
     }
     fn tlb_flush_page(&self, _virt: u64) {}
 
+    /// Convert an address-space handle to a raw `u64` token for storage in
+    /// the architecture-independent [`kernel::task::Process`] struct.
+    ///
+    /// Default returns 0; override in architectures that maintain per-process
+    /// page-table roots (all real hardware implementations should override).
+    fn aspace_to_raw(&self, _aspace: Self::AddressSpace) -> u64 {
+        0
+    }
+
     // IO Port primitives (x86-only, stubs for other archs)
     fn ioport_read_u8(&self, _port: u16) -> u8 {
         0
@@ -604,5 +613,9 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
 
     fn tlb_flush_page(&self, virt: u64) {
         self.arch.tlb_flush_page(virt)
+    }
+
+    fn aspace_to_raw(&self, aspace: Self::AddressSpace) -> u64 {
+        self.arch.aspace_to_raw(aspace)
     }
 }

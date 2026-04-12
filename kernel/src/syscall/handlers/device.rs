@@ -11,6 +11,9 @@ use abi::device::{
 };
 use abi::errors::{Errno, SysResult};
 
+/// Maximum allowed length for a device sysfs path passed to `SYS_DEVICE_CLAIM`.
+const MAX_DEVICE_PATH_LEN: usize = 256;
+
 pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
     let size = core::mem::size_of::<DeviceCall>();
     validate_user_range(call_ptr, size, true)?;
@@ -28,9 +31,8 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
 
 pub fn sys_device_claim(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
-    use crate::syscall::validate::{copyin, validate_user_range};
 
-    if path_len == 0 || path_len > 256 {
+    if path_len == 0 || path_len > MAX_DEVICE_PATH_LEN {
         return Err(Errno::EINVAL);
     }
     validate_user_range(path_ptr, path_len, false)?;

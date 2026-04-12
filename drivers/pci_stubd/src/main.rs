@@ -169,19 +169,19 @@ fn find_rule(
 }
 
 /// Tracks claimed device sysfs paths.
-type ClaimedSet = alloc::vec::Vec<String>;
+type ClaimedDevices = alloc::vec::Vec<String>;
 
-fn already_claimed(path: &str, tracked: &ClaimedSet) -> bool {
+fn already_claimed(path: &str, tracked: &ClaimedDevices) -> bool {
     tracked.iter().any(|p| p == path)
 }
 
-fn push_claim(tracked: &mut ClaimedSet, path: String) {
+fn push_claim(tracked: &mut ClaimedDevices, path: String) {
     if tracked.len() < MAX_TRACKED {
         tracked.push(path);
     }
 }
 
-fn scan_once(tracked: &mut ClaimedSet) {
+fn scan_once(tracked: &mut ClaimedDevices) {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
@@ -209,7 +209,7 @@ fn scan_once(tracked: &mut ClaimedSet) {
     }
 }
 
-fn process_device(tracked: &mut ClaimedSet, path: &str) {
+fn process_device(tracked: &mut ClaimedDevices, path: &str) {
     if already_claimed(path, tracked) {
         return;
     }
@@ -261,7 +261,7 @@ fn read_sys_u32(path: &str) -> Result<u32, abi::errors::Errno> {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("pci_stubd: starting pci-id matcher");
-    let mut tracked: ClaimedSet = alloc::vec::Vec::new();
+    let mut tracked: ClaimedDevices = alloc::vec::Vec::new();
 
     loop {
         scan_once(&mut tracked);

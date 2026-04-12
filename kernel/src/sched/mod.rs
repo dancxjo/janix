@@ -1470,9 +1470,9 @@ fn waitpid_for_pid<R: BootRuntime>(
             });
 
             if let Some((child_pid, code)) = dead_info {
-                // Reap: remove the dead child's record from the registry so it
-                // does not remain as an orphaned (zombie) entry indefinitely.
-                crate::task::registry::get_registry::<R>().remove(child_tid);
+                // Reap: remove the dead child's record from both the registry and 
+                // the scheduler state so they stay in sync.
+                remove_task_completely::<R>(child_tid);
                 return Ok((child_pid, code));
             }
         }
@@ -1512,7 +1512,7 @@ fn waitpid_for_pid<R: BootRuntime>(
             }
             // Reap the dead child.
             if let Some(reap_tid) = early_reap_tid {
-                crate::task::registry::get_registry::<R>().remove(reap_tid);
+                remove_task_completely::<R>(reap_tid);
             }
             return Ok(result);
         }
@@ -1595,6 +1595,31 @@ pub fn cpu_online<R: BootRuntime>(cpu_index: usize) {
         let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
         sched.cpu_online(cpu_index);
     }
+    rt.irq_restore(_irq);
+}
+
+/// Remove a task completely from both the global registry and the scheduler state.
+///
+/// This is the canonical way to "reap" a task.  It ensures that the thread
+/// list in the registry stays in sync with the scheduler's sorted `threads`
+/// vector, preventing index drift that would otherwise lead to panics in the
+/// context switcher.
+pub fn remove_task_completely<R: BootRuntime>(tid: TaskId) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    
+    // 1. Remove from scheduler state (requires SCHEDULER lock)
+    {
+        let lock = SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+            sched.state.remove_task(tid);
+        }
+    }
+    
+    // 2. Remove from global registry (requires REGISTRY lock)
+    crate::task::registry::get_registry::<R>().remove(tid);
+    
     rt.irq_restore(_irq);
 }
 

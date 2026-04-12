@@ -33,10 +33,8 @@
 //! └── dns/
 //!     └── lookup        ← write: hostname; read: dotted-decimal IPv4 address
 //! ```
-#![no_std]
 extern crate alloc;
 use alloc::string::ToString;
-use core::default::Default;
 
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
 use alloc::string::String;

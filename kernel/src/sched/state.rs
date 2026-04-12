@@ -166,6 +166,15 @@ impl SchedState {
         false
     }
 
+    pub fn remove_thread(&mut self, tid: ThreadId) -> bool {
+        if let Ok(idx) = self.threads.binary_search_by_key(&tid, |t| t.tid) {
+            self.threads.remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+
     // ── Backward-compatible forwarding methods ────────────────────────────────
 
     #[inline]
@@ -195,5 +204,9 @@ impl SchedState {
     #[inline]
     pub fn remove_task_from_runq(&mut self, tid: ThreadId) -> bool {
         self.remove_thread_from_runq(tid)
+    }
+    #[inline]
+    pub fn remove_task(&mut self, tid: ThreadId) -> bool {
+        self.remove_thread(tid)
     }
 }

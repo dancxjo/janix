@@ -1,11 +1,9 @@
 #![no_std]
 #![no_main]
-use alloc::string::ToString;
-use core::default::Default;
 extern crate alloc;
+use alloc::string::{String, ToString};
+use core::prelude::v1::*;
 
-use alloc::string::String;
-use alloc::vec::Vec;
 use stem::syscall::{exit, vfs_close, vfs_open, vfs_read, vfs_readdir, vfs_write};
 
 fn print(msg: &str) {

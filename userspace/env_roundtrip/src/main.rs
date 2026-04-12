@@ -1,16 +1,6 @@
-//! Smoke test: set / get / list / unset env vars via SYS_ENV_*.
-//!
-//! Acceptance criteria:
-//!   - stem::syscall::env_set stores a value
-//!   - stem::syscall::env_get retrieves it
-//!   - stem::syscall::env_list includes the new variable
-//!   - stem::syscall::env_unset removes it
 #![no_std]
 #![no_main]
-extern crate alloc;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use core::default::Default;
+extern crate stem;
 
 #[stem::main]
 fn main() -> ! {
@@ -47,7 +37,7 @@ fn main() -> ! {
     // list
     let mut list_buf = [0u8; 1024];
     match stem::syscall::env_list(&mut list_buf) {
-        Ok(n) => {
+        Ok(_n) => {
             // env_list format: count:u32, then keylen:u32, key, vallen:u32, val
             let count = u32::from_le_bytes(list_buf[0..4].try_into().unwrap()) as usize;
             let mut found = false;

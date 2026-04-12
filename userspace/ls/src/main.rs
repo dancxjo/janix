@@ -1,11 +1,9 @@
 #![no_std]
 #![no_main]
-use alloc::string::ToString;
-use core::default::Default;
 extern crate alloc;
-
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::prelude::v1::*;
 use stem::syscall::{argv_get, exit, vfs_close, vfs_open, vfs_readdir, vfs_stat, vfs_write};
 
 #[derive(Debug, Default)]
@@ -116,7 +114,7 @@ fn list_path(path: &str, flags: &Flags, is_nested: bool) {
         }
     };
 
-    let name_at_path = path.split('/').last().unwrap_or(path);
+    let _name_at_path = path.split('/').last().unwrap_or(path);
     let is_dir = (stat.mode & 0o170000) == 0o040000;
     let is_exe = (stat.mode & 0o111) != 0;
     let is_dev = (stat.mode & 0o020000) != 0 || (stat.mode & 0o060000) != 0;

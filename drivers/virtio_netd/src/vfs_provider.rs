@@ -18,10 +18,7 @@
 //! ```text
 //! [4 bytes: frame_length_le][frame_length bytes: raw Ethernet frame]
 //! ```
-#![no_std]
 extern crate alloc;
-use alloc::string::ToString;
-use core::default::Default;
 
 use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader};
 use alloc::collections::VecDeque;

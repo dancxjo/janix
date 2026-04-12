@@ -2,10 +2,8 @@
 //!
 //! Provides a high-level socket management API used by the VFS provider
 //! to implement the `/net/` tree with smoltcp TCP/UDP sockets.
-#![no_std]
 extern crate alloc;
 use alloc::string::ToString;
-use core::default::Default;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;

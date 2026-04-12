@@ -11,14 +11,12 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::{String, ToString};
-use core::default::Default;
 
 
 
 mod driver;
 mod vfs_provider;
 
-use abi::errors::Errno;
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 use alloc::vec;
 use driver::VirtioNetDriver;

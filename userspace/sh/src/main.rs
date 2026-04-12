@@ -67,21 +67,25 @@ fn read_line() -> String {
     String::from_utf8(bytes).unwrap_or_default()
 }
 
-fn wait_for_foreground_child(child_pid: i64) -> abi::errors::SysResult<()> {
+fn wait_for_foreground_child(child_tid: u64, child_pid: i64) -> abi::errors::SysResult<()> {
     let _ = stem::syscall::console_set_ctrlc_target(
-        Some(child_pid as u64),
+        Some(child_tid),
         abi::syscall::console_ctrlc_action::KILL,
     );
 
     loop {
         let _ = stem::syscall::console_poll_input();
-        match stem::syscall::waitpid(child_pid, waitpid_flags::WNOHANG) {
-            Ok((0, _)) => stem::syscall::sleep_ms(10),
-            Ok((_pid, _code)) => {
+
+        match stem::syscall::task_poll(child_tid) {
+            Ok((abi::types::TaskStatus::Dead, _)) | Err(abi::errors::Errno::ESRCH) => {
+                // Reap the child process record if it is still present.
+                let _ = stem::syscall::waitpid(child_pid, waitpid_flags::WNOHANG);
                 clear_ctrlc_target();
                 return Ok(());
             }
-            Err(abi::errors::Errno::EINTR) => continue,
+            Ok((_status, _)) => {
+                stem::syscall::sleep_ms(10);
+            }
             Err(err) => {
                 clear_ctrlc_target();
                 return Err(err);
@@ -186,7 +190,7 @@ fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult
         0,   // boot_arg
         &[], // No handles to inherit
     ) {
-        Ok(resp) => wait_for_foreground_child(resp.child_pid as i64),
+        Ok(resp) => wait_for_foreground_child(resp.child_tid, resp.child_pid as i64),
         Err(e) => {
             let out = alloc::format!("sh: {}: command not found\n", cmd.program);
             let _ = vfs_write(1, out.as_bytes());

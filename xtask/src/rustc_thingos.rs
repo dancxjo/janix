@@ -112,7 +112,6 @@ fn bootstrap_config() -> String {
 build = "x86_64-unknown-linux-gnu"
 host  = ["x86_64-unknown-thingos"]
 target = ["x86_64-unknown-thingos"]
-local-rebuild = true
 docs = false
 compiler-docs = false
 

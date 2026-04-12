@@ -196,6 +196,7 @@ If any answer is **yes**, the change needs justification or rework before merge.
 - `docs/concepts/scheduling.md` — scheduler internals
 - `docs/concepts/userland.md` — userspace threading model
 - `docs/concepts/syscalls.md` — full syscall ABI reference
+- `docs/concepts/namespaces.md` — namespace semantics and isolation roadmap
 - `docs/scheduler-anti-starvation.md` — priority aging details
 - `AGENTS.md` — quick orientation for automated agents
 - `.github/PULL_REQUEST_TEMPLATE.md` — machine-readable PR checklist

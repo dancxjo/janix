@@ -81,6 +81,7 @@ After a successful run:
 
 ```text
 target/rustc-thingos/rustc
+target/rustc-thingos/rustc-wrapper
 target/rustc-thingos/rustlib/
 ```
 
@@ -89,6 +90,11 @@ The cached `rustlib/` tree includes:
 - host libraries copied from `stage1/lib/rustlib`
 - ThingOS target `.rlib`/`.rmeta` files copied from
   `stage1-std/x86_64-unknown-thingos/release/deps`
+
+`rustc-wrapper` is the entry point intended for Cargo/xtask use. It injects:
+
+- `--sysroot target/rustc-thingos`
+- `LD_LIBRARY_PATH=target/rustc-thingos/lib`
 
 This is enough for the cached compiler to be reused on the developer machine.
 

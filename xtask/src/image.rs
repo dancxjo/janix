@@ -798,7 +798,7 @@ fn build_userspace_app_with_features(
         "core,alloc,panic_abort"
     };
 
-    let mut rustflags = String::from("-Awarnings");
+    let rustflags = String::from("-Awarnings");
     let mut cmd_obj = cmd!(
         sh,
         "cargo -Z build-std={build_std_crates} -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"

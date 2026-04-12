@@ -1,38 +1,119 @@
 # Rustc on ThingOS: Current Status (April 2026)
 
-The effort to build a stage-1 `rustc` cross-compiled for `x86_64-unknown-thingos` is currently **on hold** due to upstream LLVM compilation issues.
+The effort to build a stage-1 `rustc` cross-compiled for `x86_64-unknown-thingos`
+is **in progress**.  The original LLVM compilation blockers and std/bootstrap
+failures have been resolved.
 
 ## Current State
 
-As of April 11, 2026, the `rustc-thingos` target in `xtask` is configured to build a stage-1 compiler. While the Rust bootstrap and host tooling downloads succeed, the build fails during the LLVM compilation phase.
+As of April 12, 2026 the build reaches a new, narrower blocker:
+`rustc_driver` is built as a `dylib` by the upstream bootstrap, but
+`x86_64-unknown-thingos` has no dynamic linker and therefore cannot load
+shared libraries at runtime.
 
-### Technical Blocker: LLVM Target Incompatibility
+### Completed Work (already landed)
 
-The primary blocker is that the custom target triple `x86_64-unknown-thingos` is not recognized by the vendored LLVM build system as a standard POSIX or recognized generic target. This leads to the following C++ compilation errors in `LLVMSupport`:
+| Location | Commit | Description |
+|---|---|---|
+| Outer repo (`trunk`) | `229ceee0` | `build: relax rust bootstrap warnings for thingos` |
+| Rust fork (`thingos-patched`) | `125fe06c` | PAL/module fixes, restricted-std enablement, bootstrap proc-macro probe fix |
 
-- `error: 'EnvPathSeparator' was not declared in this scope`
-- `error: 'class llvm::sys::fs::file_status' has no member named 'getSize'`
+The following also land with the PR that introduced this status update:
 
-These errors occur because LLVM's platform-specific headers fall back to a "Generic" configuration that is missing critical definitions required by the Rest compiler's support library.
+* `targets/x86_64-unknown-thingos.json` – `"dynamic-linking": false` added so
+  that every Rust tool chain (cargo, bootstrap, the compiler itself) knows this
+  target cannot produce or load shared libraries.
+* `xtask/src/rustc_thingos.rs` – generated `config.toml` now sets
+  `[rust] rpath = false` and declares
+  `[target.x86_64-unknown-thingos] sanitizers = false` and `profiler = false`,
+  disabling runtime components that require dynamic libraries.
+
+### Active Blocker: `rustc_driver` dylib
+
+The Rust bootstrap unconditionally builds `rustc_driver` with
+`--crate-type dylib`.  Compiling that crate type for a target with
+`dynamic-linking = false` is rejected by the compiler, halting the stage-1
+`compiler/rustc` build.
+
+**Verification steps** (with the fork checked out):
+
+```bash
+# succeeds:
+python3 vendor/rust/x.py build --stage 1 library/std \
+    --host x86_64-unknown-thingos --target x86_64-unknown-thingos
+
+# proceeds past previous failures, then stops at rustc_driver dylib step:
+python3 vendor/rust/x.py build --stage 1 compiler/rustc \
+    --host x86_64-unknown-thingos --target x86_64-unknown-thingos
+```
+
+## Static-Linking Strategy
+
+The intended fix is to build `rustc_driver` as a **static rlib** and link it
+directly into the `rustc` binary.  This produces a fully self-contained
+`rustc` ELF suitable for a system without a dynamic linker.
+
+### Required change in the Rust fork (`vendor/rust`, branch `thingos-patched`)
+
+The key file is:
+
+```
+src/bootstrap/src/core/build_steps/compile.rs
+```
+
+In the function(s) that construct the `rustc_driver` cargo invocation the
+bootstrap should check whether the *host* target supports dynamic linking and,
+if not, switch to `--crate-type rlib` only, while also ensuring the main
+`compiler/rustc` Cargo.toml dependency on `rustc_driver` resolves to that
+rlib.  A minimal patch would be:
+
+```rust
+// Before calling cargo for rustc_driver, check host capability:
+let use_dylib = builder.config.rust_rpath
+    && !target.triple.contains("thingos");
+
+if use_dylib {
+    cargo.arg("--crate-type").arg("dylib,rlib");
+} else {
+    cargo.arg("--crate-type").arg("rlib");
+}
+```
+
+The exact insertion point varies with the bootstrap version; search for
+`rustc_driver` and `crate-type` in that file to locate it.
+
+Alternatively (and more robustly), read the target spec's
+`supports_dylib()` / `dynamic_linking` field that is already
+surfaced by `rustc_target::spec::Target`.
+
+### Outer-repo side already done
+
+* `"dynamic-linking": false` in `targets/x86_64-unknown-thingos.json`
+  makes the limitation machine-readable and prevents cargo from
+  accidentally attempting a dylib build for user code.
+* `[rust] rpath = false` in the generated `config.toml` keeps the
+  bootstrap aligned with static-only linking.
 
 ## How to Trigger the Build
 
-The build is currently **disabled by default** in the main `just run` and `just iso` workflows. To attempt a build anyway, use the dedicated xtask command:
-
 ```bash
+# Full attempt (will block at rustc_driver until fork patch lands):
 cargo xtask rustc-thingos
+
+# Skip rustc-thingos (e.g. in CI where build time is constrained):
+SKIP_RUSTC_THINGOS=1 just iso
 ```
 
-Or re-enable the commented-out calls in `xtask/src/main.rs`.
+## Requirements for Remaining Work
 
-## Requirements for Future Work
-
-To resolve the current blockers, the following areas need investigation:
-
-1. **LLVM Shims**: Add proper platform shims to the LLVM source tree (under `vendor/rust/src/llvm-project/`) specifically for ThingOS.
-2. **Target Specification**: Refine the custom JSON target spec to better align with what LLVM expects for a Unix-like generic target.
-3. **Cross-Compilation Toolchain**: Ensure a proper C++ standard library is available for the "Generic" target during the cross-compilation of LLVM itself.
+1. **Fork patch** – implement the static-link fallback for `rustc_driver` in
+   `src/bootstrap/src/core/build_steps/compile.rs` as described above.
+2. **Verify stage-1 compiler/rustc** – ensure a statically-linked `rustc`
+   binary is produced under
+   `build/x86_64-unknown-linux-gnu/stage1/bin/rustc`.
+3. **End-to-end smoke test** – boot ThingOS, copy the binary in from the ISO,
+   run a trivial `rustc hello.rs` on the device.
 
 ---
-*Document created: April 11, 2026*
-*Status: Blocked / Experimental*
+*Document last updated: April 12, 2026*
+*Status: In progress – fork patch needed for `rustc_driver` static link*

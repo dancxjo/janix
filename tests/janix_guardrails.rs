@@ -191,3 +191,18 @@ fn guardrail_thingos_targets_are_abort_only() {
         );
     }
 }
+
+#[test]
+fn guardrail_thingos_unwind_diagnostics_exist() {
+    let stem_runtime = include_str!("../stem/src/lib.rs");
+    assert!(
+        stem_runtime.contains("Thing-OS does not support panic=unwind"),
+        "stem runtime must emit a compile-time panic=unwind diagnostic"
+    );
+
+    let std_pal = include_str!("../vendor/rust/library/std/src/sys/pal/thingos/mod.rs");
+    assert!(
+        std_pal.contains("ThingOS std PAL is abort-only"),
+        "ThingOS std PAL must emit a compile-time panic=unwind diagnostic"
+    );
+}

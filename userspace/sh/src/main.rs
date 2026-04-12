@@ -1,13 +1,25 @@
 #![no_std]
 #![no_main]
-use alloc::string::ToString;
-use core::default::Default;
 extern crate alloc;
 
 use abi::syscall::vfs_flags;
+use abi::types::waitpid_flags;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::{info, syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write}};
+use stem::syscall::{pipe, vfs_close, vfs_open, vfs_read, vfs_write};
+
+fn set_shell_prompt_ctrlc_target() {
+    if let Ok(tid) = stem::syscall::get_tid() {
+        let _ = stem::syscall::console_set_ctrlc_target(
+            Some(tid),
+            abi::syscall::console_ctrlc_action::INTERRUPT,
+        );
+    }
+}
+
+fn clear_ctrlc_target() {
+    let _ = stem::syscall::console_clear_ctrlc_target();
+}
 
 fn prompt() {
     let mut buf = [0u8; 256];
@@ -26,6 +38,7 @@ fn prompt() {
 fn read_line() -> String {
     let mut buf = [0u8; 1024];
     let mut bytes = Vec::new();
+    set_shell_prompt_ctrlc_target();
     loop {
         match vfs_read(0, &mut buf) {
             Ok(0) => break,
@@ -42,10 +55,39 @@ fn read_line() -> String {
                     }
                 }
             }
+            Err(abi::errors::Errno::EINTR) => {
+                bytes.clear();
+                clear_ctrlc_target();
+                return String::new();
+            }
             Err(_) => break,
         }
     }
+    clear_ctrlc_target();
     String::from_utf8(bytes).unwrap_or_default()
+}
+
+fn wait_for_foreground_child(child_pid: i64) -> abi::errors::SysResult<()> {
+    let _ = stem::syscall::console_set_ctrlc_target(
+        Some(child_pid as u64),
+        abi::syscall::console_ctrlc_action::KILL,
+    );
+
+    loop {
+        let _ = stem::syscall::console_poll_input();
+        match stem::syscall::waitpid(child_pid, waitpid_flags::WNOHANG) {
+            Ok((0, _)) => stem::syscall::sleep_ms(10),
+            Ok((_pid, _code)) => {
+                clear_ctrlc_target();
+                return Ok(());
+            }
+            Err(abi::errors::Errno::EINTR) => continue,
+            Err(err) => {
+                clear_ctrlc_target();
+                return Err(err);
+            }
+        }
+    }
 }
 
 /// A single command segment: program name, args, optional stdin/stdout redirects.
@@ -144,7 +186,7 @@ fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult
         0,   // boot_arg
         &[], // No handles to inherit
     ) {
-        Ok(resp) => stem::syscall::waitpid(resp.child_pid as i64, 0).map(|_| ()),
+        Ok(resp) => wait_for_foreground_child(resp.child_pid as i64),
         Err(e) => {
             let out = alloc::format!("sh: {}: command not found\n", cmd.program);
             let _ = vfs_write(1, out.as_bytes());

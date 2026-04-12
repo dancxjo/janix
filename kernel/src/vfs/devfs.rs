@@ -255,12 +255,169 @@ impl VfsNode for DevDirNode {
 static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> =
     Mutex::new(alloc::collections::VecDeque::new());
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ConsoleCtrlCTarget {
+    tid: u64,
+    action: u32,
+}
+
+static CONSOLE_CTRLC_TARGET: Mutex<Option<ConsoleCtrlCTarget>> = Mutex::new(None);
+
 /// Global termios settings for `/dev/console`.
 ///
 /// Initialised to a sane canonical-mode default.  Can be updated via the
 /// `TCSETS` device-call ioctl, which allows userspace to switch to raw mode.
-static CONSOLE_TERMIOS: Mutex<abi::termios::Termios> =
-    Mutex::new(abi::termios::DEFAULT_TERMIOS);
+static CONSOLE_TERMIOS: Mutex<abi::termios::Termios> = Mutex::new(abi::termios::DEFAULT_TERMIOS);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConsoleIngestResult {
+    None,
+    InterruptCurrentTask,
+    RoutedTarget,
+}
+
+fn console_putchar(byte: u8, emit: bool) {
+    if emit {
+        crate::runtime_base().putchar(byte);
+    }
+}
+
+fn dispatch_console_ctrlc_target() -> ConsoleIngestResult {
+    let target = *CONSOLE_CTRLC_TARGET.lock();
+    let Some(target) = target else {
+        return ConsoleIngestResult::InterruptCurrentTask;
+    };
+
+    match target.action {
+        abi::syscall::console_ctrlc_action::INTERRUPT => {
+            if crate::sched::interrupt_task_current(target.tid).is_ok() {
+                let current_tid = unsafe { crate::sched::current_tid_current() };
+                if current_tid == target.tid {
+                    ConsoleIngestResult::InterruptCurrentTask
+                } else {
+                    ConsoleIngestResult::RoutedTarget
+                }
+            } else {
+                ConsoleIngestResult::InterruptCurrentTask
+            }
+        }
+        abi::syscall::console_ctrlc_action::KILL => {
+            if unsafe { crate::sched::kill_by_tid_current(target.tid) } {
+                ConsoleIngestResult::RoutedTarget
+            } else {
+                ConsoleIngestResult::None
+            }
+        }
+        _ => ConsoleIngestResult::InterruptCurrentTask,
+    }
+}
+
+fn ingest_console_byte(c: u8, echo_to_console: bool) -> SysResult<ConsoleIngestResult> {
+    use abi::termios::{ECHO, ECHOE, ICANON, ICRNL, ISIG};
+
+    let termios = *CONSOLE_TERMIOS.lock();
+    let canonical = termios.c_lflag & ICANON != 0;
+    let do_echo = echo_to_console && (termios.c_lflag & ECHO != 0);
+    let do_echo_erase = echo_to_console && (termios.c_lflag & ECHOE != 0);
+    let isig = termios.c_lflag & ISIG != 0;
+    let icrnl = termios.c_iflag & ICRNL != 0;
+
+    match c {
+        b'\r' | b'\n' => {
+            let mapped = if icrnl { b'\n' } else { c };
+            if do_echo {
+                console_putchar(b'\r', true);
+                console_putchar(b'\n', true);
+            }
+            CONSOLE_BUF.lock().push_back(mapped);
+            Ok(ConsoleIngestResult::None)
+        }
+        0x08 | 0x7f => {
+            if canonical {
+                let mut cb = CONSOLE_BUF.lock();
+                let last = cb.back().copied();
+                if last.is_some() && last != Some(b'\n') {
+                    cb.pop_back();
+                    if do_echo && do_echo_erase {
+                        console_putchar(0x08, true);
+                        console_putchar(b' ', true);
+                        console_putchar(0x08, true);
+                    }
+                }
+            } else {
+                CONSOLE_BUF.lock().push_back(c);
+            }
+            Ok(ConsoleIngestResult::None)
+        }
+        0x03 => {
+            if do_echo {
+                console_putchar(b'^', true);
+                console_putchar(b'C', true);
+                console_putchar(b'\r', true);
+                console_putchar(b'\n', true);
+            }
+            if isig {
+                CONSOLE_BUF.lock().clear();
+                Ok(dispatch_console_ctrlc_target())
+            } else {
+                CONSOLE_BUF.lock().push_back(0x03);
+                Ok(ConsoleIngestResult::None)
+            }
+        }
+        0x04 => {
+            if canonical {
+                CONSOLE_BUF.lock().push_back(0x04);
+            } else {
+                CONSOLE_BUF.lock().push_back(c);
+            }
+            Ok(ConsoleIngestResult::None)
+        }
+        0x20..=0x7e => {
+            if do_echo {
+                console_putchar(c, true);
+            }
+            CONSOLE_BUF.lock().push_back(c);
+            Ok(ConsoleIngestResult::None)
+        }
+        _ => {
+            if !canonical {
+                CONSOLE_BUF.lock().push_back(c);
+            }
+            Ok(ConsoleIngestResult::None)
+        }
+    }
+}
+
+pub fn set_console_ctrlc_target(tid: Option<u64>, action: u32) -> SysResult<()> {
+    match action {
+        abi::syscall::console_ctrlc_action::CLEAR => {
+            *CONSOLE_CTRLC_TARGET.lock() = None;
+            Ok(())
+        }
+        abi::syscall::console_ctrlc_action::INTERRUPT
+        | abi::syscall::console_ctrlc_action::KILL => {
+            let tid = tid.ok_or(Errno::EINVAL)?;
+            *CONSOLE_CTRLC_TARGET.lock() = Some(ConsoleCtrlCTarget { tid, action });
+            Ok(())
+        }
+        _ => Err(Errno::EINVAL),
+    }
+}
+
+pub fn inject_console_byte(byte: u8, echo_to_console: bool) -> SysResult<()> {
+    let _ = ingest_console_byte(byte, echo_to_console)?;
+    Ok(())
+}
+
+pub fn poll_console_input(echo_to_console: bool) -> SysResult<usize> {
+    let rt = crate::runtime_base();
+    let mut processed = 0usize;
+    while let Some(c) = rt.getchar() {
+        let _ = ingest_console_byte(c, echo_to_console)?;
+        processed += 1;
+    }
+    Ok(processed)
+}
 
 /// Character device node for `/dev/console`.
 ///
@@ -288,7 +445,7 @@ impl ConsoleNode {
 
 impl VfsNode for ConsoleNode {
     fn read(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        use abi::termios::{ECHO, ECHOE, ICANON, ICRNL, ISIG, VMIN};
+        use abi::termios::{ICANON, VMIN};
 
         if buf.is_empty() {
             return Ok(0);
@@ -301,84 +458,19 @@ impl VfsNode for ConsoleNode {
                 return Err(abi::errors::Errno::EINTR);
             }
 
-            let rt = crate::runtime_base();
-
-            // Snapshot current terminal flags so we are consistent across
-            // one drain + one dequeue pass.
             let termios = *CONSOLE_TERMIOS.lock();
             let canonical = termios.c_lflag & ICANON != 0;
-            let do_echo = termios.c_lflag & ECHO != 0;
-            let do_echo_erase = termios.c_lflag & ECHOE != 0;
-            let isig = termios.c_lflag & ISIG != 0;
-            let icrnl = termios.c_iflag & ICRNL != 0;
+            let poll_count = poll_console_input(true)?;
+            if poll_count > 0 && crate::sched::take_pending_interrupt_current() {
+                return Err(abi::errors::Errno::EINTR);
+            }
 
-            // ── Drain hardware FIFO into the software buffer ──────────────────
-            while let Some(c) = rt.getchar() {
-                match c {
-                    b'\r' | b'\n' => {
-                        let mapped = if icrnl { b'\n' } else { c };
-                        if do_echo {
-                            rt.putchar(b'\r');
-                            rt.putchar(b'\n');
-                        }
-                        CONSOLE_BUF.lock().push_back(mapped);
-                    }
-                    0x08 | 0x7f => {
-                        // Backspace / DEL
-                        if canonical {
-                            let mut cb = CONSOLE_BUF.lock();
-                            let last = cb.back().copied();
-                            if last.is_some() && last != Some(b'\n') {
-                                cb.pop_back();
-                                if do_echo && do_echo_erase {
-                                    rt.putchar(0x08);
-                                    rt.putchar(b' ');
-                                    rt.putchar(0x08);
-                                }
-                            }
-                        } else {
-                            CONSOLE_BUF.lock().push_back(c);
-                        }
-                    }
-                    0x03 => {
-                        // Ctrl-C
-                        if do_echo {
-                            rt.putchar(b'^');
-                            rt.putchar(b'C');
-                            rt.putchar(b'\r');
-                            rt.putchar(b'\n');
-                        }
-                        if isig {
-                            // Discard pending input and return EINTR to the
-                            // caller; the pending interrupt flag has already
-                            // been consumed so we return directly.
-                            CONSOLE_BUF.lock().clear();
-                            return Err(abi::errors::Errno::EINTR);
-                        } else {
-                            // ISIG disabled — pass Ctrl-C as a literal byte.
-                            CONSOLE_BUF.lock().push_back(0x03);
-                        }
-                    }
-                    0x04 => {
-                        // Ctrl-D (EOF in canonical mode)
-                        if canonical {
-                            CONSOLE_BUF.lock().push_back(0x04);
-                        } else {
-                            CONSOLE_BUF.lock().push_back(c);
-                        }
-                    }
-                    0x20..=0x7e => {
-                        if do_echo {
-                            rt.putchar(c);
-                        }
-                        CONSOLE_BUF.lock().push_back(c);
-                    }
-                    _ => {
-                        // In raw mode pass all bytes through; in canonical
-                        // mode silently discard control chars we don't handle.
-                        if !canonical {
-                            CONSOLE_BUF.lock().push_back(c);
-                        }
+            if poll_count == 0 {
+                let target = *CONSOLE_CTRLC_TARGET.lock();
+                if target.is_none() {
+                    // Fast path for a local Ctrl-C read-side interrupt.
+                    if crate::sched::take_pending_interrupt_current() {
+                        return Err(abi::errors::Errno::EINTR);
                     }
                 }
             }
@@ -815,12 +907,12 @@ impl VfsNode for KmsgNode {
         // For dmesg, a full snapshot is usually what's wanted.
         let mut temp = vec![0u8; crate::logging::get_log_buffer_len()];
         let n = crate::logging::copy_log_buffer(&mut temp);
-        
+
         let off = offset as usize;
         if off >= n {
             return Ok(0);
         }
-        
+
         let avail = &temp[off..n];
         let count = avail.len().min(buf.len());
         buf[..count].copy_from_slice(&avail[..count]);
@@ -828,7 +920,7 @@ impl VfsNode for KmsgNode {
     }
 
     fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
-        // Linux allows writing to /dev/kmsg to inject logs, but we'll stick to 
+        // Linux allows writing to /dev/kmsg to inject logs, but we'll stick to
         // read-only for now.
         Err(Errno::EPERM)
     }
@@ -1105,7 +1197,11 @@ mod tests {
         ConsoleNode::set_termios(raw);
 
         let t = ConsoleNode::get_termios();
-        assert_eq!(t.c_lflag & abi::termios::ICANON, 0, "ICANON should be clear");
+        assert_eq!(
+            t.c_lflag & abi::termios::ICANON,
+            0,
+            "ICANON should be clear"
+        );
         assert_eq!(t.c_lflag & abi::termios::ECHO, 0, "ECHO should be clear");
         assert_eq!(t.c_lflag & abi::termios::ISIG, 0, "ISIG should be clear");
 
@@ -1136,6 +1232,74 @@ mod tests {
         unsafe { TAKE_PENDING_INTERRUPT_HOOK = None };
 
         assert_eq!(result, Err(abi::errors::Errno::EINTR));
+    }
+
+    #[test]
+    fn test_console_inject_ctrlc_interrupts_current_target() {
+        use crate::sched::hooks::{CURRENT_TID_HOOK, INTERRUPT_TASK_HOOK};
+        use core::sync::atomic::{AtomicU64, Ordering};
+
+        static LAST_INTERRUPT: AtomicU64 = AtomicU64::new(0);
+
+        fn current_tid() -> u64 {
+            77
+        }
+
+        fn interrupt_task(tid: u64) -> Result<(), Errno> {
+            LAST_INTERRUPT.store(tid, Ordering::SeqCst);
+            Ok(())
+        }
+
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+        LAST_INTERRUPT.store(0, Ordering::SeqCst);
+        set_console_ctrlc_target(Some(77), abi::syscall::console_ctrlc_action::INTERRUPT).unwrap();
+
+        unsafe {
+            CURRENT_TID_HOOK = Some(current_tid);
+            INTERRUPT_TASK_HOOK = Some(interrupt_task);
+        }
+
+        inject_console_byte(0x03, false).unwrap();
+
+        unsafe {
+            CURRENT_TID_HOOK = None;
+            INTERRUPT_TASK_HOOK = None;
+        }
+        set_console_ctrlc_target(None, abi::syscall::console_ctrlc_action::CLEAR).unwrap();
+
+        assert_eq!(LAST_INTERRUPT.load(Ordering::SeqCst), 77);
+    }
+
+    #[test]
+    fn test_console_inject_ctrlc_kills_target() {
+        use crate::sched::hooks::KILL_BY_TID_HOOK;
+        use core::sync::atomic::{AtomicU64, Ordering};
+
+        static LAST_KILL: AtomicU64 = AtomicU64::new(0);
+
+        fn kill_task(tid: u64) -> bool {
+            LAST_KILL.store(tid, Ordering::SeqCst);
+            true
+        }
+
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+        LAST_KILL.store(0, Ordering::SeqCst);
+        set_console_ctrlc_target(Some(91), abi::syscall::console_ctrlc_action::KILL).unwrap();
+
+        unsafe {
+            KILL_BY_TID_HOOK = Some(kill_task);
+        }
+
+        inject_console_byte(0x03, false).unwrap();
+
+        unsafe {
+            KILL_BY_TID_HOOK = None;
+        }
+        set_console_ctrlc_target(None, abi::syscall::console_ctrlc_action::CLEAR).unwrap();
+
+        assert_eq!(LAST_KILL.load(Ordering::SeqCst), 91);
     }
 
     #[test]
@@ -1289,6 +1453,10 @@ mod tests {
     fn test_dev_dir_stat_has_nlink_two() {
         let st = DevDirNode.stat().unwrap();
         assert!(st.is_dir());
-        assert!(st.nlink >= 2, "dev dir nlink should be >= 2, got {}", st.nlink);
+        assert!(
+            st.nlink >= 2,
+            "dev dir nlink should be >= 2, got {}",
+            st.nlink
+        );
     }
 }

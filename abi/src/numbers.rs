@@ -69,6 +69,15 @@ pub const SYS_DEBUG_WRITE: u32 = 0x1402;
 pub const SYS_LOG_WRITE: u32 = 0x1403;
 pub const SYS_TRACE_READ: u32 = 0x1404;
 pub const SYS_CONSOLE_DISABLE: u32 = 0x1405;
+pub const SYS_CONSOLE_SET_CTRLC_TARGET: u32 = 0x1406;
+pub const SYS_CONSOLE_INJECT_BYTE: u32 = 0x1407;
+pub const SYS_CONSOLE_POLL_INPUT: u32 = 0x1408;
+
+pub mod console_ctrlc_action {
+    pub const CLEAR: u32 = 0;
+    pub const INTERRUPT: u32 = 1;
+    pub const KILL: u32 = 2;
+}
 
 // ============================================================================
 // Memory & Virtual Mapping (0x2000)

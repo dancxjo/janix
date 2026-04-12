@@ -86,6 +86,35 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
+pub fn console_set_ctrlc_target(tid: Option<u64>, action: u32) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_CONSOLE_SET_CTRLC_TARGET,
+            tid.unwrap_or(0) as usize,
+            action as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+pub fn console_clear_ctrlc_target() -> Result<(), Errno> {
+    console_set_ctrlc_target(None, abi::syscall::console_ctrlc_action::CLEAR)
+}
+
+pub fn console_inject_byte(byte: u8) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_CONSOLE_INJECT_BYTE, byte as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+pub fn console_poll_input() -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_CONSOLE_POLL_INPUT, 0, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret)
+}
+
 #[allow(deprecated)]
 pub use channel::{
     channel_capacity, channel_close, channel_create, channel_create_fds, channel_len, channel_recv,

@@ -163,9 +163,6 @@ enum Commands {
         #[arg(long, short = 'a', num_args = 1.., default_values_t = ["x86_64".to_string(), "aarch64".to_string(), "riscv64".to_string(), "loongarch64".to_string()])]
         arch: Vec<String>,
     },
-    /// Kill running QEMU instances
-    Kill,
-    GuestProxy {
         /// Listen port
         #[arg(long, default_value = "8080")]
         port: u16,

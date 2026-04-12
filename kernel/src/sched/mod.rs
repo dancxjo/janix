@@ -3002,6 +3002,7 @@ mod tests {
                     mappings: alloc::sync::Arc::new(spin::Mutex::new(
                         crate::memory::mappings::MappingList::new(),
                     )),
+                    aspace_raw: 0,
                 },
             ))),
             user_fs_base: 0,
@@ -3165,6 +3166,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         {
@@ -3198,6 +3200,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         // Register both tasks.
@@ -3252,6 +3255,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3308,6 +3312,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3394,6 +3399,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }));
 
         // Before exec: flag is clear — new threads would be accepted.

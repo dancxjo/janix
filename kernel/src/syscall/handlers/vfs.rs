@@ -1636,6 +1636,7 @@ mod tests {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
             )),
+            aspace_raw: 0,
         }))
     }
 

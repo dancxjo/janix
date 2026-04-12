@@ -202,17 +202,11 @@ impl ArchRuntime for RISCV64Runtime {
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }
-}
 
-struct DumbKernelAlloc;
-impl FrameAllocatorHook for DumbKernelAlloc {
-    fn alloc_frame(&self) -> Option<u64> {
-        None
+    fn aspace_to_raw(&self, aspace: Self::AddressSpace) -> u64 {
+        aspace.0
     }
 }
-
-pub fn hcf() -> ! {
-    loop {
         unsafe {
             asm!("wfi");
         }

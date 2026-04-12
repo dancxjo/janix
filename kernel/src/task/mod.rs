@@ -53,6 +53,7 @@ impl StartupArg {
 /// | Resource           | Owner   | How threads access it               |
 /// |--------------------|---------|-------------------------------------|
 /// | PID / PPID         | Process | `process.lock().pid`                |
+/// | VM address space   | Process | `process.lock().aspace_raw`         |
 /// | VM mappings        | Process | `process.lock().mappings` (Arc)     |
 /// | FD table           | Process | `process.lock().fd_table`           |
 /// | CWD                | Process | `process.lock().cwd`                |
@@ -102,6 +103,16 @@ pub struct Process {
     /// same object visible from both `Process.mappings` and each thread's
     /// `Thread.mappings`.
     pub mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
+    /// Process-scoped address-space token (architecture-specific raw value).
+    ///
+    /// Stores the page-table root for this process in an architecture-neutral
+    /// `u64` representation (see [`crate::BootTasking::aspace_to_raw`]).  All
+    /// threads in this process share the same address space; `Thread.aspace`
+    /// holds a typed copy of the same token for the scheduler's fast path.
+    ///
+    /// Updated atomically with `Thread.aspace` during exec and remains 0
+    /// for kernel-only threads (which have no user address space).
+    pub aspace_raw: u64,
 }
 
 /// Backward-compatible alias — prefer `Process` in new code.

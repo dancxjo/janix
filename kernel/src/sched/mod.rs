@@ -376,13 +376,6 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     };
     let sched_fields = crate::sched::state::TaskSchedFields {
         tid: task.id,
-        state: task.state,
-        priority: task.priority,
-        base_priority: task.base_priority,
-        timeslice_remaining: task.timeslice_remaining,
-        affinity: task.affinity,
-        enqueued_at_tick: task.enqueued_at_tick,
-        last_cpu: task.last_cpu,
         runq_location: None,
     };
     sched.state.insert_task(sched_fields);
@@ -1238,7 +1231,6 @@ fn mark_task_exited<R: BootRuntime>(
     };
 
     if let Some(task) = sched.state.get_task_mut(tid) {
-        task.state = TaskState::Dead;
         task.runq_location = None;
     }
 
@@ -1275,7 +1267,6 @@ fn mark_task_exited<R: BootRuntime>(
                 drop(task);
 
                 if let Some(sf) = sched.state.get_task_mut(sibling) {
-                    sf.state = TaskState::Dead;
                     sf.runq_location = None;
                 }
                 sched.state.remove_task_from_runq(sibling);
@@ -1930,13 +1921,6 @@ mod tests {
             .insert(alloc::boxed::Box::new(dummy_current));
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 0,
-            state: crate::sched::state::ThreadState::Running,
-            priority: crate::sched::state::ThreadPriority::Normal,
-            base_priority: crate::sched::state::ThreadPriority::Normal,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         });
 
@@ -2013,24 +1997,10 @@ mod tests {
         // be inserted explicitly so `prepare_schedule` can locate them.
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 1001,
-            state: crate::sched::state::ThreadState::Runnable,
-            priority: crate::sched::state::ThreadPriority::Normal,
-            base_priority: crate::sched::state::ThreadPriority::Normal,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 600,
-            last_cpu: Some(0),
             runq_location: None,
         });
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 1002,
-            state: crate::sched::state::ThreadState::Runnable,
-            priority: crate::sched::state::ThreadPriority::Low,
-            base_priority: crate::sched::state::ThreadPriority::Low,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         });
         sched
@@ -2136,24 +2106,10 @@ mod tests {
         // Scheduler state entries for both tasks.
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 2001,
-            state: crate::sched::state::ThreadState::Running,
-            priority: crate::sched::state::ThreadPriority::Normal,
-            base_priority: crate::sched::state::ThreadPriority::Normal,
-            timeslice_remaining: 0,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         });
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 2002,
-            state: crate::sched::state::ThreadState::Runnable,
-            priority: crate::sched::state::ThreadPriority::Normal,
-            base_priority: crate::sched::state::ThreadPriority::Normal,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 500,
-            last_cpu: Some(0),
             runq_location: None,
         });
         sched
@@ -2254,24 +2210,10 @@ mod tests {
         // Scheduler state entries for both tasks.
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 3001,
-            state: crate::sched::state::ThreadState::Running,
-            priority: crate::sched::state::ThreadPriority::Normal,
-            base_priority: crate::sched::state::ThreadPriority::Normal,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         });
         sched.state.insert_task(crate::sched::state::ThreadSchedFields {
             tid: 3002,
-            state: crate::sched::state::ThreadState::Runnable,
-            priority: crate::sched::state::ThreadPriority::Realtime,
-            base_priority: crate::sched::state::ThreadPriority::Realtime,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         });
 
@@ -2893,13 +2835,6 @@ mod tests {
 
         let target_fields = crate::sched::state::TaskSchedFields {
             tid: 8202,
-            state: TaskState::Runnable,
-            priority: TaskPriority::Normal,
-            base_priority: TaskPriority::Normal,
-            timeslice_remaining: types::DEFAULT_TIMESLICE,
-            affinity: Affinity::Any,
-            enqueued_at_tick: 0,
-            last_cpu: Some(0),
             runq_location: None,
         };
         sched.state.insert_task(target_fields);

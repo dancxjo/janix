@@ -665,9 +665,6 @@ pub fn build_iso_with_config(
         )?;
     }
 
-    // Stage the rustc compiler and rustlib into the ISO when available.
-    // This is a no-op when SKIP_RUSTC_THINGOS=1 or when the binary has not
-    // been built yet.
     stage_rustc_for_iso(sh, iso_root)?;
 
     let limine_conf_content = generate_limine_config(sh, programs, &asset_files, config.resolution);

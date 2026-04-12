@@ -2,8 +2,7 @@
 //! (runs on linux-gnu, targets ThingOS) then stage it into the ISO root.
 //!
 //! # Environment variables
-//! * `SKIP_RUSTC_THINGOS=1` – skip the build entirely (e.g. in CI where
-//!   build time is constrained).
+//! * `BUILD_RUSTC=1` – enable the build (off by default).
 //!
 //! # Caching
 //! The build is considered up-to-date when both of these conditions hold:
@@ -151,9 +150,8 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
 
-    // Honour the escape hatch env-var.
-    if std::env::var("SKIP_RUSTC_THINGOS").as_deref() == Ok("1") {
-        println!("SKIP_RUSTC_THINGOS=1 set – skipping rustc-thingos build.");
+    // Honour the opt-in env-var.
+    if std::env::var("BUILD_RUSTC").as_deref() != Ok("1") {
         return Ok(None);
     }
 
@@ -164,7 +162,6 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     }
 
     println!("rustc-thingos: building stage-1 rustc for x86_64-unknown-thingos …");
-    println!("  (set SKIP_RUSTC_THINGOS=1 to skip this step)");
 
     // The Rust source tree is required.
     if !Path::new("vendor/rust/.git").exists() {
@@ -243,7 +240,7 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
 /// This is a no-op when `SKIP_RUSTC_THINGOS=1` is set or when no cached
 /// binary is present (the ISO will simply not contain a compiler).
 pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
-    if std::env::var("SKIP_RUSTC_THINGOS").as_deref() == Ok("1") {
+    if std::env::var("BUILD_RUSTC").as_deref() != Ok("1") {
         return Ok(());
     }
 

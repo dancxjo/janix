@@ -181,7 +181,7 @@ bristle arch=karch: fetch-rust
 
 # Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos.
 # Caches the result under target/rustc-thingos/; a second run with no
-# relevant changes is a no-op.  Set SKIP_RUSTC_THINGOS=1 to skip entirely.
+# relevant changes is a no-op. Set BUILD_RUSTC=1 to enable.
 rustc-thingos: fetch-rust
     cargo xtask rustc-thingos
 

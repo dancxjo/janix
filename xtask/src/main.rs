@@ -165,15 +165,6 @@ enum Commands {
     },
     /// Kill running QEMU instances
     Kill,
-    /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
-    Fetch,
-    /// Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos
-    ///
-    /// Set SKIP_RUSTC_THINGOS=1 to skip this step.
-    /// The result is cached under target/rustc-thingos/ and keyed on the
-    /// target JSON spec plus rust-toolchain.toml.
-    RustcThingos,
-    /// Run HTTP proxy for guest internet access (Guest -> Host -> Internet)
     GuestProxy {
         /// Listen port
         #[arg(long, default_value = "8080")]

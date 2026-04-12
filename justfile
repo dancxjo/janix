@@ -215,7 +215,7 @@ smoke:
     cargo xtask bdd --arch x86_64 --tags @smoke
 
 # The commit hash of dancxjo/rust-thingos matching our nightly toolchain
-rust_commit := "main"
+rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 
 # Fetch (shallow clone) the Rust fork into vendor/rust/
 fetch-rust:

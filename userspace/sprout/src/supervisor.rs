@@ -173,9 +173,9 @@ impl Supervisor {
     pub fn monitor(&mut self) {
         let mut tasks = self.tasks.lock();
         if tasks.is_empty() {
-            // Only log every few iterations to avoids spam
             return;
         }
+        stem::info!("SPROUT: [monitor] polling {} tasks", tasks.len());
         for task in tasks.iter_mut() {
             if let Some(pid) = task.pid {
                 match stem::syscall::task_poll(pid) {
@@ -234,6 +234,7 @@ impl Supervisor {
     }
 
     fn process_registrations(&mut self) {
+        stem::info!("SPROUT: [process_registrations] entry");
         use abi::display_driver_protocol;
         use abi::supervisor_protocol::{
             self, classes, MSG_BIND_ASSIGNED, MSG_BIND_FAILED, MSG_BIND_READY, MSG_SERVICE_EXITING,
@@ -242,15 +243,12 @@ impl Supervisor {
         use stem::syscall::{channel_send_all, vfs_mount};
 
         let mut tasks_vec = self.tasks.lock();
-        if tasks_vec.is_empty() {
-            // stem::debug!("SPROUT: No tasks to process registrations for.");
-        }
-
-        // We check EACH task's private response channel
+        stem::info!("SPROUT: [process_registrations] acquired lock, checking {} tasks", tasks_vec.len());
         for task in tasks_vec.iter_mut() {
             if task.drv_resp_read == 0 || task.pid.is_none() {
                 continue;
             }
+            stem::info!("SPROUT: [process_registrations] polling task '{}'", task.name);
 
             // Drain all pending messages from the MSG QUEUE on this driver's response channel.
             // Drivers now send all supervisor messages (BIND_READY, SERVICE_READY, etc.) via

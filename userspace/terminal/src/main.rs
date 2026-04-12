@@ -453,7 +453,12 @@ fn main(arg: usize) -> ! {
             &payload_buf,
         ) {
             let _ = stem::syscall::channel_send_all(display_req_write, &header_buf[..total]);
-            let _ = stem::syscall::channel_send_handle(display_req_write, bind_payload.fb_fd);
+            // Transfer the framebuffer FD via the FD-first message queue API.
+            let _ = stem::syscall::channel::channel_send_msg(
+                display_req_write,
+                &[],
+                &[bind_payload.fb_fd],
+            );
         }
     }
 

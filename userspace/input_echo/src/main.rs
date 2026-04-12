@@ -5,7 +5,8 @@ use abi::hid::{
     BristleEventHeader, EventType, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use stem::info;
-use stem::syscall::{channel_recv, channel_wait, ChannelHandle};
+use stem::syscall::{channel_recv, vfs_fd_from_handle, vfs_poll, ChannelHandle};
+use abi::syscall::{PollFd, poll_flags};
 
 fn log_event(buf: &[u8]) {
     if buf.len() < BristleEventHeader::SIZE {
@@ -83,9 +84,13 @@ fn main(arg: usize) -> ! {
         }
     }
 
+    // Bridge the channel handle to a VFS FD for FD-first polling.
+    let fd = vfs_fd_from_handle(handle).unwrap_or(0);
+
     let mut buf = [0u8; 256];
     loop {
-        match channel_wait(&[handle], abi::syscall::channel_wait::READABLE) {
+        let mut pollfds = [PollFd { fd: fd as i32, events: poll_flags::POLLIN, revents: 0 }];
+        match vfs_poll(&mut pollfds, u64::MAX) {
             Ok(_) => match channel_recv(handle, &mut buf) {
                 Ok(n) if n > 0 => log_event(&buf[..n]),
                 Ok(_) => {}

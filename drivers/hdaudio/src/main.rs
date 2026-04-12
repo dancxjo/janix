@@ -9,11 +9,11 @@
 //! (or a memfd-backed ring for zero-copy).  The channel is used here only
 //! because `AudioInfoPayload` embeds a bare channel handle number that any
 //! process can read from a VFS file; plain pipe FDs cannot be shared
-//! cross-process without a prior `channel_send_handle` capability transfer.
+//! cross-process without a prior capability transfer.
 //!
 //! The correct long-term architecture is:
 //! 1. A discovery channel at `/services/sound/connect`.
-//! 2. `channel_send_handle` to pass a pipe write-end to each connecting client.
+//! 2. `channel_send_msg` to pass a pipe write-end FD to each connecting client.
 //! 3. `vfs_write` / `vfs_read` for the raw PCM byte stream.
 //!
 //! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.

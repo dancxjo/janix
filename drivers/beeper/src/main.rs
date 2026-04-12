@@ -8,12 +8,11 @@
 //! it should be transported via a **pipe** (or a memfd-backed ring for
 //! zero-copy).  Channels are used here only because `AudioInfoPayload` embeds a
 //! bare channel handle number that any process can copy from a VFS file; plain
-//! pipe FDs cannot be shared cross-process without a prior `channel_send_handle`
-//! capability transfer.
+//! pipe FDs cannot be shared cross-process without a prior capability transfer.
 //!
 //! A future version should use:
 //! 1. A discovery channel at `/services/sound/connect`.
-//! 2. `channel_send_handle` to pass a pipe write-end to the connecting client.
+//! 2. `channel_send_msg` to pass a pipe write-end FD to the connecting client.
 //! 3. `vfs_write` / `vfs_read` for the PCM byte stream.
 //!
 //! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
@@ -29,7 +28,7 @@ mod tone;
 use abi::schema::keys::WRITE_PORT_HANDLE;
 use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
 use alloc::vec::Vec;
-use stem::syscall::{channel_send, channel_wait, ChannelHandle};
+use stem::syscall::{channel_send, vfs_fd_from_handle, ChannelHandle};
 use stem::{info, warn};
 
 #[stem::main]
@@ -102,6 +101,9 @@ fn main(_arg: usize) -> ! {
 
     info!("Beeper: Playback started ({} bytes)", samples.len());
 
+    // Bridge the write port handle to a VFS FD for FD-first write-readiness polling.
+    let write_port_fd = vfs_fd_from_handle(write_port_handle).unwrap_or(0);
+
     let chunk_size = 4096;
 
     let mut offset = 0;
@@ -117,15 +119,18 @@ fn main(_arg: usize) -> ! {
                     sent_bytes += n;
                 }
                 _ => {
-                    // Port full, wait for space
-                    let _ =
-                        channel_wait(&[write_port_handle], abi::syscall::channel_wait::WRITABLE);
+                    // Port full — poll for write readiness (FD-first backpressure).
+                    let mut pollfds = [abi::syscall::PollFd {
+                        fd: write_port_fd as i32,
+                        events: abi::syscall::poll_flags::POLLOUT,
+                        revents: 0,
+                    }];
+                    let _ = stem::syscall::vfs::vfs_poll(&mut pollfds, u64::MAX);
                 }
             }
         }
 
         offset += to_write;
-        // Rely on channel_wait(WRITABLE) for native backpressure instead of sleeping manually!
     }
 
     info!("Beeper: Finished.");

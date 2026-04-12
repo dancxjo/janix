@@ -60,10 +60,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_CHANNEL_SEND_ALL => handlers::sys_channel_send_all(args[0], args[1], args[2]),
         SYS_CHANNEL_RECV => handlers::sys_channel_recv(args[0], args[1], args[2]),
         SYS_CHANNEL_CLOSE => handlers::sys_channel_close(args[0]),
+        // Deprecated: use SYS_FS_POLL after SYS_FD_FROM_HANDLE instead.
         SYS_CHANNEL_WAIT => handlers::sys_channel_wait(args[0], args[1], args[2]),
         SYS_CHANNEL_INFO => handlers::sys_channel_info(args[0]),
         SYS_CHANNEL_TRY_RECV => handlers::sys_channel_try_recv(args[0], args[1], args[2]),
+        // Deprecated: use SYS_CHANNEL_SEND_MSG instead.
         SYS_CHANNEL_SEND_HANDLE => handlers::sys_channel_send_handle(args[0], args[1]),
+        // Deprecated: use SYS_CHANNEL_RECV_MSG instead.
         SYS_CHANNEL_RECV_HANDLE => handlers::sys_channel_recv_handle(args[0], args[1]),
         SYS_CHANNEL_SEND_MSG => {
             handlers::sys_channel_send_msg(args[0], args[1], args[2], args[3], args[4])

@@ -163,9 +163,12 @@ fn main(boot_fd: usize) -> ! {
                 "VIRTIO_GPU: Sending MSG_BIND_READY handshake (ID: {})...",
                 bind_instance_id
             );
-            // Send to our private response channel
-            let _ = stem::syscall::channel_send_handle(drv_resp_write, vfs_write);
-            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
+            // Bundle the VFS provider handle and the BIND_READY notification atomically.
+            let _ = stem::syscall::channel::channel_send_msg(
+                drv_resp_write,
+                &buf[..total_len],
+                &[vfs_write],
+            );
         }
     }
 

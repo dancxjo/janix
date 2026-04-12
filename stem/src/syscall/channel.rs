@@ -17,6 +17,18 @@ pub fn channel_create(capacity: usize) -> Result<(ChannelHandle, ChannelHandle),
     Ok((write_handle, read_handle))
 }
 
+/// Create a new channel pair and immediately expose both ends as file descriptors.
+///
+/// This is the preferred FD-first entry point for new code.  The returned
+/// `(write_fd, read_fd)` can be used directly with `vfs_write`, `vfs_read`,
+/// `vfs_poll`, and `vfs_close` without ever touching the underlying handles.
+pub fn channel_create_fds(capacity: usize) -> Result<(u32, u32), Errno> {
+    let (write_handle, read_handle) = channel_create(capacity)?;
+    let write_fd = super::vfs::vfs_fd_from_handle(write_handle)?;
+    let read_fd = super::vfs::vfs_fd_from_handle(read_handle)?;
+    Ok((write_fd, read_fd))
+}
+
 pub fn channel_send(handle: ChannelHandle, data: &[u8]) -> Result<usize, Errno> {
     let ret = unsafe {
         raw_syscall6(
@@ -82,6 +94,24 @@ pub fn channel_close(handle: ChannelHandle) -> Result<(), Errno> {
     abi::errors::errno(ret).map(|_| ())
 }
 
+/// Wait for one of the given channel handles to become readable or writable.
+///
+/// # Deprecated
+///
+/// Use [`crate::syscall::vfs::vfs_fd_from_handle`] to convert each handle to an FD,
+/// then call [`crate::syscall::vfs::vfs_poll`] with a [`PollFd`] slice.
+///
+/// ```no_run
+/// use abi::syscall::{PollFd, poll_flags};
+/// use stem::syscall::vfs::{vfs_fd_from_handle, vfs_poll};
+///
+/// let fd = vfs_fd_from_handle(handle).expect("bridge");
+/// let mut pollfds = [PollFd { fd: fd as i32, events: poll_flags::POLLIN, revents: 0 }];
+/// vfs_poll(&mut pollfds, u64::MAX).expect("poll");
+/// ```
+#[deprecated(
+    note = "Convert handles to FDs with `vfs_fd_from_handle` and use `vfs_poll` instead"
+)]
 pub fn channel_wait(handles: &[ChannelHandle], flags: u32) -> Result<ChannelHandle, Errno> {
     let ret = unsafe {
         raw_syscall6(
@@ -107,6 +137,10 @@ pub fn channel_capacity(handle: ChannelHandle) -> Result<usize, Errno> {
     abi::errors::errno(ret).map(|v| (v >> 32) as usize)
 }
 
+#[deprecated(
+    note = "Use `channel_send_msg` instead, which bundles data and FDs atomically. \
+            Example: channel_send_msg(channel, &[], &[fd])"
+)]
 pub fn channel_send_handle(channel: ChannelHandle, handle: u32) -> Result<(), Errno> {
     let ret = unsafe {
         raw_syscall6(
@@ -122,6 +156,10 @@ pub fn channel_send_handle(channel: ChannelHandle, handle: u32) -> Result<(), Er
     abi::errors::errno(ret).map(|_| ())
 }
 
+#[deprecated(
+    note = "Use `channel_recv_msg` instead, which receives data and FDs atomically. \
+            Example: let mut fds=[0u32;1]; channel_recv_msg(ch, &mut[], &mut fds)"
+)]
 pub fn channel_recv_handle(channel: ChannelHandle) -> Result<u32, Errno> {
     let mut out_fd: u32 = 0;
     let ret = unsafe {

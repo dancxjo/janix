@@ -221,6 +221,13 @@ pub fn sys_channel_close(handle: usize) -> SysResult<usize> {
     }
 }
 
+/// `SYS_CHANNEL_WAIT` — wait for one of the given handles to become ready.
+///
+/// # Deprecated
+///
+/// Prefer converting handles to FDs with `SYS_FD_FROM_HANDLE` and using
+/// `SYS_FS_POLL` instead.  This syscall operates on raw IPC handle numbers
+/// rather than file descriptors and is retained only for backward compatibility.
 pub fn sys_channel_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResult<usize> {
     if count == 0 || count > 64 {
         return Err(Errno::EINVAL);
@@ -337,6 +344,12 @@ pub fn sys_channel_info(handle: usize) -> SysResult<usize> {
     Ok((cap << 32) | (len & 0xFFFFFFFF))
 }
 
+/// `SYS_CHANNEL_SEND_HANDLE` — send a single capability over a channel handle.
+///
+/// # Deprecated
+///
+/// Prefer `SYS_CHANNEL_SEND_MSG` which bundles data bytes and FDs atomically
+/// in a single message and operates without a separate capability queue.
 pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
 
@@ -388,6 +401,11 @@ pub fn sys_channel_send_handle(handle: usize, fd: usize) -> SysResult<usize> {
     Ok(0)
 }
 
+/// `SYS_CHANNEL_RECV_HANDLE` — receive a single capability from a channel handle.
+///
+/// # Deprecated
+///
+/// Prefer `SYS_CHANNEL_RECV_MSG` which receives data bytes and FDs atomically.
 pub fn sys_channel_recv_handle(handle: usize, out_fd_ptr: usize) -> SysResult<usize> {
     validate_user_range(out_fd_ptr, 4, true)?;
 

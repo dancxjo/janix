@@ -148,9 +148,12 @@ fn main(arg: usize) -> ! {
             supervisor_protocol::MSG_BIND_READY,
             &ready_bytes[..len],
         ) {
-            // Send handle to our private response channel, then notify
-            let _ = stem::syscall::channel_send_handle(drv_resp_write, req_write);
-            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
+            // Bundle the VFS provider handle and the BIND_READY notification atomically.
+            let _ = stem::syscall::channel::channel_send_msg(
+                drv_resp_write,
+                &buf[..total_len],
+                &[req_write],
+            );
             stem::debug!("VIRTIO_NETD: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
     }
@@ -208,7 +211,11 @@ fn main(arg: usize) -> ! {
                 supervisor_protocol::MSG_SERVICE_READY,
                 &payload_bytes[..p_len],
             ) {
-                let _ = stem::syscall::channel_send_all(drv_resp_write, &svc_buf[..total_len]);
+                let _ = stem::syscall::channel::channel_send_msg(
+                    drv_resp_write,
+                    &svc_buf[..total_len],
+                    &[],
+                );
                 stem::debug!("VIRTIO_NETD: Sent MSG_SERVICE_READY.");
             }
         }

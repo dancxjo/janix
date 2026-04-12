@@ -393,7 +393,7 @@ fn try_build_thingos_native_rustc(sh: &Shell, cwd: &Path, rust_src: &Path) -> Re
 
     let native_build = cmd!(
         sh,
-        "python3 {rust_src_str}/x.py build --stage 1 compiler/rustc"
+        "python3 {rust_src_str}/x.py build --stage 1 library compiler/rustc"
     )
     .env("RUST_TARGET_PATH", target_dir_str)
     .run();

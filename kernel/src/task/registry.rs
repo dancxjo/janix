@@ -64,6 +64,7 @@ pub struct RegistryGuard<R: BootRuntime> {
 
 impl<R: BootRuntime> Drop for RegistryGuard<R> {
     fn drop(&mut self) {
+        // Drop the lock before restoring interrupts.
         self.guard.take();
         unsafe {
             crate::irq::irq_restore_erased(self.irq_state);

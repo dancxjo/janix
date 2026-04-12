@@ -267,6 +267,8 @@ pub fn preempt_enable<R: BootRuntime>() {
 }
 
 pub fn resched_if_needed<R: BootRuntime>() {
+    // Explicit safe-point check: yield if need_resched is set, but do NOT
+    // run tick bookkeeping or decrement timeslices.
     let rt = crate::runtime::<R>();
     let irq = rt.irq_disable();
 
@@ -305,6 +307,10 @@ pub fn dump_stats<R: BootRuntime>() {
     crate::sched::dump_stats::<R>();
 }
 
+/// Bootstrap a CPU for scheduling.
+///
+/// Must be called before the first yield on any CPU that doesn't already
+/// have a current thread set (e.g. secondary CPUs).
 fn bootstrap_cpu<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -316,6 +322,7 @@ fn bootstrap_cpu<R: BootRuntime>() {
 
         if let Some(pc) = sched.state.per_cpu.get_mut(cpu_idx) {
             if pc.current.is_none() {
+                // CPU hasn't been bootstrapped yet — set current to idle thread.
                 if let Some(idle_id) = pc.idle_task {
                     pc.current = Some(idle_id);
                     rt.set_current_tid(idle_id);
@@ -339,13 +346,16 @@ fn bootstrap_cpu<R: BootRuntime>() {
 }
 
 pub fn run_scheduler<R: BootRuntime>() -> ! {
+    // Bootstrap this CPU if needed (sets current thread for secondary CPUs).
     bootstrap_cpu::<R>();
 
+    // Enable interrupts so this CPU can be preempted or woken from idle (HLT).
     crate::runtime::<R>().irq_restore(crate::IrqState(1));
 
     let mut idle_count: u64 = 0;
     loop {
         if !yield_now::<R>() {
+            // No runnable work — halt until next IRQ (timer tick, device, IPI).
             crate::runtime::<R>().wait_for_interrupt();
             crate::sched::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 

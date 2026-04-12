@@ -3585,6 +3585,116 @@ mod tests {
         );
     }
 
+    /// exec collapse with 4 threads is deterministic: ALL siblings (9701–9703)
+    /// are in Dead state before the exec-caller (9700) proceeds to commit.
+    ///
+    /// This tests the full scheduler + registry path that `task_exec_current`
+    /// uses via `kill_by_tid` → `mark_task_exited`:
+    ///   1. Set exec_in_progress.
+    ///   2. Collect sibling TIDs (exclude caller).
+    ///   3. Kill every sibling via mark_task_exited.
+    ///   4. Assert every sibling is Dead and only caller TID remains.
+    ///   5. Assert exec-caller is NOT Dead.
+    ///   6. Commit: clear exec_in_progress.
+    #[test]
+    fn test_exec_collapse_determinism_four_threads() {
+        let _g = init_test_env();
+
+        let caller_tid: TaskId = 9700;
+        let sibling_tids: [TaskId; 3] = [9701, 9702, 9703];
+
+        let mut all_tids = alloc::vec![caller_tid];
+        all_tids.extend_from_slice(&sibling_tids);
+
+        let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: 9700,
+            ppid: 1,
+            argv: alloc::vec![b"old".to_vec()],
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: all_tids.clone(),
+            exec_in_progress: false,
+            exec_path: alloc::string::String::from("/old/binary"),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            aspace_raw: 0,
+        }));
+
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+            make_thread_task(caller_tid, TaskState::Running, 9700, 1, pinfo.clone()),
+        ));
+        for &sid in &sibling_tids {
+            crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
+                make_thread_task(sid, TaskState::Runnable, 9700, 1, pinfo.clone()),
+            ));
+        }
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(caller_tid);
+
+        // Phase 1: set exec_in_progress atomically.
+        pinfo.lock().exec_in_progress = true;
+
+        // Phase 2: collect sibling TIDs (excluding caller).
+        let siblings: alloc::vec::Vec<TaskId> = pinfo
+            .lock()
+            .thread_ids
+            .iter()
+            .copied()
+            .filter(|&t| t != caller_tid)
+            .collect();
+        assert_eq!(siblings.len(), 3, "expected 3 siblings");
+        assert!(
+            !siblings.contains(&caller_tid),
+            "caller must not appear in sibling list"
+        );
+
+        // Phase 3: kill every sibling (as task_exec_current calls kill_by_tid_current).
+        for &sid in &siblings {
+            let _ = mark_task_exited::<MockRuntime>(&mut sched, sid, -9);
+        }
+
+        // Phase 4: invariant — every sibling must be Dead before commit.
+        for &sid in &sibling_tids {
+            assert_eq!(
+                crate::task::registry::get_task::<MockRuntime>(sid)
+                    .expect("sibling must remain as zombie")
+                    .state,
+                TaskState::Dead,
+                "sibling {} must be Dead after exec collapse",
+                sid
+            );
+        }
+
+        // thread_ids must contain only the exec-caller.
+        assert_eq!(
+            pinfo.lock().thread_ids,
+            alloc::vec![caller_tid],
+            "only exec-caller TID must remain in thread_ids after collapse"
+        );
+
+        // The exec-caller itself must NOT be Dead.
+        assert_ne!(
+            crate::task::registry::get_task::<MockRuntime>(caller_tid)
+                .expect("exec-caller must still be in registry")
+                .state,
+            TaskState::Dead,
+            "exec-caller must not be killed during collapse"
+        );
+
+        // Phase 5: commit — clear exec_in_progress.
+        pinfo.lock().exec_in_progress = false;
+        assert!(
+            !pinfo.lock().exec_in_progress,
+            "exec_in_progress must be cleared after commit"
+        );
+    }
+
     /// exec_in_progress blocks additional thread creation at the process level.
     #[test]
     fn test_exec_in_progress_rejects_new_threads() {

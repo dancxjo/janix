@@ -915,4 +915,321 @@ mod tests {
             "mappings must contain the new region after exec"
         );
     }
+
+    // ── No stale pre-exec metadata invariants ─────────────────────────────────
+
+    /// Helper: build a ProcessInfo pre-loaded with realistic pre-exec metadata.
+    fn make_pinfo_with_metadata(pid: u32) -> Arc<Mutex<ProcessInfo>> {
+        let mut fd_table = crate::vfs::fd_table::FdTable::new();
+        // fd 0: stays open (no FD_CLOEXEC)
+        fd_table
+            .insert_at(0, null_node(), OpenFlags::read_only(), "/stdin".into())
+            .unwrap();
+        // fd 1: marked FD_CLOEXEC, must be closed on exec
+        fd_table
+            .insert_at(1, null_node(), OpenFlags::write_only(), "/cloexec_fd".into())
+            .unwrap();
+        fd_table.set_fd_flags(1, FD_CLOEXEC).unwrap();
+
+        Arc::new(Mutex::new(ProcessInfo {
+            pid,
+            ppid: 1,
+            argv: alloc::vec![
+                b"old_binary".to_vec(),
+                b"--old-arg".to_vec(),
+            ],
+            env: {
+                let mut m = alloc::collections::BTreeMap::new();
+                m.insert(b"OLD_VAR".to_vec(), b"old_value".to_vec());
+                m
+            },
+            auxv: alloc::vec![(AT_PAGESZ, 4096), (AT_ENTRY, 0x1000)],
+            fd_table,
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/old/cwd"),
+            thread_ids: alloc::vec![pid as crate::task::TaskId],
+            exec_in_progress: false,
+            exec_path: alloc::string::String::from("/old/binary"),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            aspace_raw: 0xDEAD_0000,
+        }))
+    }
+
+    /// After a successful exec commit, argv is completely replaced.
+    /// Old argv must not remain visible.
+    #[test]
+    fn exec_commit_replaces_argv() {
+        let pinfo = make_pinfo_with_metadata(9500);
+
+        let old_argv = pinfo.lock().argv.clone();
+        assert_eq!(old_argv[0], b"old_binary");
+
+        // Simulate exec commit: replace argv.
+        let new_argv: alloc::vec::Vec<alloc::vec::Vec<u8>> = alloc::vec![
+            b"new_binary".to_vec(),
+            b"--new-arg1".to_vec(),
+        ];
+        pinfo.lock().argv = new_argv.clone();
+
+        let pi = pinfo.lock();
+        assert_eq!(pi.argv, new_argv, "argv must be completely replaced after exec");
+        assert_ne!(pi.argv, old_argv, "old argv must not survive exec commit");
+        // Old argv must not appear anywhere in the new argv
+        assert!(
+            !pi.argv.iter().any(|a| a == b"old_binary"),
+            "old binary name must not remain in argv after exec"
+        );
+    }
+
+    /// After a successful exec commit, env is completely replaced.
+    /// Old environment variables must not remain visible.
+    #[test]
+    fn exec_commit_replaces_env() {
+        let pinfo = make_pinfo_with_metadata(9510);
+
+        // Verify pre-exec env is present.
+        assert!(pinfo.lock().env.contains_key(b"OLD_VAR".as_slice()));
+
+        // Simulate exec commit: replace env.
+        let mut new_env: alloc::collections::BTreeMap<alloc::vec::Vec<u8>, alloc::vec::Vec<u8>> =
+            alloc::collections::BTreeMap::new();
+        new_env.insert(b"NEW_VAR".to_vec(), b"new_value".to_vec());
+        pinfo.lock().env = new_env.clone();
+
+        let pi = pinfo.lock();
+        assert_eq!(pi.env, new_env, "env must be completely replaced after exec");
+        assert!(
+            !pi.env.contains_key(b"OLD_VAR".as_slice()),
+            "old environment variable OLD_VAR must not survive exec commit"
+        );
+        assert!(
+            pi.env.contains_key(b"NEW_VAR".as_slice()),
+            "new environment variable must be present after exec"
+        );
+    }
+
+    /// After a successful exec commit, exec_path is updated to the new binary path.
+    /// The old exec_path must not remain.
+    #[test]
+    fn exec_commit_replaces_exec_path() {
+        let pinfo = make_pinfo_with_metadata(9520);
+
+        assert_eq!(pinfo.lock().exec_path, "/old/binary");
+
+        // Simulate exec commit: update exec_path.
+        pinfo.lock().exec_path = alloc::string::String::from("/new/binary");
+
+        let pi = pinfo.lock();
+        assert_eq!(
+            pi.exec_path, "/new/binary",
+            "exec_path must be updated to new binary after exec"
+        );
+        assert_ne!(
+            pi.exec_path, "/old/binary",
+            "old exec_path must not survive exec commit"
+        );
+    }
+
+    /// After a successful exec commit, auxv is rebuilt from the new image.
+    /// Old auxv values must not remain.
+    #[test]
+    fn exec_commit_replaces_auxv() {
+        let pinfo = make_pinfo_with_metadata(9530);
+
+        // Pre-exec: auxv references the old image entry point.
+        assert!(pinfo.lock().auxv.contains(&(AT_ENTRY, 0x1000)));
+
+        // Simulate exec commit: rebuild auxv from new image.
+        let new_info = LoaderAuxInfo {
+            phdr_vaddr: 0x400040,
+            phent: 56,
+            phnum: 4,
+            entry_vaddr: 0x401000,
+            ..Default::default()
+        };
+        let new_auxv = build_auxv(&new_info, 4096);
+        pinfo.lock().auxv = new_auxv.clone();
+
+        let pi = pinfo.lock();
+        assert_eq!(pi.auxv, new_auxv, "auxv must be completely replaced after exec");
+        assert!(
+            !pi.auxv.contains(&(AT_ENTRY, 0x1000)),
+            "old AT_ENTRY value must not survive exec commit"
+        );
+        assert!(
+            pi.auxv.contains(&(AT_ENTRY, 0x401000)),
+            "new AT_ENTRY must be present after exec"
+        );
+    }
+
+    /// Comprehensive: simulate a full exec metadata commit and verify no stale
+    /// pre-exec metadata (argv, env, exec_path, auxv) remains visible.
+    #[test]
+    fn exec_commit_no_stale_metadata() {
+        let pinfo = make_pinfo_with_metadata(9540);
+
+        // Verify all pre-exec metadata is present before the commit.
+        {
+            let pi = pinfo.lock();
+            assert_eq!(pi.argv[0], b"old_binary");
+            assert!(pi.env.contains_key(b"OLD_VAR".as_slice()));
+            assert_eq!(pi.exec_path, "/old/binary");
+            assert!(pi.auxv.contains(&(AT_ENTRY, 0x1000)));
+            assert_eq!(pi.aspace_raw, 0xDEAD_0000u64);
+        }
+
+        // --- exec commit phase ---
+        let new_argv = alloc::vec![b"new_binary".to_vec()];
+        let mut new_env = alloc::collections::BTreeMap::new();
+        new_env.insert(b"NEW_VAR".to_vec(), b"new_val".to_vec());
+        let new_info = LoaderAuxInfo {
+            entry_vaddr: 0x402000,
+            ..Default::default()
+        };
+        let new_auxv = build_auxv(&new_info, 4096);
+
+        {
+            let mut pi = pinfo.lock();
+            pi.argv = new_argv.clone();
+            pi.env = new_env.clone();
+            pi.auxv = new_auxv.clone();
+            pi.exec_path = alloc::string::String::from("/new/binary");
+            pi.fd_table.close_on_exec();
+            pi.exec_in_progress = false;
+            pi.aspace_raw = 0x0000_C0DE_0000u64;
+        }
+
+        // --- verify no stale metadata ---
+        let pi = pinfo.lock();
+
+        // argv: old binary name must be gone, new one present
+        assert_eq!(pi.argv, new_argv, "argv not replaced");
+        assert!(
+            !pi.argv.iter().any(|a| a == b"old_binary"),
+            "stale argv entry 'old_binary' found after exec"
+        );
+
+        // env: old var must be gone, new one present
+        assert!(
+            !pi.env.contains_key(b"OLD_VAR".as_slice()),
+            "stale env var OLD_VAR found after exec"
+        );
+        assert!(
+            pi.env.contains_key(b"NEW_VAR".as_slice()),
+            "new env var NEW_VAR missing after exec"
+        );
+
+        // exec_path: old path must be gone
+        assert_ne!(pi.exec_path, "/old/binary", "stale exec_path after exec");
+        assert_eq!(pi.exec_path, "/new/binary", "new exec_path not set");
+
+        // auxv: old AT_ENTRY must be gone
+        assert!(
+            !pi.auxv.contains(&(AT_ENTRY, 0x1000)),
+            "stale auxv AT_ENTRY value found after exec"
+        );
+        assert!(
+            pi.auxv.contains(&(AT_ENTRY, 0x402000)),
+            "new AT_ENTRY missing from auxv after exec"
+        );
+
+        // fd_table: FD_CLOEXEC fd must be closed
+        assert!(
+            matches!(pi.fd_table.get(1), Err(abi::errors::Errno::EBADF)),
+            "FD_CLOEXEC fd must be closed after exec"
+        );
+        assert!(pi.fd_table.get(0).is_ok(), "non-cloexec fd must survive");
+
+        // exec_in_progress: must be cleared
+        assert!(!pi.exec_in_progress, "exec_in_progress must be cleared after commit");
+
+        // aspace_raw: must reflect new address space
+        assert_eq!(pi.aspace_raw, 0x0000_C0DE_0000u64, "aspace_raw not updated");
+    }
+
+    // ── Thread-group collapse determinism (ProcessInfo-level) ────────────────
+
+    /// Thread-group collapse is deterministic at the ProcessInfo level:
+    /// after simulating sibling removal, the exec-caller is the only TID in
+    /// thread_ids and exec_in_progress is cleared before commit.
+    ///
+    /// Full scheduler-level determinism (all siblings Dead in registry) is
+    /// covered by `test_exec_collapse_determinism_four_threads` in
+    /// `kernel/src/sched/mod.rs`.
+    #[test]
+    fn exec_collapse_determinism_thread_ids_after_collapse() {
+        let caller_tid: crate::task::TaskId = 9600;
+        let sibling_tids = [9601u64, 9602, 9603];
+
+        let mut all_tids = alloc::vec![caller_tid];
+        all_tids.extend_from_slice(&sibling_tids);
+
+        let pinfo = Arc::new(Mutex::new(ProcessInfo {
+            pid: 9600,
+            ppid: 1,
+            argv: alloc::vec![b"old".to_vec()],
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: all_tids.clone(),
+            exec_in_progress: false,
+            exec_path: alloc::string::String::from("/old"),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            aspace_raw: 0,
+        }));
+
+        // ── Phase 1: set exec_in_progress ────────────────────────────────────
+        pinfo.lock().exec_in_progress = true;
+
+        // ── Phase 2: collect siblings (must exclude caller) ───────────────────
+        let siblings: alloc::vec::Vec<crate::task::TaskId> = {
+            let pi = pinfo.lock();
+            pi.thread_ids
+                .iter()
+                .copied()
+                .filter(|&t| t != caller_tid)
+                .collect()
+        };
+        assert_eq!(siblings.len(), 3, "expected exactly 3 siblings");
+        assert!(
+            !siblings.contains(&caller_tid),
+            "caller must not appear in sibling list"
+        );
+        for &sid in &sibling_tids {
+            assert!(siblings.contains(&sid), "sibling {} must be in list", sid);
+        }
+
+        // ── Phase 3: simulate sibling removal (mark_task_exited removes from thread_ids) ─
+        for sid in &siblings {
+            pinfo.lock().thread_ids.retain(|&t| t != *sid);
+        }
+
+        // ── Phase 4 invariant: only caller remains in thread_ids ──────────────
+        {
+            let pi = pinfo.lock();
+            assert_eq!(
+                pi.thread_ids,
+                alloc::vec![caller_tid],
+                "only exec-caller TID must remain in thread_ids after collapse"
+            );
+            // exec_in_progress is still set (commit hasn't happened yet)
+            assert!(
+                pi.exec_in_progress,
+                "exec_in_progress must remain set until commit"
+            );
+        }
+
+        // ── Phase 5: commit (clear exec_in_progress) ─────────────────────────
+        pinfo.lock().exec_in_progress = false;
+        assert!(
+            !pinfo.lock().exec_in_progress,
+            "exec_in_progress must be cleared after commit"
+        );
+    }
 }

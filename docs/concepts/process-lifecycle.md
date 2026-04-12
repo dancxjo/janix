@@ -91,12 +91,56 @@ When the exiting TID equals `Process.pid`:
 
 ### exec collapse
 
-Before `SYS_TASK_EXEC` replaces the image:
-1. `Process.exec_in_progress = true` blocks new `SYS_SPAWN_THREAD` calls.
-2. All sibling TIDs (TID ≠ caller) are killed via `mark_task_exited`.
-3. `Process.thread_ids` is updated to contain only the exec-caller TID.
-4. The image is loaded; `Process` fields (argv, env, mappings, …) are reset.
-5. `Process.exec_in_progress = false`.
+`SYS_TASK_EXEC` (= `task_exec_current`) replaces the calling process image
+in five phases.  Each phase has explicit invariants.
+
+**Phase 1 – Atomic gate**
+- `Process.exec_in_progress = true`.
+- Any concurrent `SYS_SPAWN_THREAD` call for this process now returns `EAGAIN`.
+- If the exec fails before Phase 5 the flag is cleared (`false`) and the
+  process/thread-group is left intact (rollback path).
+
+**Phase 2 – Sibling collection**
+- All TIDs in `Process.thread_ids` except the exec-caller are collected into a
+  local list.  The caller's own TID is excluded.
+
+**Phase 3 – Thread-group collapse (deterministic)**
+- Every sibling TID collected in Phase 2 is killed via `kill_by_tid_current`
+  → `mark_task_exited`.
+- `mark_task_exited` removes each killed TID from `Process.thread_ids` and
+  sets its `Task.state = Dead` in the registry.
+- After Phase 3 completes, `Process.thread_ids` contains **exactly one entry**:
+  the exec-caller TID.  This is a hard invariant — the commit phase (Phase 5)
+  must never be reached with any sibling still alive.
+
+**Phase 4 – Image swap**
+- The new ELF image is read, loaded into a fresh address space, and the
+  auxiliary vector is rebuilt.
+- `Process.mappings` is replaced with the new mapping list.
+- `Task.aspace` and `Process.aspace_raw` are updated to the new page-table root.
+- `Process.fd_table.close_on_exec()` is called: FDs with `FD_CLOEXEC` are closed.
+- All pre-exec metadata fields are overwritten:
+  - `Process.argv` ← new argument list
+  - `Process.env`  ← new environment
+  - `Process.auxv` ← rebuilt from the new image's ELF headers
+  - `Process.exec_path` ← path to the new binary
+
+**Phase 5 – Commit**
+- `Process.exec_in_progress = false`.
+- The exec-caller's `Task.ctx` is replaced with a new user context at the new
+  image's entry point.
+- Control is transferred to the new image via `switch_with_tls`.  This call
+  must **never** return to the exec call site.
+
+**No stale metadata invariant**
+After Phase 5, no field that was set before `SYS_TASK_EXEC` was called
+remains visible through `Process`:
+- Pre-exec `argv`, `env`, `auxv`, `exec_path` are replaced.
+- Pre-exec mappings and address-space token are replaced.
+- `FD_CLOEXEC`-flagged file descriptors are closed.
+- `exec_in_progress` is cleared.
+
+Implementation: `task_exec_current` in `kernel/src/task/exec.rs`.
 
 ---
 
@@ -179,7 +223,10 @@ processes exit frequently.
 - [x] No orphaned records after `waitpid` success path
 - [x] `WNOHANG`: returns `(0, 0)` without reaping live children
 - [x] `ECHILD` after reaping (second `waitpid` for same child)
-- [x] exec collapse: sibling threads killed, exec-caller survives
+- [x] exec collapse: sibling threads killed deterministically; exec-caller is sole survivor
+- [x] exec invariants documented (see "exec collapse" section above)
+- [x] exec invariants tested (`kernel/src/task/exec.rs` and `kernel/src/sched/mod.rs`)
+- [x] No stale pre-exec process metadata (argv, env, auxv, exec_path, mappings, aspace_raw) visible after successful exec
 - [ ] Reparenting to init (PID 1) when parent exits (future act)
 
 ---

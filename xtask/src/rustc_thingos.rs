@@ -553,7 +553,6 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
                  ISO will not include a native compiler this run."
             );
         }
-        let _ = staged;
     } else {
         println!(
             "rustc-thingos: mode: Linux-hosted cross-compiler only (default, stable)."

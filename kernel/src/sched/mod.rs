@@ -1463,21 +1463,20 @@ fn waitpid_for_pid<R: BootRuntime>(
         // Fast path: look for a dead child without registering.
         for &child_tid in &children {
             // Collect exit info without holding the registry guard across the reap call.
-            let dead_info = {
-                crate::task::registry::get_task::<R>(child_tid).and_then(|task| {
-                    if task.state == TaskState::Dead {
-                        let code = task.exit_code.unwrap_or(0);
-                        let child_pid = task
-                            .process_info
-                            .as_ref()
-                            .map(|pi| pi.lock().pid as u64)
-                            .unwrap_or(child_tid);
-                        Some((child_pid, code))
-                    } else {
-                        None
-                    }
-                })
-            }; // ThreadRef (registry guard) dropped here.
+            let dead_info = crate::task::registry::get_task::<R>(child_tid).and_then(|task| {
+                // `task` (ThreadRef / registry guard) is dropped when this closure returns.
+                if task.state == TaskState::Dead {
+                    let code = task.exit_code.unwrap_or(0);
+                    let child_pid = task
+                        .process_info
+                        .as_ref()
+                        .map(|pi| pi.lock().pid as u64)
+                        .unwrap_or(child_tid);
+                    Some((child_pid, code))
+                } else {
+                    None
+                }
+            });
 
             if let Some((child_pid, code)) = dead_info {
                 // Reap: remove the dead child's record from the registry so it

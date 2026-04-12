@@ -258,7 +258,6 @@ fn run_pipeline(cmds: &[Cmd]) {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let _ = vfs_write(1, b"janix sh\n");
-    info!("SH: TID is {}", stem::syscall::get_tid().unwrap_or(0));
 
     loop {
         prompt();

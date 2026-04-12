@@ -21,8 +21,11 @@ That distinction matters:
 ```bash
 just fetch-rust
 just rust-apply-patches
-BUILD_RUSTC=1 cargo xtask rustc-thingos
+cargo xtask rustc-thingos
 ```
+
+To opt out of this build step in composite flows (`xtask iso/run/run-hdd`), set
+`SKIP_RUSTC_THINGOS=1`.
 
 Inside `cargo xtask rustc-thingos`:
 
@@ -111,7 +114,7 @@ the cached bootstrap compiler and sysroot.
 
 In practice:
 
-- `BUILD_RUSTC=1 cargo xtask ...` uses the cached compiler path
+- `cargo xtask ...` uses the cached compiler path by default (unless `SKIP_RUSTC_THINGOS=1`)
 - plain `cargo ...` does not
 
 If plain Cargo is used directly, it may try to compile the patched ThingOS

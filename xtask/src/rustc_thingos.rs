@@ -2,7 +2,7 @@
 //! (runs on linux-gnu, targets ThingOS).
 //!
 //! # Environment variables
-//! * `BUILD_RUSTC=1` – enable the build (off by default).
+//! * `SKIP_RUSTC_THINGOS=1` – skip the build (on by default).
 //!
 //! # Caching
 //! The build is considered up-to-date when both of these conditions hold:
@@ -19,9 +19,9 @@
 use crate::common::Result;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};
 
 /// Where the cached rustc binary lives (relative to the project root).
@@ -143,13 +143,11 @@ fn cache_rustlib_tree(sh: &Shell, cwd: &Path) -> Result<()> {
         for entry in std::fs::read_dir(&host_lib)? {
             let entry = entry?;
             let path = entry.path();
-            let keep = matches!(
-                path.extension().and_then(|ext| ext.to_str()),
-                Some("so")
-            ) || path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.contains(".so."));
+            let keep = matches!(path.extension().and_then(|ext| ext.to_str()), Some("so"))
+                || path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.contains(".so."));
             if keep {
                 let file_name = path.file_name().unwrap();
                 std::fs::copy(&path, cached_lib.join(file_name))?;
@@ -266,8 +264,8 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
 
-    // Honour the opt-in env-var.
-    if std::env::var("BUILD_RUSTC").as_deref() != Ok("1") {
+    // Allow explicit opt-out for faster dev loops.
+    if std::env::var("SKIP_RUSTC_THINGOS").as_deref() == Ok("1") {
         return Ok(None);
     }
 
@@ -342,7 +340,7 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
 /// machine but not yet runnable inside the ThingOS image.
 pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
     let _ = (sh, iso_root);
-    if std::env::var("BUILD_RUSTC").as_deref() != Ok("1") {
+    if std::env::var("SKIP_RUSTC_THINGOS").as_deref() == Ok("1") {
         return Ok(());
     }
     println!(

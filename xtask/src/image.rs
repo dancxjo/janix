@@ -792,13 +792,15 @@ fn build_userspace_app_with_features(
     // target/rustc-thingos/.
     let stage1_rustc = cwd.join("target/rustc-thingos/rustc");
     let stage1_rustc_wrapper = cwd.join("target/rustc-thingos/rustc-wrapper");
+    let skip_rustc_thingos = std::env::var("SKIP_RUSTC_THINGOS").as_deref() == Ok("1");
     let use_fork_rustc = target.ends_with(".json")
         && target.contains("thingos")
+        && target.contains("x86_64-unknown-thingos")
         && stage1_rustc.exists()
         && stage1_rustc_wrapper.exists()
-        && std::env::var("BUILD_RUSTC").as_deref() == Ok("1");
+        && !skip_rustc_thingos;
 
-    let build_std_crates = if std::env::var("BUILD_RUSTC").as_deref() == Ok("1") {
+    let build_std_crates = if use_fork_rustc {
         "core,alloc,std,panic_abort"
     } else {
         "core,alloc,panic_abort"

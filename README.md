@@ -262,7 +262,7 @@ Thing-OS uses a fork of the Rust compiler and standard library to support its cu
 - **Submodules**: Manual changes to submodules (like LLVM) should be documented alongside the corresponding patch snapshot.
 
 Current bootstrap note:
-- `BUILD_RUSTC=1 cargo xtask rustc-thingos` currently produces a Linux-hosted cross-compiler plus a ThingOS target sysroot cache. It does not yet produce a ThingOS-hosted `/bin/rustc` for ISO staging.
+- `cargo xtask rustc-thingos` (run by default in ISO/run flows unless `SKIP_RUSTC_THINGOS=1` is set) currently produces a Linux-hosted cross-compiler plus a ThingOS target sysroot cache. It does not yet produce a ThingOS-hosted `/bin/rustc` for ISO staging.
 
 Workflow:
 1. `just fetch-rust` (clones the fork)

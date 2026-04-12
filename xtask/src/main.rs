@@ -23,9 +23,7 @@ use xshell::Shell;
 use crate::bdd::bdd;
 use crate::build::build;
 use crate::clean::{clean, distclean};
-use crate::common::{
-    COLOR_BLUE, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW, project_root,
-};
+use crate::common::{COLOR_BLUE, COLOR_GREEN, COLOR_RED, COLOR_RESET, COLOR_YELLOW, project_root};
 use crate::fetch::fetch;
 use crate::image::{
     IsoConfig, ProgramConfig, build_hdd, build_iso, build_iso_with_config, default_programs,
@@ -169,7 +167,8 @@ enum Commands {
     Fetch,
     /// Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos
     ///
-    /// Set BUILD_RUSTC=1 to enable this step.
+    /// This step is enabled by default.
+    /// Set SKIP_RUSTC_THINGOS=1 to skip it.
     /// The result is cached under target/rustc-thingos/ and keyed on the
     /// target JSON spec plus rust-toolchain.toml.
     RustcThingos,
@@ -204,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
+            // Build rustc for thingos unless explicitly skipped.
             rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
@@ -220,7 +219,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 build_iso(&sh, &env, &programs)?
             };
-            println!("{}ISO generated at: {}{}", COLOR_GREEN, path.display(), COLOR_RESET);
+            println!(
+                "{}ISO generated at: {}{}",
+                COLOR_GREEN,
+                path.display(),
+                COLOR_RESET
+            );
         }
         Commands::Hdd { env, profile, init } => {
             limine(&sh)?;
@@ -229,7 +233,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut programs = default_programs();
             apply_init(&mut programs, init);
             let path = build_hdd(&sh, &env, &programs)?;
-            println!("{}HDD generated at: {}{}", COLOR_GREEN, path.display(), COLOR_RESET);
+            println!(
+                "{}HDD generated at: {}{}",
+                COLOR_GREEN,
+                path.display(),
+                COLOR_RESET
+            );
         }
         Commands::Run {
             env,
@@ -242,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
+            // Build rustc for thingos unless explicitly skipped.
             rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
@@ -271,7 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            // Build rustc for thingos (currently disabled - see docs/status/rustc_build.md).
+            // Build rustc for thingos unless explicitly skipped.
             rustc_thingos::build_rustc_thingos(&sh, &env)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);

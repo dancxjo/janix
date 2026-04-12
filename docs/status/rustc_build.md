@@ -3,8 +3,8 @@
 ## Summary
 
 The Linux-hosted stage-1 cross-compiler bootstrap **succeeds** as of April 12,
-2026.  Running `BUILD_RUSTC=1 cargo xtask rustc-thingos` (or
-`BUILD_RUSTC=1 just rustc-thingos`) drives `x.py` through all three stages
+2026.  Running `cargo xtask rustc-thingos` (or
+`just rustc-thingos`) drives `x.py` through all three stages
 successfully and caches the result under `target/rustc-thingos/`.
 
 The produced compiler is a **Linux-hosted cross-compiler** — it runs on
@@ -58,7 +58,8 @@ intentionally disabled.
 - `xtask/src/image.rs` calls `stage_rustc_for_iso(sh, iso_root)` (line ~638).
 - `xtask/src/main.rs` calls `rustc_thingos::build_rustc_thingos(&sh, &env)` in
   all ISO/run paths.
-- `build_rustc_thingos` respects the `BUILD_RUSTC=1` env-var gate.
+- `build_rustc_thingos` runs by default and respects the `SKIP_RUSTC_THINGOS=1`
+  env-var opt-out gate.
 - `stage_rustc_for_iso` prints an advisory message and returns `Ok(())` without
   copying anything — intentionally, because the cached binary is a Linux ELF.
 
@@ -89,7 +90,7 @@ directly to the `dancxjo/rust-thingos` fork.
 
 ## Current artifact layout
 
-After a successful `BUILD_RUSTC=1 cargo xtask rustc-thingos`, the bootstrap
+After a successful `cargo xtask rustc-thingos`, the bootstrap
 writes artifacts to the repository-root `build/` tree:
 
 ```text

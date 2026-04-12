@@ -181,8 +181,8 @@ bristle arch=karch: fetch-rust
 
 # Build and cache the current stage-1 Rust bootstrap output.
 # Today this produces a Linux-hosted cross-compiler for x86_64-unknown-thingos
-# plus a cached rustlib tree under target/rustc-thingos/. Set BUILD_RUSTC=1
-# to enable.
+# plus a cached rustlib tree under target/rustc-thingos/. Set
+# SKIP_RUSTC_THINGOS=1 to opt out.
 rustc-thingos: fetch-rust rust-apply-patches
     cargo xtask rustc-thingos
 

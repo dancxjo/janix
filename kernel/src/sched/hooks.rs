@@ -68,7 +68,7 @@ pub(crate) static mut PROCESS_INFO_HOOK: Option<fn() -> Option<Arc<Mutex<Process
 pub(crate) static mut PROCESS_INFO_FOR_TID_HOOK: Option<
     fn(u64) -> Option<Arc<Mutex<ProcessInfo>>>,
 > = None;
-pub(crate) static mut GRAPH_THING_FOR_CURRENT_HOOK: Option<fn() -> Option<u64>> = None;
+pub(crate) static mut CURRENT_RESOURCE_HOOK: Option<fn() -> Option<u64>> = None;
 pub(crate) static mut POLL_TASK_EXIT_HOOK: Option<fn(TaskId) -> Result<Option<i32>, Errno>> = None;
 pub(crate) static mut REGISTER_TASK_EXIT_WAITER_HOOK: Option<
     fn(TaskId, TaskId) -> Result<Option<i32>, Errno>,
@@ -362,8 +362,8 @@ pub unsafe fn spawn_process_ex_current(
     }
 }
 
-pub unsafe fn graph_thing_for_current() -> Option<u64> {
-    if let Some(hook) = unsafe { GRAPH_THING_FOR_CURRENT_HOOK } {
+pub unsafe fn current_task_resource_id() -> Option<u64> {
+    if let Some(hook) = unsafe { CURRENT_RESOURCE_HOOK } {
         hook()
     } else {
         None

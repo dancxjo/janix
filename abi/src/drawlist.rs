@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-/// Packed drawlist wire format for graph-native rendering.
+/// Packed drawlist wire format for VFS-native rendering.
 ///
 /// # Layout
 /// ```text

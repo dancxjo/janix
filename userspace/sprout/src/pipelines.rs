@@ -191,7 +191,7 @@ fn probe_bootfb_vfs() -> Option<(u32, u32, u32, u32)> {
         }
     };
     let mut payload = FbInfoPayload {
-        graph_id: 0,
+        device_handle: 0,
         width: 0,
         height: 0,
         stride: 0,

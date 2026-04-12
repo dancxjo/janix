@@ -221,35 +221,39 @@ fn recv_fds(channel: u32) -> (u32, u32) {
 The kernel re-numbers each thing in the receiver's thing table.  Duplicate
 semantics: the sender retains its own thing.
 
-### Legacy API (compatibility): `channel_send_handle` / `channel_recv_handle`
+### Legacy API (deprecated): `channel_send_handle` / `channel_recv_handle`
+
+> **⚠ Deprecated**: Use `channel_send_msg` / `channel_recv_msg` instead.  The
+> old single-handle API is retained only for backward compatibility.  New code
+> must use the atomic FD-passing APIs shown in the section above.
 
 The old single-thing API is still supported as a compatibility wrapper:
 
 ```rust
-use stem::syscall::channel::{channel_send_handle, channel_recv_handle, channel_send_all, channel_recv};
+use stem::syscall::channel::{channel_recv_msg, channel_send_msg, channel_send_all, channel_recv};
 
-// Sender:
+// Sender (FD-first):
 fn send_fd(channel: u32, fd: u32) {
-    channel_send_handle(channel, fd).expect("send_handle");
-    channel_send_all(channel, b"fd-ready").expect("send");
+    channel_send_msg(channel, b"fd-ready", &[fd]).expect("send_msg");
 }
 
-// Receiver:
+// Receiver (FD-first):
 fn recv_fd(channel: u32) -> u32 {
-    let new_fd = channel_recv_handle(channel).expect("recv_handle");
     let mut tag = [0u8; 8];
-    channel_recv(channel, &mut tag).expect("recv");
+    let mut fds = [0u32; 1];
+    let (_, n_fds) = channel_recv_msg(channel, &mut tag, &mut fds).expect("recv_msg");
     assert_eq!(&tag, b"fd-ready");
-    new_fd
+    assert_eq!(n_fds, 1);
+    fds[0]
 }
 ```
 
 The kernel re-numbers the fd in the receiver's fd table.  The receiver can
-use `new_fd` with any `SYS_FS_*` syscall immediately.
+use the received fd with any `SYS_FS_*` syscall immediately.
 
-> **Note**: The new `channel_send_msg` / `channel_recv_msg` API is preferred
-> for all new code.  The old `send_handle` / `recv_handle` pair is kept for
-> backward compatibility and is implemented as a thin wrapper.
+> **Note**: The `channel_send_msg` / `channel_recv_msg` API bundles data and
+> FDs atomically in a single message, eliminating ordering races between the
+> data queue and capability queue that existed in the old split API.
 
 ---
 
@@ -439,7 +443,7 @@ See `docs/concepts/supervisor_protocol.md` for the full specification and
 Minimal sketch:
 
 ```rust
-use stem::syscall::channel::{channel_create, channel_send_handle, channel_send_all, channel_try_recv};
+use stem::syscall::channel::{channel_create, channel_send_msg, channel_recv_msg};
 use abi::supervisor_protocol::{self, classes};
 use abi::vfs_rpc::VFS_RPC_MAX_REQ;
 
@@ -447,7 +451,7 @@ fn register_driver(drv_req_read: u32, drv_resp_write: u32, bind_instance_id: u64
     // 1. Create provider channel.
     let (vfs_write, vfs_read) = channel_create(VFS_RPC_MAX_REQ * 8).unwrap();
 
-    // 2. Send provider thing + BIND_READY.
+    // 2. Send provider FD + BIND_READY atomically (FD-first).
     let payload = supervisor_protocol::BindReadyPayload {
         bind_instance_id,
         class_mask: classes::DISPLAY_CARD | classes::FRAMEBUFFER,
@@ -456,14 +460,14 @@ fn register_driver(drv_req_read: u32, drv_resp_write: u32, bind_instance_id: u64
     let mut payload_bytes = [0u8; supervisor_protocol::BIND_READY_PAYLOAD_SIZE];
     supervisor_protocol::encode_bind_ready_le(&payload, &mut payload_bytes);
 
-    channel_send_handle(drv_resp_write, vfs_write).unwrap();
-    // encode into a framed message…
-    channel_send_all(drv_resp_write, &payload_bytes).unwrap();
+    // Bundle BIND_READY data and the provider FD atomically.
+    channel_send_msg(drv_resp_write, &payload_bytes, &[vfs_write]).unwrap();
 
-    // 3. Wait for BIND_ASSIGNED.
+    // 3. Wait for BIND_ASSIGNED (received via channel_recv_msg).
     let mut buf = [0u8; 256];
+    let mut fds = [0u32; 0];
     loop {
-        if let Ok(n) = channel_try_recv(drv_req_read, &mut buf) {
+        if let Ok((n, _)) = channel_recv_msg(drv_req_read, &mut buf, &mut fds) {
             // parse msg_type, check for MSG_BIND_ASSIGNED …
             break;
         }

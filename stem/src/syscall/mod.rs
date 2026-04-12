@@ -76,16 +76,18 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
+#[allow(deprecated)]
 pub use channel::{
-    channel_capacity, channel_close, channel_create, channel_len, channel_recv,
+    channel_capacity, channel_close, channel_create, channel_create_fds, channel_len, channel_recv,
     channel_recv_handle, channel_recv_msg, channel_send, channel_send_all, channel_send_handle,
     channel_send_msg, channel_try_recv, channel_wait, ChannelHandle,
 };
 pub use vfs::{
     dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_chmod, vfs_close, vfs_fcntl, vfs_fchmod,
-    vfs_fsync, vfs_futimes, vfs_getcwd, vfs_isatty, vfs_mkdir, vfs_mount, vfs_open, vfs_poll,
-    vfs_read, vfs_readdir, vfs_readv, vfs_realpath, vfs_rename, vfs_seek, vfs_stat, vfs_umount,
-    vfs_unlink, vfs_utimes, vfs_watch_fd, vfs_watch_path, vfs_write, vfs_writev,
+    vfs_fd_from_handle, vfs_fsync, vfs_futimes, vfs_getcwd, vfs_isatty, vfs_mkdir, vfs_mount,
+    vfs_open, vfs_poll, vfs_read, vfs_readdir, vfs_readv, vfs_realpath, vfs_rename, vfs_seek,
+    vfs_stat, vfs_umount, vfs_unlink, vfs_utimes, vfs_watch_fd, vfs_watch_path, vfs_write,
+    vfs_writev,
 };
 pub use wait::wait_many;
 

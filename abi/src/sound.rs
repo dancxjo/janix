@@ -15,7 +15,7 @@
 ///
 /// The correct long-term design is:
 /// 1. Publish a **channel** handle for the control/discovery endpoint.
-/// 2. Use `channel_send_handle` to deliver a pipe write-end to each client.
+/// 2. Use `channel_send_msg` to deliver a pipe write-end FD to each client.
 /// 3. Use `vfs_write` / `vfs_read` for the raw PCM byte stream.
 ///
 /// Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
@@ -27,7 +27,7 @@ pub struct AudioInfoPayload {
     /// Channel handle — write end (app → driver PCM byte stream).
     ///
     /// Legacy: this is a channel handle repurposed as a byte-stream endpoint.
-    /// New code should obtain a pipe write-end via `channel_send_handle` on a
+    /// New code should obtain a pipe write-end FD via `channel_send_msg` on a
     /// dedicated connect channel instead.
     pub write_handle: u32,
     /// Channel handle — read end (driver ← app PCM byte stream).

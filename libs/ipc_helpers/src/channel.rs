@@ -52,11 +52,16 @@ pub fn recv_blocking(handle: ChannelHandle, buf: &mut [u8]) -> Result<usize, Err
 ///
 /// **Prefer [`send_msg_blocking`] for new code**, which atomically bundles
 /// data and handles in a single message.
+#[deprecated(
+    note = "Use `send_msg_blocking(channel, message, &[cap])` instead, \
+            which bundles data and FDs atomically"
+)]
 pub fn send_cap_and_message(
     channel: ChannelHandle,
     cap: u32,
     message: &[u8],
 ) -> Result<(), Errno> {
+    #[allow(deprecated)]
     channel_send_handle(channel, cap)?;
     send_all_blocking(channel, message)
 }
@@ -67,10 +72,15 @@ pub fn send_cap_and_message(
 ///
 /// **Prefer [`recv_msg_blocking`] for new code**, which atomically reads
 /// data and handles together.
+#[deprecated(
+    note = "Use `recv_msg_blocking(channel, buf, &mut fds)` instead, \
+            which receives data and FDs atomically"
+)]
 pub fn recv_cap_and_message(
     channel: ChannelHandle,
     buf: &mut [u8],
 ) -> Result<(u32, usize), Errno> {
+    #[allow(deprecated)]
     let new_fd = channel_recv_handle(channel)?;
     let n = recv_blocking(channel, buf)?;
     Ok((new_fd, n))

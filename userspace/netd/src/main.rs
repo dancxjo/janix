@@ -85,6 +85,10 @@ fn main(_arg: usize) -> ! {
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
     let mut last_link_state = device.link_up();
 
+    // Bridge the request-read port to an FD for FD-first polling.
+    let req_fd = stem::syscall::vfs::vfs_fd_from_handle(net_provider.req_read_port())
+        .unwrap_or(0);
+
     loop {
         let mut did_work = false;
 
@@ -118,10 +122,12 @@ fn main(_arg: usize) -> ! {
         socket_api.gc_closed_sockets(&mut socket_set);
 
         if !did_work {
-            let _ = stem::syscall::channel::channel_wait(
-                &[net_provider.req_read_port()],
-                abi::syscall::channel_wait::READABLE,
-            );
+            let mut pollfds = [abi::syscall::PollFd {
+                fd: req_fd as i32,
+                events: abi::syscall::poll_flags::POLLIN,
+                revents: 0,
+            }];
+            let _ = stem::syscall::vfs::vfs_poll(&mut pollfds, u64::MAX);
         }
     }
 }

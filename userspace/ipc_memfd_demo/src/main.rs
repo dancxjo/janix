@@ -14,7 +14,7 @@
 //! 4. **Unmap and re-map** — verifies that data survives an unmap/remap cycle
 //!    (simulating what a compositor would do after receiving the fd).
 //! 5. **Pass the fd** — in a real multi-process scenario the fd would be
-//!    transferred to a consumer process via `channel_send_handle`.  See
+//!    transferred to a consumer process via `channel_send_msg`.  See
 //!    `docs/concepts/ipc_cookbook.md` Recipe 5 for the full multi-process
 //!    version.
 //!

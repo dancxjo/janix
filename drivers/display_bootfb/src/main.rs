@@ -160,9 +160,12 @@ fn main(boot_fd: usize) -> ! {
             &ready_bytes[..len],
         ) {
             debug!("display_bootfb: Sending MSG_BIND_READY handshake...");
-            // Send both handle and notification to our dedicated response channel
-            let _ = stem::syscall::channel_send_handle(drv_resp_write, vfs_write);
-            let _ = stem::syscall::channel_send_all(drv_resp_write, &buf[..total_len]);
+            // Bundle the VFS provider handle and the BIND_READY notification atomically.
+            let _ = stem::syscall::channel::channel_send_msg(
+                drv_resp_write,
+                &buf[..total_len],
+                &[vfs_write],
+            );
             debug!("display_bootfb: Sent MSG_BIND_READY, waiting for MSG_BIND_ASSIGNED...");
         }
     }
@@ -230,7 +233,11 @@ fn main(boot_fd: usize) -> ! {
                 supervisor_protocol::MSG_SERVICE_READY,
                 &payload_bytes[..p_len],
             ) {
-                let _ = stem::syscall::channel_send_all(drv_resp_write, &svc_buf[..total_len]);
+                let _ = stem::syscall::channel::channel_send_msg(
+                    drv_resp_write,
+                    &svc_buf[..total_len],
+                    &[],
+                );
                 debug!("display_bootfb: Sent MSG_SERVICE_READY.");
             }
         }

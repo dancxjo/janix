@@ -232,8 +232,6 @@ impl Supervisor {
         };
         use stem::syscall::{channel_send_all, vfs_mount};
 
-        let mut buf = [0u8; 1024];
-
         let mut tasks_vec = self.tasks.lock();
         if tasks_vec.is_empty() {
             // stem::debug!("SPROUT: No tasks to process registrations for.");
@@ -245,16 +243,28 @@ impl Supervisor {
                 continue;
             }
 
-            // stem::debug!("SPROUT: Polling task {} on port {}...", task.name, task.drv_resp_read);
-
-            while let Ok(n) = stem::syscall::channel_try_recv(task.drv_resp_read, &mut buf) {
+            // Drain all pending messages from the MSG QUEUE on this driver's response channel.
+            // Drivers now send all supervisor messages (BIND_READY, SERVICE_READY, etc.) via
+            // channel_send_msg so that FDs and data are bundled atomically in a single message.
+            let mut msg_data = [0u8; 1024];
+            let mut msg_fds = [0u32; 1];
+            while let Ok((n, n_fds)) = stem::syscall::channel::channel_recv_msg(
+                task.drv_resp_read,
+                &mut msg_data,
+                &mut msg_fds,
+            ) {
                 stem::debug!(
-                    "SPROUT: Received {} bytes from task {} (tid={})",
+                    "SPROUT: Received {} bytes (fds={}) from task {} (tid={})",
                     n,
+                    n_fds,
                     task.name,
                     task.pid.unwrap_or(0)
                 );
-                if let Some((header, payload)) = display_driver_protocol::parse_message(&buf[..n]) {
+                // Extract the optional provider FD that was bundled with the message.
+                let bundled_fd = if n_fds > 0 { msg_fds[0] } else { 0 };
+                if let Some((header, payload)) =
+                    display_driver_protocol::parse_message(&msg_data[..n])
+                {
                     stem::debug!(
                         "SPROUT: Received message type {} from {}",
                         header.msg_type,
@@ -298,27 +308,22 @@ impl Supervisor {
                                 ready.class_mask
                             );
 
-                            // 1. Extract provider port
-                            // Drivers send the vfs handle BEFORE the BIND_READY message
-                            let mut provider_port = 0;
-                            match stem::syscall::channel_recv_handle(task.drv_resp_read) {
-                                Ok(p) => {
-                                    provider_port = p;
-                                    stem::debug!(
-                                        "SPROUT: Received VFS provider handle {} from {}",
-                                        p,
-                                        task_name
-                                    );
-                                }
-                                Err(e) => {
-                                    warn!("SPROUT: Failed to receive VFS provider handle from {}: {:?}", task_name, e);
-                                    send_bind_failed(
-                                        task.drv_req_write,
-                                        ready.bind_instance_id,
-                                        supervisor_protocol::errors::ERR_NO_PROVIDER_HANDLE,
-                                        b"no provider handle attached",
-                                    );
-                                }
+                            // 1. Extract provider port (bundled in the same message as BIND_READY)
+                            let provider_port = bundled_fd;
+                            if provider_port != 0 {
+                                stem::debug!(
+                                    "SPROUT: Received VFS provider handle {} from {}",
+                                    provider_port,
+                                    task_name
+                                );
+                            } else {
+                                warn!("SPROUT: BIND_READY from {} carried no provider FD — rejecting", task_name);
+                                send_bind_failed(
+                                    task.drv_req_write,
+                                    ready.bind_instance_id,
+                                    supervisor_protocol::errors::ERR_NO_PROVIDER_HANDLE,
+                                    b"no provider handle attached",
+                                );
                             }
 
                             if provider_port != 0 {

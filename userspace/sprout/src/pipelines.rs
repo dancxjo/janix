@@ -879,7 +879,7 @@ pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
         &[],
     ) {
         Ok(resp) => {
-            debug!("SPROUT: Spawned serial shell (PID={})", resp.child_tid);
+            info!("SPROUT: Spawned serial shell (PID={})", resp.child_tid);
             let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
                 name: "sh".to_string(),

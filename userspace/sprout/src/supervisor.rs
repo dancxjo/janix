@@ -170,13 +170,24 @@ impl Supervisor {
         }
     }
 
-    fn monitor(&mut self) {
+    pub fn monitor(&mut self) {
         let mut tasks = self.tasks.lock();
+        if tasks.is_empty() {
+            // Only log every few iterations to avoids spam
+            return;
+        }
         for task in tasks.iter_mut() {
             if let Some(pid) = task.pid {
                 match stem::syscall::task_poll(pid) {
                     Ok((status, code)) => {
+                        stem::info!("SPROUT: Polling task '{}' (PID {}): status={:?}, code={}", task.name, pid, status, code);
                         if status == stem::abi::types::TaskStatus::Dead {
+                            info!("SPROUT: Task '{}' (PID {}) is Dead (code {})", task.name, pid, code);
+                            if task.name == "sh" {
+                                info!("SPROUT: Shell exited. Performing system shutdown...");
+                                stem::syscall::shutdown();
+                            }
+
                             info!(
                                 "SPROUT: Task '{}' (PID {}) died with code {}. Restarting...",
                                 task.name, pid, code
@@ -362,7 +373,7 @@ impl Supervisor {
                                 // 3. Mount
                                 match vfs_mount(provider_port, &path) {
                                     Ok(()) => {
-                                        stem::debug!(
+                                        stem::info!(
                                             "SPROUT: Sovereign mount success: {} -> {}",
                                             task_name,
                                             path

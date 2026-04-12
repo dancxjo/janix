@@ -7,7 +7,7 @@ extern crate alloc;
 use abi::syscall::vfs_flags;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write};
+use stem::{info, syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write}};
 
 fn prompt() {
     let mut buf = [0u8; 256];
@@ -258,6 +258,7 @@ fn run_pipeline(cmds: &[Cmd]) {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let _ = vfs_write(1, b"janix sh\n");
+    info!("SH: TID is {}", stem::syscall::get_tid().unwrap_or(0));
 
     loop {
         prompt();
@@ -307,5 +308,6 @@ fn main(_arg: usize) -> ! {
         run_pipeline(&cmds);
     }
 
+    let _ = vfs_write(1, b"SH EXITING\n");
     stem::syscall::exit(0)
 }

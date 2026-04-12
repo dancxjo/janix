@@ -24,8 +24,16 @@ fn main(_arg: usize) -> ! {
     stem::debug!("Bloom: VFS-native compositor starting...");
 
     // 1. Discover card at /dev/display/cardN
-    let card_path = find_display_card().expect("No display card found!");
-    stem::debug!("Bloom: Selected display card: {}", card_path);
+    let mut card_path = None;
+    for _ in 0..50 {
+        if let Some(path) = find_display_card() {
+            card_path = Some(path);
+            break;
+        }
+        stem::sleep_ms(100);
+    }
+    let card_path = card_path.expect("No display card found after retry!");
+    stem::info!("Bloom: Selected display card: {}", card_path);
 
     let fd = vfs_open(&card_path, O_RDONLY).expect("Failed to open display card");
 

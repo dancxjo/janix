@@ -14,8 +14,6 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Clean: `just clean`
 - Audit platform boundary: `python3 scripts/audit_platform_boundary.py`
 - Rust source checkout: `just fetch-rust`
-- Apply committed Rust patches locally: `just rust-apply-patches`
-- Save `vendor/rust/` edits back to the repo patch: `just rust-save-patches`
 
 ## Top-level layout (what's what)
 - `abi/`: shared ABI types and syscalls between kernel/userspace.
@@ -60,31 +58,25 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 
 **See `docs/platform.md` for the complete platform layer contract.**
 
-## Rust patch source of truth
+## Rust source of truth
 
-When working on Rust std or `stem::pal` integration, treat `vendor/rust/` as ephemeral local state.
+Thing-OS uses a fork of the Rust compiler and standard library to support its custom target triple and VFS-first architecture.
 
-- `vendor/rust/` is not committed to the repository.
-- `just fetch-rust` populates `vendor/rust/` with the pinned upstream Rust tree only.
-- `patches/rust/` contains numbered patch files (`NN-name.patch`) applied in sorted order; these are the committed source of truth for Thing-OS Rust source modifications.
-- `just rust-apply-patches` must be run before you inspect or edit `vendor/rust/` for Thing-OS-specific behavior.
-- `just rust-save-patches [name]` saves the current diff as `patches/rust/<name>.patch` (default `thingos-pal`). Use a numbered name (e.g. `70-fs`) to target a specific logical group.
-- To split a monolithic diff into the numbered files run `python3 scripts/split_rust_patch.py`.
+- **Fork Repository**: [dancxjo/rust-thingos](https://github.com/dancxjo/rust-thingos)
+- **Local Path**: `vendor/rust/` (populated via `just fetch-rust`)
+- **Modifications**: All changes to `core`, `alloc`, `std`, or the compiler must be committed directly to the `rust-thingos` fork. This repository does not use local `.patch` files.
+- **Submodules**: Manual changes to submodules (like LLVM) are documented in `vendor/rust/submodule_patches.md`.
 
-Expected workflow:
-
-1. `just fetch-rust`
-2. `just rust-apply-patches`
-3. edit `vendor/rust/...`
-4. `just rust-save-patches`
+Workflow:
+1. `just fetch-rust` (clones the fork)
+2. Edit `vendor/rust/...`
+3. Commit and push changes to the `rust-thingos` fork repository.
+4. Run `just rust-reset` to discard local uncommitted changes if needed.
 
 Important implications:
-
 - Fresh checkouts do not have `vendor/rust/`.
-- A machine that only ran `just fetch-rust` is on unpatched upstream std.
-- `git status` in the main repo does not track whether `vendor/rust/` is patched or dirty.
-- If `vendor/rust/` is manually edited and the patch is not saved, another fetch/reset can silently discard the work.
-- CI and developer environments only converge when `patches/rust/thingos-pal.patch` is updated and committed.
+- `git status` in the main repo does not track changes inside `vendor/rust/`.
+- The `xtask` build system hashes the git revision of `vendor/rust/` to detect when the compiler needs to be rebuilt.
 
 ## Notes
 - Workspace members are listed in `Cargo.toml`.

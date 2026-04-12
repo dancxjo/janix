@@ -10,7 +10,7 @@
 //! 1. `target/rustc-thingos/rustc` exists.
 //! 2. `target/rustc-thingos/.cache-key` contains a hash derived from the
 //!    content of `targets/x86_64-unknown-thingos.json`, `rust-toolchain.toml`,
-//!    and all patch files under `patches/rust/`.  Changing any of these files
+//!    and the git revision of `vendor/rust/`. Changing any of these
 //!    invalidates the cache.
 
 use crate::common::Result;
@@ -37,27 +37,19 @@ fn compute_cache_key() -> String {
             content.hash(&mut hasher);
         }
     }
-    // Hash all patch files in patches/rust/ so that edits to any patch
-    // invalidate the cached compiler.
-    if let Ok(entries) = std::fs::read_dir("patches/rust") {
-        let mut paths: Vec<_> = entries
-            .flatten()
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("patch")
-            })
-            .map(|e| e.path())
-            .collect();
-        // Sort for determinism.
-        paths.sort();
-        for patch_path in paths {
-            if let Ok(content) = std::fs::read_to_string(&patch_path) {
-                content.hash(&mut hasher);
-            }
+
+    // Hash the current git revision of vendor/rust/ to invalidate the cache
+    // when the fork is updated.
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir("vendor/rust")
+        .output()
+    {
+        if output.status.success() {
+            output.stdout.hash(&mut hasher);
         }
     }
+
     format!("{:016x}", hasher.finish())
 }
 

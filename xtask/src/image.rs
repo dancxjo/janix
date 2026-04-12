@@ -819,7 +819,6 @@ fn build_userspace_app_with_features(
     if !std_src.exists() {
         println!("==> Rust vendor source not found. Fetching...");
         cmd!(sh, "just fetch-rust").run()?;
-        cmd!(sh, "just rust-apply-patches").run()?;
     }
 
     let mut cmd = cmd!(

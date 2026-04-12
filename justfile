@@ -27,7 +27,7 @@ build arch=karch:
 
 # Build everything (ISO) - optionally specify architecture
 # Examples: just iso, just iso aarch64
-iso arch=karch: ensure-rust-patched
+iso arch=karch: fetch-rust
     cargo xtask iso --env {{arch}} --profile {{rust_profile}}
 
 # Build HDD image
@@ -36,7 +36,7 @@ hdd arch=karch:
 
 # Run with QEMU (UEFI mode)
 # Examples: just run, just run aarch64, just run -i, just run x86_64 -i
-run *args: ensure-rust-patched
+run *args: fetch-rust
     #!/usr/bin/env bash
     set -e
     ARCH="{{karch}}"
@@ -205,7 +205,8 @@ test *args:
         {{args}}
 
 # Check everything (compilation + UI split)
-check: check-ui-split ensure-rust-patched
+check: check-ui-split fetch-rust
+    #!/usr/bin/env bash
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p sprout
 
@@ -213,51 +214,10 @@ check: check-ui-split ensure-rust-patched
 smoke:
     cargo xtask bdd --arch x86_64 --tags @smoke
 
-# --- Vendored Rust Standard Library ---
-
-# The commit hash of rust-lang/rust matching our nightly toolchain
+# The commit hash of dancxjo/rust-thingos matching our nightly toolchain
 rust_commit := "main"
 
-# Ensure the Rust stdlib patches are applied (idempotent).
-# Uses a hash of all patches to detect changes.
-ensure-rust-patched: fetch-rust
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -d vendor/rust/.git ]; then
-        echo "ERROR: vendor/rust/ not found after fetch-rust. Run: just fetch-rust" >&2
-        exit 1
-    fi
-    shopt -s nullglob
-    patches=( patches/rust/*.patch )
-    if [ ${#patches[@]} -eq 0 ]; then
-        echo "No patches found in patches/rust/. Nothing to apply."
-        exit 0
-    fi
-    # Compute current hash of all patches
-    # Sort by filename so numbered patches apply in order
-    IFS=$'\n' sorted=($(printf '%s\n' "${patches[@]}" | sort))
-    current_hash=$(sha256sum "${sorted[@]}" | sha256sum | cut -d' ' -f1)
-
-    stored_hash=""
-    if [ -f vendor/rust/.patches_hash ]; then
-        stored_hash=$(cat vendor/rust/.patches_hash)
-    fi
-
-    if [ "$current_hash" != "$stored_hash" ]; then
-        echo "==> Rust patches changed or missing. Re-applying..."
-        just rust-reset
-        cd vendor/rust
-        for p in "${sorted[@]}"; do
-            echo "  Applying $p..."
-            git apply "../../$p" || { echo "ERROR: Failed to apply $p" >&2; exit 1; }
-        done
-        echo "$current_hash" > .patches_hash
-        echo "==> Applied ${#sorted[@]} patch file(s) from patches/rust/"
-    else
-        echo "==> Rust patches already up-to-date."
-    fi
-
-# Fetch (shallow clone) the Rust source tree into vendor/rust/
+# Fetch (shallow clone) the Rust fork into vendor/rust/
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -266,7 +226,7 @@ fetch-rust:
         echo "vendor/rust already exists, skipping clone."
         echo "  To re-fetch, run: just rust-reset  (or rm -rf vendor/rust)"
     else
-        echo "==> Shallow-cloning rust-lang/rust at {{rust_commit}}..."
+        echo "==> Shallow-cloning dancxjo/rust-thingos at {{rust_commit}}..."
         git clone --depth 1 --filter=blob:none --no-checkout \
             https://github.com/dancxjo/rust-thingos.git vendor/rust
         cd vendor/rust
@@ -288,29 +248,6 @@ fetch-rust:
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
 
-
-# Save local modifications in vendor/rust/ as patches
-# Save local vendor/rust modifications as a patch.
-# Usage: just rust-save-patches [name]
-# If [name] is given (e.g. "30-fs"), saves to patches/rust/30-fs.patch.
-# Otherwise saves to patches/rust/thingos-pal.patch (legacy default).
-rust-save-patches name="thingos-pal":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mkdir -p patches/rust
-    cd vendor/rust
-    # Stage new (untracked) files so they appear in git diff
-    git add -N .
-    if git diff --quiet && git diff --cached --quiet; then
-        echo "No changes to save."
-        exit 0
-    fi
-    OUTFILE="../../patches/rust/{{name}}.patch"
-    git diff > "$OUTFILE"
-    echo "==> Saved patch to patches/rust/{{name}}.patch"
-    echo "  $(wc -l < "$OUTFILE") lines"
-    echo "  Files changed: $(grep -c '^diff' "$OUTFILE")"
-
 # Hard-reset vendor/rust/ to the pinned commit (discards local changes)
 rust-reset:
     #!/usr/bin/env bash
@@ -325,27 +262,4 @@ rust-reset:
     git checkout -- .
     git clean -fd
     echo "==> vendor/rust reset to {{rust_commit}}"
-
-# Apply all patches in patches/rust/*.patch to vendor/rust/ in sorted order.
-rust-apply-patches:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -d vendor/rust/.git ]; then
-        echo "vendor/rust does not exist. Run: just fetch-rust"
-        exit 1
-    fi
-    shopt -s nullglob
-    patches=( patches/rust/*.patch )
-    if [ ${#patches[@]} -eq 0 ]; then
-        echo "No patches found in patches/rust/. Nothing to apply."
-        exit 0
-    fi
-    # Sort by filename so numbered patches apply in order
-    IFS=$'\n' sorted=($(printf '%s\n' "${patches[@]}" | sort))
-    cd vendor/rust
-    for p in "${sorted[@]}"; do
-        echo "==> Applying $p ..."
-        git apply "../../$p"
-    done
-    echo "==> All patches applied (${#sorted[@]} files)"
 

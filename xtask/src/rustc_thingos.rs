@@ -314,12 +314,14 @@ fn cache_thingos_rustc_tree(sh: &Shell, cwd: &Path, thingos_rustc: &Path) -> Res
 ///   src/bootstrap/src/core/build_steps/compile.rs
 /// ensures `rustc_driver` is built as an rlib (static archive) for no-dylib
 /// targets, linked statically into the `rustc` binary.
-fn bootstrap_config(include_thingos_host: bool) -> String {
+fn bootstrap_config(include_thingos_host: bool, local_rebuild: bool) -> String {
     let host_list = if include_thingos_host {
         "[\"x86_64-unknown-linux-gnu\", \"x86_64-unknown-thingos\"]"
     } else {
         "[\"x86_64-unknown-linux-gnu\"]"
     };
+
+    let local_rebuild = if local_rebuild { "true" } else { "false" };
 
     format!(
         r#"change-id = "ignore"
@@ -330,7 +332,7 @@ build = "x86_64-unknown-linux-gnu"
 # then optionally try a ThingOS-native rustc pass.
 host  = {host_list}
 target = ["x86_64-unknown-linux-gnu", "x86_64-unknown-thingos"]
-local-rebuild = true
+local-rebuild = {local_rebuild}
 docs = false
 compiler-docs = false
 
@@ -388,12 +390,12 @@ fn try_build_thingos_native_rustc(sh: &Shell, cwd: &Path, rust_src: &Path) -> Re
     let target_dir = cwd.join("targets");
     let target_dir_str = target_dir.to_str().unwrap();
 
-    std::fs::write(rust_src.join("config.toml"), bootstrap_config(true))?;
+    std::fs::write(rust_src.join("config.toml"), bootstrap_config(true, true))?;
     seed_stage0_thingos_sysroot(cwd)?;
 
     let native_build = cmd!(
         sh,
-        "python3 {rust_src_str}/x.py build --stage 1 library compiler/rustc"
+        "python3 {rust_src_str}/x.py build --stage 1 compiler/rustc"
     )
     .env("RUST_TARGET_PATH", target_dir_str)
     .run();
@@ -402,7 +404,7 @@ fn try_build_thingos_native_rustc(sh: &Shell, cwd: &Path, rust_src: &Path) -> Re
         println!(
             "rustc-thingos: warning: native rustc build failed; continuing without ISO rustc: {err}"
         );
-        std::fs::write(rust_src.join("config.toml"), bootstrap_config(false))?;
+        std::fs::write(rust_src.join("config.toml"), bootstrap_config(false, true))?;
         return Ok(false);
     }
 
@@ -413,7 +415,7 @@ fn try_build_thingos_native_rustc(sh: &Shell, cwd: &Path, rust_src: &Path) -> Re
                 "rustc-thingos: ThingOS-native binary cached at {}",
                 THINGOS_RUSTC_BINARY
             );
-            std::fs::write(rust_src.join("config.toml"), bootstrap_config(false))?;
+            std::fs::write(rust_src.join("config.toml"), bootstrap_config(false, true))?;
             Ok(true)
         }
         None => {
@@ -421,7 +423,7 @@ fn try_build_thingos_native_rustc(sh: &Shell, cwd: &Path, rust_src: &Path) -> Re
                 "rustc-thingos: warning: native rustc build finished but artifact was not found; \
                  ISO will not include a native compiler."
             );
-            std::fs::write(rust_src.join("config.toml"), bootstrap_config(false))?;
+            std::fs::write(rust_src.join("config.toml"), bootstrap_config(false, true))?;
             Ok(false)
         }
     }
@@ -491,7 +493,7 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     let rust_src_str = rust_src.to_str().unwrap();
 
     // Write our bootstrap config.toml into the vendored source tree.
-    std::fs::write(rust_src.join("config.toml"), bootstrap_config(false))?;
+    std::fs::write(rust_src.join("config.toml"), bootstrap_config(false, true))?;
 
     // RUST_TARGET_PATH tells x.py where to find custom JSON target specs.
     let target_dir = cwd.join("targets");

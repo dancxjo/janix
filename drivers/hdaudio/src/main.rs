@@ -1,31 +1,34 @@
-//! Intel HDA sound driver.
+//! Intel HDA sound driver — VFS-first PCM audio.
 //!
-//! # IPC note (legacy deviation)
+//! Exposes the HDA controller as a VFS provider mounted at `/dev/audio/card0/`:
 //!
-//! This driver receives raw PCM audio data via `channel_recv` on a channel
-//! handle published in `AudioInfoPayload`.  Raw PCM is a continuous byte
-//! stream with no message boundaries — according to the IPC doctrine
-//! (`docs/concepts/channels_vs_pipes.md`) it should arrive over a **pipe**
-//! (or a memfd-backed ring for zero-copy).  The channel is used here only
-//! because `AudioInfoPayload` embeds a bare channel handle number that any
-//! process can read from a VFS file; plain pipe FDs cannot be shared
-//! cross-process without a prior capability transfer.
+//! ```text
+//! /dev/audio/card0/
+//!     ctl     — control node (AUDIO_GET_INFO device call)
+//!     out0    — PCM playback stream (write PCM, poll POLLOUT for space)
+//! ```
 //!
-//! The correct long-term architecture is:
-//! 1. A discovery channel at `/services/sound/connect`.
-//! 2. `channel_send_msg` to pass a pipe write-end FD to each connecting client.
-//! 3. `vfs_write` / `vfs_read` for the raw PCM byte stream.
-//!
-//! Tracked as part of <https://github.com/dancxjo/thing-os/issues/591>.
+//! Apps open `out0`, send an `AUDIO_SET_PARAMS` device call, then `AUDIO_START`,
+//! and stream PCM via `write()`.
 #![no_std]
 #![no_main]
 use alloc::string::ToString;
 use core::default::Default;
 extern crate alloc;
 
-
-use abi::schema::{keys, kinds};
+use abi::device::DeviceKind;
+use abi::sound::{
+    AudioParams, AudioSampleFormat, AudioState, AudioStatus, AudioStreamInfo, AUDIO_DRAIN,
+    AUDIO_GET_INFO, AUDIO_GET_PARAMS, AUDIO_GET_STATUS, AUDIO_SET_PARAMS, AUDIO_START, AUDIO_STOP,
+    format_bit,
+};
+use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::mem::size_of;
 use core::ptr::{read_volatile, write_volatile};
+use stem::syscall::channel::{channel_create, channel_send_all, channel_try_recv};
+use stem::syscall::vfs::vfs_mount;
 use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
 use stem::{debug, error, info, warn};
 
@@ -236,7 +239,8 @@ fn main(boot_fd: usize) -> ! {
         }
     }
 
-    let (write_handle, read_handle) = match stem::syscall::channel_create(65536) {
+    // ── Mount VFS provider at /dev/audio/card0/ ───────────────────────────────
+    let (req_write, req_read) = match channel_create(VFS_RPC_MAX_REQ * 16) {
         Ok(h) => h,
         Err(e) => {
             error!("HDAUDIO: channel_create failed: {:?}", e);
@@ -246,71 +250,346 @@ fn main(boot_fd: usize) -> ! {
         }
     };
 
-    // Publish service to VFS
-    use abi::sound::AudioInfoPayload;
-    use abi::syscall::vfs_flags::{O_CREAT, O_RDWR};
-    use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
-
-    let payload = AudioInfoPayload {
-        magic: AudioInfoPayload::MAGIC,
-        write_handle: write_handle as u32,
-        read_handle: read_handle as u32,
-        sample_rate: 48000,
-        channels: 2,
-        bits_per_sample: 16,
-    };
-
-    let _ = vfs_mkdir("/services/sound");
-    if let Ok(fd) = vfs_open("/services/sound/main", O_CREAT | O_RDWR) {
-        let slice = unsafe {
-            core::slice::from_raw_parts(
-                &payload as *const _ as *const u8,
-                abi::sound::AUDIO_INFO_PAYLOAD_SIZE,
-            )
-        };
-        let _ = vfs_write(fd, slice);
-        let _ = vfs_close(fd);
-        debug!("HDAUDIO: published binary PCM1 info to /services/sound/main");
-    } else {
-        warn!("HDAUDIO: failed to publish info to /services/sound/main");
+    match vfs_mount(req_write, "/dev/audio/card0") {
+        Ok(()) => info!("HDAUDIO: Mounted at /dev/audio/card0"),
+        Err(e) => warn!("HDAUDIO: vfs_mount failed: {:?}", e),
     }
 
-    debug!(
-        "HDAUDIO: stream started (write_port={}, read_port={})",
-        write_handle, read_handle
-    );
-
-    let mut in_buf = [0u8; 4096];
+    // ── Audio card state ──────────────────────────────────────────────────────
+    let mut card = HdaAudioCard::new();
+    let mut rpc_buf = vec![0u8; VFS_RPC_MAX_REQ];
+    let hdr_size = size_of::<VfsRpcReqHeader>();
     let mut total_bytes: u64 = 0;
     let mut last_log_ns = 0u64;
-    loop {
-        match stem::syscall::channel_recv(read_handle, &mut in_buf) {
-            Ok(n) if n > 0 => {
-                hda.feed_pcm(&in_buf[..n]);
-                total_bytes = total_bytes.saturating_add(n as u64);
 
+    // ── Main event loop ───────────────────────────────────────────────────────
+    loop {
+        // 1. Service VFS RPC requests (non-blocking).
+        loop {
+            match channel_try_recv(req_read, &mut rpc_buf) {
+                Ok(n) if n >= hdr_size => {
+                    let hdr: VfsRpcReqHeader = unsafe {
+                        core::ptr::read_unaligned(rpc_buf.as_ptr() as *const VfsRpcReqHeader)
+                    };
+                    let op = match VfsRpcOp::from_u8(hdr.op) {
+                        Some(o) => o,
+                        None => {
+                            let _ = channel_send_all(hdr.resp_port, &hda_resp_err(22));
+                            continue;
+                        }
+                    };
+                    let payload = &rpc_buf[hdr_size..n];
+                    let resp = hda_dispatch_rpc(op, payload, &mut card);
+                    let _ = channel_send_all(hdr.resp_port, &resp);
+
+                    // Notify subscribers when ring gains space.
+                    if card.out0_subscribed && card.ring.free_space() > 0 {
+                        let _ = stem::syscall::vfs::vfs_notify(
+                            req_write,
+                            HANDLE_OUT0,
+                            abi::syscall::poll_flags::POLLOUT,
+                        );
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        // 2. Feed HDA hardware from ring buffer.
+        let chunk = 4096usize;
+        if card.ring.available() >= chunk {
+            let mut tmp = vec![0u8; chunk];
+            let n = card.ring.dequeue(&mut tmp);
+            if n > 0 {
+                hda.feed_pcm(&tmp[..n]);
+                total_bytes = total_bytes.saturating_add(n as u64);
+                card.app_frame += n as u64;
                 let now = stem::time::monotonic_ns();
                 if now.saturating_sub(last_log_ns) > 1_000_000_000 {
                     debug!("HDAUDIO: streamed {} bytes", total_bytes);
                     last_log_ns = now;
                 }
-            }
-            Ok(_) => stem::yield_now(),
-            Err(_) => {
-                let timeout_ms = if hda.buffered_bytes() == 0 {
-                    None
-                } else {
-                    Some(stem::time::Duration::from_millis(10))
-                };
-
-                let mut ws = stem::wait_set::WaitSet::new();
-                if let Ok(_) = ws.add_port_readable(read_handle as u64) {
-                    let _ = ws.wait(timeout_ms);
-                } else {
-                    stem::time::sleep_ms(10);
+                // Notify waiting writers.
+                if card.out0_subscribed {
+                    let _ = stem::syscall::vfs::vfs_notify(
+                        req_write,
+                        HANDLE_OUT0,
+                        abi::syscall::poll_flags::POLLOUT,
+                    );
                 }
             }
+        } else {
+            stem::time::sleep_ms(1);
         }
+    }
+}
+
+// ── VFS provider handle constants ─────────────────────────────────────────────
+
+const HANDLE_ROOT: u64 = 0;
+const HANDLE_CTL: u64 = 1;
+const HANDLE_OUT0: u64 = 2;
+
+const S_IFDIR: u32 = 0o040_000;
+const S_IFREG: u32 = 0o100_000;
+
+// ── HDA ring buffer ───────────────────────────────────────────────────────────
+
+struct HdaRingBuf {
+    data: Vec<u8>,
+    head: usize,
+    tail: usize,
+    len: usize,
+    cap: usize,
+}
+
+impl HdaRingBuf {
+    fn new(capacity: usize) -> Self {
+        let cap = capacity.max(1);
+        let mut data = Vec::with_capacity(cap);
+        data.resize(cap, 0u8);
+        Self { data, head: 0, tail: 0, len: 0, cap }
+    }
+    fn free_space(&self) -> usize { self.cap - self.len }
+    fn available(&self) -> usize { self.len }
+    fn enqueue(&mut self, src: &[u8]) -> usize {
+        let n = src.len().min(self.free_space());
+        for i in 0..n {
+            self.data[self.tail] = src[i];
+            self.tail = (self.tail + 1) % self.cap;
+        }
+        self.len += n;
+        n
+    }
+    fn dequeue(&mut self, dst: &mut [u8]) -> usize {
+        let n = dst.len().min(self.len);
+        for i in 0..n {
+            dst[i] = self.data[self.head];
+            self.head = (self.head + 1) % self.cap;
+        }
+        self.len -= n;
+        n
+    }
+}
+
+// ── HDA audio card state ──────────────────────────────────────────────────────
+
+struct HdaAudioCard {
+    ring: HdaRingBuf,
+    params: AudioParams,
+    state: u32,
+    app_frame: u64,
+    xruns: u32,
+    out0_subscribed: bool,
+}
+
+impl HdaAudioCard {
+    fn new() -> Self {
+        Self {
+            ring: HdaRingBuf::new(64 * 1024),
+            params: AudioParams {
+                sample_format: AudioSampleFormat::S16LE as u32,
+                rate: 48000,
+                channels: 2,
+                period_frames: 1024,
+                buffer_frames: 4096,
+                _reserved: [0; 3],
+            },
+            state: AudioState::Stopped as u32,
+            app_frame: 0,
+            xruns: 0,
+            out0_subscribed: false,
+        }
+    }
+
+    fn stream_info(&self) -> AudioStreamInfo {
+        AudioStreamInfo {
+            supported_formats: format_bit(AudioSampleFormat::S16LE),
+            min_rate: 44100,
+            max_rate: 48000,
+            max_channels: 2,
+            min_buffer_frames: 256,
+            max_buffer_frames: 65536,
+            min_period_frames: 64,
+            current_params: self.params,
+            _reserved: [0; 4],
+        }
+    }
+
+    fn status(&self) -> AudioStatus {
+        let fmt = AudioSampleFormat::from_u32(self.params.sample_format)
+            .unwrap_or(AudioSampleFormat::S16LE);
+        let bpf = (fmt.bytes_per_sample() * self.params.channels) as usize;
+        let avail = if bpf > 0 { (self.ring.free_space() / bpf) as u32 } else { 0 };
+        AudioStatus {
+            state: self.state,
+            hw_frame: self.app_frame,
+            app_frame: self.app_frame,
+            avail_frames: avail,
+            xruns: self.xruns,
+            _reserved: [0; 4],
+        }
+    }
+}
+
+// ── VFS RPC helpers ───────────────────────────────────────────────────────────
+
+fn hda_resp_ok_u64(v: u64) -> Vec<u8> {
+    let mut b = vec![0u8; 9];
+    b[1..9].copy_from_slice(&v.to_le_bytes());
+    b
+}
+
+fn hda_resp_ok_stat(mode: u32, size: u64, ino: u64) -> Vec<u8> {
+    let mut b = vec![0u8; 21];
+    b[1..5].copy_from_slice(&mode.to_le_bytes());
+    b[5..13].copy_from_slice(&size.to_le_bytes());
+    b[13..21].copy_from_slice(&ino.to_le_bytes());
+    b
+}
+
+fn hda_resp_ok_read(data: &[u8]) -> Vec<u8> {
+    let mut b = vec![0u8; 5 + data.len()];
+    b[1..5].copy_from_slice(&(data.len() as u32).to_le_bytes());
+    b[5..].copy_from_slice(data);
+    b
+}
+
+fn hda_resp_ok_written(n: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 5];
+    b[1..5].copy_from_slice(&n.to_le_bytes());
+    b
+}
+
+fn hda_resp_ok_poll(revents: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 5];
+    b[1..5].copy_from_slice(&revents.to_le_bytes());
+    b
+}
+
+fn hda_resp_ok_dc(ret: u32, out: &[u8]) -> Vec<u8> {
+    let mut b = vec![0u8; 9 + out.len()];
+    b[1..5].copy_from_slice(&ret.to_le_bytes());
+    b[5..9].copy_from_slice(&(out.len() as u32).to_le_bytes());
+    b[9..].copy_from_slice(out);
+    b
+}
+
+fn hda_resp_err(e: u8) -> Vec<u8> { vec![e] }
+
+fn hda_encode_readdir(names: &[(&str, u32, u64)], offset: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (i, (name, ftype, ino)) in names.iter().enumerate() {
+        if (i as u64) < offset { continue; }
+        let nb = name.as_bytes();
+        let nl = nb.len().min(255) as u8;
+        out.extend_from_slice(&ino.to_le_bytes());
+        out.push(*ftype as u8);
+        out.push(nl);
+        out.extend_from_slice(&nb[..nl as usize]);
+    }
+    out
+}
+
+fn hda_dispatch_rpc(op: VfsRpcOp, payload: &[u8], card: &mut HdaAudioCard) -> Vec<u8> {
+    match op {
+        VfsRpcOp::Lookup => {
+            if payload.len() < 4 { return hda_resp_err(22); }
+            let plen = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+            let path = if payload.len() >= 4 + plen {
+                core::str::from_utf8(&payload[4..4 + plen]).unwrap_or("")
+            } else { "" };
+            let h = match path { "" => HANDLE_ROOT, "ctl" => HANDLE_CTL, "out0" => HANDLE_OUT0, _ => return hda_resp_err(2) };
+            hda_resp_ok_u64(h)
+        }
+        VfsRpcOp::Stat => {
+            if payload.len() < 8 { return hda_resp_err(22); }
+            let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+            match h {
+                HANDLE_ROOT => hda_resp_ok_stat(S_IFDIR | 0o755, 0, 1),
+                HANDLE_CTL  => hda_resp_ok_stat(S_IFREG | 0o444, 0, 2),
+                HANDLE_OUT0 => hda_resp_ok_stat(S_IFREG | 0o222, 0, 3),
+                _ => hda_resp_err(2),
+            }
+        }
+        VfsRpcOp::Readdir => {
+            if payload.len() < 20 { return hda_resp_err(22); }
+            let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+            let off = u64::from_le_bytes(payload[8..16].try_into().unwrap_or([0;8]));
+            if h != HANDLE_ROOT { return hda_resp_err(20); }
+            let entries: &[(&str, u32, u64)] = &[("ctl", S_IFREG, 2), ("out0", S_IFREG, 3)];
+            hda_resp_ok_read(&hda_encode_readdir(entries, off))
+        }
+        VfsRpcOp::Read => hda_resp_ok_read(&[]),
+        VfsRpcOp::Write => {
+            if payload.len() < 20 { return hda_resp_err(22); }
+            let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+            if h != HANDLE_OUT0 { return hda_resp_err(30); }
+            let dlen = u32::from_le_bytes(payload[16..20].try_into().unwrap_or([0;4])) as usize;
+            let data = if payload.len() >= 20 + dlen { &payload[20..20+dlen] } else { &payload[20..] };
+            let n = card.ring.enqueue(data);
+            hda_resp_ok_written(n as u32)
+        }
+        VfsRpcOp::Poll => {
+            if payload.len() < 8 { return hda_resp_err(22); }
+            let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+            if h != HANDLE_OUT0 { return hda_resp_ok_poll(abi::syscall::poll_flags::POLLOUT as u32); }
+            let rev = if card.ring.free_space() > 0 { abi::syscall::poll_flags::POLLOUT as u32 } else { 0 };
+            hda_resp_ok_poll(rev)
+        }
+        VfsRpcOp::DeviceCall => {
+            let dc_size = size_of::<abi::device::DeviceCall>();
+            if payload.len() < 8 + dc_size { return hda_resp_err(22); }
+            let dc: abi::device::DeviceCall = unsafe {
+                core::ptr::read_unaligned(payload[8..].as_ptr() as *const abi::device::DeviceCall)
+            };
+            if dc.kind != DeviceKind::Audio { return hda_resp_err(38); }
+            let in_data = &payload[8 + dc_size..];
+            match dc.op {
+                AUDIO_GET_INFO => {
+                    let info = card.stream_info();
+                    let bytes = unsafe { core::slice::from_raw_parts(&info as *const AudioStreamInfo as *const u8, size_of::<AudioStreamInfo>()) };
+                    hda_resp_ok_dc(0, bytes)
+                }
+                AUDIO_SET_PARAMS => {
+                    if in_data.len() >= size_of::<AudioParams>() {
+                        let req: AudioParams = unsafe { core::ptr::read_unaligned(in_data.as_ptr() as *const AudioParams) };
+                        card.params = AudioParams { sample_format: req.sample_format, rate: req.rate.clamp(44100, 48000), channels: req.channels.clamp(1,2), period_frames: req.period_frames.max(64), buffer_frames: req.buffer_frames.max(256), _reserved: [0;3] };
+                    }
+                    let bytes = unsafe { core::slice::from_raw_parts(&card.params as *const AudioParams as *const u8, size_of::<AudioParams>()) };
+                    hda_resp_ok_dc(0, bytes)
+                }
+                AUDIO_GET_PARAMS => {
+                    let bytes = unsafe { core::slice::from_raw_parts(&card.params as *const AudioParams as *const u8, size_of::<AudioParams>()) };
+                    hda_resp_ok_dc(0, bytes)
+                }
+                AUDIO_GET_STATUS => {
+                    let st = card.status();
+                    let bytes = unsafe { core::slice::from_raw_parts(&st as *const AudioStatus as *const u8, size_of::<AudioStatus>()) };
+                    hda_resp_ok_dc(0, bytes)
+                }
+                AUDIO_START   => { card.state = AudioState::Running as u32;  hda_resp_ok_dc(0, &[]) }
+                AUDIO_STOP    => { card.state = AudioState::Stopped as u32; card.ring = HdaRingBuf::new(64*1024); hda_resp_ok_dc(0, &[]) }
+                AUDIO_DRAIN   => { card.state = AudioState::Draining as u32; hda_resp_ok_dc(0, &[]) }
+                _             => hda_resp_err(38),
+            }
+        }
+        VfsRpcOp::SubscribeReady => {
+            if payload.len() >= 8 {
+                let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+                if h == HANDLE_OUT0 { card.out0_subscribed = true; }
+            }
+            vec![0u8]
+        }
+        VfsRpcOp::UnsubscribeReady => {
+            if payload.len() >= 8 {
+                let h = u64::from_le_bytes(payload[..8].try_into().unwrap_or([0;8]));
+                if h == HANDLE_OUT0 { card.out0_subscribed = false; }
+            }
+            vec![0u8]
+        }
+        VfsRpcOp::Close  => vec![0u8],
+        VfsRpcOp::Rename => hda_resp_err(30),
     }
 }
 

@@ -1493,6 +1493,7 @@ name = "hdaudio"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ipc_helpers",
  "stem",
 ]
 
@@ -4073,6 +4074,7 @@ name = "virtio_sound"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ipc_helpers",
  "stem",
  "virtio",
 ]

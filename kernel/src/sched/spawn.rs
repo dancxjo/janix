@@ -1039,7 +1039,12 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
 mod tests {
     use super::*;
     use crate::task::TaskPriority;
-    use crate::{BootRuntime, BootRuntimeBase, BootTasking, MapPerms, UserEntry, UserTaskSpec};
+
+    // Re-use the shared mock runtime defined in `sched::tests` so that both
+    // this module and `sched::mod` share a single `init_runtime` call and a
+    // single `MockRuntime` type.  This prevents the "Runtime type mismatch" /
+    // double-init panics that occur when each module defines its own mock.
+    use crate::sched::tests::{MockRuntime, init_test_env};
 
     #[test]
     fn boot_module_match_requires_exact_basename() {
@@ -1049,123 +1054,9 @@ mod tests {
         assert!(!boot_module_matches("/bin/ls", "/bin/smallsh"));
     }
 
-    #[derive(Clone, Copy, Default)]
-    struct MockContext(usize);
-    #[derive(Clone, Copy, Default)]
-    struct MockAddressSpace(u64);
-
-    struct MockRuntime;
-    impl BootRuntimeBase for MockRuntime {
-        fn putchar(&self, _c: u8) {}
-        fn mono_ticks(&self) -> u64 {
-            0
-        }
-        fn mono_freq_hz(&self) -> u64 {
-            1
-        }
-        fn init_secondary_cpu(&self, _cpu_index: usize) {}
-        fn phys_to_virt_offset(&self) -> u64 {
-            0
-        }
-    }
-    impl BootRuntime for MockRuntime {
-        type Tasking = MockRuntime;
-        fn tasking(&self) -> &Self {
-            self
-        }
-        fn halt(&self) -> ! {
-            loop {}
-        }
-        fn irq_disable(&self) -> crate::IrqState {
-            crate::IrqState(0)
-        }
-        fn irq_restore(&self, _state: crate::IrqState) {}
-        fn phys_memory_map(&self) -> &'static [crate::PhysRange] {
-            &[]
-        }
-        fn modules(&self) -> &'static [crate::BootModuleDesc] {
-            &[]
-        }
-        fn framebuffer(&self) -> Option<crate::FramebufferInfo> {
-            None
-        }
-    }
-    impl BootTasking for MockRuntime {
-        type Runtime = MockRuntime;
-        type Context = MockContext;
-        type AddressSpace = MockAddressSpace;
-        fn init(&self, _hhdm: u64) {}
-        fn init_kernel_context(
-            &self,
-            _entry: extern "C" fn(usize) -> !,
-            _st: u64,
-            _arg: usize,
-        ) -> Self::Context {
-            MockContext(_arg)
-        }
-        fn init_user_context(
-            &self,
-            _spec: UserTaskSpec<Self::AddressSpace>,
-            _kst: u64,
-        ) -> Self::Context {
-            MockContext(_spec.arg)
-        }
-        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context, _tid: u64) {}
-        unsafe fn enter_user(&self, _e: UserEntry) -> ! {
-            loop {}
-        }
-        fn make_user_address_space(&self) -> Self::AddressSpace {
-            MockAddressSpace(0)
-        }
-        fn active_address_space(&self) -> Self::AddressSpace {
-            MockAddressSpace(0)
-        }
-        fn activate_address_space(&self, _as: Self::AddressSpace) {}
-        fn map_page(
-            &self,
-            _as: Self::AddressSpace,
-            _v: u64,
-            _p: u64,
-            _pr: crate::MapPerms,
-            _k: crate::MapKind,
-            _a: &dyn crate::FrameAllocatorHook,
-        ) -> Result<(), ()> {
-            Ok(())
-        }
-        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> {
-            Ok(None)
-        }
-        fn protect_page(
-            &self,
-            _as: Self::AddressSpace,
-            _v: u64,
-            _pr: crate::MapPerms,
-        ) -> Result<(), ()> {
-            Ok(())
-        }
-        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> {
-            None
-        }
-        fn tlb_flush_page(&self, _v: u64) {}
-    }
-
-    static INIT_TESTS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-    static MOCK_RUNTIME: MockRuntime = MockRuntime;
-
-    /// Initialise the global kernel runtime and task registry exactly once.
-    ///
-    /// All tests in this module must call this helper before touching any
-    /// global kernel state to avoid double-init panics from `OnceCell`.
-    fn ensure_global_init() {
-        if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
-            crate::task::registry::init::<MockRuntime>();
-            unsafe { crate::init_runtime(&MOCK_RUNTIME) };
-        }
-    }
-
     #[test]
     fn test_spawn_arg_semantics() {
-        ensure_global_init();
+        let _g = init_test_env();
 
         let mut sched = Scheduler::<MockRuntime>::new();
         sched.next_id = 5000;
@@ -1204,7 +1095,7 @@ mod tests {
     ///   → arg placed in first argument register on the target arch
     #[test]
     fn test_spawn_user_thread_arg() {
-        ensure_global_init();
+        let _g = init_test_env();
 
         let mut sched = Scheduler::<MockRuntime>::new();
         sched.next_id = 9000;

@@ -375,14 +375,15 @@ fn test_chdir_relative_open() -> Result<(), std::string::String> {
     }
 
     // Record original CWD so we can restore it.
-    let mut cwd_buf = std::vec::Vec::new();
-    cwd_buf.resize(4096, 0u8);
+    let mut cwd_buf = [0u8; 4096];
+    // Capture original CWD as an owned String so it outlives the buffer slice.
     let original_cwd = {
         let n = stem::syscall::vfs_getcwd(&mut cwd_buf)
             .map_err(|e| std::alloc::format!("vfs_getcwd (save): {:?}", e))?;
-        core::str::from_utf8(&cwd_buf[..n])
-            .map_err(|_| "vfs_getcwd returned non-UTF8".to_string())?
-            .to_string()
+        alloc::string::String::from(
+            core::str::from_utf8(&cwd_buf[..n])
+                .map_err(|_| std::alloc::format!("vfs_getcwd returned non-UTF8"))?,
+        )
     };
 
     // chdir to the subdirectory.
@@ -393,9 +394,10 @@ fn test_chdir_relative_open() -> Result<(), std::string::String> {
     let new_cwd = {
         let n = stem::syscall::vfs_getcwd(&mut cwd_buf)
             .map_err(|e| std::alloc::format!("vfs_getcwd (after chdir): {:?}", e))?;
-        core::str::from_utf8(&cwd_buf[..n])
-            .map_err(|_| "non-UTF8 cwd".to_string())?
-            .to_string()
+        alloc::string::String::from(
+            core::str::from_utf8(&cwd_buf[..n])
+                .map_err(|_| std::alloc::format!("non-UTF8 cwd"))?,
+        )
     };
     if new_cwd != subdir {
         let _ = stem::syscall::vfs_chdir(&original_cwd);

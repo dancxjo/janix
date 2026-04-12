@@ -991,6 +991,10 @@ pub fn sys_fs_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> 
     let stat = node.stat()?;
     let size = stat.size;
 
+    // Read the current offset and immediately release the offset lock.
+    // This is intentional: validation of `new_offset` happens before the
+    // final write-back at the end of this function, so a brief unlock
+    // between the read and write is safe (single-threaded per-process FD table).
     let current_offset = *file.offset.lock();
 
     // The raw syscall argument carries the offset as pointer-sized bits.  On
@@ -2058,7 +2062,6 @@ mod tests {
     /// Helper: run `sys_fs_getcwd` with the given process info and a stack buffer.
     fn getcwd_with_process_info(
         pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
-        buf: &mut [u8],
     ) -> SysResult<usize> {
         let _guard = TEST_POLL_GUARD.lock();
         unsafe {
@@ -2076,7 +2079,6 @@ mod tests {
             CURRENT_TID_HOOK = None;
         }
         TEST_PROCESS_INFO.lock().take();
-        let _ = buf; // silence unused warning
         res
     }
 
@@ -2085,8 +2087,7 @@ mod tests {
     #[test]
     fn getcwd_returns_root_for_default_process() {
         let pinfo = make_process_info_with_nodes(&[]);
-        let mut buf = [0u8; 256];
-        let len = getcwd_with_process_info(pinfo, &mut buf).expect("getcwd should succeed");
+        let len = getcwd_with_process_info(pinfo).expect("getcwd should succeed");
         assert_eq!(len, 1, "default CWD is '/' – length should be 1");
     }
 
@@ -2096,8 +2097,7 @@ mod tests {
     fn getcwd_reflects_updated_cwd() {
         let pinfo = make_process_info_with_nodes(&[]);
         pinfo.lock().cwd = alloc::string::String::from("/tmp");
-        let mut buf = [0u8; 256];
-        let len = getcwd_with_process_info(pinfo, &mut buf).expect("getcwd should succeed");
+        let len = getcwd_with_process_info(pinfo).expect("getcwd should succeed");
         assert_eq!(len, 4, "'/tmp' has 4 bytes");
     }
 

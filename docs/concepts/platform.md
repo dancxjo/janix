@@ -26,6 +26,16 @@ pub mod pal {
 }
 ```
 
+## Panic/Unwind Policy (Thing-OS Targets)
+
+Thing-OS targets are currently **abort-only** for panics.
+
+- All Thing-OS target specs set `panic-strategy = "abort"`.
+- Stack unwinding ABI/runtime (`panic_unwind`, personality routines, unwinder integration) is not part of the supported target contract.
+- A panic in any thread aborts the process; panic payload propagation through `JoinHandle::join` is therefore not available on Thing-OS today.
+
+To keep this failure mode explicit, Thing-OS runtime code emits a compile-time diagnostic if built with `panic = "unwind"`.
+
 ### Design Principles
 
 1. **Explicit over implicit**: All platform capabilities must go through PAL

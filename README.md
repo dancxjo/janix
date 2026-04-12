@@ -46,6 +46,10 @@ The kernel is intentionally small. It does five things:
 
 Everything else — TCP/IP, NIC drivers, window management, fonts, storage — lives in userspace, mounted into the namespace.
 
+### Panic strategy policy
+
+Thing-OS targets are currently `panic = "abort"` only. Unwinding is not yet supported as part of the target ABI/runtime contract, so panics abort the process (including panics from child threads).
+
 ### The namespace
 
 ```

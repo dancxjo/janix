@@ -2,6 +2,9 @@
 #![no_std]
 extern crate alloc;
 
+#[cfg(all(target_os = "thingos", panic = "unwind"))]
+compile_error!("Thing-OS does not support panic=unwind. Use panic=abort (target contract).");
+
 pub use abi;
 #[cfg(feature = "rt")]
 pub use stem_macros::main;

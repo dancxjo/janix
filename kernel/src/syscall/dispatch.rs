@@ -75,7 +75,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),
 
-        SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),
+        SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0], args[1]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),
         SYS_DEVICE_IRQ_SUBSCRIBE => handlers::sys_device_irq_subscribe(args[0], args[1], args[2]),
         SYS_DEVICE_IOPORT_READ => handlers::sys_device_ioport(args[0], 0, false, args[1]),

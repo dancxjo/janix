@@ -921,9 +921,23 @@ pub fn console_disable() {
 
 // Device MMIO and DMA syscalls
 
-/// Claim a device from the device registry
-pub fn device_claim(graph_id: u64) -> Result<usize, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_DEVICE_CLAIM, graph_id as usize, 0, 0, 0, 0, 0) };
+/// Claim a device identified by its sysfs path (e.g. `/sys/devices/pci-0000:00:1f.2`).
+///
+/// The kernel resolves the path to a device in the registry and returns a
+/// capability handle. Use the handle for `device_map_mmio`, `device_alloc_dma`,
+/// and related calls.
+pub fn device_claim(path: &str) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_DEVICE_CLAIM,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
     abi::errors::errno(ret)
 }
 

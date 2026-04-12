@@ -145,29 +145,25 @@ fn main(boot_fd: usize) -> ! {
 
     debug!("HDAUDIO: using device path: {}", path_str);
 
-    let dev = if !path_str.is_empty() {
-        // Find handle in the sysfs path
-        if let Some(h) = read_sys_u32(&alloc::format!("{}/handle", path_str)) {
-            h as u64
-        } else {
-            find_hda_device().unwrap_or(0)
-        }
+    let dev_path = if !path_str.is_empty() {
+        alloc::string::String::from(path_str)
     } else {
-        find_hda_device().unwrap_or(0)
+        match find_hda_device() {
+            Some(p) => p,
+            None => {
+                error!("HDAUDIO: no HDA PCI device found");
+                loop {
+                    stem::time::sleep_ms(1000);
+                }
+            }
+        }
     };
 
-    if dev == 0 {
-        error!("HDAUDIO: no HDA PCI device found");
-        loop {
-            stem::time::sleep_ms(1000);
-        }
-    }
-
-    debug!("HDAUDIO: claiming PCI device handle {}...", dev);
-    let claim = match device_claim(dev) {
+    debug!("HDAUDIO: claiming PCI device at '{}'...", dev_path);
+    let claim = match device_claim(&dev_path) {
         Ok(h) => h,
         Err(e) => {
-            error!("HDAUDIO: claim failed for handle {}: {:?}", dev, e);
+            error!("HDAUDIO: claim failed for '{}': {:?}", dev_path, e);
             loop {
                 stem::time::sleep_ms(1000);
             }
@@ -184,7 +180,7 @@ fn main(boot_fd: usize) -> ! {
         }
     };
 
-    debug!("HDAUDIO: claimed device handle {} mmio=0x{:x}", dev, mmio);
+    debug!("HDAUDIO: claimed device '{}' mmio=0x{:x}", dev_path, mmio);
 
     let mut hda = match HdaController::new(mmio, claim) {
         Ok(h) => h,
@@ -700,9 +696,10 @@ impl HdaController {
     }
 }
 
-fn find_hda_device() -> Option<u64> {
+/// Scan `/sys/devices` for an HDA controller (PCI class 0x0403) and return its sysfs path.
+fn find_hda_device() -> Option<alloc::string::String> {
     use abi::syscall::vfs_flags;
-    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_readdir};
+    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
     stem::debug!("HDAUDIO: Searching for HDA controller in /sys/devices...");
     let fd = match vfs_open("/sys/devices", vfs_flags::O_RDONLY) {
@@ -747,15 +744,9 @@ fn find_hda_device() -> Option<u64> {
             );
 
             if class_str.trim().starts_with("0x0403") {
-                let handle_path = alloc::format!("/sys/devices/{}/handle", name);
-                if let Some(graph_id) = read_sys_u64(&handle_path) {
-                    stem::debug!(
-                        "HDAUDIO: Found device via scan: {} (graph_id={})",
-                        name,
-                        graph_id
-                    );
-                    return Some(graph_id);
-                }
+                let dev_path = alloc::format!("/sys/devices/{}", name);
+                stem::debug!("HDAUDIO: Found HDA controller via scan: {}", dev_path);
+                return Some(dev_path);
             }
         }
         pos += name.len() + 1;
@@ -778,17 +769,4 @@ fn read_sys_string(path: &str) -> Option<alloc::string::String> {
             .trim()
             .to_string(),
     )
-}
-
-fn read_sys_u64(path: &str) -> Option<u64> {
-    let s = read_sys_string(path)?;
-    if s.starts_with("0x") {
-        u64::from_str_radix(&s[2..], 16).ok()
-    } else {
-        s.parse().ok()
-    }
-}
-
-fn read_sys_u32(path: &str) -> Option<u32> {
-    read_sys_u64(path).map(|v| v as u32)
 }

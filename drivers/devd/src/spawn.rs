@@ -12,7 +12,6 @@ const MAX_BACKOFF_MS: u64 = 5_000;
 
 pub struct ManagedDriver {
     pub slot: String,
-    pub device_handle: u64,
     pub driver: &'static str,
     pub mount_path: Option<String>,
     pub pid: Option<u64>,
@@ -24,7 +23,6 @@ impl ManagedDriver {
     pub fn new(device: &SysDevice, binding: Binding, mount_path: Option<String>) -> Self {
         Self {
             slot: device.slot.clone(),
-            device_handle: device.device_handle,
             driver: binding.driver,
             mount_path,
             pid: None,

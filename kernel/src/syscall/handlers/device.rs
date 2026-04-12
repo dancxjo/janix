@@ -1,5 +1,7 @@
 //! Device capability syscalls
 
+extern crate alloc;
+
 use super::{copyin, copyout};
 use crate::syscall::validate::validate_user_range;
 use abi::device::{
@@ -8,6 +10,9 @@ use abi::device::{
     PciEnableMsiResponse,
 };
 use abi::errors::{Errno, SysResult};
+
+/// Maximum allowed length for a device sysfs path passed to `SYS_DEVICE_CLAIM`.
+const MAX_DEVICE_PATH_LEN: usize = 256;
 
 pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
     let size = core::mem::size_of::<DeviceCall>();
@@ -24,14 +29,27 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
+pub fn sys_device_claim(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
+
+    if path_len == 0 || path_len > MAX_DEVICE_PATH_LEN {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(path_ptr, path_len, false)?;
+    let mut buf = alloc::vec![0u8; path_len];
+    unsafe { copyin(&mut buf, path_ptr)? };
+    let full_path = core::str::from_utf8(&buf).map_err(|_| Errno::EINVAL)?;
+
+    // Accept either a full sysfs path (/sys/devices/<slot>) or a bare slot name.
+    let slot = full_path
+        .trim_start_matches("/sys/devices/")
+        .trim_matches('/');
 
     let task_id = unsafe { crate::sched::current_tid_current() };
 
     let res = {
         let mut reg = REGISTRY.lock();
-        if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
+        if let Some(device_idx) = reg.find_by_slot(slot) {
             if let Some(claim_handle) = reg.claim(device_idx, task_id) {
                 Ok(claim_handle)
             } else {
@@ -45,22 +63,22 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
     match res {
         Ok(claim_handle) => {
             crate::kdebug!(
-                "DEVICE: task {} claimed device {} (handle {})",
+                "DEVICE: task {} claimed device '{}' (handle {})",
                 task_id,
-                graph_id,
+                slot,
                 claim_handle
             );
             Ok(claim_handle)
         }
         Err(Errno::EBUSY) => {
             crate::kdebug!(
-                "DEVICE: claim failed - device {} is already claimed",
-                graph_id
+                "DEVICE: claim failed - device '{}' is already claimed",
+                slot
             );
             Err(Errno::EBUSY)
         }
         Err(e) => {
-            crate::kdebug!("DEVICE: device {} not found in registry", graph_id);
+            crate::kdebug!("DEVICE: device '{}' not found in registry", slot);
             Err(e)
         }
     }

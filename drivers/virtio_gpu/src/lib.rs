@@ -73,11 +73,8 @@ impl VirtioGpu {
     pub fn new(sysfs_path: &str) -> Result<Self, Errno> {
         use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
 
-        // Read internal handle from /sys/devices/.../handle
-        let device_handle =
-            read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
-
-        let claim_handle = device_claim(device_handle)?;
+        // Claim the device using its sysfs path as the primary key.
+        let claim_handle = device_claim(sysfs_path)?;
 
         // Read VirtIO capability offsets from sysfs
         let common_bar =

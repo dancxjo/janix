@@ -90,15 +90,10 @@ pub struct Rtl8168Driver {
 
 impl Rtl8168Driver {
     pub fn new(sysfs_path: &str) -> Result<Self, Errno> {
-        // Read internal handle from /sys/devices/.../handle
-        let handle =
-            read_sys_u32(&alloc::format!("{}/handle", sysfs_path)).ok_or(Errno::ENODEV)? as u64;
-        info!(
-            "RTL8168: discovered device handle 0x{:x} from {}",
-            handle, sysfs_path
-        );
+        // Claim the device using its sysfs path as the primary key.
+        info!("RTL8168: claiming device at {}", sysfs_path);
 
-        let claim = device_claim(handle)?;
+        let claim = device_claim(sysfs_path)?;
         let mmio = device_map_mmio(claim, 0)?;
         info!("RTL8168: BAR0 mapped at 0x{:x}", mmio);
 
@@ -399,24 +394,6 @@ impl Rtl8168Driver {
     }
     fn write_u32(&self, reg: u32, value: u32) {
         unsafe { write_volatile((self.mmio + reg as u64) as *mut u32, value) }
-    }
-}
-
-fn read_sys_u32(path: &str) -> Option<u32> {
-    use abi::syscall::vfs_flags::O_RDONLY;
-    use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
-
-    let fd = vfs_open(path, O_RDONLY).ok()?;
-    let mut buf = [0u8; 32];
-    let n = vfs_read(fd, &mut buf).ok()?;
-    let _ = vfs_close(fd);
-
-    let s = core::str::from_utf8(&buf[..n]).ok()?;
-    let trimmed = s.trim();
-    if trimmed.starts_with("0x") {
-        u32::from_str_radix(&trimmed[2..], 16).ok()
-    } else {
-        trimmed.parse::<u32>().ok()
     }
 }
 

@@ -490,32 +490,28 @@ fn main(boot_fd: usize) -> ! {
     };
     let path_str = core::str::from_utf8(path).unwrap_or("");
 
-    // Read kernel handle from sysfs
-    let mut pci_handle = if !path_str.is_empty() {
-        read_sys_u64(&alloc::format!("{}/handle", path_str)).unwrap_or(0)
+    // Resolve the sysfs path for this device.
+    let dev_path = if !path_str.is_empty() {
+        alloc::string::String::from(path_str)
     } else {
-        0
+        match find_ahci_device() {
+            Some(p) => p,
+            None => {
+                error!("AHCI: Failed to find controller info at '{}'", path_str);
+                loop {
+                    stem::sleep(Duration::from_secs(60));
+                }
+            }
+        }
     };
 
-    if pci_handle == 0 {
-        debug!("AHCI: Searching for controller via class scan...");
-        pci_handle = find_ahci_device().unwrap_or(0);
-    }
-
-    if pci_handle == 0 {
-        error!("AHCI: Failed to find controller info at '{}'", path_str);
-        loop {
-            stem::sleep(Duration::from_secs(60));
-        }
-    }
-
-    let claim_handle = match stem::syscall::device_claim(pci_handle) {
+    let claim_handle = match stem::syscall::device_claim(&dev_path) {
         Ok(h) => {
-            debug!("AHCI: Claimed PCI device 0x{:x} handle={}", pci_handle, h);
+            debug!("AHCI: Claimed PCI device '{}' handle={}", dev_path, h);
             h
         }
         Err(e) => {
-            error!("AHCI: Failed to claim: {:?}", e);
+            error!("AHCI: Failed to claim '{}': {:?}", dev_path, e);
             loop {
                 stem::sleep(Duration::from_secs(60));
             }
@@ -888,7 +884,8 @@ fn send_error_response(port_handle: ChannelHandle, error_code: BlockDeviceError)
     }
 }
 
-fn find_ahci_device() -> Option<u64> {
+/// Scan `/sys/devices` for an AHCI controller (PCI class 0x010601) and return its sysfs path.
+fn find_ahci_device() -> Option<alloc::string::String> {
     use abi::syscall::vfs_flags;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
@@ -924,11 +921,9 @@ fn find_ahci_device() -> Option<u64> {
             if let Some(class_str) = read_sys_string(&class_path) {
                 // PCI Class 01, Subclass 06, ProgIf 01 is AHCI
                 if class_str.trim().starts_with("0x010601") {
-                    let handle_path = alloc::format!("/sys/devices/{}/handle", name);
-                    if let Some(h) = read_sys_u64(&handle_path) {
-                        info!("AHCI: Found {} via scan (handle=0x{:x})", name, h);
-                        return Some(h);
-                    }
+                    let dev_path = alloc::format!("/sys/devices/{}", name);
+                    info!("AHCI: Found {} via scan", dev_path);
+                    return Some(dev_path);
                 }
             }
         }
@@ -951,13 +946,4 @@ fn read_sys_string(path: &str) -> Option<alloc::string::String> {
             .trim()
             .to_string(),
     )
-}
-
-fn read_sys_u64(path: &str) -> Option<u64> {
-    let s = read_sys_string(path)?;
-    if s.starts_with("0x") {
-        u64::from_str_radix(&s[2..], 16).ok()
-    } else {
-        s.parse().ok()
-    }
 }

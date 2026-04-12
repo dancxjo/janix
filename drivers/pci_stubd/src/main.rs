@@ -3,12 +3,9 @@
 
 extern crate alloc;
 
-use abi::ids::HandleId;
-use abi::schema::{keys, source};
-use abi::types::ThingId;
+use alloc::string::String;
 use stem::{info, warn};
 
-const MAX_FUNCTIONS: usize = 256;
 const MAX_TRACKED: usize = 128;
 
 const CLASS_DISPLAY: u8 = 0x03;
@@ -32,11 +29,6 @@ struct PciRule {
     subclass: Option<u8>,
     prog_if: Option<u8>,
     role_kind: &'static str,
-}
-
-#[derive(Copy, Clone, Default)]
-struct ClaimedDevice {
-    id: ThingId,
 }
 
 const RULES: [PciRule; 9] = [
@@ -176,28 +168,20 @@ fn find_rule(
     None
 }
 
-fn already_claimed(
-    id: ThingId,
-    tracked: &[ClaimedDevice; MAX_TRACKED],
-    tracked_len: usize,
-) -> bool {
-    tracked[..tracked_len].iter().any(|entry| entry.id == id)
+/// Tracks claimed device sysfs paths.
+type ClaimedSet = alloc::vec::Vec<String>;
+
+fn already_claimed(path: &str, tracked: &ClaimedSet) -> bool {
+    tracked.iter().any(|p| p == path)
 }
 
-fn push_claim(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize, id: ThingId) {
-    if *tracked_len >= MAX_TRACKED {
-        return;
+fn push_claim(tracked: &mut ClaimedSet, path: String) {
+    if tracked.len() < MAX_TRACKED {
+        tracked.push(path);
     }
-    tracked[*tracked_len] = ClaimedDevice { id };
-    *tracked_len += 1;
 }
 
-fn publish_binding(_id: ThingId, _rule: PciRule, _claim: usize) {
-    // Purged graph-based binding reporting.
-    // Future: report bindings via /sys or /run.
-}
-
-fn scan_once(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize) {
+fn scan_once(tracked: &mut ClaimedSet) {
     use abi::syscall::vfs_flags::O_RDONLY;
     use stem::syscall::vfs::{vfs_close, vfs_open, vfs_readdir};
 
@@ -218,21 +202,15 @@ fn scan_once(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize
         if end > offset {
             if let Ok(name) = core::str::from_utf8(&buf[offset..end]) {
                 let path = alloc::format!("/sys/devices/{}", name);
-                process_device(tracked, tracked_len, &path);
+                process_device(tracked, &path);
             }
         }
         offset = end + 1;
     }
 }
 
-fn process_device(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize, path: &str) {
-    let handle = match read_sys_u32(&alloc::format!("{}/handle", path)) {
-        Ok(h) => h as u64,
-        Err(_) => return,
-    };
-
-    let id = ThingId::from_u64(handle);
-    if already_claimed(id, tracked, *tracked_len) {
+fn process_device(tracked: &mut ClaimedSet, path: &str) {
+    if already_claimed(path, tracked) {
         return;
     }
 
@@ -248,14 +226,13 @@ fn process_device(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut 
         return;
     };
 
-    match stem::syscall::device_claim(handle) {
+    match stem::syscall::device_claim(path) {
         Ok(claim) => {
             info!(
                 "pci_stubd: bound {} to {} vendor={:04x} device={:04x} class={:02x}:{:02x}:{:02x} claim={}",
                 rule.name, path, vendor_id, device_id, class_code, subclass, prog_if, claim
             );
-            publish_binding(id, rule, claim);
-            push_claim(tracked, tracked_len, id);
+            push_claim(tracked, alloc::string::String::from(path));
         }
         Err(e) => {
             warn!("pci_stubd: failed bind {} at {}: {:?}", rule.name, path, e);
@@ -284,11 +261,10 @@ fn read_sys_u32(path: &str) -> Result<u32, abi::errors::Errno> {
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("pci_stubd: starting pci-id matcher");
-    let mut tracked = [ClaimedDevice::default(); MAX_TRACKED];
-    let mut tracked_len = 0usize;
+    let mut tracked: ClaimedSet = alloc::vec::Vec::new();
 
     loop {
-        scan_once(&mut tracked, &mut tracked_len);
+        scan_once(&mut tracked);
         stem::time::sleep_ms(1000);
     }
 }

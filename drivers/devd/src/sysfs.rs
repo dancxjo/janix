@@ -11,7 +11,6 @@ pub struct SysDevice {
     pub vendor_id: u16,
     pub device_id: u16,
     pub class_code: u32, // Full class triplet: class << 16 | subclass << 8 | prog_if
-    pub device_handle: u64,
     pub present: bool,
 }
 
@@ -27,7 +26,6 @@ pub fn scan_devices() -> Result<Vec<SysDevice>, Errno> {
         let vendor_id = read_hex_u16(&format!("{}/vendor", base))?;
         let device_id = read_hex_u16(&format!("{}/device", base))?;
         let class_triplet = read_hex_u32(&format!("{}/class", base))?;
-        let device_handle = read_dec_u64(&format!("{}/handle", base))?;
         let status = read_string(&format!("{}/status", base))?;
 
         devices.push(SysDevice {
@@ -35,7 +33,6 @@ pub fn scan_devices() -> Result<Vec<SysDevice>, Errno> {
             vendor_id,
             device_id,
             class_code: class_triplet,
-            device_handle,
             present: status == "present",
         });
     }
@@ -87,11 +84,6 @@ fn read_hex_u16(path: &str) -> Result<u16, Errno> {
 fn read_hex_u32(path: &str) -> Result<u32, Errno> {
     let text = read_string(path)?;
     parse_hex(&text).map(|value| value as u32)
-}
-
-fn read_dec_u64(path: &str) -> Result<u64, Errno> {
-    let text = read_string(path)?;
-    text.parse::<u64>().map_err(|_| Errno::EINVAL)
 }
 
 fn parse_hex(text: &str) -> Result<u64, Errno> {

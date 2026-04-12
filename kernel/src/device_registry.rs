@@ -236,7 +236,28 @@ impl DeviceRegistry {
         }
     }
 
-    /// Find device by graph ID
+    /// Find device by PCI slot name (e.g. `"pci-0000:00:1f.2"`).
+    ///
+    /// The slot name is derived from the device's [`PciLocation`] in the same
+    /// way that sysfs does, so callers can use a sysfs path as the primary key.
+    pub fn find_by_slot(&self, slot: &str) -> Option<usize> {
+        for i in 0..self.device_count {
+            if let Some(entry) = &self.devices[i] {
+                if let Some(loc) = entry.pci_location {
+                    let name = alloc::format!(
+                        "pci-0000:{:02x}:{:02x}.{}",
+                        loc.bus, loc.dev, loc.func
+                    );
+                    if name == slot {
+                        return Some(i);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Find device by graph ID (legacy, kept for internal use only).
     pub fn find_by_graph_id(&self, graph_id: u64) -> Option<usize> {
         for i in 0..self.device_count {
             if let Some(entry) = &self.devices[i] {

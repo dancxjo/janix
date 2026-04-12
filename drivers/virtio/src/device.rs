@@ -49,11 +49,9 @@ impl VirtioDevice {
     pub fn new(sys_path: &str) -> Result<Self, Errno> {
         stem::debug!("VirtIO: device::new({})", sys_path);
 
-        // Read kernel handle from /sys/devices/.../handle
-        let device_id = read_sys_u32(&alloc::format!("{}/handle", sys_path))? as u64;
-
-        stem::debug!("VirtIO: internal handle=0x{:x} - claiming...", device_id);
-        let claim_handle = device_claim(device_id)?;
+        // Claim the device using its sysfs path as the primary key.
+        stem::debug!("VirtIO: claiming '{}'...", sys_path);
+        let claim_handle = device_claim(sys_path)?;
         stem::debug!("VirtIO: claimed, handle={}", claim_handle);
 
         // Read VirtIO capability offsets from sysfs

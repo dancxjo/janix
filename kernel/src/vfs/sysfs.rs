@@ -34,33 +34,29 @@ impl VfsDriver for SysFs {
             SysPath::Root => Ok(Arc::new(StaticDirNode::new(300, &["devices", "firmware"]))),
             SysPath::Devices => Ok(Arc::new(DevicesDirNode)),
             SysPath::DeviceDir(name) => {
-                let (_, entry) = find_device_by_slot(name)?;
-                crate::ktrace!(
-                    "sysfs: matched device dir '{}' to graph_id={}",
-                    name,
-                    entry.graph_id
-                );
-                Ok(Arc::new(DeviceDirNode::new(entry)))
+                let (idx, entry) = find_device_by_slot(name)?;
+                crate::ktrace!("sysfs: matched device dir '{}' (idx={})", name, idx);
+                Ok(Arc::new(DeviceDirNode::new(idx, entry)))
             }
             SysPath::DeviceFile(name, file) => {
-                let (_, entry) = find_device_by_slot(name)?;
-                let node = lookup_device_file(entry, file)?;
+                let (idx, entry) = find_device_by_slot(name)?;
+                let node = lookup_device_file(idx, entry, file)?;
                 crate::ktrace!("sysfs: matched device file '{}/{}'", name, file);
                 Ok(Arc::new(node))
             }
             SysPath::VirtioDir(name) => {
-                let (_, entry) = find_device_by_slot(name)?;
+                let (idx, entry) = find_device_by_slot(name)?;
                 if entry.vendor_id != 0x1af4 {
                     return Err(Errno::ENOENT);
                 }
-                Ok(Arc::new(VirtioDirNode::new(entry)))
+                Ok(Arc::new(VirtioDirNode::new(idx, entry)))
             }
             SysPath::VirtioFile(name, file) => {
-                let (_, entry) = find_device_by_slot(name)?;
+                let (idx, entry) = find_device_by_slot(name)?;
                 if entry.vendor_id != 0x1af4 {
                     return Err(Errno::ENOENT);
                 }
-                let node = lookup_virtio_file(entry, file)?;
+                let node = lookup_virtio_file(idx, entry, file)?;
                 Ok(Arc::new(node))
             }
             SysPath::Firmware => Ok(Arc::new(StaticDirNode::new(
@@ -205,12 +201,14 @@ impl VfsNode for DevicesDirNode {
 
 struct DeviceDirNode {
     ino: u64,
+    device_index: usize,
 }
 
 impl DeviceDirNode {
-    fn new(entry: DeviceEntry) -> Self {
+    fn new(device_index: usize, _entry: DeviceEntry) -> Self {
         Self {
-            ino: 0x1000 + entry.graph_id,
+            ino: 0x1000 + device_index as u64,
+            device_index,
         }
     }
 }
@@ -235,23 +233,17 @@ impl VfsNode for DeviceDirNode {
 
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         let mut entries = vec![
-            "vendor", "device", "class", "status", "handle", "bar0", "bar1", "bar2", "bar3",
+            "vendor", "device", "class", "status", "bar0", "bar1", "bar2", "bar3",
             "bar4", "bar5",
         ];
 
-        // Find device in registry to check if it's VirtIO
+        // Check if it's a VirtIO device
         let reg = REGISTRY.lock();
-        let mut is_virtio = false;
-        for i in 0..reg.len() {
-            if let Some(entry) = reg.entry_copy(i) {
-                if 0x1000 + entry.graph_id == self.ino {
-                    if entry.vendor_id == 0x1af4 {
-                        is_virtio = true;
-                    }
-                    break;
-                }
-            }
-        }
+        let is_virtio = reg
+            .entry_copy(self.device_index)
+            .map(|e| e.vendor_id == 0x1af4)
+            .unwrap_or(false);
+        drop(reg);
 
         if is_virtio {
             entries.push("virtio");
@@ -330,8 +322,8 @@ fn slot_name(entry: DeviceEntry) -> alloc::string::String {
     format!("pci-0000:{:02x}:{:02x}.{}", loc.bus, loc.dev, loc.func)
 }
 
-fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
-    let ino_base = 0x2000 + entry.graph_id * 16;
+fn lookup_device_file(device_index: usize, entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
+    let ino_base = 0x2000 + (device_index as u64) * 16;
     let text = match file {
         "vendor" => format!("0x{:04x}\n", entry.vendor_id),
         "device" => format!("0x{:04x}\n", entry.device_id),
@@ -340,7 +332,6 @@ fn lookup_device_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
             entry.class_code, entry.subclass, entry.prog_if
         ),
         "status" => "present\n".into(),
-        "handle" => format!("{}\n", entry.graph_id),
         "bar0" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[0], entry.mmio_sizes[0]),
         "bar1" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[1], entry.mmio_sizes[1]),
         "bar2" => format!("0x{:x} 0x{:x}\n", entry.mmio_bars[2], entry.mmio_sizes[2]),
@@ -357,9 +348,9 @@ struct VirtioDirNode {
 }
 
 impl VirtioDirNode {
-    fn new(entry: DeviceEntry) -> Self {
+    fn new(device_index: usize, _entry: DeviceEntry) -> Self {
         Self {
-            ino: 0x3000 + entry.graph_id,
+            ino: 0x3000 + device_index as u64,
         }
     }
 }
@@ -402,7 +393,7 @@ impl VfsNode for VirtioDirNode {
     }
 }
 
-fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
+fn lookup_virtio_file(device_index: usize, entry: DeviceEntry, file: &str) -> SysResult<StaticTextNode> {
     use crate::virtio::pci::{VirtioCapabilityType, VirtioPciDevice};
 
     let loc = entry.pci_location.ok_or(Errno::ENODEV)?;
@@ -511,6 +502,6 @@ fn lookup_virtio_file(entry: DeviceEntry, file: &str) -> SysResult<StaticTextNod
         _ => return Err(Errno::ENOENT),
     };
 
-    let ino_base = 0x4000 + entry.graph_id * 32;
+    let ino_base = 0x4000 + (device_index as u64) * 32;
     Ok(StaticTextNode::new(text.into_bytes(), ino_base))
 }

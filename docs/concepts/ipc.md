@@ -18,9 +18,10 @@ another.
 |-----------|---------------|-------------|
 | **Channel** | `SYS_CHANNEL_*` | Discrete messages: commands, ACKs, events, thing passing, RPC |
 | **Pipe** | `SYS_PIPE` / `SYS_FS_*` | Sequential byte streams: stdio, process output pipelines |
+| **Unix socket** | `SYS_SOCKET` / `SYS_BIND` / `SYS_CONNECT` / `SYS_SOCKETPAIR` | Bidirectional byte-stream endpoint IPC via filesystem path or anonymous pair |
 | **Memfd** | `SYS_MEMFD_CREATE` / `SYS_VM_MAP` | Bulk data, zero-copy buffers, shared rings |
 | **Futex** | `SYS_FUTEX_WAIT` / `SYS_FUTEX_WAKE` | Low-level in-process synchronisation, mutex/condvar building blocks |
-| **Poll/wait** | `SYS_FS_POLL` | Readiness multiplexing across pipes, channels, and provider things |
+| **Poll/wait** | `SYS_FS_POLL` | Readiness multiplexing across pipes, channels, sockets, and provider things |
 | **VFS RPC** | `SYS_FS_MOUNT` + channel protocol | Structured request/reply filesystem provider interface |
 
 ---
@@ -123,7 +124,93 @@ vfs_close(read_thing).expect("close read");
 
 ---
 
-## 4. Memfd
+## 4. Unix Domain Sockets
+
+### What Unix domain sockets are
+
+A **Unix domain socket** is a bidirectional, connection-oriented byte-stream
+endpoint bound to a filesystem path under `/run` (or elsewhere).  The kernel
+implements `AF_UNIX + SOCK_STREAM` sockets as first-class VFS things that
+participate in the unified `SYS_FS_POLL` readiness model.
+
+There are two usage modes:
+
+- **Named** — a server binds to a path (`/run/foo.sock`), calls `listen()`, and
+  accepts connections.  Clients call `connect("/run/foo.sock")`.  The bound path
+  appears in the VFS as a socket file marker (`S_IFSOCK`).
+- **Anonymous** — `SYS_SOCKETPAIR` creates a connected pair of socket things
+  with no filesystem binding.  Useful for parent–child IPC before exec, or for
+  intra-process thread communication.
+
+Each connected socket thing supports `vfs_read`, `vfs_write`, `vfs_close`, and
+`SYS_FS_POLL`, exactly like a pipe.
+
+### When to use Unix sockets
+
+- Server → client connections where multiple clients need to connect over time.
+- Bidirectional peer-to-peer byte streams (both ends can read and write).
+- Replacing a named pipe (FIFO) when bidirectionality is needed without a
+  second pipe.
+- Pre-exec channel setup between parent and child (use `socketpair()`).
+
+### When **not** to use Unix sockets
+
+- Unidirectional parent→child streams where `vfs_write` / `vfs_read` on a pipe
+  suffice — a pipe is simpler.
+- Structured message exchange or capability passing — use a channel.
+- Bulk one-shot data transfer — use memfd.
+
+### Short examples
+
+**Named socket (server side):**
+
+```rust
+use stem::syscall::socket::{socket, bind, listen, accept};
+use stem::syscall::vfs::{vfs_read, vfs_write};
+use abi::syscall::{socket_domain::AF_UNIX, socket_type::SOCK_STREAM};
+
+let srv = socket(AF_UNIX, SOCK_STREAM, 0).expect("socket");
+bind(srv, "/run/echo.sock").expect("bind");
+listen(srv, 8).expect("listen");
+
+let conn = accept(srv).expect("accept");   // blocks until a client connects
+let mut buf = [0u8; 256];
+let n = vfs_read(conn, &mut buf).expect("read");
+vfs_write(conn, &buf[..n]).expect("write"); // echo back
+```
+
+**Named socket (client side):**
+
+```rust
+use stem::syscall::socket::{socket, connect};
+use stem::syscall::vfs::{vfs_write, vfs_read};
+use abi::syscall::{socket_domain::AF_UNIX, socket_type::SOCK_STREAM};
+
+let fd = socket(AF_UNIX, SOCK_STREAM, 0).expect("socket");
+connect(fd, "/run/echo.sock").expect("connect");
+vfs_write(fd, b"hello").expect("write");
+let mut buf = [0u8; 8];
+let n = vfs_read(fd, &mut buf).expect("read");
+assert_eq!(&buf[..n], b"hello");
+```
+
+**Anonymous pair:**
+
+```rust
+use stem::syscall::socket::socketpair;
+use stem::syscall::vfs::{vfs_write, vfs_read};
+use abi::syscall::{socket_domain::AF_UNIX, socket_type::SOCK_STREAM};
+
+let (a, b) = socketpair(AF_UNIX, SOCK_STREAM, 0).expect("socketpair");
+vfs_write(a, b"ping").expect("write a");
+let mut buf = [0u8; 8];
+let n = vfs_read(b, &mut buf).expect("read b");
+assert_eq!(&buf[..n], b"ping");
+```
+
+---
+
+## 5. Memfd
 
 ### What memfd is
 
@@ -168,7 +255,7 @@ channel_send_msg(chan_write_thing, b"frame-ready", &[frame_thing])
 
 ---
 
-## 5. Futex
+## 6. Futex
 
 ### What futex is
 
@@ -210,7 +297,7 @@ futex_wake(LOCK.as_ptr(), 1).ok();
 
 ---
 
-## 6. Poll/wait
+## 7. Poll/wait
 
 ### What poll/wait is
 
@@ -255,7 +342,7 @@ See `docs/concepts/readiness.md` for the full readiness flag semantics.
 
 ---
 
-## 7. VFS RPC
+## 8. VFS RPC
 
 ### What VFS RPC is
 
@@ -299,7 +386,7 @@ loop_.run(|op| match op {
 
 ---
 
-## 8. Decision Matrix
+## 9. Decision Matrix
 
 | I need to … | Use |
 |-------------|-----|
@@ -307,20 +394,22 @@ loop_.run(|op| match op {
 | Do synchronous request/reply RPC | Channel + `abi::rpc::RpcHeader` |
 | Pass a thing (capability) to another process | Channel + `channel_send_msg` |
 | Transfer a large buffer zero-copy | Memfd thing + channel (to pass the thing) |
-| Stream bytes parent→child | Pipe |
+| Stream bytes parent→child (unidirectional) | Pipe |
+| Bidirectional byte-stream between two processes | Unix socket (`socketpair` or named) |
+| Service accepting connections from many clients | Unix socket (named, `bind`+`listen`+`accept`) |
 | Expose a subtree as a filesystem | VFS RPC |
 | Wait on multiple things at once | `SYS_FS_POLL` (works for all VFS things) |
 | Implement a mutex or condvar | Futex (or `stem::sync` wrappers) |
 
 ---
 
-## 9. See Also
+## 10. See Also
 
 - `docs/concepts/channel_semantics.md` — capacity, atomicity, blocking, peer death
 - `docs/concepts/channels_vs_pipes.md` — when to use which
 - `docs/concepts/vfs_rpc_provider.md` — provider lifecycle
 - `docs/concepts/memfd.md` — bulk-data path
-- `docs/concepts/readiness.md` — poll/wait model
+- `docs/concepts/readiness.md` — poll/wait model (covers pipes, channels, and sockets)
 - `docs/concepts/supervisor_protocol.md` — service registration over channels
 - `docs/concepts/ipc_cookbook.md` — practical recipes
 - `abi/src/rpc.rs` — structured request/reply header types

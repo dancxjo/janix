@@ -81,7 +81,42 @@ bridged to a VFS thing via `SYS_FS_FD_FROM_HANDLE`.
 The semantics mirror pipes exactly, which means the same event-loop code
 can handle both without special-casing.
 
-### 2.3 VFS-Backed Files
+### 2.3 Unix Domain Sockets (`UnixSocketNode`)
+
+Unix domain sockets (`SYS_SOCKET + AF_UNIX + SOCK_STREAM`) are bidirectional
+VFS things.  Each connected end has its own read buffer (data written by the
+peer) and tracks whether the peer has closed.
+
+**Connected socket (read direction):**
+
+| Condition | POLLIN | POLLHUP |
+|-----------|--------|---------|
+| Peer has written data | ✓ | — |
+| No data, peer alive | — | — |
+| Data available, peer closed | ✓ | ✓ |
+| No data, peer closed (EOF) | ✓ | ✓ |
+
+`POLLIN` is set whenever the local read buffer is non-empty **or** the peer has
+closed (EOF).  A `vfs_read` that returns 0 signals EOF.
+
+**Connected socket (write direction):**
+
+| Condition | POLLOUT | POLLERR | POLLHUP |
+|-----------|---------|---------|---------|
+| Local write buffer has free space, peer alive | ✓ | — | — |
+| Local write buffer full, peer alive | — | — | — |
+| Peer closed (broken pipe) | — | ✓ | ✓ |
+
+**Listening socket (server side):**
+
+| Condition | POLLIN |
+|-----------|--------|
+| At least one connection in the accept queue | ✓ |
+| Accept queue empty | — |
+
+`POLLIN` on a listening socket means `accept()` will not block.
+
+### 2.4 VFS-Backed Files
 
 Regular things and device nodes opened via `SYS_FS_OPEN` implement
 `VfsNode::poll`.  The default implementation returns `POLLIN | POLLOUT`
@@ -131,11 +166,11 @@ completes or after the task is parked.
 use stem::syscall::vfs::*;
 use abi::syscall::{PollFd, poll_flags};
 
-fn run_event_loop(pipe_read: u32, channel_thing: u32, file_thing: u32) {
+fn run_event_loop(pipe_read: u32, socket_thing: u32, channel_thing: u32) {
     let mut fds = [
         PollFd { fd: pipe_read as i32,       events: poll_flags::POLLIN, revents: 0 },
+        PollFd { fd: socket_thing as i32,    events: poll_flags::POLLIN | poll_flags::POLLOUT, revents: 0 },
         PollFd { fd: channel_thing as i32,   events: poll_flags::POLLIN, revents: 0 },
-        PollFd { fd: file_thing as i32,      events: poll_flags::POLLIN | poll_flags::POLLOUT, revents: 0 },
     ];
 
     loop {
@@ -163,6 +198,9 @@ fn run_event_loop(pipe_read: u32, channel_thing: u32, file_thing: u32) {
 }
 ```
 
+All three thing types — pipes, sockets, and channel things — are polled
+through the same `SYS_FS_POLL` interface with identical flag semantics.
+
 ---
 
 ## 5. Peer-Death / Hangup Consistency
@@ -173,6 +211,9 @@ Hangup behaviour is uniform across all object classes:
   on the read end (the EOF signal).
 - Closing the **read** end of a pipe or channel causes `POLLERR | POLLHUP`
   on the write end (broken pipe signal).
+- Closing one end of a connected Unix socket causes `POLLIN | POLLHUP` on the
+  peer's read direction (EOF) and `POLLERR | POLLHUP` on the peer's write
+  direction (broken pipe).
 - These bits are always reported in `revents` regardless of the `events`
   mask, so an event loop does not need to subscribe to them explicitly.
 

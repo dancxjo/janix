@@ -111,6 +111,37 @@ fn inherit_process_info<R: BootRuntime>(
 // Global round-robin index for CPU selection
 pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
+/// Register `tid` in the owning process's thread-group list.
+///
+/// This is the **single, mandatory** registration point for every thread that
+/// belongs to a user process.  All spawn paths (`spawn_user_thread`,
+/// `spawn_user_task`, `spawn_process`, `spawn_process_ex`) call this function
+/// so that exec-collapse and thread-group exit can reliably enumerate every
+/// live thread via `ProcessInfo::thread_ids`.
+///
+/// Duplicate-safe: the TID is only appended if not already present, so calling
+/// this more than once for the same TID is harmless.
+///
+/// # Why this matters
+/// Previously the registration in `spawn_user_thread` was inadvertently gated
+/// on `tls_base != 0`.  Threads created without a TLS base (the common case for
+/// many POSIX-style threads) were invisible to exec-collapse and thread-group
+/// teardown.  Extracting the logic into this function ensures:
+///   1. The invariant is expressed once, not scattered across callers.
+///   2. Future spawn paths cannot forget to register by accident — they just
+///      call `register_thread_in_process` after building the task.
+pub(crate) fn register_thread_in_process(
+    pinfo: &Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>>,
+    tid: crate::task::TaskId,
+) {
+    if let Some(pinfo) = pinfo {
+        let mut pi = pinfo.lock();
+        if !pi.thread_ids.contains(&tid) {
+            pi.thread_ids.push(tid);
+        }
+    }
+}
+
 impl<R: BootRuntime> Scheduler<R> {
     fn pick_cpu_and_bringup(&mut self, affinity: Affinity, _trigger_smp: bool) -> usize {
         let rt = crate::runtime::<R>();
@@ -338,15 +369,10 @@ impl<R: BootRuntime> Scheduler<R> {
         };
 
         // Register this thread's TID in the owning process so exec and exit
-        // can enumerate all threads.  This must happen unconditionally —
-        // previously the registration was gated on `tls_base != 0` which was
-        // a bug: threads spawned without a TLS base were invisible to exec.
-        if let Some(pinfo) = task.process_info.as_ref() {
-            let mut pi = pinfo.lock();
-            if !pi.thread_ids.contains(&id) {
-                pi.thread_ids.push(id);
-            }
-        }
+        // can enumerate all threads.  Delegated to the central helper so that
+        // every spawn path enforces the invariant identically and future callers
+        // cannot accidentally skip registration.
+        register_thread_in_process(&task.process_info, id);
 
         let sched_fields = crate::sched::state::TaskSchedFields {
             tid: task.id,
@@ -1114,5 +1140,205 @@ mod tests {
 
     extern "C" fn mock_entry(_arg: usize) -> ! {
         loop {}
+    }
+
+    // ── Thread-group membership invariant tests ───────────────────────────
+
+    /// Helper: build a minimal `ProcessInfo` Arc with the given leader TID.
+    fn make_process_info(leader: crate::task::TaskId) -> alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>> {
+        alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+            pid: leader as u32,
+            ppid: 1,
+            argv: alloc::vec::Vec::new(),
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec::Vec::new(),
+            fd_table: crate::vfs::fd_table::FdTable::new(),
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![leader],
+            exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            aspace_raw: 0,
+        }))
+    }
+
+    /// Helper: build a minimal leader task backed by `pinfo` and insert it into
+    /// the registry, then set it as the current task on CPU 0.
+    fn setup_leader_task(
+        sched: &mut Scheduler<MockRuntime>,
+        leader_id: crate::task::TaskId,
+        pinfo: alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>,
+    ) {
+        use crate::task::{TaskPriority, TaskState};
+        let leader = crate::task::Task {
+            id: leader_id,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: true,
+            wake_pending: false,
+            pending_interrupt: false,
+            affinity: crate::task::Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: crate::sched::tests::MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&crate::sched::tests::MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: crate::sched::types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: Some(pinfo),
+            user_fs_base: 0,
+            detached: false,
+        };
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(leader));
+        sched.state.per_cpu[0].current = Some(leader_id);
+    }
+
+    /// A thread spawned with `tls_base = 0` must appear in the parent
+    /// process's `thread_ids`.
+    ///
+    /// This directly tests the fix for the historical bug where the
+    /// registration was inadvertently gated on `tls_base != 0`.
+    #[test]
+    fn test_spawn_thread_zero_tls_base_registered_in_thread_ids() {
+        let _g = init_test_env();
+
+        let leader_id: crate::task::TaskId = 7100;
+        let pinfo = make_process_info(leader_id);
+
+        let mut sched = Scheduler::<MockRuntime>::new();
+        sched.next_id = 7101;
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        setup_leader_task(&mut sched, leader_id, pinfo.clone());
+
+        let child_id = sched.spawn_user_thread(
+            0x4000,
+            0x8000,
+            StartupArg::None,
+            abi::types::StackInfo::default(),
+            TaskPriority::Normal,
+            crate::task::Affinity::Any,
+            0,     // tls_base = 0 — the historically broken case
+            false,
+        );
+
+        let pi = pinfo.lock();
+        assert!(
+            pi.thread_ids.contains(&child_id),
+            "thread spawned with tls_base=0 must appear in process thread_ids"
+        );
+        assert!(
+            pi.thread_ids.contains(&leader_id),
+            "leader TID must still be present after spawning a child"
+        );
+    }
+
+    /// A thread spawned with a non-zero `tls_base` must also appear in the
+    /// parent process's `thread_ids`.
+    #[test]
+    fn test_spawn_thread_nonzero_tls_base_registered_in_thread_ids() {
+        let _g = init_test_env();
+
+        let leader_id: crate::task::TaskId = 7200;
+        let pinfo = make_process_info(leader_id);
+
+        let mut sched = Scheduler::<MockRuntime>::new();
+        sched.next_id = 7201;
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        setup_leader_task(&mut sched, leader_id, pinfo.clone());
+
+        let child_id = sched.spawn_user_thread(
+            0x4000,
+            0x8000,
+            StartupArg::None,
+            abi::types::StackInfo::default(),
+            TaskPriority::Normal,
+            crate::task::Affinity::Any,
+            0xDEAD_CAFE_0000_0000u64, // non-zero tls_base
+            false,
+        );
+
+        let pi = pinfo.lock();
+        assert!(
+            pi.thread_ids.contains(&child_id),
+            "thread spawned with non-zero tls_base must appear in process thread_ids"
+        );
+    }
+
+    /// Calling `register_thread_in_process` twice for the same TID must not
+    /// produce duplicate entries in `thread_ids`.
+    #[test]
+    fn test_register_thread_in_process_no_duplicates() {
+        let _g = init_test_env();
+
+        let pinfo = make_process_info(7300);
+        let pinfo_opt = Some(pinfo.clone());
+
+        // First registration (e.g. from spawn path).
+        register_thread_in_process(&pinfo_opt, 7301);
+        // Second registration (e.g. accidental double-call or re-use).
+        register_thread_in_process(&pinfo_opt, 7301);
+
+        let pi = pinfo.lock();
+        let count = pi.thread_ids.iter().filter(|&&t| t == 7301).count();
+        assert_eq!(count, 1, "duplicate TID entries must not be created");
+    }
+
+    /// Spawning multiple threads in sequence must register every one of them.
+    #[test]
+    fn test_multiple_threads_all_registered_in_thread_ids() {
+        let _g = init_test_env();
+
+        let leader_id: crate::task::TaskId = 7400;
+        let pinfo = make_process_info(leader_id);
+
+        let mut sched = Scheduler::<MockRuntime>::new();
+        sched.next_id = 7401;
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        setup_leader_task(&mut sched, leader_id, pinfo.clone());
+
+        let mut child_ids = alloc::vec::Vec::new();
+        for _ in 0..4 {
+            let id = sched.spawn_user_thread(
+                0x4000,
+                0x8000,
+                StartupArg::None,
+                abi::types::StackInfo::default(),
+                TaskPriority::Normal,
+                crate::task::Affinity::Any,
+                0,
+                false,
+            );
+            child_ids.push(id);
+        }
+
+        let pi = pinfo.lock();
+        // Leader + 4 children = 5 entries, no duplicates.
+        assert_eq!(
+            pi.thread_ids.len(),
+            5,
+            "all spawned threads plus leader must be in thread_ids"
+        );
+        for &cid in &child_ids {
+            assert!(
+                pi.thread_ids.contains(&cid),
+                "child TID {} must be in thread_ids",
+                cid
+            );
+        }
     }
 }

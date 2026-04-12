@@ -91,6 +91,25 @@ pub(crate) static mut SET_CURRENT_USER_FS_BASE_HOOK: Option<fn(u64)> = None;
 /// Wait for a child process to exit, returning (child_pid, exit_code).
 pub(crate) static mut WAITPID_HOOK: Option<fn(i64, u32) -> Result<(u64, i32), Errno>> = None;
 
+// ── Signal-subsystem hooks (type-erased) ──────────────────────────────────────
+
+/// Return the `(blocked_mask, thread_pending)` for the current thread.
+pub(crate) static mut GET_THREAD_SIGNAL_HOOK: Option<fn() -> (abi::signal::SigSet, abi::signal::SigSet)> = None;
+/// Atomically replace the current thread's blocked mask; returns the old mask.
+pub(crate) static mut SET_THREAD_BLOCKED_HOOK: Option<fn(abi::signal::SigSet) -> abi::signal::SigSet> = None;
+/// Remove signal `sig` from the current thread's *thread-level* pending set.
+/// Returns `true` if the signal was found there (vs. process-level).
+pub(crate) static mut CLEAR_THREAD_PENDING_HOOK: Option<fn(u32) -> bool> = None;
+/// Return/set the stopped flag on the current thread.
+pub(crate) static mut GET_THREAD_STOPPED_HOOK: Option<fn() -> bool> = None;
+pub(crate) static mut SET_THREAD_STOPPED_HOOK: Option<fn(bool)> = None;
+/// Return the sigsuspend saved-mask (Some) or None if not in sigsuspend.
+pub(crate) static mut GET_SIGSUSPEND_MASK_HOOK: Option<fn() -> Option<abi::signal::SigSet>> = None;
+/// Clear sigsuspend state and restore the provided mask as the blocked mask.
+pub(crate) static mut CLEAR_SIGSUSPEND_HOOK: Option<fn(abi::signal::SigSet)> = None;
+/// Save the current blocked mask as the sigsuspend restore mask.
+pub(crate) static mut SAVE_SIGSUSPEND_MASK_HOOK: Option<fn()> = None;
+
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
         let _ = hook();
@@ -489,5 +508,51 @@ pub unsafe fn waitpid_current(pid: i64, flags: u32) -> Result<(u64, i32), Errno>
         hook(pid, flags)
     } else {
         Err(Errno::ENOSYS)
+    }
+}
+
+// ── Signal-subsystem hook wrappers ───────────────────────────────────────────
+
+pub fn get_thread_signal_current() -> (abi::signal::SigSet, abi::signal::SigSet) {
+    unsafe {
+        GET_THREAD_SIGNAL_HOOK.map(|f| f()).unwrap_or_default()
+    }
+}
+
+pub fn set_thread_blocked_current(mask: abi::signal::SigSet) -> abi::signal::SigSet {
+    unsafe {
+        SET_THREAD_BLOCKED_HOOK.map(|f| f(mask)).unwrap_or_default()
+    }
+}
+
+pub fn clear_thread_pending_current(sig: u32) -> bool {
+    unsafe { CLEAR_THREAD_PENDING_HOOK.map(|f| f(sig)).unwrap_or(false) }
+}
+
+pub fn set_thread_stopped_current(val: bool) {
+    unsafe {
+        if let Some(f) = SET_THREAD_STOPPED_HOOK {
+            f(val);
+        }
+    }
+}
+
+pub fn get_sigsuspend_mask_current() -> Option<abi::signal::SigSet> {
+    unsafe { GET_SIGSUSPEND_MASK_HOOK.map(|f| f()).unwrap_or(None) }
+}
+
+pub fn clear_sigsuspend_current(mask: abi::signal::SigSet) {
+    unsafe {
+        if let Some(f) = CLEAR_SIGSUSPEND_HOOK {
+            f(mask);
+        }
+    }
+}
+
+pub fn save_sigsuspend_mask_current() {
+    unsafe {
+        if let Some(f) = SAVE_SIGSUSPEND_MASK_HOOK {
+            f();
+        }
     }
 }

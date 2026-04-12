@@ -197,6 +197,11 @@ pub fn on_tick<R: BootRuntime>() {
 
     DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
 
+    // Check alarm deadlines on CPU 0 every tick.
+    if cpu_idx == 0 && ticks % 100 == 0 {
+        crate::signal::deliver::check_alarms();
+    }
+
     try_resched_if_needed::<R>();
 }
 
@@ -306,6 +311,15 @@ pub fn init<R: BootRuntime>() {
             hooks::SET_CURRENT_USER_FS_BASE_HOOK = Some(set_current_user_fs_base::<R>);
             hooks::WAITPID_HOOK = Some(waitpid::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
+            // Signal-subsystem hooks
+            hooks::GET_THREAD_SIGNAL_HOOK = Some(get_thread_signal::<R>);
+            hooks::SET_THREAD_BLOCKED_HOOK = Some(set_thread_blocked::<R>);
+            hooks::CLEAR_THREAD_PENDING_HOOK = Some(clear_thread_pending::<R>);
+            hooks::SET_THREAD_STOPPED_HOOK = Some(set_thread_stopped::<R>);
+            hooks::GET_THREAD_STOPPED_HOOK = Some(get_thread_stopped::<R>);
+            hooks::GET_SIGSUSPEND_MASK_HOOK = Some(get_sigsuspend_mask::<R>);
+            hooks::CLEAR_SIGSUSPEND_HOOK = Some(clear_sigsuspend_mask::<R>);
+            hooks::SAVE_SIGSUSPEND_MASK_HOOK = Some(save_sigsuspend_mask::<R>);
         }
         blocking::init_blocking_hooks::<R>();
         let cpu_total = if let Some(ptr) = *lock {
@@ -354,6 +368,10 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         is_user: false,
         wake_pending: false,
         pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
         stack_info: None,
         mappings: alloc::sync::Arc::new(spin::Mutex::new(
             crate::memory::mappings::MappingList::new(),
@@ -1285,7 +1303,19 @@ fn mark_task_exited<R: BootRuntime>(
             // If the exiting thread is the thread-group leader (its TID == pid),
             // drain all remaining siblings and schedule them for termination.
             if pi.pid as TaskId == tid {
-                core::mem::take(&mut pi.thread_ids)
+                // Deliver SIGCHLD to the parent process.
+                let ppid = pi.ppid;
+                drop(pi); // release lock before calling signal machinery
+                if ppid > 0 {
+                    crate::signal::deliver::signal_parent_sigchld(ppid);
+                }
+                crate::task::registry::get_task::<R>(tid)
+                    .and_then(|t| t.process_info.clone())
+                    .map(|pinfo2| {
+                        let mut pi2 = pinfo2.lock();
+                        core::mem::take(&mut pi2.thread_ids)
+                    })
+                    .unwrap_or_default()
             } else {
                 alloc::vec::Vec::new()
             }
@@ -1318,6 +1348,7 @@ fn mark_task_exited<R: BootRuntime>(
 
     waiters
 }
+
 
 fn wake_waiters(waiters: &[u64]) {
     for &tid in waiters {
@@ -1797,6 +1828,79 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
     }
 }
 
+// ── Signal-subsystem typed implementations (registered as hooks) ─────────────
+
+fn get_thread_signal<R: BootRuntime>() -> (abi::signal::SigSet, abi::signal::SigSet) {
+    let tid = unsafe { current_tid::<R>() };
+    crate::task::registry::get_task::<R>(tid)
+        .map(|t| (t.blocked_signals, t.pending_signals))
+        .unwrap_or_default()
+}
+
+fn set_thread_blocked<R: BootRuntime>(mask: abi::signal::SigSet) -> abi::signal::SigSet {
+    let tid = unsafe { current_tid::<R>() };
+    // Ensure SIGKILL and SIGSTOP can never be blocked.
+    let mut new_mask = mask;
+    new_mask.remove(abi::signal::SIGKILL);
+    new_mask.remove(abi::signal::SIGSTOP);
+    crate::task::registry::get_task_mut::<R>(tid)
+        .map(|mut t| {
+            let old = t.blocked_signals;
+            t.blocked_signals = new_mask;
+            old
+        })
+        .unwrap_or_default()
+}
+
+fn clear_thread_pending<R: BootRuntime>(sig: u32) -> bool {
+    let tid = unsafe { current_tid::<R>() };
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        if task.pending_signals.contains(sig) {
+            task.pending_signals.remove(sig);
+            return true;
+        }
+    }
+    false
+}
+
+fn set_thread_stopped<R: BootRuntime>(val: bool) {
+    let tid = unsafe { current_tid::<R>() };
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        task.is_stopped = val;
+    }
+}
+
+fn get_thread_stopped<R: BootRuntime>() -> bool {
+    let tid = unsafe { current_tid::<R>() };
+    crate::task::registry::get_task::<R>(tid)
+        .map(|t| t.is_stopped)
+        .unwrap_or(false)
+}
+
+fn get_sigsuspend_mask<R: BootRuntime>() -> Option<abi::signal::SigSet> {
+    let tid = unsafe { current_tid::<R>() };
+    crate::task::registry::get_task::<R>(tid)
+        .and_then(|t| t.sigsuspend_mask)
+}
+
+fn save_sigsuspend_mask<R: BootRuntime>() {
+    let tid = unsafe { current_tid::<R>() };
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        if task.sigsuspend_mask.is_none() {
+            let cur = task.blocked_signals;
+            task.sigsuspend_mask = Some(cur);
+        }
+    }
+}
+
+fn clear_sigsuspend_mask<R: BootRuntime>(restore_mask: abi::signal::SigSet) {
+    let tid = unsafe { current_tid::<R>() };
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        task.sigsuspend_mask = None;
+        task.blocked_signals = restore_mask;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1967,6 +2071,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2021,6 +2129,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2053,6 +2165,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2136,6 +2252,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2168,6 +2288,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2243,6 +2367,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2275,6 +2403,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2375,6 +2507,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2454,6 +2590,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2551,6 +2691,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2582,6 +2726,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2647,6 +2795,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2678,6 +2830,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2736,6 +2892,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2787,6 +2947,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2841,6 +3005,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2872,6 +3040,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -2903,6 +3075,10 @@ mod tests {
             is_user: false,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -3117,6 +3293,10 @@ mod tests {
             is_user: true,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -3144,6 +3324,10 @@ mod tests {
                     cwd: alloc::string::String::from("/"),
                     thread_ids: alloc::vec![pid as TaskId],
                     exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
                     exec_path: alloc::string::String::new(),
                     mappings: alloc::sync::Arc::new(spin::Mutex::new(
                         crate::memory::mappings::MappingList::new(),
@@ -3351,6 +3535,10 @@ mod tests {
             is_user: true,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -3391,6 +3579,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![7000, 7001],
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3425,6 +3617,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8700, 8701],
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3485,6 +3681,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![8800, 8801],
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3549,6 +3749,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9100, 9101, 9102],
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3656,6 +3860,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: all_tids.clone(),
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::from("/old/binary"),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3750,6 +3958,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![9300],
             exec_in_progress: false,
+                    signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+                    pending_signals: abi::signal::SigSet::EMPTY,
+                    is_stopped: false,
+                    alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -3802,6 +4014,10 @@ mod tests {
             is_user: true,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -3849,6 +4065,10 @@ mod tests {
             is_user: true,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
@@ -3895,6 +4115,10 @@ mod tests {
             is_user: true,
             wake_pending: false,
             pending_interrupt: false,
+            blocked_signals: abi::signal::SigSet::EMPTY,
+            pending_signals: abi::signal::SigSet::EMPTY,
+            sigsuspend_mask: None,
+            is_stopped: false,
             affinity: Affinity::Any,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,

@@ -1670,6 +1670,10 @@ mod tests {
             cwd: alloc::string::String::from("/"),
             thread_ids: alloc::vec![1],
             exec_in_progress: false,
+            signal_dispositions: [abi::signal::SigAction { handler: 0, mask: abi::signal::SigSet::EMPTY, flags: 0, _pad: 0 }; 32],
+            pending_signals: abi::signal::SigSet::EMPTY,
+            is_stopped: false,
+            alarm_deadline: 0,
             exec_path: alloc::string::String::new(),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),

@@ -89,6 +89,8 @@ members = [
     "userspace/env_roundtrip",
     "userspace/cwd_test",
     "userspace/time_test",
+    "userspace/kill",
+    "userspace/sig_test",
     "userspace/wayland_hello",
     "userspace/terminal",
     "userspace/petals",

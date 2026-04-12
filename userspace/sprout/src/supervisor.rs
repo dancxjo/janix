@@ -181,6 +181,7 @@ impl Supervisor {
         for (pid, name) in pids {
             match stem::syscall::task_poll(pid) {
                 Ok((status, code)) => {
+                    stem::debug!("SPROUT: Polling task '{}' (PID {}): status={:?}, code={}", name, pid, status, code);
                     if status == stem::abi::types::TaskStatus::Dead {
                         info!("SPROUT: Task '{}' (PID {}) is Dead (code {})", name, pid, code);
                         

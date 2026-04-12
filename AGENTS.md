@@ -78,6 +78,17 @@ Important implications:
 - `git status` in the main repo does not track changes inside `vendor/rust/`.
 - The `xtask` build system hashes the git revision of `vendor/rust/` to detect when the compiler needs to be rebuilt.
 
+## Architecture Guardrails
+
+Four non-negotiable design rules govern all kernel and userspace changes:
+
+1. **Scheduler-first** — every unit of execution is a kernel-scheduled task.
+2. **Userland drivers** — hardware logic lives in userspace; kernel exposes only `SYS_DEVICE_*` primitives.
+3. **VFS-first** — all system resources are reachable through mounted filesystem paths.
+4. **Spawn + exec** — new processes use `SYS_SPAWN_PROCESS[_EX]` + `SYS_TASK_EXEC`; there is no `SYS_FORK`.
+
+**See `docs/concepts/janix-guardrails.md` for the full reference and PR review checklist.**
+
 ## Notes
 - Workspace members are listed in `Cargo.toml`.
 - `target/` is build output and can be ignored in reviews.

@@ -303,6 +303,7 @@ thing-os/
 
 ## Documentation
 
+- [**Janix Architecture Guardrails**](./docs/concepts/janix-guardrails.md) — non-negotiable design rules (scheduler-first, userland drivers, VFS-first, spawn+exec)
 - [Components](./docs/components/) — per-component design docs
 - [Concepts](./docs/concepts/) — deep dives on scheduling, namespaces, VFS
 - [Behavior Reports](./docs/behavior/) — BDD test results

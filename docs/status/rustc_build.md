@@ -14,6 +14,63 @@ therefore **not staged into the ISO** by default.
 
 ---
 
+## Operator guide: two-mode behavior
+
+`just rustc-thingos` (and the rustc step inside `just iso`/`just run`) has two
+modes:
+
+### Default mode — Linux-hosted cross-compiler (stable)
+
+```
+just rustc-thingos
+# or equivalently:
+just iso
+just run
+```
+
+- Builds and caches `target/rustc-thingos/rustc` (Linux ELF).
+- Always succeeds on a Linux developer host.
+- The ThingOS-native compiler is **not** built.
+- The ISO boots without `/bin/rustc`.
+
+Control knobs:
+| Env var | Effect |
+|---|---|
+| `SKIP_RUSTC_THINGOS=1` | Skip the entire step (no build, no cache check). |
+
+### Opt-in mode — ThingOS-native rustc recovery (unstable, non-fatal)
+
+```
+BUILD_THINGOS_NATIVE_RUSTC=1 just rustc-thingos
+```
+
+- Attempts to build a ThingOS-native stage-1 `rustc` (runs on ThingOS, not Linux).
+- Non-fatal: failures are logged as warnings; the default boot path is never broken.
+- On success, caches the binary at `target/rustc-thingos/thingos-rustc` and
+  stages it into the ISO at `bin/rustc` + `lib/rustlib/`.
+- This path is currently **experimental** and may fail until the ThingOS
+  userspace runtime is sufficiently stable to host a compiler process.
+
+### ISO staging decision
+
+At ISO build time, `stage_rustc_for_iso` prints one of:
+
+```
+rustc-thingos: staging decision: ThingOS-native rustc absent (target/rustc-thingos/thingos-rustc);
+    skipping ISO staging (default, stable path).
+rustc-thingos: To include a native compiler in the ISO, set BUILD_THINGOS_NATIVE_RUSTC=1
+    and run `just rustc-thingos`, then rebuild the ISO.
+```
+
+or, when the native binary is present:
+
+```
+rustc-thingos: staging decision: ThingOS-native rustc present (target/rustc-thingos/thingos-rustc);
+    staging into ISO.
+```
+
+---
+
 ## Blocking issues: resolved
 
 Three issues were tracked as blockers in issue #713.  All three have been

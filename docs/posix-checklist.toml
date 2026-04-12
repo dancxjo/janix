@@ -288,12 +288,12 @@ id = "fd.isatty"
 title = "Terminal detection"
 category = "terminal"
 priority = "p1"
-status = "missing"
+status = "partial"
 owner = "mixed"
 rust_blocker = false
 cargo_blocker = true
 posix = "isatty"
-notes = "Audit explicitly marks isatty missing."
+notes = "SYS_FS_ISATTY present; sys_fs_isatty checks VfsNode::is_tty() which defaults to false. Console/TTY nodes can override is_tty()."
 
 # ---- Filesystem and stat -----------------------------------------------------
 
@@ -314,12 +314,12 @@ id = "fs.stat_timestamps"
 title = "atime/mtime/ctime in stat and fstat"
 category = "filesystem"
 priority = "p0"
-status = "missing"
+status = "present"
 owner = "mixed"
 rust_blocker = true
 cargo_blocker = true
 posix = "stat/fstat"
-notes = "Critical for cargo and build systems."
+notes = "VfsStat and FileStat include atime/mtime/ctime (sec+nsec). Timestamps are updated on write/truncate/mkdir; read by kernel::time::now_timespec()."
 
 [[features]]
 id = "fs.readdir"
@@ -362,36 +362,36 @@ id = "filesystem.fsync"
 title = "File sync / durability barrier"
 category = "filesystem"
 priority = "p1"
-status = "missing"
+status = "present"
 owner = "mixed"
 rust_blocker = false
 cargo_blocker = true
 posix = "fsync"
-notes = "Audit marks fsync missing."
+notes = "SYS_FS_SYNC (sys_fs_sync) implemented; calls VfsNode::sync() on the fd's node. No-op for ramfs (in-memory), deferred for persistent backing stores."
 
 [[features]]
 id = "fs.symlinks"
 title = "Symbolic links"
 category = "filesystem"
 priority = "p2"
-status = "missing"
+status = "present"
 owner = "kernel"
 rust_blocker = false
 cargo_blocker = false
 posix = "symlink"
-notes = "Audit marks symlinks unsupported."
+notes = "SYS_FS_SYMLINK and RamFs::create_symlink implemented. path.rs resolve() follows symlinks up to MAX_SYMLINK_DEPTH (40). VfsDriver::symlink supported in ramfs."
 
 [[features]]
 id = "fs.readlink"
 title = "Read symbolic link target"
 category = "filesystem"
 priority = "p2"
-status = "missing"
+status = "present"
 owner = "kernel"
 rust_blocker = false
 cargo_blocker = false
 posix = "readlink"
-notes = "Naturally follows symlink support."
+notes = "SYS_FS_READLINK implemented; calls VfsNode::readlink(). RamFs symlink nodes return the target via readlink(). lstat (SYS_FS_LSTAT) and resolve_no_follow() also present."
 
 [[features]]
 id = "fs.permissions"
@@ -436,12 +436,12 @@ id = "path.realpath"
 title = "Canonical path resolution"
 category = "path"
 priority = "p1"
-status = "missing"
+status = "present"
 owner = "mixed"
 rust_blocker = false
 cargo_blocker = true
 posix = "realpath"
-notes = "Audit notes only kernel-internal path resolution today."
+notes = "SYS_FS_REALPATH (sys_fs_realpath) implemented. vfs::path::normalise() handles . / .. / double-slash. stem::syscall::vfs_realpath() wraps the syscall."
 
 # ---- Memory ------------------------------------------------------------------
 

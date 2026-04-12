@@ -350,6 +350,177 @@ fn test_truncate() -> Result<(), std::string::String> {
     Ok(())
 }
 
+// ── Test: fs_chdir_relative_open ──────────────────────────────────────────────
+
+/// Verifies that after chdir, relative paths resolve against the new CWD.
+fn test_chdir_relative_open() -> Result<(), std::string::String> {
+    use std::io::Write;
+
+    let subdir = "/tmp/test_fs_cwd_sub";
+    let abs_file = std::alloc::format!("{}/hello.txt", subdir);
+    let content = b"cwd test content";
+
+    // Clean slate.
+    let _ = std::fs::remove_file(&abs_file);
+    let _ = std::fs::remove_dir(subdir);
+
+    // Create subdir and write a file via the absolute path.
+    std::fs::create_dir(subdir)
+        .map_err(|e| std::alloc::format!("create_dir: {}", e))?;
+    {
+        let mut f = std::fs::File::create(&abs_file)
+            .map_err(|e| std::alloc::format!("create abs: {}", e))?;
+        f.write_all(content)
+            .map_err(|e| std::alloc::format!("write_all: {}", e))?;
+    }
+
+    // Record original CWD so we can restore it.
+    let mut cwd_buf = [0u8; 4096];
+    // Capture original CWD as an owned String so it outlives the buffer slice.
+    let original_cwd = {
+        let n = stem::syscall::vfs_getcwd(&mut cwd_buf)
+            .map_err(|e| std::alloc::format!("vfs_getcwd (save): {:?}", e))?;
+        alloc::string::String::from(
+            core::str::from_utf8(&cwd_buf[..n])
+                .map_err(|_| std::alloc::format!("vfs_getcwd returned non-UTF8"))?,
+        )
+    };
+
+    // chdir to the subdirectory.
+    stem::syscall::vfs_chdir(subdir)
+        .map_err(|e| std::alloc::format!("vfs_chdir({}): {:?}", subdir, e))?;
+
+    // Verify getcwd reflects the change.
+    let new_cwd = {
+        let n = stem::syscall::vfs_getcwd(&mut cwd_buf)
+            .map_err(|e| std::alloc::format!("vfs_getcwd (after chdir): {:?}", e))?;
+        alloc::string::String::from(
+            core::str::from_utf8(&cwd_buf[..n])
+                .map_err(|_| std::alloc::format!("non-UTF8 cwd"))?,
+        )
+    };
+    if new_cwd != subdir {
+        let _ = stem::syscall::vfs_chdir(&original_cwd);
+        return Err(std::alloc::format!(
+            "getcwd mismatch after chdir: expected {:?}, got {:?}", subdir, new_cwd
+        ));
+    }
+
+    // Open the file via a relative path now that CWD is the subdir.
+    let result = (|| -> Result<(), std::string::String> {
+        let mut f = std::fs::File::open("hello.txt")
+            .map_err(|e| std::alloc::format!("open relative: {}", e))?;
+        let mut buf = std::vec::Vec::new();
+        use std::io::Read;
+        f.read_to_end(&mut buf)
+            .map_err(|e| std::alloc::format!("read_to_end: {}", e))?;
+        if buf != content {
+            return Err(std::alloc::format!(
+                "relative open content mismatch: {:?}", buf
+            ));
+        }
+        Ok(())
+    })();
+
+    // Restore original CWD before propagating any error.
+    let _ = stem::syscall::vfs_chdir(&original_cwd);
+
+    result?;
+
+    // Cleanup.
+    std::fs::remove_file(&abs_file)
+        .map_err(|e| std::alloc::format!("remove_file: {}", e))?;
+    std::fs::remove_dir(subdir)
+        .map_err(|e| std::alloc::format!("remove_dir: {}", e))?;
+
+    Ok(())
+}
+
+// ── Test: fs_getcwd_roundtrip ─────────────────────────────────────────────────
+
+/// Verifies that chdir → getcwd returns the exact path we changed to.
+fn test_getcwd_roundtrip() -> Result<(), std::string::String> {
+    let mut buf = [0u8; 4096];
+
+    // Save the original CWD.
+    let n = stem::syscall::vfs_getcwd(&mut buf)
+        .map_err(|e| std::alloc::format!("getcwd (initial): {:?}", e))?;
+    let original = core::str::from_utf8(&buf[..n])
+        .map_err(|_| "non-UTF8 initial cwd".to_string())?
+        .to_string();
+
+    // chdir to /tmp.
+    stem::syscall::vfs_chdir("/tmp")
+        .map_err(|e| std::alloc::format!("chdir /tmp: {:?}", e))?;
+
+    // getcwd must now return "/tmp".
+    let n2 = stem::syscall::vfs_getcwd(&mut buf)
+        .map_err(|e| std::alloc::format!("getcwd (after /tmp): {:?}", e))?;
+    let after = core::str::from_utf8(&buf[..n2])
+        .map_err(|_| "non-UTF8 cwd after".to_string())?;
+    if after != "/tmp" {
+        let _ = stem::syscall::vfs_chdir(&original);
+        return Err(std::alloc::format!(
+            "getcwd after chdir /tmp: expected '/tmp', got {:?}", after
+        ));
+    }
+
+    // Restore.
+    stem::syscall::vfs_chdir(&original)
+        .map_err(|e| std::alloc::format!("chdir restore: {:?}", e))?;
+
+    Ok(())
+}
+
+// ── Test: fs_mkdir_eexist ─────────────────────────────────────────────────────
+
+/// mkdir on an existing directory must fail with an appropriate error.
+fn test_mkdir_eexist() -> Result<(), std::string::String> {
+    let dir = "/tmp/test_fs_eexist_dir";
+    let _ = std::fs::remove_dir(dir);
+
+    // First create should succeed.
+    std::fs::create_dir(dir)
+        .map_err(|e| std::alloc::format!("create_dir (first): {}", e))?;
+
+    // Second create on the same path should fail with AlreadyExists.
+    match std::fs::create_dir(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => {
+            let _ = std::fs::remove_dir(dir);
+            return Err(std::alloc::format!(
+                "create_dir (second): unexpected error: {}", e
+            ));
+        }
+        Ok(()) => {
+            let _ = std::fs::remove_dir(dir);
+            return Err("create_dir (second): should have failed but succeeded".into());
+        }
+    }
+
+    std::fs::remove_dir(dir)
+        .map_err(|e| std::alloc::format!("remove_dir: {}", e))?;
+
+    Ok(())
+}
+
+// ── Test: fs_open_enoent ──────────────────────────────────────────────────────
+
+/// Opening a non-existent file without O_CREAT must fail with NotFound.
+fn test_open_enoent() -> Result<(), std::string::String> {
+    let path = "/tmp/test_fs_definitely_does_not_exist_xyz.txt";
+    // Make sure it really doesn't exist.
+    let _ = std::fs::remove_file(path);
+
+    match std::fs::File::open(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(std::alloc::format!(
+            "open non-existent: expected NotFound, got {}", e
+        )),
+        Ok(_) => Err("open non-existent: succeeded unexpectedly".into()),
+    }
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[stem::main]
@@ -363,6 +534,10 @@ fn main(_arg: usize) -> ! {
     check!("fs_rename_remove", test_rename_remove());
     check!("fs_create_new", test_create_new());
     check!("fs_truncate", test_truncate());
+    check!("fs_chdir_relative_open", test_chdir_relative_open());
+    check!("fs_getcwd_roundtrip", test_getcwd_roundtrip());
+    check!("fs_mkdir_eexist", test_mkdir_eexist());
+    check!("fs_open_enoent", test_open_enoent());
 
     let failures = unsafe { FAILURES };
     if failures == 0 {

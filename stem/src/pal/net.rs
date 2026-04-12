@@ -72,8 +72,9 @@
 
 use super::vfs_flags::{O_NONBLOCK, O_RDONLY, O_RDWR, O_WRONLY};
 use crate::syscall;
-use crate::syscall::vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
+use crate::syscall::vfs::{vfs_close, vfs_open, vfs_poll, vfs_read, vfs_write};
 use abi::errors::{Errno, SysResult};
+use abi::syscall::{poll_flags, PollFd};
 use spin::Mutex;
 
 /// A VFS file descriptor returned by [`vfs_open`].
@@ -86,6 +87,58 @@ const CONNECT_POLL_NS: u64 = 5_000_000;
 
 /// Nanoseconds to wait between accept polls.
 const ACCEPT_POLL_NS: u64 = 5_000_000;
+
+fn wait_fd_or_sleep(
+    fd: Fd,
+    events: u16,
+    deadline_ns: u64,
+    fallback_sleep_ns: u64,
+) -> SysResult<()> {
+    match wait_fd(fd, events, deadline_ns) {
+        Ok(()) => Ok(()),
+        Err(Errno::ENOSYS) => {
+            syscall::sleep_ns(fallback_sleep_ns);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn wait_fd(fd: Fd, events: u16, deadline_ns: u64) -> SysResult<()> {
+    loop {
+        let timeout_ms = if deadline_ns == 0 {
+            u64::MAX
+        } else {
+            let now = syscall::monotonic_ns();
+            if now >= deadline_ns {
+                return Err(Errno::ETIMEDOUT);
+            }
+            ns_to_timeout_ms(deadline_ns.saturating_sub(now))
+        };
+
+        let mut pollfd = [PollFd {
+            fd: fd as i32,
+            events,
+            revents: 0,
+        }];
+
+        match vfs_poll(&mut pollfd, timeout_ms) {
+            Ok(0) => {
+                if deadline_ns != 0 {
+                    return Err(Errno::ETIMEDOUT);
+                }
+            }
+            Ok(_) => return Ok(()),
+            Err(Errno::EINTR) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn ns_to_timeout_ms(ns: u64) -> u64 {
+    let ms = ns.saturating_add(999_999) / 1_000_000;
+    ms.max(1)
+}
 
 // IPv6 rejection
 
@@ -267,7 +320,12 @@ impl TcpListenerHandle {
                     if deadline_ns != 0 && syscall::monotonic_ns() >= deadline_ns {
                         return Err(Errno::ETIMEDOUT);
                     }
-                    syscall::sleep_ns(ACCEPT_POLL_NS);
+                    wait_fd_or_sleep(
+                        self.accept_fd,
+                        poll_flags::POLLIN,
+                        deadline_ns,
+                        ACCEPT_POLL_NS,
+                    )?;
                 }
                 Err(e) => return Err(e),
             }
@@ -529,7 +587,7 @@ pub fn tcp_connect(addr: &str, port: u16, deadline_ns: u64) -> SysResult<TcpHand
             let _ = vfs_close(ctl_fd);
             return Err(Errno::ETIMEDOUT);
         }
-        syscall::sleep_ns(CONNECT_POLL_NS);
+        wait_fd_or_sleep(data_fd, poll_flags::POLLOUT, deadline_ns, CONNECT_POLL_NS)?;
     }
 
     Ok(TcpHandle {
@@ -683,7 +741,7 @@ pub fn resolve_hostname(hostname: &str, deadline_ns: u64) -> SysResult<[u8; 4]> 
                     let _ = vfs_close(lookup_fd);
                     return Err(Errno::ETIMEDOUT);
                 }
-                syscall::sleep_ns(CONNECT_POLL_NS);
+                wait_fd_or_sleep(lookup_fd, poll_flags::POLLIN, deadline_ns, CONNECT_POLL_NS)?;
             }
             Err(e) => {
                 let _ = vfs_close(lookup_fd);
@@ -746,7 +804,10 @@ mod tests {
     fn test_try_parse_ipv4_valid() {
         assert_eq!(try_parse_ipv4("127.0.0.1"), Some([127, 0, 0, 1]));
         assert_eq!(try_parse_ipv4("0.0.0.0"), Some([0, 0, 0, 0]));
-        assert_eq!(try_parse_ipv4("255.255.255.255"), Some([255, 255, 255, 255]));
+        assert_eq!(
+            try_parse_ipv4("255.255.255.255"),
+            Some([255, 255, 255, 255])
+        );
         assert_eq!(try_parse_ipv4("192.168.1.50"), Some([192, 168, 1, 50]));
         assert_eq!(try_parse_ipv4("  10.0.0.1  "), Some([10, 0, 0, 1]));
     }

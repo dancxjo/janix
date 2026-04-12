@@ -149,11 +149,11 @@ fn locate_thingos_rustc(cwd: &Path, rust_src: &Path) -> Option<PathBuf> {
     let root_build = xpy_build_root(cwd);
     let candidates = [
         // Cargo build artifact produced by a Canadian-cross x.py run.
-        root_build
-            .join("stage1-rustc/x86_64-unknown-thingos/release/rustc-main"),
+        root_build.join("stage1-rustc/x86_64-unknown-thingos/release/rustc-main"),
         // Installed stage-1 tree inside the vendor/rust build directory.
-        rust_src
-            .join("build/x86_64-unknown-linux-gnu/stage1-rustc/x86_64-unknown-thingos/release/rustc-main"),
+        rust_src.join(
+            "build/x86_64-unknown-linux-gnu/stage1-rustc/x86_64-unknown-thingos/release/rustc-main",
+        ),
         rust_src.join("build/x86_64-unknown-thingos/stage1/bin/rustc"),
     ];
 
@@ -450,7 +450,10 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     }
 
     write_cache_key()?;
-    println!("rustc-thingos: Linux-hosted binary cached at {}", RUSTC_BINARY);
+    println!(
+        "rustc-thingos: Linux-hosted binary cached at {}",
+        RUSTC_BINARY
+    );
     Ok(Some(PathBuf::from(RUSTC_BINARY)))
 }
 
@@ -519,4 +522,3 @@ pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
 
     Ok(())
 }
-

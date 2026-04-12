@@ -84,8 +84,10 @@ impl Supervisor {
         // self.wait_for_display();
 
         loop {
+            stem::info!("SPROUT: --- Supervisor Loop Cycle Start (tasks={}) ---", self.tasks.lock().len());
             self.process_registrations();
             self.monitor();
+            stem::info!("SPROUT: --- Supervisor Loop Cycle End ---");
             stem::sleep_ms(100);
         }
     }

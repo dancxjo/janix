@@ -154,7 +154,7 @@ fn find_framebuffer() -> Option<Framebuffer> {
     let fd = vfs_open("/dev/fb0", O_RDONLY).ok()?;
 
     let mut payload = FbInfoPayload {
-        graph_id: 0,
+        device_handle: 0,
         width: 0,
         height: 0,
         stride: 0,

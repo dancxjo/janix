@@ -28,7 +28,7 @@ pub use hooks::{
     ProcessSnapshot, add_user_mapping_current, alloc_user_stack_current,
     check_user_mapping_current, current_priority_current, current_task_name_current,
     current_tid_current, dump_stats_current, exit_current, get_user_mapping_at_current,
-    graph_thing_for_current, handle_user_stack_fault_current, interrupt_task_current,
+    current_task_resource_id, handle_user_stack_fault_current, interrupt_task_current,
     kill_by_tid_current, list_processes_current, poll_task_exit_current, process_info_current,
     process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
     remove_user_mappings_current, set_current_user_fs_base_current, set_priority_current,
@@ -292,7 +292,7 @@ pub fn init<R: BootRuntime>() {
             hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
             hooks::PROCESS_INFO_FOR_TID_HOOK = Some(process_info_for_tid::<R>);
             hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
-            hooks::GRAPH_THING_FOR_CURRENT_HOOK = Some(graph_thing_for_current_impl::<R>);
+            hooks::CURRENT_RESOURCE_HOOK = Some(current_task_resource_id_impl::<R>);
             hooks::POLL_TASK_EXIT_HOOK = Some(poll_task_exit::<R>);
             hooks::REGISTER_TASK_EXIT_WAITER_HOOK = Some(register_task_exit_waiter_public::<R>);
             hooks::UNREGISTER_TASK_EXIT_WAITER_HOOK = Some(unregister_task_exit_waiter::<R>);
@@ -1286,7 +1286,7 @@ fn wake_waiters(waiters: &[u64]) {
     }
 }
 
-fn graph_thing_for_current_impl<R: BootRuntime>() -> Option<u64> {
+fn current_task_resource_id_impl<R: BootRuntime>() -> Option<u64> {
     None
 }
 

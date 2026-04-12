@@ -2,24 +2,24 @@
 //!
 //! This module defines the canonical, machine-readable contract for every long-running
 //! service in Thing-OS. The contract formalizes what the system already believes:
-//! - Services are graph-native watchers, not boot-time scanners
-//! - The graph is the only source of truth
+//! - Services are filesystem/device watchers, not boot-time scanners
+//! - The VFS is the source of truth for resource discovery
 //! - Services declare their dependencies and outputs explicitly
 //!
 //! ## Contract Fields
 //!
 //! - **Service Name**: Canonical name of the service
-//! - **Watched Kinds**: Node kinds this service watches (input)
-//! - **Published Kinds**: Node kinds this service publishes (output)
+//! - **Watched Kinds**: Resource kinds this service watches (input)
+//! - **Published Kinds**: Resource kinds this service publishes (output)
 //! - **Published Properties**: Property keys this service sets
 //! - **Idempotent**: Whether repeated operations produce the same result
-//! - **Boot Assumptions**: MUST be empty for graph-native services
+//! - **Boot Assumptions**: MUST be empty for watch-driven services
 //!
 //! ## Runtime Enforcement
 //!
 //! Services MUST:
 //! 1. Declare their contract before startup
-//! 2. Register their contract node in the graph at `/sys/services/{name}`
+//! 2. Register their contract entry at `/services/{name}`
 //! 3. Only watch declared kinds
 //! 4. Only publish declared kinds and properties
 //!
@@ -57,29 +57,29 @@ use crate::schema::{keys, kinds, rels};
 
 /// A service contract declaration
 ///
-/// This struct defines the complete interface contract for a graph-native service.
-/// Services MUST declare their contract at startup and register it in the graph.
+/// This struct defines the complete interface contract for a VFS-native service.
+/// Services MUST declare their contract at startup and register it under `/services`.
 #[derive(Debug, Clone)]
 pub struct ServiceContract {
     /// Canonical service name (e.g., "flytrap", "blossom")
     pub name: &'static str,
 
-    /// Node kinds this service watches (input dependencies)
+    /// Resource kinds this service watches (input dependencies)
     ///
     /// Service MUST NOT watch kinds not declared here.
-    /// Empty array means service doesn't watch any nodes (clock-driven, etc.)
+    /// Empty array means service doesn't watch any resources (clock-driven, etc.)
     pub watched_kinds: &'static [&'static str],
 
-    /// Node kinds this service publishes (output)
+    /// Resource kinds this service publishes (output)
     ///
-    /// Service MUST NOT create nodes of kinds not declared here.
-    /// Empty array means service doesn't create nodes (pure transformer, etc.)
+    /// Service MUST NOT create resources of kinds not declared here.
+    /// Empty array means service doesn't create resources (pure transformer, etc.)
     pub published_kinds: &'static [&'static str],
 
-    /// Property keys this service sets on published nodes
+    /// Property keys this service sets on published resources
     ///
     /// Service MUST NOT set properties not declared here on its published kinds.
-    /// May also set properties on watched nodes (transformations).
+    /// May also set properties on watched resources (transformations).
     pub published_properties: &'static [&'static str],
 
     /// Whether this service's operations are idempotent
@@ -97,7 +97,7 @@ pub struct ServiceContract {
 
     /// Boot-time assumptions that MUST exist before service starts
     ///
-    /// For graph-native services, this MUST be empty!
+    /// For watch-driven services, this MUST be empty!
     /// Non-empty values indicate a service that violates the watch-driven model.
     ///
     /// Example of INVALID assumptions (boot-shaped thinking):
@@ -105,7 +105,7 @@ pub struct ServiceContract {
     /// - "Framebuffer exists"
     /// - "Network is available"
     ///
-    /// Instead, services MUST watch for these things and react when they appear.
+    /// Instead, services MUST watch for these resources and react when they appear.
     pub boot_assumptions: &'static [&'static str],
 }
 
@@ -120,14 +120,14 @@ impl ServiceContract {
             return Err("Service name cannot be empty");
         }
 
-        // Graph-native services MUST NOT have boot assumptions
+        // Watch-driven services MUST NOT have boot assumptions
         if !self.boot_assumptions.is_empty() {
-            return Err("Graph-native services MUST NOT have boot assumptions");
+            return Err("Watch-driven services MUST NOT have boot assumptions");
         }
 
         // Service must either watch or publish (or both)
         if self.watched_kinds.is_empty() && self.published_kinds.is_empty() {
-            return Err("Service must watch and/or publish nodes");
+            return Err("Service must watch and/or publish resources");
         }
 
         Ok(())
@@ -194,7 +194,7 @@ mod tests {
 
         assert_eq!(
             contract.validate(),
-            Err("Graph-native services MUST NOT have boot assumptions")
+            Err("Watch-driven services MUST NOT have boot assumptions")
         );
     }
 
@@ -211,7 +211,7 @@ mod tests {
 
         assert_eq!(
             contract.validate(),
-            Err("Service must watch and/or publish nodes")
+            Err("Service must watch and/or publish resources")
         );
     }
 

@@ -48,7 +48,7 @@ pub struct MsixCapability {
 pub struct DeviceEntry {
     pub kind: &'static str,
     pub ioport_ranges: &'static [(u16, u16)], // (start, end) inclusive
-    pub graph_id: u64,                        // ThingId in the graph
+    pub resource_id: u64,                     // Kernel resource ID for this device
     pub mmio_bars: [u64; MAX_BARS],           // BAR physical addresses
     pub mmio_sizes: [u64; MAX_BARS],          // BAR sizes
     pub vendor_id: u16,
@@ -67,12 +67,12 @@ impl DeviceEntry {
     pub const fn new_legacy(
         kind: &'static str,
         ioport_ranges: &'static [(u16, u16)],
-        graph_id: u64,
+        resource_id: u64,
     ) -> Self {
         Self {
             kind,
             ioport_ranges,
-            graph_id,
+            resource_id,
             mmio_bars: [0; MAX_BARS],
             mmio_sizes: [0; MAX_BARS],
             vendor_id: 0,
@@ -90,14 +90,14 @@ impl DeviceEntry {
 
     pub const fn new_mmio(
         kind: &'static str,
-        graph_id: u64,
+        resource_id: u64,
         bars: [u64; MAX_BARS],
         sizes: [u64; MAX_BARS],
     ) -> Self {
         Self {
             kind,
             ioport_ranges: &[],
-            graph_id,
+            resource_id,
             mmio_bars: bars,
             mmio_sizes: sizes,
             vendor_id: 0,
@@ -257,11 +257,11 @@ impl DeviceRegistry {
         None
     }
 
-    /// Find device by graph ID (legacy, kept for internal use only).
-    pub fn find_by_graph_id(&self, graph_id: u64) -> Option<usize> {
+    /// Find device by resource ID.
+    pub fn find_by_resource_id(&self, resource_id: u64) -> Option<usize> {
         for i in 0..self.device_count {
             if let Some(entry) = &self.devices[i] {
-                if entry.graph_id == graph_id {
+                if entry.resource_id == resource_id {
                     return Some(i);
                 }
             }
@@ -385,7 +385,7 @@ impl DeviceRegistry {
         Some((device.irq_mode, device.irq_vector))
     }
 
-    pub fn get_graph_id_for_claim(&self, claim_handle: usize) -> Option<u64> {
+    pub fn get_resource_id_for_claim(&self, claim_handle: usize) -> Option<u64> {
         if claim_handle >= MAX_CLAIMS {
             return None;
         }
@@ -394,7 +394,7 @@ impl DeviceRegistry {
             return None;
         }
         let device = self.get(claim.device_index)?;
-        Some(device.graph_id)
+        Some(device.resource_id)
     }
 
     /// Allocate DMA buffer tracking slot

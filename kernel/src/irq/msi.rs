@@ -23,21 +23,21 @@ pub fn enable_for_claim(
         return Err(Errno::EINVAL);
     }
 
-    let (location, msi_cap, msix_cap, graph_id, bars) = {
+    let (location, msi_cap, msix_cap, resource_id, bars) = {
         let reg = REGISTRY.lock();
         let (location, msi_cap, msix_cap) = reg.get_pci_info(claim_handle).ok_or(Errno::ENODEV)?;
         let bars = reg.get_bars(claim_handle).ok_or(Errno::ENODEV)?;
-        let graph_id = reg
-            .get_graph_id_for_claim(claim_handle)
+        let resource_id = reg
+            .get_resource_id_for_claim(claim_handle)
             .ok_or(Errno::ENODEV)?;
-        (location, msi_cap, msix_cap, graph_id, bars)
+        (location, msi_cap, msix_cap, resource_id, bars)
     };
 
-    if graph_id == 0 {
+    if resource_id == 0 {
         return Err(Errno::ENODEV);
     }
 
-    let vector = alloc_vector(graph_id, 0).ok_or(Errno::ENOMEM)?;
+    let vector = alloc_vector(resource_id, 0).ok_or(Errno::ENOMEM)?;
     let result = if prefer_msix {
         if let Some(msix) = msix_cap {
             program_msix(location, msix, vector, bars)?;
@@ -189,6 +189,6 @@ fn pci_write_config_u16(location: PciLocation, offset: u8, value: u16) {
         .ok();
 }
 
-fn update_graph_irq(_graph_id: u64, _mode: IrqMode, _vector: u8) {
-    // Legacy graph updates are gone.
+fn update_device_irq(_resource_id: u64, _mode: IrqMode, _vector: u8) {
+    // Device IRQ state is tracked via the registry, not the graph.
 }

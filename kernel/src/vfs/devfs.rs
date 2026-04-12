@@ -67,15 +67,15 @@ pub fn unregister(name: &str) -> bool {
     DEVICE_REGISTRY.lock().remove(name).is_some()
 }
 
-pub fn set_boot_fb(fb: crate::FramebufferInfo, graph_id: u64) {
+pub fn set_boot_fb(fb: crate::FramebufferInfo, resource_id: u64) {
     crate::kinfo!(
-        "devfs: set_boot_fb width={} height={} pitch={} graph_id=0x{:x}",
+        "devfs: set_boot_fb width={} height={} pitch={} resource_id=0x{:x}",
         fb.width,
         fb.height,
         fb.pitch,
-        graph_id
+        resource_id
     );
-    *BOOT_FB_INFO.lock() = Some((fb, graph_id));
+    *BOOT_FB_INFO.lock() = Some((fb, resource_id));
 }
 
 // ── DevFs driver ─────────────────────────────────────────────────────────────
@@ -130,14 +130,14 @@ impl VfsDriver for DevFs {
             "null" => Ok(Arc::new(NullNode)),
             "zero" => Ok(Arc::new(ZeroNode)),
             "fb0" => {
-                if let Some((fb, graph_id)) = *BOOT_FB_INFO.lock() {
+                if let Some((fb, resource_id)) = *BOOT_FB_INFO.lock() {
                     crate::kdebug!(
                         "devfs: lookup fb0 -> hit ({}x{} stride={})",
                         fb.width,
                         fb.height,
                         fb.pitch
                     );
-                    Ok(Arc::new(FbNode::new(fb, graph_id)))
+                    Ok(Arc::new(FbNode::new(fb, resource_id)))
                 } else {
                     crate::kwarn!("devfs: lookup fb0 -> missing boot fb state");
                     Err(Errno::ENOENT)
@@ -568,12 +568,12 @@ impl VfsNode for ZeroNode {
 #[repr(C)]
 pub struct FbNode {
     fb: crate::FramebufferInfo,
-    graph_id: u64,
+    resource_id: u64,
 }
 
 impl FbNode {
-    pub const fn new(fb: crate::FramebufferInfo, graph_id: u64) -> Self {
-        Self { fb, graph_id }
+    pub const fn new(fb: crate::FramebufferInfo, resource_id: u64) -> Self {
+        Self { fb, resource_id }
     }
 }
 
@@ -582,7 +582,7 @@ impl VfsNode for FbNode {
         use abi::display_driver_protocol::{FB_INFO_PAYLOAD_SIZE, FbInfoPayload};
 
         let payload = FbInfoPayload {
-            graph_id: self.graph_id,
+            device_handle: self.resource_id,
             width: self.fb.width,
             height: self.fb.height,
             stride: self.fb.pitch,

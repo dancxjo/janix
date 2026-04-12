@@ -303,7 +303,7 @@ pub mod keys {
     /// Consumer cursor into UI_EVENT_LOG (byte offset).
     pub const UI_EVENT_CURSOR: &str = "ui.event.cursor";
     pub const UI_EVENT_GEN: &str = "ui.event.gen";
-    // DrawList (graph-native vector program) properties
+    // DrawList (VFS-native vector program) properties
     /// Bytespace id containing packed drawlist commands.
     pub const UI_DRAWLIST_BYTESPACE: &str = "ui.drawlist.bytespace";
     /// Monotonic generation for drawlist updates.
@@ -549,7 +549,7 @@ pub mod keys {
     pub const SERVICE_CONTRACT_PUBLISHED_PROPERTIES: &str = "service.contract.published_properties";
     /// Service contract idempotency flag (1 if idempotent, 0 if stateful)
     pub const SERVICE_CONTRACT_IDEMPOTENT: &str = "service.contract.idempotent";
-    /// Service contract boot assumptions (bytespace, MUST be empty for graph-native services)
+    /// Service contract boot assumptions (bytespace, MUST be empty for watch-driven services)
     pub const SERVICE_CONTRACT_BOOT_ASSUMPTIONS: &str = "service.contract.boot_assumptions";
     /// Service contract status ("declared", "registered", "active", "error")
     pub const SERVICE_CONTRACT_STATUS: &str = "service.contract.status";

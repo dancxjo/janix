@@ -807,7 +807,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     memory::global_alloc::init(runtime);
 
     if let Some(fb) = runtime.framebuffer() {
-        let fb_graph_id = 0xFB00_0000;
+        let fb_resource_id = 0xFB00_0000;
 
         {
             let mut reg = crate::device_registry::REGISTRY.lock();
@@ -828,16 +828,16 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             sizes[0] = fb.byte_len as u64;
             reg.register(crate::device_registry::DeviceEntry::new_mmio(
                 "display_fb",
-                fb_graph_id,
+                fb_resource_id,
                 bars,
                 sizes,
             ));
         }
 
-        crate::vfs::devfs::set_boot_fb(fb, fb_graph_id);
+        crate::vfs::devfs::set_boot_fb(fb, fb_resource_id);
         crate::vfs::devfs::register(
             "fb0",
-            alloc::sync::Arc::new(crate::vfs::devfs::FbNode::new(fb, fb_graph_id)),
+            alloc::sync::Arc::new(crate::vfs::devfs::FbNode::new(fb, fb_resource_id)),
         );
     }
 
@@ -1223,13 +1223,13 @@ pub fn scan_pci() {
                     }
                 }
 
-                let graph_id =
+                let resource_id =
                     0x2000_0000 | ((bus as u64) << 16) | ((dev as u64) << 8) | (func as u64);
 
                 let entry = crate::device_registry::DeviceEntry {
                     kind: "pci_device",
                     ioport_ranges: &[],
-                    graph_id,
+                    resource_id,
                     mmio_bars: bars,
                     mmio_sizes: sizes,
                     vendor_id,

@@ -44,7 +44,7 @@ pub const DRIVER_KIND_RAMFB: u32 = 3;
 #[repr(C, align(8))]
 #[derive(Clone, Copy, Debug)]
 pub struct FbInfoPayload {
-    pub graph_id: u64, // Pseudo graph ID to pass to sys_device_claim
+    pub device_handle: u64, // Device handle to pass to sys_device_claim
     pub width: u32,
     pub height: u32,
     pub stride: u32,

@@ -224,13 +224,16 @@ fetch-rust:
     ROOT_DIR="$(pwd)"
     if [ -d vendor/rust/.git ]; then
         echo "vendor/rust already exists, skipping clone."
-        echo "  To re-fetch, run: just rust-reset  (or rm -rf vendor/rust)"
+        echo "  Attempting to ensure enough history for LLVM (depth 100)..."
+        cd vendor/rust && git fetch --depth 100 origin {{rust_commit}}
+        cd "$ROOT_DIR"
+        echo "  To re-fetch from scratch, run: just rust-reset  (or rm -rf vendor/rust)"
     else
-        echo "==> Shallow-cloning dancxjo/rust-thingos at {{rust_commit}}..."
-        git clone --depth 1 --filter=blob:none --no-checkout \
+        echo "==> Shallow-cloning dancxjo/rust-thingos at {{rust_commit}} (depth 100)..."
+        git clone --depth 100 --filter=blob:none --no-checkout \
             https://github.com/dancxjo/rust-thingos.git vendor/rust
         cd vendor/rust
-        git fetch --depth 1 origin {{rust_commit}}
+        git fetch --depth 100 origin {{rust_commit}}
         git checkout {{rust_commit}}
         echo "==> Rust source ready at vendor/rust/"
         cd "$ROOT_DIR"
@@ -247,6 +250,9 @@ fetch-rust:
         cd "$ROOT_DIR"
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
+    
+    # Automatically apply necessary patches for Thing-OS
+    python3 scripts/patch_rust_fork.py
 
 # Hard-reset vendor/rust/ to the pinned commit (discards local changes)
 rust-reset:

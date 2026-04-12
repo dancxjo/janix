@@ -265,11 +265,11 @@ Current bootstrap note:
 - `cargo xtask rustc-thingos` (run by default in ISO/run flows unless `SKIP_RUSTC_THINGOS=1` is set) currently produces a Linux-hosted cross-compiler plus a ThingOS target sysroot cache. It does not yet produce a ThingOS-hosted `/bin/rustc` for ISO staging.
 
 Workflow:
-1. `just fetch-rust` (clones the fork)
+1. `just fetch-rust` (initializes/syncs the `vendor/rust` submodule and pins it to `thingos-patched`)
 2. If needed, replay local snapshots with `just rust-apply-patches`.
 3. Edit `vendor/rust/...`
 4. Commit and push changes to the `rust-thingos` fork repository.
-5. Run `just rust-reset` to discard local uncommitted changes if needed.
+5. Run `just rust-reset` to hard-reset `vendor/rust` to `origin/thingos-patched`.
 
 Important implications:
 - Fresh checkouts do not have `vendor/rust/`.

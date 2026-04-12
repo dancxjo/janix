@@ -68,10 +68,10 @@ Thing-OS uses a fork of the Rust compiler and standard library to support its cu
 - **Submodules**: Manual changes to submodules (like LLVM) are documented in `vendor/rust/submodule_patches.md`.
 
 Workflow:
-1. `just fetch-rust` (clones the fork)
+1. `just fetch-rust` (initializes/syncs the `vendor/rust` submodule and pins it to `thingos-patched`)
 2. Edit `vendor/rust/...`
 3. Commit and push changes to the `rust-thingos` fork repository.
-4. Run `just rust-reset` to discard local uncommitted changes if needed.
+4. Run `just rust-reset` to hard-reset `vendor/rust` to `origin/thingos-patched`.
 
 Important implications:
 - Fresh checkouts do not have `vendor/rust/`.

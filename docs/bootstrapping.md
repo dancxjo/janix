@@ -143,16 +143,16 @@ As revalidated on April 12, 2026:
 See [docs/status/rustc_build.md](./status/rustc_build.md) for the current
 status summary.
 
-## Checkout Modes
+## Checkout Mode
 
-`vendor/rust` may appear in one of two forms:
+`vendor/rust` is required to be a git submodule tracked by this repository.
+The submodule is pinned to the `thingos-patched` branch.
 
-- submodule mode
-- plain checkout mode
+If your local checkout has a legacy plain directory instead of a gitlink,
+convert it before bootstrapping:
 
-Some local checkouts currently have the Rust git metadata present under
-`.git/modules/vendor/rust` without a matching gitlink in the parent index.
-Bootstrap tooling should therefore tolerate either layout when possible.
+1. `rm -rf vendor/rust`
+2. `just fetch-rust`
 
 ## Next Step for a True Hosted Compiler
 

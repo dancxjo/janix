@@ -222,44 +222,49 @@ rust_branch := "thingos-patched"
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
-    rust_gitlink_mode="false"
-    if [ -f .gitmodules ] && git ls-files --stage -- vendor/rust | grep -q '^160000 '; then
-        rust_gitlink_mode="true"
+
+    if [ ! -f .gitmodules ]; then
+        echo "Missing .gitmodules. vendor/rust must be configured as a submodule."
+        exit 1
     fi
 
-    if [ "$rust_gitlink_mode" = "true" ]; then
-        if [ ! -e vendor/rust ]; then
-            echo "==> Initializing vendor/rust submodule..."
-        else
-            echo "==> Syncing vendor/rust submodule metadata..."
-        fi
-        git submodule sync --recursive vendor/rust
-        git submodule update --init vendor/rust
-    else
-        if [ ! -d vendor/rust/.git ] && [ ! -f vendor/rust/.git ]; then
-            if [ -e vendor/rust ]; then
-                echo "vendor/rust exists but is not a git checkout"
-                exit 1
-            fi
-            echo "==> Cloning rust fork into vendor/rust (non-submodule mode)..."
-            git clone --origin origin --branch {{rust_branch}} https://github.com/dancxjo/rust-thingos.git vendor/rust
-        else
-            echo "==> Using existing vendor/rust checkout (non-submodule mode)..."
-        fi
+    if ! git config -f .gitmodules --get submodule.vendor/rust.path >/dev/null; then
+        echo "Missing submodule.vendor/rust entry in .gitmodules."
+        exit 1
     fi
-    if git -C vendor/rust ls-remote --exit-code --heads origin {{rust_branch}} >/dev/null 2>&1; then
-        git -C vendor/rust fetch origin {{rust_branch}}
-        if git -C vendor/rust show-ref --verify --quiet refs/heads/{{rust_branch}}; then
-            git -C vendor/rust switch {{rust_branch}}
-        else
-            git -C vendor/rust switch -c {{rust_branch}} --track origin/{{rust_branch}}
-        fi
-        git -C vendor/rust pull --ff-only origin {{rust_branch}}
-        echo "==> Rust source ready at vendor/rust/ on branch {{rust_branch}}"
-    else
-        echo "==> Rust source ready at vendor/rust/ at recorded submodule commit"
-        echo "    Remote branch origin/{{rust_branch}} not found yet; staying detached."
+
+    if ! git ls-files --stage -- vendor/rust | grep -q '^160000 '; then
+        echo "vendor/rust is not recorded as a submodule gitlink (mode 160000)."
+        echo "Remediation:"
+        echo "  1) remove legacy checkout: rm -rf vendor/rust"
+        echo "  2) re-add submodule metadata if needed: git submodule add -b {{rust_branch}} https://github.com/dancxjo/rust-thingos.git vendor/rust"
+        echo "  3) run: just fetch-rust"
+        exit 1
     fi
+
+    if [ ! -e vendor/rust ]; then
+        echo "==> Initializing vendor/rust submodule..."
+    else
+        echo "==> Syncing vendor/rust submodule metadata..."
+    fi
+    git submodule sync --recursive vendor/rust
+    git submodule set-branch --branch {{rust_branch}} vendor/rust
+    git submodule update --init --recursive vendor/rust
+
+    if ! git -C vendor/rust ls-remote --exit-code --heads origin {{rust_branch}} >/dev/null 2>&1; then
+        echo "Remote branch origin/{{rust_branch}} was not found in vendor/rust."
+        exit 1
+    fi
+
+    git -C vendor/rust fetch origin {{rust_branch}}
+    if git -C vendor/rust show-ref --verify --quiet refs/heads/{{rust_branch}}; then
+        git -C vendor/rust switch {{rust_branch}}
+    else
+        git -C vendor/rust switch -c {{rust_branch}} --track origin/{{rust_branch}}
+    fi
+    git -C vendor/rust pull --ff-only origin {{rust_branch}}
+    echo "==> Rust source ready at vendor/rust/ on branch {{rust_branch}}"
+
     # Ensure library submodules needed for std are initialized
     if [ ! -f vendor/rust/library/backtrace/Cargo.toml ]; then
         echo "==> Initializing library/backtrace submodule..."
@@ -301,15 +306,27 @@ rust-apply-patches: fetch-rust
     done
     echo "==> Rust patch snapshots applied"
 
-# Hard-reset vendor/rust/ to the recorded submodule commit (discards local changes)
+# Hard-reset vendor/rust to thingos-patched and discard local changes.
 rust-reset:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -e vendor/rust/.git ] && [ ! -f vendor/rust/.git ]; then
-        echo "vendor/rust does not exist. Run: just fetch-rust"
+
+    if [ ! -f .gitmodules ] || ! git config -f .gitmodules --get submodule.vendor/rust.path >/dev/null; then
+        echo "Missing vendor/rust submodule metadata."
         exit 1
     fi
-    git -C vendor/rust reset --hard
-    git -C vendor/rust clean -fd
+
+    if ! git ls-files --stage -- vendor/rust | grep -q '^160000 '; then
+        echo "vendor/rust is not a submodule gitlink."
+        echo "Run: rm -rf vendor/rust && just fetch-rust"
+        exit 1
+    fi
+
+    git submodule sync --recursive vendor/rust
+    git submodule set-branch --branch {{rust_branch}} vendor/rust
     git submodule update --init --recursive --checkout vendor/rust
-    echo "==> vendor/rust reset to the recorded submodule commit"
+    git -C vendor/rust fetch origin {{rust_branch}}
+    git -C vendor/rust switch {{rust_branch}} || git -C vendor/rust switch -c {{rust_branch}} --track origin/{{rust_branch}}
+    git -C vendor/rust reset --hard origin/{{rust_branch}}
+    git -C vendor/rust clean -fd
+    echo "==> vendor/rust reset to origin/{{rust_branch}}"

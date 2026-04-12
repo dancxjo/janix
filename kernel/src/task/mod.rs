@@ -14,8 +14,14 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-pub type TaskId = crate::sched::state::TaskId;
-pub use crate::sched::state::{Affinity, TaskPriority, TaskState};
+pub type ThreadId = crate::sched::state::ThreadId;
+/// Backward-compatible alias — prefer `ThreadId` in new code.
+pub type TaskId = ThreadId;
+pub use crate::sched::state::{Affinity, ThreadPriority, ThreadState};
+/// Backward-compatible alias — prefer `ThreadPriority` in new code.
+pub type TaskPriority = ThreadPriority;
+/// Backward-compatible alias — prefer `ThreadState` in new code.
+pub type TaskState = ThreadState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupArg {
@@ -36,66 +42,92 @@ impl StartupArg {
     }
 }
 
-/// Per-process identity and storage.
+/// First-class process object.
 ///
-/// Shared by all threads within a process via `Arc<Mutex<ProcessInfo>>`.
-/// Kernel tasks typically have `None` — only user processes created
-/// by `spawn_process` get one.
-pub struct ProcessInfo {
-    /// Thread Group ID (TGID) — the PID of the thread group leader.
-    ///
-    /// For the initial thread of a process, `tgid == pid`.  All additional
-    /// threads spawned by that process inherit the same `ProcessInfo` Arc and
-    /// therefore see the same `tgid`.  This is the value returned by
-    /// `SYS_GETPID` from userspace (analogous to POSIX `getpid()`).
+/// A `Process` is the unit of resource ownership in Thing-OS.  Every user
+/// process has exactly one `Process`, shared via `Arc<Mutex<Process>>` by all
+/// threads that belong to it.  Kernel-only threads have `process_info = None`.
+///
+/// # Ownership model
+///
+/// | Resource           | Owner   | How threads access it               |
+/// |--------------------|---------|-------------------------------------|
+/// | PID / PPID         | Process | `process.lock().pid`                |
+/// | VM mappings        | Process | `process.lock().mappings` (Arc)     |
+/// | FD table           | Process | `process.lock().fd_table`           |
+/// | CWD                | Process | `process.lock().cwd`                |
+/// | VFS namespace      | Process | `process.lock().namespace`          |
+/// | argv / env / auxv  | Process | `process.lock().argv` etc.          |
+/// | Thread list        | Process | `process.lock().thread_ids`         |
+/// | exec path          | Process | `process.lock().exec_path`          |
+///
+/// # Locking rules
+///
+/// The `Process` mutex must **never** be acquired while the scheduler lock
+/// (`SCHEDULER.lock()`) is held — reverse order causes deadlock.
+///
+/// See `docs/concepts/process-object.md` for the full design document.
+pub struct Process {
+    /// Thread Group ID — the PID of the thread-group leader.
     pub pid: u32,
+    /// PID of the parent process.
     pub ppid: u32,
+    /// Argument vector passed at spawn/exec time.
     pub argv: Vec<Vec<u8>>,
+    /// Environment variables.
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
-    /// Auxiliary vector (ELF AT_* entries).
-    ///
-    /// Each entry is a `(type, value)` pair matching the standard ELF auxv
-    /// format.  Required entries: `AT_PAGESZ`, `AT_PHDR`, `AT_PHENT`,
-    /// `AT_PHNUM`, `AT_ENTRY`.  Terminated implicitly — no `AT_NULL` sentinel
-    /// is stored here; the kernel adds it when serialising to userspace.
+    /// ELF auxiliary vector (AT_* entries as `(type, value)` pairs).
     pub auxv: Vec<(u64, u64)>,
-    /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
+    /// File descriptor table — fds 0/1/2 pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
-    /// VFS namespace for this process.
-    ///
-    /// **ACT III stub**: all processes share the global namespace.  Per-process
-    /// divergence (sandboxing / containers) will be wired up in a later act.
+    /// VFS namespace (stub: global for all processes).
     pub namespace: crate::vfs::NamespaceRef,
     /// Current working directory.
     pub cwd: alloc::string::String,
-    /// TIDs of all threads belonging to this thread group (process).
+    /// TIDs of all threads in this thread group.
     ///
-    /// The first entry is the thread-group leader (its TID equals `pid`).
-    /// New entries are appended when `spawn_user_thread` creates a sibling
-    /// thread; entries are removed when a thread terminates.  When this list
-    /// becomes empty the address space and process resources can be reclaimed.
-    pub thread_ids: Vec<TaskId>,
-    /// Set to `true` while a `task_exec` is in progress for this process.
-    ///
-    /// When set, new `SYS_SPAWN_THREAD` calls into this process group are
-    /// rejected with `EAGAIN`.  Cleared on pre-commit failure so that the
-    /// original thread group is left intact.  After a successful exec commit
-    /// the caller is the only surviving thread and the flag is irrelevant.
+    /// The first entry is the thread-group leader (TID == PID).  Entries are
+    /// added on `spawn_user_thread` and removed when a thread exits.
+    pub thread_ids: Vec<ThreadId>,
+    /// Set while an `exec` is in progress; blocks new `SYS_SPAWN_THREAD` calls.
     pub exec_in_progress: bool,
-    /// Path of the executable image currently running in this process.
-    ///
-    /// Populated at spawn time from `argv[0]` (or the module path) and updated
-    /// on every `exec` with the resolved path of the new image.  Exposed to
-    /// userspace as `/proc/self/exe` (a read-only symlink target).
+    /// Path of the currently-running executable image.
     pub exec_path: alloc::string::String,
+    /// Process-scoped VM mapping list.
+    ///
+    /// Every `Thread` in this process holds a clone of this `Arc` in its own
+    /// `mappings` field so the scheduler's hot path (the `CURRENT_MAPPINGS`
+    /// per-CPU cache) works without locking the `Process` mutex on every
+    /// context switch.  The underlying `MappingList` is therefore always the
+    /// same object visible from both `Process.mappings` and each thread's
+    /// `Thread.mappings`.
+    pub mappings: alloc::sync::Arc<spin::Mutex<crate::memory::mappings::MappingList>>,
 }
 
-pub struct Task<R: BootRuntime> {
-    pub id: TaskId,
-    pub state: TaskState,
-    pub priority: TaskPriority,
+/// Backward-compatible alias — prefer `Process` in new code.
+pub type ProcessInfo = Process;
+
+/// Kernel representation of a single thread of execution.
+///
+/// Each `Thread<R>` corresponds to exactly one schedulable entity.  User
+/// threads are created by `spawn_user_thread`; kernel threads by `spawn`.
+///
+/// # Fields split by concern
+///
+/// | Concern              | Fields                                               |
+/// |----------------------|------------------------------------------------------|
+/// | Identity             | `id`                                                 |
+/// | Scheduler state      | `state`, `priority`, `timeslice_remaining`, …        |
+/// | Execution context    | `ctx`, `kstack_*`, `aspace`, `user_fs_base`          |
+/// | Per-thread flags     | `is_user`, `detached`, `pending_interrupt`           |
+/// | Process reference    | `process_info` — shared `Arc<Mutex<Process>>`        |
+/// | VM fast-path cache   | `mappings` — clone of `Process.mappings` (same Arc)  |
+pub struct Thread<R: BootRuntime> {
+    pub id: ThreadId,
+    pub state: ThreadState,
+    pub priority: ThreadPriority,
     pub exit_code: Option<i32>,
-    /// Exit notification is level-triggered: exit status stays readable after wake.
+    /// Exit notification: level-triggered so status stays readable after wake.
     pub exit_waiters: crate::sched::WaitQueue,
     pub is_user: bool,
     pub wake_pending: bool,
@@ -113,43 +145,41 @@ pub struct Task<R: BootRuntime> {
 
     pub stack_info: Option<StackInfo>,
 
+    /// VM mapping list — a clone of `Process.mappings` (same underlying `Arc`).
+    ///
+    /// Kept here for zero-lock fast access by the scheduler's per-CPU mapping
+    /// cache (`CURRENT_MAPPINGS`).  Always updated atomically with
+    /// `Process.mappings` during exec or thread creation.
     pub mappings: Arc<Mutex<crate::memory::mappings::MappingList>>,
 
-    /// Remaining time slice in ticks before preemption
+    /// Remaining time slice in ticks before preemption.
     pub timeslice_remaining: u32,
     pub last_cpu: Option<usize>,
 
-    /// Short human-readable name (e.g. "bristle", "idle/0")
+    /// Short human-readable name (e.g. "bristle", "idle/0").
     pub name: [u8; 32],
     pub name_len: u8,
 
-    /// Per-process identity and storage (shared across threads).
-    pub process_info: Option<Arc<Mutex<ProcessInfo>>>,
+    /// Owning process (shared across all threads in the group).
+    ///
+    /// `None` for pure kernel threads.
+    pub process_info: Option<Arc<Mutex<Process>>>,
 
-    /// Anti-starvation: tracks the tick when this task was last enqueued (added to a run queue).
-    /// Used to calculate how long the task has been waiting: `current_tick - enqueued_at_tick`.
-    /// When this exceeds `AGING_THRESHOLD_TICKS`, the task's effective priority is boosted.
+    /// Anti-starvation: tick when this thread was last enqueued.
     pub enqueued_at_tick: u64,
 
-    /// Anti-starvation: base priority before any aging boost.
-    /// When a task is created or its priority is changed via set_priority(), both
-    /// `priority` and `base_priority` are updated. The scheduler temporarily modifies
-    /// `priority` for aging, but always restores it to `base_priority` when scheduled.
-    pub base_priority: TaskPriority,
+    /// Base priority before any aging boost.
+    pub base_priority: ThreadPriority,
 
     /// Per-thread user-mode TLS base (FS_BASE on x86_64).
-    ///
-    /// Saved on every context switch-out and restored on every context switch-in.
-    /// Userspace sets/reads this via `SYS_TASK_SET_TLS_BASE` / `SYS_TASK_GET_TLS_BASE`.
-    /// Initialized to 0 for all new threads; the runtime may update it later.
     pub user_fs_base: u64,
 
-    /// If `true` the thread was created as detached: it cannot be joined and
-    /// its kernel task record may be reclaimed immediately on exit.
-    ///
-    /// Joining a detached thread via `SYS_TASK_WAIT` returns `EINVAL`.
+    /// `true` if this thread was created as detached (cannot be joined).
     pub detached: bool,
 }
+
+/// Backward-compatible alias — prefer `Thread<R>` in new code.
+pub type Task<R> = Thread<R>;
 
 pub fn init<R: BootRuntime>() {
     crate::task::registry::init::<R>();
@@ -158,17 +188,17 @@ pub fn init<R: BootRuntime>() {
 pub fn spawn<R: BootRuntime>(
     entry: extern "C" fn(usize) -> !,
     arg: StartupArg,
-    priority: TaskPriority,
+    priority: ThreadPriority,
     affinity: Affinity,
-) -> TaskId {
+) -> ThreadId {
     crate::sched::spawn::<R>(entry, arg, priority, affinity)
 }
 
 pub fn spawn_with_priority<R: BootRuntime>(
     entry: extern "C" fn(usize) -> !,
     arg: StartupArg,
-    priority: TaskPriority,
-) -> TaskId {
+    priority: ThreadPriority,
+) -> ThreadId {
     crate::sched::spawn_with_priority::<R>(entry, arg, priority)
 }
 
@@ -277,8 +307,10 @@ pub fn dump_stats<R: BootRuntime>() {
     crate::sched::dump_stats::<R>();
 }
 
-/// Bootstrap a CPU for scheduling. Must be called before the first yield
-/// on any CPU that doesn't already have a current task set (e.g., secondary CPUs).
+/// Bootstrap a CPU for scheduling.
+///
+/// Must be called before the first yield on any CPU that doesn't already
+/// have a current thread set (e.g. secondary CPUs).
 fn bootstrap_cpu<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -290,22 +322,21 @@ fn bootstrap_cpu<R: BootRuntime>() {
 
         if let Some(pc) = sched.state.per_cpu.get_mut(cpu_idx) {
             if pc.current.is_none() {
-                // CPU hasn't been bootstrapped yet. Set current to idle task.
+                // CPU hasn't been bootstrapped yet — set current to idle thread.
                 if let Some(idle_id) = pc.idle_task {
                     pc.current = Some(idle_id);
                     rt.set_current_tid(idle_id);
                     crate::kdebug!(
-                        "SMP: CPU {} bootstrapped with idle task {}",
+                        "SMP: CPU {} bootstrapped with idle thread {}",
                         cpu_idx,
                         idle_id
                     );
 
-                    // Mark the idle task as running
-                    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(idle_id) {
-                        task.state = TaskState::Running;
+                    if let Some(mut t) = crate::task::registry::get_thread_mut::<R>(idle_id) {
+                        t.state = ThreadState::Running;
                     }
                 } else {
-                    crate::kerror!("SMP: CPU {} has no idle task!", cpu_idx);
+                    crate::kerror!("SMP: CPU {} has no idle thread!", cpu_idx);
                 }
             }
         }
@@ -315,16 +346,16 @@ fn bootstrap_cpu<R: BootRuntime>() {
 }
 
 pub fn run_scheduler<R: BootRuntime>() -> ! {
-    // Bootstrap this CPU if needed (sets current task for secondary CPUs)
+    // Bootstrap this CPU if needed (sets current thread for secondary CPUs).
     bootstrap_cpu::<R>();
 
-    // Enable interrupts so this CPU can be preempted or woken from idle (HLT)
+    // Enable interrupts so this CPU can be preempted or woken from idle (HLT).
     crate::runtime::<R>().irq_restore(crate::IrqState(1));
 
     let mut idle_count: u64 = 0;
     loop {
         if !yield_now::<R>() {
-            // No runnable work — halt until next IRQ (timer tick, device, IPI)
+            // No runnable work — halt until next IRQ (timer tick, device, IPI).
             crate::runtime::<R>().wait_for_interrupt();
             crate::sched::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 

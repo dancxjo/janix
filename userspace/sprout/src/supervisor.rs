@@ -190,11 +190,6 @@ impl Supervisor {
                         // Re-lock to update task state
                         let mut tasks = self.tasks.lock();
                         if let Some(task) = tasks.iter_mut().find(|t| t.pid == Some(pid)) {
-                            if task.name == "sh" {
-                                info!("SPROUT: Shell exited. Performing system shutdown...");
-                                stem::syscall::shutdown();
-                            }
-
                             info!(
                                 "SPROUT: Task '{}' (PID {}) died with code {}. Restarting...",
                                 task.name, pid, code
@@ -213,10 +208,32 @@ impl Supervisor {
             }
         }
 
+        // Init-style lifecycle: if all supervised children are gone, halt the system.
+        let should_shutdown = {
+            let tasks = self.tasks.lock();
+            !tasks.is_empty() && tasks.iter().all(|t| t.pid.is_none())
+        };
+        if should_shutdown {
+            info!("SPROUT: All supervised tasks have exited. Performing system shutdown...");
+            stem::syscall::shutdown();
+        }
+
         // Handle Spawning/Restarting for tasks without PIDs
         let mut tasks = self.tasks.lock();
         for task in tasks.iter_mut() {
             if task.pid.is_none() {
+                if task.name == "shell" {
+                    let selected = crate::pipelines::select_serial_shell();
+                    if task.module_path != selected {
+                        info!(
+                            "SPROUT: Switching serial shell from '{}' to '{}'",
+                            task.module_path,
+                            selected
+                        );
+                        task.module_path = selected;
+                    }
+                }
+
                 let handles_owned: Vec<u64> = if task.boot_req_read != 0 && task.boot_resp_write != 0 {
                     alloc::vec![task.boot_req_read as u64, task.boot_resp_write as u64]
                 } else {
@@ -224,9 +241,14 @@ impl Supervisor {
                 };
 
                 let arg_str = alloc::format!("{}", task.spawn_arg);
+                let spawn_path = if task.module_path.is_empty() {
+                    task.name.as_str()
+                } else {
+                    task.module_path.as_str()
+                };
                 let spawn_res = stem::syscall::spawn_process_ex(
-                    &task.name,
-                    &[task.name.as_bytes(), arg_str.as_bytes()],
+                    spawn_path,
+                    &[spawn_path.as_bytes(), arg_str.as_bytes()],
                     &alloc::collections::BTreeMap::new(),
                     stem::abi::types::stdio_mode::INHERIT,
                     stem::abi::types::stdio_mode::INHERIT,

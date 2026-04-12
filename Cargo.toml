@@ -45,6 +45,7 @@ members = [
     "userspace/input_echo",
     "userspace/sh",
     "userspace/smallsh",
+    "userspace/setshell",
     "userspace/ls",
     "userspace/ps",
     "userspace/cat",

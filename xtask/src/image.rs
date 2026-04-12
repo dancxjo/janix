@@ -138,6 +138,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "setshell",
+            is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "dmesg",
             is_init: true,
             boot_module: true,

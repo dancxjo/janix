@@ -15,6 +15,57 @@ use stem::syscall::vfs::{vfs_close, vfs_open, vfs_read};
 use stem::syscall::{channel_create, ChannelHandle};
 use stem::{debug, info, warn};
 
+fn file_exists(path: &str) -> bool {
+    match vfs_open(path, O_RDONLY) {
+        Ok(fd) => {
+            let _ = vfs_close(fd);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn read_trimmed_text(path: &str) -> Option<alloc::string::String> {
+    let fd = vfs_open(path, O_RDONLY).ok()?;
+    let mut buf = [0u8; 256];
+    let n = vfs_read(fd, &mut buf).ok()?;
+    let _ = vfs_close(fd);
+    if n == 0 {
+        return None;
+    }
+
+    let s = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+pub fn select_serial_shell() -> alloc::string::String {
+    // Prefer runtime override, then system default, then known built-in fallback.
+    for cfg in ["/run/sprout/shell", "/etc/default/shell"] {
+        if let Some(candidate) = read_trimmed_text(cfg) {
+            if file_exists(&candidate) {
+                return candidate;
+            }
+            warn!(
+                "SPROUT: Ignoring shell override '{}' from {} (missing binary)",
+                candidate,
+                cfg
+            );
+        }
+    }
+
+    for candidate in ["/bin/sh", "/bin/smallsh"] {
+        if file_exists(candidate) {
+            return candidate.to_string();
+        }
+    }
+
+    "/bin/sh".to_string()
+}
+
 fn ensure_session_roots() {
     use stem::syscall::vfs::vfs_mkdir;
     let _ = vfs_mkdir("/session");
@@ -858,6 +909,7 @@ pub fn setup_graphics_stack(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
 
 pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
     debug!("SPROUT: Setting up serial shell on /dev/console...");
+    let shell_path = select_serial_shell();
 
     let console_fd =
         match stem::syscall::vfs::vfs_open("/dev/console", abi::syscall::vfs_flags::O_RDWR) {
@@ -869,8 +921,8 @@ pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
         };
 
     match stem::syscall::spawn_process_ex(
-        "/bin/sh",
-        &[b"/bin/sh"],
+        &shell_path,
+        &[shell_path.as_bytes()],
         &alloc::collections::BTreeMap::new(),
         abi::types::stdio_mode::INHERIT, // stdin
         abi::types::stdio_mode::INHERIT, // stdout
@@ -879,12 +931,16 @@ pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
         &[],
     ) {
         Ok(resp) => {
-            debug!("SPROUT: Spawned serial shell (PID={})", resp.child_tid);
+            debug!(
+                "SPROUT: Spawned serial shell '{}' (PID={})",
+                shell_path,
+                resp.child_tid
+            );
             let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {
-                name: "sh".to_string(),
+                name: "shell".to_string(),
                 kind: TaskKind::App,
-                module_path: "/bin/sh".to_string(),
+                module_path: shell_path,
                 pid: Some(resp.child_tid),
                 restarts: 0,
                 spawn_arg: 0,

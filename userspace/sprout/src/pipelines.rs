@@ -51,8 +51,7 @@ pub fn select_serial_shell() -> alloc::string::String {
             }
             warn!(
                 "SPROUT: Ignoring shell override '{}' from {} (missing binary)",
-                candidate,
-                cfg
+                candidate, cfg
             );
         }
     }
@@ -933,8 +932,7 @@ pub fn setup_serial_shell(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
         Ok(resp) => {
             debug!(
                 "SPROUT: Spawned serial shell '{}' (PID={})",
-                shell_path,
-                resp.child_tid
+                shell_path, resp.child_tid
             );
             let mut tasks = shared_tasks.lock();
             tasks.push(ManagedTask {

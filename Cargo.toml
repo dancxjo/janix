@@ -112,10 +112,7 @@ members = [
 ]
 
 # Exclude wasm32 theme crates (different target)
-exclude = [
-    "bulb/themes/genie_circles",
-    "vendor/rust",
-]
+exclude = ["bulb/themes/genie_circles", "vendor/rust"]
 
 resolver = "2"
 

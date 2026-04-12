@@ -8,6 +8,8 @@ pub enum DeviceKind {
     Pci = 5,
     Display = 6,
     Terminal = 7,
+    /// PCM audio stream or control node under `/dev/audio/card<N>/`.
+    Audio = 8,
 }
 
 #[repr(C)]

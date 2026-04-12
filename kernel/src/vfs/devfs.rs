@@ -121,6 +121,7 @@ impl VfsDriver for DevFs {
         match path {
             "display" => return Ok(Arc::new(DevSubDirNode::new("display/"))),
             "input" => return Ok(Arc::new(DevSubDirNode::new("input/"))),
+            "audio" => return Ok(Arc::new(DevSubDirNode::new("audio/"))),
             _ => {}
         }
 
@@ -231,6 +232,7 @@ impl VfsNode for DevDirNode {
         }
         names.push("display".to_string());
         names.push("input".to_string());
+        names.push("audio".to_string());
         names.push("rtc".to_string());
         names.push("random".to_string());
         names.push("urandom".to_string());

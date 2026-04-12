@@ -1,13 +1,15 @@
-//! High-level `WaitSet` primitive — graph as waitable substrate.
+//! High-level `WaitSet` primitive — FD-centric readiness substrate.
 //!
 //! `WaitSet` lets a task block until *any* of a collection of event sources
-//! becomes ready: ports, graph watches, timers, task-exit signals, IRQs, and
-//! async graph-op handles.  Internally it builds a `WaitSpec` array and calls
-//! the `SYS_WAIT_MANY` syscall, which parks the calling task in the kernel
-//! until at least one source fires.
+//! becomes ready: file descriptors, ports, timers, task-exit signals, and IRQs.
+//! Internally it builds a `WaitSpec` array and calls the `SYS_WAIT_MANY`
+//! syscall, which parks the calling task in the kernel until at least one
+//! source fires.
 //!
-//! This eliminates userspace polling loops and makes graph IPC safe to use in
-//! hot paths, because the task only wakes when there is real work to do.
+//! This eliminates userspace polling loops.  Because all VFS-backed objects
+//! (pipes, sockets, and channel ends bridged via `SYS_FS_FD_FROM_HANDLE`)
+//! expose FD readiness, a single `WaitSet` can multiplex the complete set of
+//! I/O the calling task cares about.
 //!
 //! # Example
 //!
@@ -17,15 +19,15 @@
 //!
 //! let mut set = WaitSet::new();
 //! let rx_port = 1u64;
-//! let watch_id = 1u32;
-//! let tok_rx    = set.add_port_readable(rx_port).unwrap();
-//! let tok_watch = set.add_vfs_watch(watch_id).unwrap();
+//! let pipe_read_fd = 3u32;
+//! let tok_rx   = set.add_port_readable(rx_port).unwrap();
+//! let tok_pipe = set.add_fd_readable(pipe_read_fd).unwrap();
 //!
 //! for event in set.wait(Some(Duration::from_secs(5))).unwrap() {
 //!     if event.token() == tok_rx && event.is_readable() {
 //!         // port has data — call channel_recv
-//!     } else if event.token() == tok_watch {
-//!         // graph event — call drain loop
+//!     } else if event.token() == tok_pipe && event.is_readable() {
+//!         // pipe has data — call vfs_read
 //!     }
 //! }
 //! ```
@@ -247,9 +249,36 @@ impl WaitSet {
         self.push_spec(WaitKind::Port, interest::WRITABLE, handle)
     }
 
-    /// Watch a VFS file descriptor (e.g. a watch FD or a pipe) for readability.
-    pub fn add_vfs_watch(&mut self, fd: u32) -> Result<WaitToken, Errno> {
+    /// Watch a VFS file descriptor for readability.
+    ///
+    /// `fd` is any open file descriptor: a pipe read-end, a socket, a channel
+    /// end that was bridged via `SYS_FS_FD_FROM_HANDLE`, or a device node.
+    /// The waiter wakes when the underlying node reports `POLLIN`.
+    ///
+    /// This is the recommended API for FD-based readiness.  The older
+    /// [`add_vfs_watch`][Self::add_vfs_watch] alias is deprecated.
+    pub fn add_fd_readable(&mut self, fd: u32) -> Result<WaitToken, Errno> {
         self.push_spec(WaitKind::Fd, interest::READABLE, fd as u64)
+    }
+
+    /// Watch a VFS file descriptor for writability.
+    ///
+    /// `fd` is any open file descriptor: a pipe write-end, a socket, a channel
+    /// end that was bridged via `SYS_FS_FD_FROM_HANDLE`, or a device node.
+    /// The waiter wakes when the underlying node reports `POLLOUT`.
+    pub fn add_fd_writable(&mut self, fd: u32) -> Result<WaitToken, Errno> {
+        self.push_spec(WaitKind::Fd, interest::WRITABLE, fd as u64)
+    }
+
+    /// Watch a VFS file descriptor for readability.
+    ///
+    /// # Deprecated
+    ///
+    /// Use [`add_fd_readable`][Self::add_fd_readable] instead.  This alias
+    /// exists only for backward compatibility.
+    #[deprecated(note = "Use add_fd_readable instead")]
+    pub fn add_vfs_watch(&mut self, fd: u32) -> Result<WaitToken, Errno> {
+        self.add_fd_readable(fd)
     }
 
     /// Watch for a task to exit.
@@ -268,9 +297,14 @@ impl WaitSet {
 
     /// Watch for an async graph-operation to complete.
     ///
-    /// `op_handle` is the raw handle from
-    /// [`crate::graph_wait::GraphOpHandle::raw`].
+    /// # Deprecated
+    ///
+    /// Graph operations are removed.  The kernel returns `ENOSYS` for
+    /// `WaitKind::GraphOp`.  There is no direct replacement: async I/O should
+    /// be modelled as FD readiness via [`add_fd_readable`][Self::add_fd_readable].
+    #[deprecated(note = "Graph ops are removed; model async I/O as FD readiness with add_fd_readable")]
     pub fn add_graph_op(&mut self, op_handle: u64) -> Result<WaitToken, Errno> {
+        #[allow(deprecated)]
         self.push_spec(WaitKind::GraphOp, 0, op_handle)
     }
 
@@ -363,7 +397,7 @@ mod tests {
         let mut set = WaitSet::new();
         let t1 = set.add_port_readable(1).unwrap();
         assert_eq!(set.len(), 1);
-        let _t2 = set.add_vfs_watch(2).unwrap();
+        let _t2 = set.add_fd_readable(2).unwrap();
         assert_eq!(set.len(), 2);
         // tokens are unique
         assert_ne!(t1.0, _t2.0);
@@ -409,7 +443,7 @@ mod tests {
         assert_eq!(set.specs[0].flags, interest::READABLE);
         assert_eq!(set.specs[0].object, 10);
 
-        let _ = set.add_vfs_watch(5).unwrap();
+        let _ = set.add_fd_readable(5).unwrap();
         assert_eq!(set.specs[1].kind, WaitKind::Fd as u32);
         assert_eq!(set.specs[1].object, 5);
     }
@@ -432,5 +466,44 @@ mod tests {
         assert!(!ev.is_exited());
         assert_eq!(ev.token(), WaitToken(42));
         assert_eq!(ev.value(), 128);
+    }
+
+    #[test]
+    fn add_fd_readable_creates_fd_spec_with_readable_interest() {
+        let mut set = WaitSet::new();
+        let tok = set.add_fd_readable(7).unwrap();
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.specs[0].kind, WaitKind::Fd as u32);
+        assert_eq!(set.specs[0].flags, interest::READABLE);
+        assert_eq!(set.specs[0].object, 7);
+        assert_eq!(set.specs[0].token, tok.0);
+    }
+
+    #[test]
+    fn add_fd_writable_creates_fd_spec_with_writable_interest() {
+        let mut set = WaitSet::new();
+        let tok = set.add_fd_writable(9).unwrap();
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.specs[0].kind, WaitKind::Fd as u32);
+        assert_eq!(set.specs[0].flags, interest::WRITABLE);
+        assert_eq!(set.specs[0].object, 9);
+        assert_eq!(set.specs[0].token, tok.0);
+    }
+
+    #[test]
+    fn fd_readable_and_writable_tokens_are_distinct() {
+        let mut set = WaitSet::new();
+        let tr = set.add_fd_readable(4).unwrap();
+        let tw = set.add_fd_writable(4).unwrap();
+        assert_ne!(tr, tw, "readable and writable registrations get unique tokens");
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn remove_fd_readable_entry() {
+        let mut set = WaitSet::new();
+        let tok = set.add_fd_readable(3).unwrap();
+        assert!(set.remove(tok));
+        assert!(set.is_empty());
     }
 }

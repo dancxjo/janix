@@ -69,11 +69,23 @@ avoid flooding because they only care whether the resource is ready now.
 
 ## Public API Direction
 
-The long-term API shape is filesystem/device-native:
+The canonical readiness API for userland is FD-centric:
 
-- open a file watch on a path or file descriptor
-- submit an async operation and receive an `OpHandle`
-- arm a `ReadyCondition` and, if needed, include its wait spec in `wait_many`
+- For polling one or more FDs for I/O readiness, use **`SYS_FS_POLL`** (stem
+  wrapper: `vfs_poll`).  Pipes, sockets, and channel ends bridged via
+  `SYS_FS_FD_FROM_HANDLE` all use the same `PollFd` interface.
+- To block on a mix of FDs, ports, task exit, and IRQs in a single call, use
+  **`SYS_WAIT_MANY`** with `WaitKind::Fd` (stem wrapper: `WaitSet::add_fd_readable`
+  / `add_fd_writable`).
+- Higher-level helpers: `FsWatch` for change-notification streams, `OpHandle`
+  for one-shot async completions, `ReadyCondition` for declarative condition
+  waits.
 
-New userland code should use these VFS-oriented handle types. Do not introduce
-new APIs that reference graph watches, graph ops, or graph-era naming.
+New userland code must use VFS-oriented handle types.  Do not introduce new
+APIs that reference graph watches, graph ops, or graph-era naming.
+
+### Deprecated `WaitKind` values
+
+`WaitKind::GraphOp` and `WaitKind::RootWatch` are **deprecated** and return
+`ENOSYS`.  The stem `WaitSet::add_graph_op` method is deprecated accordingly.
+Use `add_fd_readable` / `add_fd_writable` for all FD-based readiness.

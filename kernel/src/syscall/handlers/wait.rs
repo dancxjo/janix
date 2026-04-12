@@ -150,6 +150,7 @@ fn collect_ready(specs: &[WaitSpec], out: &mut [WaitResult]) -> SysResult<usize>
     Ok(count)
 }
 
+#[allow(deprecated)] // handle legacy WaitKind variants that map to ENOSYS
 fn poll_spec(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     match WaitKind::from_u32(spec.kind).ok_or(Errno::EINVAL)? {
         WaitKind::Port => poll_port(spec),
@@ -311,6 +312,7 @@ fn poll_irq(spec: &WaitSpec) -> Option<WaitResult> {
     }
 }
 
+#[allow(deprecated)] // handle legacy WaitKind variants that map to ENOSYS
 fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Registration>> {
     let mut regs = alloc::vec::Vec::new();
     for spec in specs {
@@ -398,7 +400,9 @@ fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> Sy
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::sync::Arc;
     use core::sync::atomic::Ordering;
+    use spin::Mutex;
 
     fn alloc_port_pair(capacity: usize) -> (u32, u32) {
         let port_id = crate::ipc::create_port(capacity);
@@ -410,6 +414,72 @@ mod tests {
             .alloc(port_id, crate::ipc::HandleMode::Read)
             .expect("read handle");
         (write.0, read.0)
+    }
+
+    // ── FD-semantics test helpers ─────────────────────────────────────────────
+    //
+    // These helpers mirror the pattern used in vfs.rs tests: they install a
+    // process-info hook so that `poll_fd` (which calls
+    // `crate::sched::process_info_current()`) can find a real FD table.
+
+    static FD_TEST_GUARD: spin::Mutex<()> = spin::Mutex::new(());
+    static FD_TEST_PINFO: spin::Mutex<Option<Arc<Mutex<crate::task::ProcessInfo>>>> =
+        spin::Mutex::new(None);
+
+    fn fd_test_process_info_hook() -> Option<Arc<Mutex<crate::task::ProcessInfo>>> {
+        FD_TEST_PINFO.lock().clone()
+    }
+
+    fn fd_test_tid() -> u64 {
+        99
+    }
+
+    fn make_pinfo_with_node(
+        fd: u32,
+        node: Arc<dyn crate::vfs::VfsNode>,
+    ) -> Arc<Mutex<crate::task::ProcessInfo>> {
+        use crate::vfs::{fd_table::FdTable, OpenFlags};
+        let mut table = FdTable::new();
+        table
+            .insert_at(fd, node, OpenFlags::read_write(), "/test".into())
+            .expect("insert_at");
+        Arc::new(Mutex::new(crate::task::ProcessInfo {
+            pid: 1,
+            ppid: 0,
+            argv: alloc::vec![],
+            env: alloc::collections::BTreeMap::new(),
+            auxv: alloc::vec![],
+            fd_table: table,
+            namespace: crate::vfs::NamespaceRef::global(),
+            cwd: alloc::string::String::from("/"),
+            thread_ids: alloc::vec![1],
+            exec_in_progress: false,
+            exec_path: alloc::string::String::new(),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            aspace_raw: 0,
+        }))
+    }
+
+    /// Run `poll_spec` with a process-info hook installed.
+    fn poll_spec_with_pinfo(
+        pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
+        spec: &WaitSpec,
+    ) -> SysResult<Option<WaitResult>> {
+        let _guard = FD_TEST_GUARD.lock();
+        unsafe {
+            crate::sched::hooks::CURRENT_TID_HOOK = Some(fd_test_tid);
+            crate::sched::hooks::PROCESS_INFO_HOOK = Some(fd_test_process_info_hook);
+        }
+        FD_TEST_PINFO.lock().replace(pinfo);
+        let result = poll_spec(spec);
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            crate::sched::hooks::CURRENT_TID_HOOK = None;
+        }
+        FD_TEST_PINFO.lock().take();
+        result
     }
 
     #[test]
@@ -604,9 +674,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn poll_graph_op_returns_enosys() {
-        // GraphOp waiting is not yet implemented; poll_graph_op returns ENOSYS.
-        // When the root async-ops module is added this test should be expanded.
+        // GraphOp is deprecated and returns ENOSYS.  This test verifies the
+        // backward-compatibility shim remains in place so existing binaries that
+        // pass WaitKind::GraphOp = 6 receive a clean error rather than EINVAL.
         let spec = WaitSpec {
             kind: WaitKind::GraphOp as u32,
             flags: 0,
@@ -696,5 +768,121 @@ mod tests {
         assert_eq!(invalid.flags, wait::ready::ERROR);
         assert_eq!(invalid.value, Errno::EINVAL as i64);
         assert_eq!(invalid.token, invalid_spec.token);
+    }
+
+    // ── WaitKind::Fd tests ────────────────────────────────────────────────────
+    //
+    // These tests verify the FD-centric readiness model: poll_spec routes
+    // WaitKind::Fd through poll_fd(), which translates VfsNode::poll() flags
+    // into wait::ready flags.
+
+    /// A pipe read-end with data reports ready::READABLE when interest::READABLE.
+    #[test]
+    fn poll_fd_pipe_read_ready_reports_readable() {
+        let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        // Write data so the read end has POLLIN.
+        write_node.write(0, b"hello").expect("pipe write");
+        let pinfo = make_pinfo_with_node(5, read_node);
+        let spec = WaitSpec {
+            kind: WaitKind::Fd as u32,
+            flags: wait::interest::READABLE,
+            object: 5,
+            token: 200,
+        };
+        let result = poll_spec_with_pinfo(pinfo, &spec)
+            .expect("poll_spec ok")
+            .expect("fd should be ready");
+        assert_ne!(
+            result.flags & wait::ready::READABLE,
+            0,
+            "READABLE must be set on pipe read-end with data"
+        );
+        assert_eq!(result.token, 200);
+        let _ = write_node; // keep write end alive
+    }
+
+    /// A pipe read-end with no data and a live write end is not ready.
+    #[test]
+    fn poll_fd_empty_pipe_read_end_not_ready() {
+        let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        let pinfo = make_pinfo_with_node(6, read_node);
+        let spec = WaitSpec {
+            kind: WaitKind::Fd as u32,
+            flags: wait::interest::READABLE,
+            object: 6,
+            token: 201,
+        };
+        let result = poll_spec_with_pinfo(pinfo, &spec).expect("poll_spec ok");
+        assert!(
+            result.is_none(),
+            "empty pipe with live writer must not be ready"
+        );
+        let _ = write_node;
+    }
+
+    /// A pipe write-end with buffer space reports ready::WRITABLE.
+    #[test]
+    fn poll_fd_pipe_write_end_ready_reports_writable() {
+        let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        let pinfo = make_pinfo_with_node(7, write_node);
+        let spec = WaitSpec {
+            kind: WaitKind::Fd as u32,
+            flags: wait::interest::WRITABLE,
+            object: 7,
+            token: 202,
+        };
+        let result = poll_spec_with_pinfo(pinfo, &spec)
+            .expect("poll_spec ok")
+            .expect("write end should be ready");
+        assert_ne!(
+            result.flags & wait::ready::WRITABLE,
+            0,
+            "WRITABLE must be set on pipe write-end with free space"
+        );
+        assert_eq!(result.token, 202);
+        let _ = read_node;
+    }
+
+    /// Closing the write end causes the read end to report HANGUP.
+    #[test]
+    fn poll_fd_pipe_read_hangup_when_writer_closed() {
+        let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        // VfsNode::close() is the fd-close path that decrements the peer
+        // refcount.  Dropping the Arc alone does not change the pipe state.
+        write_node.close();
+        let pinfo = make_pinfo_with_node(8, read_node);
+        let spec = WaitSpec {
+            kind: WaitKind::Fd as u32,
+            flags: wait::interest::READABLE,
+            object: 8,
+            token: 203,
+        };
+        let result = poll_spec_with_pinfo(pinfo, &spec)
+            .expect("poll_spec ok")
+            .expect("read end should be ready after writer closed");
+        assert_ne!(
+            result.flags & wait::ready::HANGUP,
+            0,
+            "HANGUP must be set after the write end is closed"
+        );
+    }
+
+    /// An FD that does not exist in the process table returns EBADF.
+    #[test]
+    fn poll_fd_missing_fd_returns_ebadf() {
+        let (read_node, _write_node) = crate::ipc::pipe::create_fd_pair(0, false);
+        // Install FD at 3 but poll FD 99.
+        let pinfo = make_pinfo_with_node(3, read_node);
+        let spec = WaitSpec {
+            kind: WaitKind::Fd as u32,
+            flags: wait::interest::READABLE,
+            object: 99,
+            token: 204,
+        };
+        let result = poll_spec_with_pinfo(pinfo, &spec);
+        assert!(
+            matches!(result, Err(Errno::EBADF)),
+            "missing fd must return EBADF"
+        );
     }
 }

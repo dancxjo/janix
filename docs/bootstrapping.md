@@ -15,6 +15,7 @@ at `vendor/rust/` (branch `thingos-patched`).
 
 ```
 just fetch-rust          # clone / sync vendor/rust submodule
+just rust-apply-patches  # replay local Rust/LLVM snapshots, if any
 cargo xtask rustc-thingos  # generate config.toml, run x.py, cache binary
 just iso                 # ISO includes /bin/rustc if SKIP_RUSTC_THINGOS≠1
 ```
@@ -140,10 +141,11 @@ These paths mirror the standard rustup/toolchain layout so that on-device
 
 ## Compatibility with `just fetch-rust`
 
-`just fetch-rust` always resets `vendor/rust/` to the submodule-pinned
-commit on `thingos-patched`.  The generated `config.toml` is written into
-`vendor/rust/` at build time and is not tracked by the submodule.  No
-manual step is needed after a `just fetch-rust` to restore the config.
+`just fetch-rust` resets `vendor/rust/` to the submodule-pinned
+commit on `thingos-patched`.  If the outer repo carries local Rust/LLVM
+snapshots under `patches/rust/`, replay them with `just rust-apply-patches`
+before bootstrapping. The generated `config.toml` is written into
+`vendor/rust/` at build time and is not tracked by the submodule.
 
 ## Current Status
 

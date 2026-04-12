@@ -182,7 +182,7 @@ bristle arch=karch: fetch-rust
 # Build stage-1 rustc cross-compiled to run on x86_64-unknown-thingos.
 # Caches the result under target/rustc-thingos/; a second run with no
 # relevant changes is a no-op. Set BUILD_RUSTC=1 to enable.
-rustc-thingos: fetch-rust
+rustc-thingos: fetch-rust rust-apply-patches
     cargo xtask rustc-thingos
 
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
@@ -255,6 +255,36 @@ fetch-rust:
         git -C vendor/rust submodule update --init --depth 1 src/llvm-project
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
+
+# Reapply local Rust fork snapshots into vendor/rust/ and its llvm-project
+# submodule.
+rust-apply-patches: fetch-rust
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shopt -s nullglob
+    rust_patches=(patches/rust/vendor-rust/*.patch)
+    llvm_patches=(patches/rust/llvm-project/*.patch)
+    if [ ${#rust_patches[@]} -eq 0 ] && [ ${#llvm_patches[@]} -eq 0 ]; then
+        echo "==> No Rust patch snapshots to apply"
+        exit 0
+    fi
+    for patch in "${rust_patches[@]}"; do
+        if git -C vendor/rust apply --reverse --check "../../${patch}" >/dev/null 2>&1; then
+            echo "==> ${patch} already applied in vendor/rust/"
+        else
+            echo "==> Applying ${patch} to vendor/rust/"
+            git -C vendor/rust apply --3way "../../${patch}"
+        fi
+    done
+    for patch in "${llvm_patches[@]}"; do
+        if git -C vendor/rust/src/llvm-project apply --reverse --check "../../../../${patch}" >/dev/null 2>&1; then
+            echo "==> ${patch} already applied in vendor/rust/src/llvm-project/"
+        else
+            echo "==> Applying ${patch} to vendor/rust/src/llvm-project/"
+            git -C vendor/rust/src/llvm-project apply --3way "../../../../${patch}"
+        fi
+    done
+    echo "==> Rust patch snapshots applied"
 
 # Hard-reset vendor/rust/ to the recorded submodule commit (discards local changes)
 rust-reset:

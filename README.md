@@ -220,7 +220,7 @@ Services communicate over files, not ports. The migration to the janix network m
 - **python3** and **git**
 
 > [!NOTE]
-> **Rustc on ThingOS**: The automatic build of `rustc` for ThingOS is currently disabled due to upstream LLVM target compatibility issues. See [docs/status/rustc_build.md](docs/status/rustc_build.md) for details.
+> **Rustc on ThingOS**: The hosted-compiler bootstrap is still in progress. The LLVM host-detection issue is patched locally, but the end-to-end `rustc` build remains incomplete. See [docs/status/rustc_build.md](docs/status/rustc_build.md) for details.
 
 ### Build & run
 
@@ -254,14 +254,15 @@ Thing-OS uses a fork of the Rust compiler and standard library to support its cu
 
 - **Fork Repository**: [dancxjo/rust-thingos](https://github.com/dancxjo/rust-thingos)
 - **Local Path**: `vendor/rust/` (populated via `just fetch-rust`)
-- **Modifications**: All changes to `core`, `alloc`, `std`, or the compiler must be committed directly to the `rust-thingos` fork. This repository does not use local `.patch` files.
-- **Submodules**: Manual changes to submodules (like LLVM) are documented in `vendor/rust/submodule_patches.md`.
+- **Modifications**: The source of truth remains the `rust-thingos` fork. Local snapshots for in-flight Rust/LLVM changes may also live under `patches/rust/` and can be replayed with `just rust-apply-patches`.
+- **Submodules**: Manual changes to submodules (like LLVM) should be documented alongside the corresponding patch snapshot.
 
 Workflow:
 1. `just fetch-rust` (clones the fork)
-2. Edit `vendor/rust/...`
-3. Commit and push changes to the `rust-thingos` fork repository.
-4. Run `just rust-reset` to discard local uncommitted changes if needed.
+2. If needed, replay local snapshots with `just rust-apply-patches`.
+3. Edit `vendor/rust/...`
+4. Commit and push changes to the `rust-thingos` fork repository.
+5. Run `just rust-reset` to discard local uncommitted changes if needed.
 
 Important implications:
 - Fresh checkouts do not have `vendor/rust/`.

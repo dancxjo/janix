@@ -1,8 +1,25 @@
 # Rustc on ThingOS: Current Status (April 2026)
 
 The effort to build a stage-1 `rustc` cross-compiled for `x86_64-unknown-thingos`
-is **in progress**.  The original LLVM compilation blockers and std/bootstrap
-failures have been resolved.
+is **in progress**. The vendored LLVM tree now carries a ThingOS-specific CMake
+classification so LLVM no longer falls back to the Generic support headers when
+building for a ThingOS host target.
+
+## LLVM Host Detection Fix
+
+The vendored Rust/LLVM sources now treat `thingos` as Unix-like during LLVM's
+CMake platform setup:
+
+* `src/bootstrap/src/core/build_steps/llvm.rs` now sets
+  `CMAKE_SYSTEM_NAME=ThingOS` for `thingos` targets.
+* `src/llvm-project/llvm/cmake/modules/HandleLLVMOptions.cmake` maps
+  `ThingOS` to `LLVM_ON_UNIX=1`.
+* `src/llvm-project/llvm/cmake/config-ix.cmake` treats `ThingOS` as a known
+  Unix-like platform for the support-library configuration probes.
+
+This addresses the earlier LLVMSupport failures where the Generic fallback
+omitted Unix-only definitions such as `EnvPathSeparator` and
+`sys::fs::file_status::getSize()`.
 
 ## Current State
 

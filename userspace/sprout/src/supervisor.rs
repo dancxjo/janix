@@ -179,14 +179,14 @@ impl Supervisor {
         }
 
         for (pid, name) in pids {
-            match stem::syscall::task_poll(pid as usize) {
+            match stem::syscall::task_poll(pid) {
                 Ok((status, code)) => {
                     if status == stem::abi::types::TaskStatus::Dead {
                         info!("SPROUT: Task '{}' (PID {}) is Dead (code {})", name, pid, code);
                         
                         // Re-lock to update task state
                         let mut tasks = self.tasks.lock();
-                        if let Some(task) = tasks.iter_mut().find(|t| t.pid == Some(pid as usize)) {
+                        if let Some(task) = tasks.iter_mut().find(|t| t.pid == Some(pid)) {
                             if task.name == "sh" {
                                 info!("SPROUT: Shell exited. Performing system shutdown...");
                                 stem::syscall::shutdown();
@@ -203,7 +203,7 @@ impl Supervisor {
                 }
                 Err(_) => {
                     let mut tasks = self.tasks.lock();
-                    if let Some(task) = tasks.iter_mut().find(|t| t.pid == Some(pid as usize)) {
+                    if let Some(task) = tasks.iter_mut().find(|t| t.pid == Some(pid)) {
                         task.pid = None;
                     }
                 }

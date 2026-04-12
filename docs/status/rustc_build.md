@@ -23,10 +23,9 @@ omitted Unix-only definitions such as `EnvPathSeparator` and
 
 ## Current State
 
-As of April 12, 2026 the build reaches a new, narrower blocker:
-`rustc_driver` is built as a `dylib` by the upstream bootstrap, but
-`x86_64-unknown-thingos` has no dynamic linker and therefore cannot load
-shared libraries at runtime.
+The remaining end-to-end blocker has not been revalidated in this pass. Older
+notes below about `rustc_driver` reflect the historical state of the effort and
+should be treated as background, not as a freshly confirmed current failure.
 
 ### Completed Work (already landed)
 

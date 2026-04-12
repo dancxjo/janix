@@ -112,6 +112,7 @@ fn bootstrap_config() -> String {
 build = "x86_64-unknown-linux-gnu"
 host  = ["x86_64-unknown-thingos"]
 target = ["x86_64-unknown-thingos"]
+local-rebuild = true
 docs = false
 compiler-docs = false
 
@@ -220,14 +221,12 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
         if alt.exists() {
             sh.copy_file(&alt, RUSTC_BINARY)?;
         } else {
-            return Err(
-                format!(
-                    "stage-1 rustc binary not found after bootstrap.\n\
+            return Err(format!(
+                "stage-1 rustc binary not found after bootstrap.\n\
                      Looked in:\n  {:?}\n  {:?}",
-                    stage1_rustc, alt
-                )
-                .into(),
-            );
+                stage1_rustc, alt
+            )
+            .into());
         }
     } else {
         sh.copy_file(&stage1_rustc, RUSTC_BINARY)?;
@@ -265,12 +264,15 @@ pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
     // Stage the rustlib directory (contains rlibs needed to compile Rust
     // programs on the device) at /usr/lib/rustlib if it was produced.
     let cwd = std::env::current_dir()?;
-    let rustlib_src =
-        cwd.join("vendor/rust/build/x86_64-unknown-linux-gnu/stage1/lib/rustlib");
+    let rustlib_src = cwd.join("vendor/rust/build/x86_64-unknown-linux-gnu/stage1/lib/rustlib");
     if rustlib_src.exists() {
         sh.create_dir(iso_root.join("usr/lib"))?;
         let rustlib_src_str = rustlib_src.to_str().unwrap();
-        let rustlib_dest_str = iso_root.join("usr/lib/rustlib").to_str().unwrap().to_string();
+        let rustlib_dest_str = iso_root
+            .join("usr/lib/rustlib")
+            .to_str()
+            .unwrap()
+            .to_string();
         cmd!(sh, "cp -r {rustlib_src_str} {rustlib_dest_str}").run()?;
         println!("  Staged /usr/lib/rustlib");
     }

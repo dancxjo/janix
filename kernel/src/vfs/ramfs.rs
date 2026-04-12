@@ -482,13 +482,23 @@ impl VfsDriver for RamFs {
 
     /// Create a directory at `path`.
     ///
-    /// Intermediate directories are created as needed (like `mkdir -p`).
+    /// Intermediate directories are created on demand.  Returns `EEXIST` if
+    /// the final path component already exists (POSIX `mkdir(2)` semantics).
     fn mkdir(&self, path: &str) -> SysResult<()> {
         // Inline the inherent mkdir logic to avoid ambiguous self.mkdir() dispatch.
         let mut current = self.root.clone();
-        for component in path.split('/').filter(|c| !c.is_empty()) {
+        let components: alloc::vec::Vec<&str> =
+            path.split('/').filter(|c| !c.is_empty()).collect();
+        let last_idx = components.len().saturating_sub(1);
+        for (i, component) in components.iter().enumerate() {
             let next = match current.lookup_child(component) {
-                Ok(child) => child,
+                Ok(child) => {
+                    // The final component already exists → POSIX EEXIST.
+                    if i == last_idx {
+                        return Err(Errno::EEXIST);
+                    }
+                    child
+                }
                 Err(Errno::ENOENT) => {
                     let new_dir = RamfsEntry::new_dir();
                     current.insert_child(component, new_dir.clone())?;
@@ -1130,5 +1140,41 @@ mod tests {
         let fs = RamFs::new();
         let err = fs.create_hard_link("ghost.txt", "link.txt").unwrap_err();
         assert_eq!(err, Errno::ENOENT);
+    }
+
+    // ── VfsDriver::mkdir POSIX semantics ──────────────────────────────────────
+
+    /// Creating a directory that already exists must return EEXIST (POSIX mkdir(2)).
+    #[test]
+    fn test_driver_mkdir_existing_dir_returns_eexist() {
+        use super::super::VfsDriver;
+        let fs = RamFs::new();
+        // First mkdir succeeds.
+        fs.mkdir("newdir").unwrap();
+        // Second mkdir on the same name must fail with EEXIST.
+        let err = <RamFs as VfsDriver>::mkdir(&fs, "newdir").unwrap_err();
+        assert_eq!(err, Errno::EEXIST);
+    }
+
+    /// Creating a directory whose last component clashes with an existing file
+    /// must also return EEXIST.
+    #[test]
+    fn test_driver_mkdir_clashes_with_file_returns_eexist() {
+        use super::super::VfsDriver;
+        let fs = RamFs::new();
+        fs.create_file("thing.txt", vec![]).unwrap();
+        let err = <RamFs as VfsDriver>::mkdir(&fs, "thing.txt").unwrap_err();
+        assert_eq!(err, Errno::EEXIST);
+    }
+
+    /// Creating a directory with a non-existent intermediate component must
+    /// succeed (intermediate directories are still created on demand).
+    #[test]
+    fn test_driver_mkdir_nested_creates_intermediate_dirs() {
+        use super::super::VfsDriver;
+        let fs = RamFs::new();
+        <RamFs as VfsDriver>::mkdir(&fs, "a/b/c").unwrap();
+        let node = fs.lookup("a/b/c").unwrap();
+        assert!(node.stat().unwrap().is_dir());
     }
 }

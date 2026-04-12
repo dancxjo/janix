@@ -991,11 +991,42 @@ pub fn sys_fs_seek(fd: usize, offset: usize, whence: usize) -> SysResult<usize> 
     let stat = node.stat()?;
     let size = stat.size;
 
-    let mut current_offset = *file.offset.lock();
-    let new_offset = match whence {
-        0 => offset as u64,                                // SEEK_SET
-        1 => current_offset.saturating_add(offset as u64), // SEEK_CUR
-        2 => size.saturating_add(offset as u64),           // SEEK_END
+    let current_offset = *file.offset.lock();
+
+    // The raw syscall argument carries the offset as pointer-sized bits.  On
+    // 64-bit targets the bit representation of `i64` and `usize` are the same,
+    // so reinterpreting as `i64` recovers the signed value for SEEK_CUR /
+    // SEEK_END (which may receive negative offsets).
+    let offset_signed = offset as i64;
+
+    let new_offset: u64 = match whence {
+        0 => {
+            // SEEK_SET – absolute position; negative is invalid.
+            if offset_signed < 0 {
+                return Err(Errno::EINVAL);
+            }
+            offset as u64
+        }
+        1 => {
+            // SEEK_CUR – relative to current position.
+            let new = (current_offset as i64)
+                .checked_add(offset_signed)
+                .ok_or(Errno::EINVAL)?;
+            if new < 0 {
+                return Err(Errno::EINVAL);
+            }
+            new as u64
+        }
+        2 => {
+            // SEEK_END – relative to end of file.
+            let new = (size as i64)
+                .checked_add(offset_signed)
+                .ok_or(Errno::EINVAL)?;
+            if new < 0 {
+                return Err(Errno::EINVAL);
+            }
+            new as u64
+        }
         _ => return Err(Errno::EINVAL),
     };
 
@@ -1160,6 +1191,9 @@ pub fn resolve_path(path: &str) -> SysResult<alloc::string::String> {
 
 pub fn sys_fs_chdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
     validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
     let mut path_buf = vec![0u8; path_len];
     unsafe { copyin(&mut path_buf, path_ptr)? };
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
@@ -1860,6 +1894,287 @@ mod tests {
     #[test]
     fn lstat_path_too_long_returns_einval() {
         let result = sys_fs_lstat(0x1000, 4097, 0x2000);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    // ── sys_fs_seek – signed offset semantics ─────────────────────────────────
+
+    /// A file-like node with a fixed size for use in seek tests.
+    struct SizedFileNode(u64);
+
+    impl VfsNode for SizedFileNode {
+        fn read(&self, _: u64, _: &mut [u8]) -> SysResult<usize> {
+            Ok(0)
+        }
+        fn write(&self, _: u64, buf: &[u8]) -> SysResult<usize> {
+            Ok(buf.len())
+        }
+        fn stat(&self) -> SysResult<VfsStat> {
+            Ok(VfsStat {
+                mode: VfsStat::S_IFREG | 0o644,
+                size: self.0,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// Run `sys_fs_seek` with the given process info, fd, offset, and whence.
+    ///
+    /// Acquires `TEST_POLL_GUARD` so seek tests don't race with poll tests over
+    /// the shared `PROCESS_INFO_HOOK` / `CURRENT_TID_HOOK` globals.
+    fn seek_with_process_info(
+        pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
+        fd: usize,
+        offset: usize,
+        whence: usize,
+    ) -> SysResult<usize> {
+        let _guard = TEST_POLL_GUARD.lock();
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            crate::sched::hooks::PROCESS_INFO_HOOK = Some(process_info_hook);
+        }
+        TEST_PROCESS_INFO.lock().replace(pinfo);
+
+        let res = sys_fs_seek(fd, offset, whence);
+
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            CURRENT_TID_HOOK = None;
+        }
+        TEST_PROCESS_INFO.lock().take();
+        res
+    }
+
+    /// SEEK_SET to a positive offset must succeed and return that offset.
+    #[test]
+    fn seek_set_positive_returns_new_offset() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        let result = seek_with_process_info(pinfo, 3, 16, 0 /* SEEK_SET */);
+        assert_eq!(result, Ok(16));
+    }
+
+    /// SEEK_SET with a negative signed value must return EINVAL.
+    #[test]
+    fn seek_set_negative_returns_einval() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // Pass -1i64 as usize (two's complement).
+        let neg1 = (-1i64) as usize;
+        let result = seek_with_process_info(pinfo, 3, neg1, 0 /* SEEK_SET */);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    /// SEEK_CUR with a positive offset advances the position.
+    #[test]
+    fn seek_cur_positive_advances_position() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // First seek to 10.
+        seek_with_process_info(Arc::clone(&pinfo), 3, 10, 0 /* SEEK_SET */).unwrap();
+        // Then advance by 5 → expected offset = 15.
+        let result = seek_with_process_info(pinfo, 3, 5, 1 /* SEEK_CUR */);
+        assert_eq!(result, Ok(15));
+    }
+
+    /// SEEK_CUR with a negative offset moves the position backward.
+    #[test]
+    fn seek_cur_negative_moves_backward() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // Seek to 20 first.
+        seek_with_process_info(Arc::clone(&pinfo), 3, 20, 0 /* SEEK_SET */).unwrap();
+        // Seek back by 4 → expected offset = 16.
+        let neg4 = (-4i64) as usize;
+        let result = seek_with_process_info(pinfo, 3, neg4, 1 /* SEEK_CUR */);
+        assert_eq!(result, Ok(16));
+    }
+
+    /// SEEK_CUR with a negative offset that would go before the start must
+    /// return EINVAL.
+    #[test]
+    fn seek_cur_negative_before_start_returns_einval() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // Offset is 0 (default); seek back by 1 → would be -1.
+        let neg1 = (-1i64) as usize;
+        let result = seek_with_process_info(pinfo, 3, neg1, 1 /* SEEK_CUR */);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    /// SEEK_END with offset 0 must return the file size.
+    #[test]
+    fn seek_end_zero_returns_file_size() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        let result = seek_with_process_info(pinfo, 3, 0, 2 /* SEEK_END */);
+        assert_eq!(result, Ok(64));
+    }
+
+    /// SEEK_END with a negative offset seeks from the end of the file.
+    #[test]
+    fn seek_end_negative_seeks_from_end() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // -4 from end of 64-byte file → offset 60.
+        let neg4 = (-4i64) as usize;
+        let result = seek_with_process_info(pinfo, 3, neg4, 2 /* SEEK_END */);
+        assert_eq!(result, Ok(60));
+    }
+
+    /// SEEK_END with a positive offset seeks past the end (sparse / hole).
+    #[test]
+    fn seek_end_positive_seeks_past_end() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // +4 past the end of a 64-byte file → offset 68.
+        let result = seek_with_process_info(pinfo, 3, 4, 2 /* SEEK_END */);
+        assert_eq!(result, Ok(68));
+    }
+
+    /// SEEK_END with a negative offset that would precede the start must return
+    /// EINVAL.
+    #[test]
+    fn seek_end_negative_before_start_returns_einval() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(4));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        // -8 from end of 4-byte file → would be -4.
+        let neg8 = (-8i64) as usize;
+        let result = seek_with_process_info(pinfo, 3, neg8, 2 /* SEEK_END */);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    /// An unknown whence value must return EINVAL.
+    #[test]
+    fn seek_invalid_whence_returns_einval() {
+        let node: Arc<dyn VfsNode> = Arc::new(SizedFileNode(64));
+        let pinfo = make_process_info_with_nodes(&[(3, node)]);
+        let result = seek_with_process_info(pinfo, 3, 0, 99 /* invalid */);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    // ── sys_fs_getcwd – CWD reading ───────────────────────────────────────────
+
+    /// Helper: run `sys_fs_getcwd` with the given process info and a stack buffer.
+    fn getcwd_with_process_info(
+        pinfo: Arc<Mutex<crate::task::ProcessInfo>>,
+        buf: &mut [u8],
+    ) -> SysResult<usize> {
+        let _guard = TEST_POLL_GUARD.lock();
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            crate::sched::hooks::PROCESS_INFO_HOOK = Some(process_info_hook);
+        }
+        TEST_PROCESS_INFO.lock().replace(pinfo);
+
+        // Pass buf_ptr=0, buf_len=0 so the handler only returns the length
+        // without trying to copy to userspace (avoids validate_user_range).
+        let res = sys_fs_getcwd(0, 0);
+
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            CURRENT_TID_HOOK = None;
+        }
+        TEST_PROCESS_INFO.lock().take();
+        let _ = buf; // silence unused warning
+        res
+    }
+
+    /// A freshly spawned process starts with CWD = "/".
+    /// getcwd must return the byte length of "/" (1).
+    #[test]
+    fn getcwd_returns_root_for_default_process() {
+        let pinfo = make_process_info_with_nodes(&[]);
+        let mut buf = [0u8; 256];
+        let len = getcwd_with_process_info(pinfo, &mut buf).expect("getcwd should succeed");
+        assert_eq!(len, 1, "default CWD is '/' – length should be 1");
+    }
+
+    /// After the CWD is changed in the ProcessInfo struct, getcwd must report
+    /// the updated value.
+    #[test]
+    fn getcwd_reflects_updated_cwd() {
+        let pinfo = make_process_info_with_nodes(&[]);
+        pinfo.lock().cwd = alloc::string::String::from("/tmp");
+        let mut buf = [0u8; 256];
+        let len = getcwd_with_process_info(pinfo, &mut buf).expect("getcwd should succeed");
+        assert_eq!(len, 4, "'/tmp' has 4 bytes");
+    }
+
+    // ── resolve_path – relative path resolution ───────────────────────────────
+
+    /// Helper: call `resolve_path` with the given process info's CWD set.
+    fn resolve_relative(
+        cwd: &str,
+        rel_path: &str,
+    ) -> SysResult<alloc::string::String> {
+        let _guard = TEST_POLL_GUARD.lock();
+        unsafe {
+            CURRENT_TID_HOOK = Some(test_current_tid);
+            crate::sched::hooks::PROCESS_INFO_HOOK = Some(process_info_hook);
+        }
+        let pinfo = make_process_info_with_nodes(&[]);
+        pinfo.lock().cwd = alloc::string::String::from(cwd);
+        TEST_PROCESS_INFO.lock().replace(pinfo);
+
+        let res = resolve_path(rel_path);
+
+        unsafe {
+            crate::sched::hooks::PROCESS_INFO_HOOK = None;
+            CURRENT_TID_HOOK = None;
+        }
+        TEST_PROCESS_INFO.lock().take();
+        res
+    }
+
+    /// A relative path is joined with the CWD and normalised.
+    #[test]
+    fn resolve_path_relative_joined_with_cwd() {
+        let result = resolve_relative("/home/user", "docs/readme.txt").unwrap();
+        assert_eq!(result, "/home/user/docs/readme.txt");
+    }
+
+    /// A relative path with ".." components is resolved correctly.
+    #[test]
+    fn resolve_path_relative_with_dotdot() {
+        let result = resolve_relative("/home/user/projects", "../docs").unwrap();
+        assert_eq!(result, "/home/user/docs");
+    }
+
+    /// A relative "." refers to the CWD itself.
+    #[test]
+    fn resolve_path_relative_dot_refers_to_cwd() {
+        let result = resolve_relative("/tmp", ".").unwrap();
+        assert_eq!(result, "/tmp");
+    }
+
+    /// An absolute path is left unchanged (CWD is irrelevant).
+    #[test]
+    fn resolve_path_absolute_ignores_cwd() {
+        let result = resolve_relative("/some/cwd", "/etc/hosts").unwrap();
+        assert_eq!(result, "/etc/hosts");
+    }
+
+    /// CWD with a trailing slash is handled without producing double slashes.
+    #[test]
+    fn resolve_path_cwd_with_trailing_slash() {
+        let result = resolve_relative("/tmp/", "file.txt").unwrap();
+        assert_eq!(result, "/tmp/file.txt");
+    }
+
+    // ── sys_fs_chdir – input validation ──────────────────────────────────────
+
+    /// A zero-length path must return EINVAL immediately.
+    #[test]
+    fn chdir_zero_path_len_returns_einval() {
+        let result = sys_fs_chdir(0x1000, 0);
+        assert_eq!(result, Err(Errno::EINVAL));
+    }
+
+    /// A path longer than 4096 bytes must return EINVAL immediately.
+    #[test]
+    fn chdir_path_too_long_returns_einval() {
+        let result = sys_fs_chdir(0x1000, 4097);
         assert_eq!(result, Err(Errno::EINVAL));
     }
 }

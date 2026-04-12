@@ -219,13 +219,46 @@ Hangup behaviour is uniform across all object classes:
 
 ---
 
-## 6. Future Extensions
+## 6. `SYS_WAIT_MANY` and `WaitKind::Fd`
+
+`SYS_FS_POLL` is the preferred single-call interface for multiplexing many FDs.
+For use cases that mix FDs with non-FD readiness sources (ports, task exit, IRQs),
+the higher-level `SYS_WAIT_MANY` syscall (see `docs/wait_many.md`) accepts typed
+`WaitSpec` entries.
+
+The `WaitKind::Fd` variant routes through the same `VfsNode::poll` / waiter API:
+
+```rust
+use abi::wait::{WaitKind, WaitSpec, interest};
+
+WaitSpec {
+    kind: WaitKind::Fd as u32,
+    flags: interest::READABLE,  // interest::WRITABLE for write readiness
+    object: fd as u64,          // the file-descriptor number
+    token: MY_TOKEN,
+}
+```
+
+All VFS-backed resources — pipes, sockets, channel ends bridged with
+`SYS_FS_FD_FROM_HANDLE`, and device nodes — use `WaitKind::Fd`.
+
+### Task Exit
+
+Task exit is observed through `WaitKind::TaskExit` rather than an FD today.
+Future work may expose a pollable "process exit FD" that allows `SYS_FS_POLL`
+loops to wait for child process termination alongside other I/O without a
+separate `wait_many` call.
+
+### Deprecated Kinds
+
+`WaitKind::GraphOp` (= 6) and `WaitKind::RootWatch` (= 2) are **deprecated**
+and return `ENOSYS`.  New code must not use them.  Existing binaries that pass
+these kind values will receive a clean `ENOSYS` error.
+
+---
+
+## 7. Future Extensions
 
 The same `VfsNode::poll` / `add_waiter` / `remove_waiter` contract is the
 extension point for timer FDs, process-exit notification FDs, IRQ FDs, and
 any other kernel waitable that needs to participate in `SYS_FS_POLL`.
-
-The higher-level `SYS_WAIT_MANY` syscall (see `docs/wait_many.md`) uses a
-parallel but orthogonal mechanism based on typed `WaitSpec` entries.  For
-VFS things, `SYS_WAIT_MANY` supports `WaitKind::Fd` which routes
-through the same `VfsNode::poll` / waiter API.

@@ -105,7 +105,8 @@ pub fn channel_close(handle: ChannelHandle) -> Result<(), Errno> {
 /// use abi::syscall::{PollFd, poll_flags};
 /// use stem::syscall::vfs::{vfs_fd_from_handle, vfs_poll};
 ///
-/// let fd = vfs_fd_from_handle(handle).expect("bridge");
+/// let channel_handle: u32 = 1; // obtained from channel_create
+/// let fd = vfs_fd_from_handle(channel_handle).expect("bridge");
 /// let mut pollfds = [PollFd { fd: fd as i32, events: poll_flags::POLLIN, revents: 0 }];
 /// vfs_poll(&mut pollfds, u64::MAX).expect("poll");
 /// ```

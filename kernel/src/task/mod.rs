@@ -81,7 +81,14 @@ pub struct Process {
     pub auxv: Vec<(u64, u64)>,
     /// File descriptor table — fds 0/1/2 pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
-    /// VFS namespace (stub: global for all processes).
+    /// VFS namespace — currently a global stub shared by all processes.
+    ///
+    /// [`crate::vfs::NamespaceRef`] is a unit struct today: all instances
+    /// resolve to the same underlying global mount table.  The field exists
+    /// so that per-process namespace isolation can be added later without
+    /// touching every spawn call site.
+    ///
+    /// See `docs/concepts/namespaces.md` for the behaviour matrix and roadmap.
     pub namespace: crate::vfs::NamespaceRef,
     /// Current working directory.
     pub cwd: alloc::string::String,

@@ -97,5 +97,5 @@ exec / task_exec_current()
 - [x] Thread creation inherits the parent's `Process.mappings` Arc
 - [x] `Process.thread_ids` tracks all live TIDs in the group
 - [x] Backward-compat aliases keep existing code compiling without changes
-- [ ] Per-process namespace divergence (future act)
+- [ ] Per-process namespace divergence — see `docs/concepts/namespaces.md` for roadmap
 - [ ] `ThreadId` exposed separately from `ProcessId` in ABI types (future)

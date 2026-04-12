@@ -434,19 +434,54 @@ pub trait VfsDriver: Send + Sync {
 
 /// A reference to the VFS namespace (mount table view) for a process.
 ///
-/// **Design stub for ACT III**: all processes share a single global namespace.
-/// Per-process namespace divergence (sandboxing, containers) will be
-/// introduced in a later act once the process registry is wired in.
+/// # Current semantics (stub)
 ///
-/// Carrying this type in [`crate::task::ProcessInfo`] now makes it possible
-/// to plumb per-process namespaces without changing the call sites later.
+/// All processes share a **single global mount table**.  `NamespaceRef` is a
+/// unit struct: every instance is equivalent and resolves to the same
+/// underlying state.  Mounts and unmounts performed by *any* process are
+/// immediately visible to *all* processes.
+///
+/// The field `Process.namespace` is populated at spawn time and cloned into
+/// child processes, but both parent and child resolve to the same global state.
+///
+/// # What is intentionally NOT guaranteed today
+///
+/// - Mount isolation: a process cannot have a private mount table.
+/// - Privilege checking: `SYS_FS_MOUNT` does not verify ownership.
+/// - Snapshot-on-spawn: spawning a child does not fork the mount table.
+///
+/// # Roadmap
+///
+/// Per-process namespace divergence (sandboxing, containers) will be
+/// introduced in a future milestone.  The field in [`crate::task::Process`]
+/// and all call sites that call [`NamespaceRef::global()`] are already wired
+/// so that adding real isolation requires only changes to this struct and
+/// `vfs::mount`, without touching every spawn path again.
+///
+/// See `docs/concepts/namespaces.md` for the full behaviour matrix and
+/// staged implementation roadmap.
 #[derive(Clone, Debug, Default)]
 pub struct NamespaceRef;
 
 impl NamespaceRef {
     /// Return the shared (global) namespace reference.
+    ///
+    /// All current callers receive an equivalent value.  Once per-process
+    /// namespace isolation is implemented this constructor will create a new
+    /// namespace backed by a clone of the system-wide mount table, and this
+    /// function will return the root (initial) namespace.
     pub fn global() -> Self {
         Self
+    }
+
+    /// Returns `true` once per-process namespace isolation is implemented.
+    ///
+    /// Currently always returns `false` because all processes share the global
+    /// mount table.  Code that needs to behave differently when real isolation
+    /// is active should guard on this method rather than assuming one behaviour
+    /// or the other.
+    pub fn is_isolated(&self) -> bool {
+        false
     }
 }
 

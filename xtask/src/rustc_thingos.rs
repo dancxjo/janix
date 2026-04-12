@@ -189,9 +189,13 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
 
     // Run the bootstrap.  Stage-1 is sufficient to produce a usable compiler;
     // a full stage-2 bootstrap can be added later.
+    // Run the bootstrap.  We build both `library` and `compiler/rustc` so that
+    // the stage-1 sysroot has prebuilt core/alloc/std for x86_64-unknown-linux-gnu
+    // (needed when the stage-1 rustc is used as RUSTC for cargo builds — cargo
+    // runs build scripts on the host and they need host std in the sysroot).
     cmd!(
         sh,
-        "python3 {rust_src_str}/x.py build --stage 1 compiler/rustc"
+        "python3 {rust_src_str}/x.py build --stage 1 library compiler/rustc"
     )
     .env("RUST_TARGET_PATH", target_dir_str)
     .run()?;

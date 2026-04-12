@@ -214,58 +214,57 @@ check: check-ui-split fetch-rust
 smoke:
     cargo xtask bdd --arch x86_64 --tags @smoke
 
-# The commit hash of dancxjo/rust-thingos matching our nightly toolchain
-rust_commit := "3dc7a1f33b27c0fff3187eb6876e59796cc25818"
+# The Rust fork branch that carries the Thing-OS std/LLVM integration.
+rust_branch := "thingos-patched"
 
-# Fetch (shallow clone) the Rust fork into vendor/rust/
+# Fetch/update the Rust fork submodule into vendor/rust/
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
-    ROOT_DIR="$(pwd)"
-    if [ -d vendor/rust/.git ]; then
-        echo "vendor/rust already exists, skipping clone."
-        echo "  Attempting to ensure enough history for LLVM (depth 100)..."
-        cd vendor/rust && git fetch --depth 100 origin {{rust_commit}}
-        cd "$ROOT_DIR"
-        echo "  To re-fetch from scratch, run: just rust-reset  (or rm -rf vendor/rust)"
+    if [ ! -f .gitmodules ]; then
+        echo "missing .gitmodules; vendor/rust must be managed as a submodule"
+        exit 1
+    fi
+    if [ ! -e vendor/rust ]; then
+        echo "==> Initializing vendor/rust submodule..."
     else
-        echo "==> Shallow-cloning dancxjo/rust-thingos at {{rust_commit}} (depth 100)..."
-        git clone --depth 100 --filter=blob:none --no-checkout \
-            https://github.com/dancxjo/rust-thingos.git vendor/rust
-        cd vendor/rust
-        git fetch --depth 100 origin {{rust_commit}}
-        git checkout {{rust_commit}}
-        echo "==> Rust source ready at vendor/rust/"
-        cd "$ROOT_DIR"
+        echo "==> Syncing vendor/rust submodule metadata..."
+    fi
+    git submodule sync --recursive vendor/rust
+    git submodule update --init vendor/rust
+    if git -C vendor/rust ls-remote --exit-code --heads origin {{rust_branch}} >/dev/null 2>&1; then
+        git -C vendor/rust fetch origin {{rust_branch}}
+        if git -C vendor/rust show-ref --verify --quiet refs/heads/{{rust_branch}}; then
+            git -C vendor/rust switch {{rust_branch}}
+        else
+            git -C vendor/rust switch -c {{rust_branch}} --track origin/{{rust_branch}}
+        fi
+        git -C vendor/rust pull --ff-only origin {{rust_branch}}
+        echo "==> Rust source ready at vendor/rust/ on branch {{rust_branch}}"
+    else
+        echo "==> Rust source ready at vendor/rust/ at recorded submodule commit"
+        echo "    Remote branch origin/{{rust_branch}} not found yet; staying detached."
     fi
     # Ensure library submodules needed for std are initialized
     if [ ! -f vendor/rust/library/backtrace/Cargo.toml ]; then
         echo "==> Initializing library/backtrace submodule..."
-        cd vendor/rust && git submodule update --init --depth 1 library/backtrace
-        cd "$ROOT_DIR"
+        git -C vendor/rust submodule update --init --depth 1 library/backtrace
     fi
     if [ ! -d vendor/rust/src/llvm-project/llvm ]; then
         echo "==> Initializing src/llvm-project submodule..."
-        cd vendor/rust && git submodule update --init --depth 1 src/llvm-project
-        cd "$ROOT_DIR"
+        git -C vendor/rust submodule update --init --depth 1 src/llvm-project
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
-    
-    # Automatically apply necessary patches for Thing-OS
-    python3 scripts/patch_rust_fork.py
 
-# Hard-reset vendor/rust/ to the pinned commit (discards local changes)
+# Hard-reset vendor/rust/ to the recorded submodule commit (discards local changes)
 rust-reset:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d vendor/rust/.git ]; then
+    if [ ! -e vendor/rust/.git ] && [ ! -f vendor/rust/.git ]; then
         echo "vendor/rust does not exist. Run: just fetch-rust"
         exit 1
     fi
-    cd vendor/rust
-    # Un-stage any intent-to-add files (from git add -N)
-    git reset HEAD -- . 2>/dev/null || true
-    git checkout -- .
-    git clean -fd
-    echo "==> vendor/rust reset to {{rust_commit}}"
-
+    git -C vendor/rust reset --hard
+    git -C vendor/rust clean -fd
+    git submodule update --init --recursive --checkout vendor/rust
+    echo "==> vendor/rust reset to the recorded submodule commit"

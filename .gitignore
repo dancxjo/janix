@@ -15,7 +15,9 @@ temp_*.txt
 /*.py
 
 # Vendor dependencies (fetched by `just fetch`)
-/vendor/
+!/vendor/
+/vendor/*
+!/vendor/rust/
 
 # Fetched assets (managed by `just fetch`)
 # NOTE: /assets/wallpapers/ is tracked - must come before the ignore

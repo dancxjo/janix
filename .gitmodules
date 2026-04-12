@@ -1,0 +1,4 @@
+[submodule "vendor/rust"]
+	path = vendor/rust
+	url = https://github.com/dancxjo/rust-thingos.git
+	branch = thingos-patched

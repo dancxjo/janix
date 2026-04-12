@@ -37,6 +37,10 @@ pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::sched::current_tid_current() as usize) }
 }
 
+pub fn sys_available_parallelism() -> SysResult<usize> {
+    Ok(scheduler::available_parallelism_current())
+}
+
 pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
     use abi::types::SpawnThreadReq;
 

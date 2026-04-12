@@ -49,6 +49,7 @@ pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, 
 pub(crate) static mut TASK_WAIT_HOOK: Option<fn(TaskId) -> Result<i32, Errno>> = None;
 pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPriority)> = None;
 pub(crate) static mut CURRENT_PRIORITY_HOOK: Option<fn() -> crate::task::TaskPriority> = None;
+pub(crate) static mut AVAILABLE_PARALLELISM_HOOK: Option<fn() -> usize> = None;
 pub(crate) static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;
 pub(crate) static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
 pub(crate) static mut SLEEP_TICKS_HOOK: Option<fn(u64)> = None;
@@ -252,6 +253,14 @@ pub unsafe fn current_priority_current() -> crate::task::TaskPriority {
         hook()
     } else {
         crate::task::TaskPriority::Normal
+    }
+}
+
+pub fn available_parallelism_current() -> usize {
+    if let Some(hook) = unsafe { AVAILABLE_PARALLELISM_HOOK } {
+        hook().max(1)
+    } else {
+        1
     }
 }
 

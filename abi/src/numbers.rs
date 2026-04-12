@@ -27,6 +27,11 @@ pub const SYS_TASK_INTERRUPT: u32 = 0x1010;
 /// Wait for a child process to exit and retrieve its exit status.
 /// Supports `WNOHANG` for non-blocking polling.  Analogous to POSIX `waitpid`.
 pub const SYS_WAITPID: u32 = 0x1011;
+/// Return the current thread's effective CPU parallelism.
+///
+/// This is affinity-aware: pinned threads report 1, while unpinned threads
+/// report the current online CPU count.
+pub const SYS_AVAILABLE_PARALLELISM: u32 = 0x1012;
 
 // ============================================================================
 // Process Environment (0x1100)

@@ -88,6 +88,12 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
     }
 }
 
+/// Boot-only helper: spawn a process from a boot module by name.
+///
+/// This is the legacy `SYS_SPAWN_PROCESS` handler.  It looks up the
+/// executable by name in the static boot module table and is intentionally
+/// scoped to boot/module-launch use.  For runtime process creation, userspace
+/// should use `SYS_SPAWN_PROCESS_EX` with a VFS path.
 pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysResult<usize> {
     if name_len > 128 {
         return Err(Errno::EINVAL);
@@ -443,7 +449,19 @@ pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     Ok(total)
 }
 
-/// SYS_SPAWN_PROCESS_EX handler.
+/// `SYS_SPAWN_PROCESS_EX` handler — general-purpose runtime process creation.
+///
+/// The `name_ptr`/`name_len` fields in [`SpawnProcessExReq`] are treated as a
+/// VFS path to the executable (e.g. `/usr/bin/ls`).  The kernel opens the
+/// file, loads its ELF image into a new address space, and returns the child
+/// TID/PID in the response.
+///
+/// This handler follows the standard runtime process model:
+/// 1. Open the executable from the VFS.
+/// 2. Build a new process object and initial thread.
+/// 3. Apply inheritance/replacement for stdio, fds, cwd, and env.
+/// 4. Schedule the new thread for execution.
+///
 /// Args: req_ptr = pointer to SpawnProcessExReq, resp_ptr = pointer to SpawnProcessExResp.
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
@@ -532,8 +550,11 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         None
     };
 
+    // Use the general-purpose VFS-based runtime process creation path.
+    // The `name` field in the request is treated as the VFS path to the
+    // executable (e.g. `/usr/bin/ls`).
     let result = unsafe {
-        scheduler::spawn_process_ex_current(
+        scheduler::spawn_process_from_path_current(
             name,
             argv,
             env,

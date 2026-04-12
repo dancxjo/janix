@@ -320,6 +320,11 @@ pub fn process_info_for_tid_current(tid: u64) -> Option<Arc<Mutex<ProcessInfo>>>
     }
 }
 
+/// Boot-only hook: spawn a process by looking up the name in the boot module table.
+///
+/// Retained for the legacy `SYS_SPAWN_PROCESS_EX` boot path and for boot-time
+/// module launch.  Runtime callers should use [`spawn_process_from_path_current`]
+/// which opens the executable from the VFS.
 pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
     unsafe fn(
         &str,
@@ -334,6 +339,27 @@ pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
     ) -> Result<SpawnExResult, abi::errors::Errno>,
 > = None;
 
+/// General-purpose runtime hook: spawn a process by opening an executable
+/// from the VFS at the given path.
+///
+/// Installed during scheduler initialisation and called by `SYS_SPAWN_PROCESS_EX`
+/// at runtime.
+pub(crate) static mut SPAWN_PROCESS_FROM_PATH_HOOK: Option<
+    unsafe fn(
+        &str,
+        Vec<Vec<u8>>,
+        BTreeMap<Vec<u8>, Vec<u8>>,
+        StdioSpec,
+        StdioSpec,
+        StdioSpec,
+        u64,
+        Vec<u64>,
+        Option<alloc::string::String>,
+    ) -> Result<SpawnExResult, abi::errors::Errno>,
+> = None;
+
+/// Invoke the boot-module-based spawn hook (boot-only; use
+/// `spawn_process_from_path_current` for runtime process creation).
 pub unsafe fn spawn_process_ex_current(
     name: &str,
     argv: Vec<Vec<u8>>,
@@ -348,6 +374,38 @@ pub unsafe fn spawn_process_ex_current(
     if let Some(hook) = SPAWN_PROCESS_EX_HOOK {
         hook(
             name,
+            argv,
+            env,
+            stdin_spec,
+            stdout_spec,
+            stderr_spec,
+            boot_arg,
+            inherited_handles,
+            cwd,
+        )
+    } else {
+        Err(abi::errors::Errno::ENOSYS)
+    }
+}
+
+/// Invoke the VFS-based runtime process creation hook.
+///
+/// This is the **standard runtime path** for `SYS_SPAWN_PROCESS_EX`.
+/// The `path` argument is a VFS path to the executable (e.g. `/usr/bin/ls`).
+pub unsafe fn spawn_process_from_path_current(
+    path: &str,
+    argv: Vec<Vec<u8>>,
+    env: BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin_spec: StdioSpec,
+    stdout_spec: StdioSpec,
+    stderr_spec: StdioSpec,
+    boot_arg: u64,
+    inherited_handles: Vec<u64>,
+    cwd: Option<alloc::string::String>,
+) -> Result<SpawnExResult, abi::errors::Errno> {
+    if let Some(hook) = SPAWN_PROCESS_FROM_PATH_HOOK {
+        hook(
+            path,
             argv,
             env,
             stdin_spec,

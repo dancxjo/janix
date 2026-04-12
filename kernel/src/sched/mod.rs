@@ -33,13 +33,14 @@ pub use hooks::{
     process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
     remove_user_mappings_current, set_current_user_fs_base_current, set_priority_current,
     sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
+    spawn_process_from_path_current,
     spawn_user_thread_current, task_exec_current, task_status_current, task_wait_current,
     take_pending_interrupt_current, unregister_task_exit_waiter_current,
     unregister_timeout_wake_current, waitpid_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
-    SpawnExResult, StdioSpec, spawn, spawn_process, spawn_user_task_full, spawn_user_thread,
+    SpawnExResult, StdioSpec, boot_spawn_process, spawn, spawn_user_task_full, spawn_user_thread,
     spawn_user_thread_ex, spawn_with_priority, user_thread_trampoline,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
@@ -266,7 +267,7 @@ pub fn init<R: BootRuntime>() {
             hooks::YIELD_HOOK = Some(sleep::yield_now::<R>);
             hooks::EXIT_HOOK = Some(exit::<R>);
             hooks::SPAWN_USER_HOOK = Some(spawn::spawn_user_thread_ex::<R>);
-            hooks::SPAWN_PROCESS_HOOK = Some(spawn::spawn_process::<R>);
+            hooks::SPAWN_PROCESS_HOOK = Some(spawn::boot_spawn_process::<R>);
             hooks::CURRENT_TID_HOOK = Some(current_tid::<R>);
             hooks::INTERRUPT_TASK_HOOK = Some(interrupt_task::<R>);
             hooks::TAKE_PENDING_INTERRUPT_HOOK = Some(take_pending_interrupt::<R>);
@@ -291,7 +292,8 @@ pub fn init<R: BootRuntime>() {
             hooks::PROTECT_USER_RANGE_HOOK = Some(vm::protect_user_range::<R>);
             hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
             hooks::PROCESS_INFO_FOR_TID_HOOK = Some(process_info_for_tid::<R>);
-            hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
+            hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::boot_spawn_process_ex::<R>);
+            hooks::SPAWN_PROCESS_FROM_PATH_HOOK = Some(spawn::spawn_process_from_path::<R>);
             hooks::CURRENT_RESOURCE_HOOK = Some(current_task_resource_id_impl::<R>);
             hooks::POLL_TASK_EXIT_HOOK = Some(poll_task_exit::<R>);
             hooks::REGISTER_TASK_EXIT_WAITER_HOOK = Some(register_task_exit_waiter_public::<R>);

@@ -96,6 +96,8 @@ members = [
     "userspace/loglevel",
     "userspace/poll_mux",
     "userspace/test_exec",
+    "userspace/reboot",
+    "userspace/shutdown",
     "userspace/tests/test_vm_protect",
     "userspace/tests/test_futex",
     "userspace/tests/test_exec_env",

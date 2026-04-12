@@ -137,6 +137,8 @@ pub fn now() -> Instant {
     time::now()
 }
 
+pub use syscall::{reboot, shutdown};
+
 pub mod thing;
 
 #[cfg(feature = "global-alloc")]

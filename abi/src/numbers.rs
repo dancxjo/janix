@@ -215,6 +215,12 @@ pub const SYS_LOG_SET_LEVEL: u32 = 0x7003;
 /// Intended for privileged entropy-source drivers (analogous to `SYS_TIME_ANCHOR`).
 pub const SYS_ENTROPY_SEED: u32 = 0x7004;
 
+pub mod reboot_cmd {
+    pub const RESTART: u32 = 0;
+    pub const HALT: u32 = 1;
+    pub const POWER_OFF: u32 = 2;
+}
+
 // ============================================================================
 // ABI Flags & Constants
 // ============================================================================

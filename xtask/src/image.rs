@@ -431,6 +431,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "reboot",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "shutdown",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

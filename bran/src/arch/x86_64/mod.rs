@@ -388,6 +388,7 @@ impl ArchRuntime for X86_64Runtime {
     }
 
     fn reboot(&self) -> ! {
+        kernel::kinfo!("X86_64: performing reboot via 8042");
         // Pulse the CPU reset line via the 8042 keyboard controller
         unsafe {
             // Wait for the keyboard controller input buffer to be clear
@@ -403,7 +404,37 @@ impl ArchRuntime for X86_64Runtime {
             // Send the reset command (0xFE = pulse reset line)
             core::arch::asm!("out dx, al", in("dx") 0x64u16, in("al") 0xFEu8, options(nostack, preserves_flags));
         }
+
+        // Fallback 1: Triple Fault
+        kernel::kinfo!("X86_64: reboot failed, attempting triple fault");
+        unsafe {
+            core::arch::asm!("lidt [{}]", in(reg) 0, options(nostack, preserves_flags));
+            core::arch::asm!("int3", options(noreturn));
+        } 
+
         // If that didn't work, halt
+        hcf()
+    }
+
+    fn shutdown(&self) -> ! {
+        kernel::kinfo!("X86_64: performing shutdown (QEMU/ACPI)");
+        
+        // 1. QEMU shutdown (newer)
+        unsafe {
+            core::arch::asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16, options(nostack, preserves_flags));
+        }
+
+        // 2. QEMU shutdown (older)
+        unsafe {
+            core::arch::asm!("out dx, ax", in("dx") 0xB004u16, in("ax") 0x2000u16, options(nostack, preserves_flags));
+        }
+
+        // 3. VirtualBox / Bochs shutdown
+        unsafe {
+            core::arch::asm!("out dx, ax", in("dx") 0x4004u16, in("ax") 0x3400u16, options(nostack, preserves_flags));
+        }
+
+        kernel::kinfo!("X86_64: shutdown failed, halting");
         hcf()
     }
 

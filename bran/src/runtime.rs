@@ -14,6 +14,12 @@ pub trait ArchRuntime {
         None
     }
     fn halt(&self) -> !;
+    fn shutdown(&self) -> ! {
+        self.halt()
+    }
+    fn reboot(&self) -> ! {
+        self.halt()
+    }
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64;
     fn irq_disable(&self) -> IrqState;
@@ -87,12 +93,6 @@ pub trait ArchRuntime {
     // Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
 
-    /// Reboot the system. Architecture-specific implementation required.
-    fn reboot(&self) -> ! {
-        loop {
-            core::hint::spin_loop();
-        }
-    }
 
     // Tasking - defaults
     fn init_kernel_context(
@@ -344,6 +344,10 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
 
     fn reboot(&self) -> ! {
         self.arch.reboot()
+    }
+
+    fn shutdown(&self) -> ! {
+        self.arch.shutdown()
     }
 
     fn current_cpu_id(&self) -> CpuId {

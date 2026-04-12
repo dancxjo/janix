@@ -415,6 +415,13 @@ pub trait BootRuntimeBase: 'static {
         }
     }
 
+    /// Shutdown the system. This should never return.
+    fn shutdown(&self) -> ! {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
     fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
 

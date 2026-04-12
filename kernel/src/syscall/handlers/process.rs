@@ -17,9 +17,20 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
     Ok(0)
 }
 
-pub fn sys_reboot() -> SysResult<usize> {
-    crate::kprintln!("SYSCALL REBOOT: system reboot requested");
-    crate::runtime_base().reboot();
+pub fn sys_reboot(cmd: usize) -> SysResult<usize> {
+    use abi::syscall::reboot_cmd;
+
+    match cmd as u32 {
+        reboot_cmd::RESTART => {
+            crate::kprintln!("SYSCALL REBOOT: system reboot requested");
+            crate::runtime_base().reboot();
+        }
+        reboot_cmd::HALT | reboot_cmd::POWER_OFF => {
+            crate::kprintln!("SYSCALL SHUTDOWN: system shutdown requested");
+            crate::runtime_base().shutdown();
+        }
+        _ => Err(Errno::EINVAL),
+    }
 }
 
 pub fn sys_get_tid() -> SysResult<usize> {

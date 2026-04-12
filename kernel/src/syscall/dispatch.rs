@@ -7,7 +7,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
 
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
-        SYS_REBOOT => handlers::sys_reboot(),
+        SYS_REBOOT => handlers::sys_reboot(args[0]),
         SYS_READ => handlers::sys_read(args[0], args[1], args[2]),
         SYS_WRITE => handlers::sys_write(args[0], args[1], args[2]),
         SYS_DEBUG_WRITE => handlers::sys_debug_write(args[0], args[1]),

@@ -36,12 +36,22 @@ pub fn exit(code: i32) -> ! {
     }
 }
 
-/// Reboot the system. This call does not return.
-pub fn reboot() -> ! {
+/// Reboot or shutdown the system. This call does not return.
+pub fn reboot_raw(cmd: u32) -> ! {
     unsafe {
-        raw_syscall6(SYS_REBOOT, 0, 0, 0, 0, 0, 0);
+        raw_syscall6(SYS_REBOOT, cmd as usize, 0, 0, 0, 0, 0);
         core::hint::unreachable_unchecked();
     }
+}
+
+/// Reboot the system. This call does not return.
+pub fn reboot() -> ! {
+    reboot_raw(abi::syscall::reboot_cmd::RESTART)
+}
+
+/// Shutdown the system. This call does not return.
+pub fn shutdown() -> ! {
+    reboot_raw(abi::syscall::reboot_cmd::POWER_OFF)
 }
 
 pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {

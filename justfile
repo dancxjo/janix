@@ -221,17 +221,31 @@ rust_branch := "thingos-patched"
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -f .gitmodules ]; then
-        echo "missing .gitmodules; vendor/rust must be managed as a submodule"
-        exit 1
+    rust_gitlink_mode="false"
+    if [ -f .gitmodules ] && git ls-files --stage -- vendor/rust | grep -q '^160000 '; then
+        rust_gitlink_mode="true"
     fi
-    if [ ! -e vendor/rust ]; then
-        echo "==> Initializing vendor/rust submodule..."
+
+    if [ "$rust_gitlink_mode" = "true" ]; then
+        if [ ! -e vendor/rust ]; then
+            echo "==> Initializing vendor/rust submodule..."
+        else
+            echo "==> Syncing vendor/rust submodule metadata..."
+        fi
+        git submodule sync --recursive vendor/rust
+        git submodule update --init vendor/rust
     else
-        echo "==> Syncing vendor/rust submodule metadata..."
+        if [ ! -d vendor/rust/.git ] && [ ! -f vendor/rust/.git ]; then
+            if [ -e vendor/rust ]; then
+                echo "vendor/rust exists but is not a git checkout"
+                exit 1
+            fi
+            echo "==> Cloning rust fork into vendor/rust (non-submodule mode)..."
+            git clone --origin origin --branch {{rust_branch}} https://github.com/dancxjo/rust-thingos.git vendor/rust
+        else
+            echo "==> Using existing vendor/rust checkout (non-submodule mode)..."
+        fi
     fi
-    git submodule sync --recursive vendor/rust
-    git submodule update --init vendor/rust
     if git -C vendor/rust ls-remote --exit-code --heads origin {{rust_branch}} >/dev/null 2>&1; then
         git -C vendor/rust fetch origin {{rust_branch}}
         if git -C vendor/rust show-ref --verify --quiet refs/heads/{{rust_branch}}; then

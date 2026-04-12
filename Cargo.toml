@@ -100,6 +100,7 @@ members = [
     "userspace/reboot",
     "userspace/shutdown",
     "userspace/tests/test_vm_protect",
+    "userspace/tests/test_vm_shared",
     "userspace/tests/test_futex",
     "userspace/tests/test_exec_env",
     "userspace/tests/test_threads",

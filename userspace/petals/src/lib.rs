@@ -3,7 +3,6 @@ use alloc::string::ToString;
 use core::default::Default;
 extern crate alloc;
 
-
 pub mod blit;
 pub mod bmp;
 pub mod font;
@@ -36,7 +35,7 @@ impl Texture {
             addr_hint: 0,
             len: size,
             prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-            flags: VmMapFlags::empty(),
+            flags: VmMapFlags::SHARED,
             backing: VmBacking::File { fd, offset: 0 },
         };
 

@@ -93,7 +93,7 @@ pub use channel::{
     channel_send_msg, channel_try_recv, channel_wait, ChannelHandle,
 };
 pub use vfs::{
-    dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_chmod, vfs_close, vfs_fcntl, vfs_fchmod,
+    dup, dup2, pipe, tcgetattr, tcsetattr, vfs_chdir, vfs_chmod, vfs_close, vfs_fchmod, vfs_fcntl,
     vfs_fd_from_handle, vfs_fsync, vfs_futimes, vfs_getcwd, vfs_isatty, vfs_mkdir, vfs_mount,
     vfs_open, vfs_poll, vfs_read, vfs_readdir, vfs_readv, vfs_realpath, vfs_rename, vfs_seek,
     vfs_stat, vfs_umount, vfs_unlink, vfs_utimes, vfs_watch_fd, vfs_watch_path, vfs_write,
@@ -113,7 +113,11 @@ pub use wait::wait_many;
 ///
 /// Note: Thing-OS only supports 64-bit targets, so `u64` timeout values
 /// fit safely in a `usize` register argument.
-pub fn futex_wait(addr: &core::sync::atomic::AtomicU32, expected: u32, timeout_ns: u64) -> Result<(), Errno> {
+pub fn futex_wait(
+    addr: &core::sync::atomic::AtomicU32,
+    expected: u32,
+    timeout_ns: u64,
+) -> Result<(), Errno> {
     let ret = unsafe {
         raw_syscall6(
             SYS_FUTEX_WAIT,
@@ -684,7 +688,17 @@ pub fn spawn_process_ex(
     boot_arg: u64,
     handles: &[u64],
 ) -> Result<abi::types::SpawnProcessExResp, Errno> {
-    spawn_process_ex_cwd(name, argv, env, stdin_mode, stdout_mode, stderr_mode, boot_arg, handles, None)
+    spawn_process_ex_cwd(
+        name,
+        argv,
+        env,
+        stdin_mode,
+        stdout_mode,
+        stderr_mode,
+        boot_arg,
+        handles,
+        None,
+    )
 }
 
 pub fn spawn_process_ex_cwd(
@@ -1108,15 +1122,7 @@ pub fn entropy_seed(buf: &[u8]) {
         let chunk = &buf[offset..];
         let len = chunk.len().min(256);
         unsafe {
-            raw_syscall6(
-                SYS_ENTROPY_SEED,
-                chunk.as_ptr() as usize,
-                len,
-                0,
-                0,
-                0,
-                0,
-            );
+            raw_syscall6(SYS_ENTROPY_SEED, chunk.as_ptr() as usize, len, 0, 0, 0, 0);
         }
         offset += len;
     }
@@ -1135,7 +1141,19 @@ pub fn vm_map(req: &abi::vm::VmMapReq) -> Result<abi::vm::VmMapResp, Errno> {
 }
 
 pub fn vm_unmap(addr: usize, len: usize) -> Result<(), Errno> {
-    let ret = unsafe { raw_syscall6(SYS_VM_UNMAP, addr, len, 0, 0, 0, 0) };
+    let req = abi::vm::VmUnmapReq { addr, len };
+    let mut resp = abi::vm::VmUnmapResp::default();
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VM_UNMAP,
+            &req as *const _ as usize,
+            &mut resp as *mut _ as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
     abi::errors::errno(ret).map(|_| ())
 }
 

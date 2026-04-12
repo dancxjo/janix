@@ -40,6 +40,22 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     let fixed = req.flags.contains(abi::vm::VmMapFlags::FIXED);
     let guard = req.flags.contains(abi::vm::VmMapFlags::GUARD);
 
+    // Legacy compatibility: callers that don't set PRIVATE/SHARED get a
+    // sensible default based on backing type.
+    let map_private = req.flags.contains(abi::vm::VmMapFlags::PRIVATE);
+    let map_shared = req.flags.contains(abi::vm::VmMapFlags::SHARED);
+    if map_private && map_shared {
+        return Err(Errno::EINVAL);
+    }
+
+    let effective_shared = if map_shared {
+        true
+    } else if map_private {
+        false
+    } else {
+        matches!(req.backing, VmBacking::File { .. })
+    };
+
     let mut addr = req.addr_hint;
     if fixed {
         if addr == 0 || addr % page_size != 0 {
@@ -61,94 +77,98 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         let hhdm = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
         let mut virt = addr as u64;
         let end = virt + len as u64;
-        let mut virt = addr as u64;
-        let end = virt + len as u64;
+        // Resolve file backing metadata once to avoid re-locking fd_table on
+        // every page and to enforce access checks up front.
+        let file_backing = match req.backing {
+            VmBacking::File { fd, offset } => {
+                let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+                let (node, status_flags) = {
+                    let lock = pinfo_arc.lock();
+                    let file = lock.fd_table.get(fd)?;
+                    (file.node.clone(), *file.status_flags.lock())
+                };
 
-        // Try to obtain a 0-copy physical region, if this is a file backing
-        let zero_copy_region = match req.backing {
-            VmBacking::File { fd, .. } => {
-                if let Some(pinfo_arc) = crate::sched::process_info_current() {
-                    let node = {
-                        let lock = pinfo_arc.lock();
-                        if let Ok(file) = lock.fd_table.get(fd) {
-                            Some(file.node.clone())
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(n) = node {
-                        n.phys_region().ok()
-                    } else {
-                        None
+                if req.prot.contains(VmProt::READ) && !status_flags.is_readable() {
+                    return Err(Errno::EACCES);
+                }
+                if req.prot.contains(VmProt::WRITE) && !status_flags.is_writable() {
+                    return Err(Errno::EACCES);
+                }
+
+                let shared_region = if effective_shared {
+                    let (phys_base, total_size) =
+                        node.phys_region().map_err(|_| Errno::EOPNOTSUPP)?;
+                    if offset as usize >= total_size || total_size - (offset as usize) < len {
+                        return Err(Errno::EINVAL);
                     }
+                    Some((phys_base, total_size))
                 } else {
                     None
-                }
+                };
+
+                Some((fd, offset, node, shared_region))
             }
-            _ => None,
+            VmBacking::Anonymous { .. } => {
+                if effective_shared {
+                    // Shared anonymous mappings are not yet represented by a
+                    // transferable kernel object.
+                    return Err(Errno::EOPNOTSUPP);
+                }
+                None
+            }
         };
 
         while virt < end {
-            let phys = if let Some((phys_base, total_size)) = zero_copy_region {
-                // 0-copy path
-                let VmBacking::File {
-                    offset: file_offset,
-                    ..
-                } = req.backing
-                else {
-                    unreachable!()
-                };
-                let current_offset = file_offset + (virt - addr as u64);
-                if current_offset >= total_size as u64 {
-                    // Out of bounds for the region
-                    return Err(Errno::EINVAL);
-                }
-                phys_base + current_offset
-            } else {
-                // Allocation path
-                let allocated_phys = crate::memory::alloc_frame().ok_or(Errno::ENOMEM)?;
-                match req.backing {
-                    VmBacking::Anonymous { zeroed } => {
-                        if zeroed {
+            let phys =
+                if let Some((_, file_offset, _, Some((phys_base, total_size)))) = &file_backing {
+                    // 0-copy path
+                    let current_offset = *file_offset + (virt - addr as u64);
+                    if current_offset >= *total_size as u64 {
+                        // Out of bounds for the region
+                        return Err(Errno::EINVAL);
+                    }
+                    phys_base + current_offset
+                } else {
+                    // Allocation path
+                    let allocated_phys = crate::memory::alloc_frame().ok_or(Errno::ENOMEM)?;
+                    match req.backing {
+                        VmBacking::Anonymous { zeroed } => {
+                            if zeroed {
+                                let hhdm_virt = allocated_phys + hhdm;
+                                unsafe {
+                                    core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
+                                }
+                            }
+                        }
+                        VmBacking::File { .. } => {
+                            let (file_offset, node) =
+                                if let Some((_, file_offset, node, _)) = &file_backing {
+                                    (*file_offset, node.clone())
+                                } else {
+                                    return Err(Errno::EINVAL);
+                                };
+
                             let hhdm_virt = allocated_phys + hhdm;
-                            unsafe {
-                                core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
+                            let slice = unsafe {
+                                core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size)
+                            };
+
+                            let current_offset = file_offset + (virt - addr as u64);
+                            let bytes_read = node.read(current_offset, slice)?;
+
+                            if bytes_read < page_size {
+                                unsafe {
+                                    core::ptr::write_bytes(
+                                        (hhdm_virt + bytes_read as u64) as *mut u8,
+                                        0,
+                                        page_size - bytes_read,
+                                    );
+                                }
                             }
                         }
                     }
-                    VmBacking::File {
-                        fd,
-                        offset: file_offset,
-                    } => {
-                        let pinfo_arc =
-                            crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-                        let node = {
-                            let lock = pinfo_arc.lock();
-                            let file = lock.fd_table.get(fd)?;
-                            file.node.clone()
-                        };
-
-                        let hhdm_virt = allocated_phys + hhdm;
-                        let slice = unsafe {
-                            core::slice::from_raw_parts_mut(hhdm_virt as *mut u8, page_size)
-                        };
-
-                        let current_offset = file_offset + (virt - addr as u64);
-                        let bytes_read = node.read(current_offset, slice)?;
-
-                        if bytes_read < page_size {
-                            unsafe {
-                                core::ptr::write_bytes(
-                                    (hhdm_virt + bytes_read as u64) as *mut u8,
-                                    0,
-                                    page_size - bytes_read,
-                                );
-                            }
-                        }
-                    }
-                }
-                allocated_phys
-            };
+                    allocated_phys
+                };
 
             unsafe {
                 crate::memory::map_user_page_with_perms(virt, phys, perms)?;

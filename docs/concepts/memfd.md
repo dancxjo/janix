@@ -17,6 +17,21 @@ in a memfd and send the thing across the channel with
 [`abi::memfd::MemFdRef`] descriptor (16 bytes) that names the thing, and the
 byte length of the valid window.
 
+## Mapping mode semantics
+
+`vm_map` supports both `MAP_SHARED` and `MAP_PRIVATE` semantics via
+`VmMapFlags::SHARED` and `VmMapFlags::PRIVATE`:
+
+* File-backed + `SHARED`: mappings reference the same physical pages (writes in
+  one mapping become visible in peer mappings/processes).
+* File-backed + `PRIVATE`: mapping is copy-on-map (new physical pages are
+  allocated and initialized from file contents; writes are private).
+* Anonymous mappings are currently private-only; requesting `SHARED` on
+  anonymous backing returns `EOPNOTSUPP`.
+
+For backward compatibility, callers that omit both flags default to
+`SHARED` for file backing and `PRIVATE` for anonymous backing.
+
 ## Memfd lifetime and reference counting
 
 The kernel maintains a reference count on each memfd region:
@@ -68,7 +83,7 @@ let req = VmMapReq {
     addr_hint: 0,
     len: width * height * 4,
     prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-    flags: VmMapFlags::empty(),
+  flags: VmMapFlags::SHARED,
     backing: VmBacking::File { fd: thing, offset: 0 },
 };
 let mapped = vm_map(&req)?;
@@ -109,7 +124,7 @@ let req = VmMapReq {
     addr_hint: 0,
     len: desc.length as usize,
     prot: VmProt::READ | VmProt::USER,
-    flags: VmMapFlags::empty(),
+  flags: VmMapFlags::SHARED,
     backing: VmBacking::File { fd: new_thing, offset: 0 },
 };
 let mapped = vm_map(&req)?;

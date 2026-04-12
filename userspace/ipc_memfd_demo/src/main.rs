@@ -35,10 +35,8 @@ use alloc::string::ToString;
 use core::default::Default;
 extern crate alloc;
 
-
-
 use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
-use stem::syscall::{memfd_create, vm_map, vm_unmap, vfs_close};
+use stem::syscall::{memfd_create, vfs_close, vm_map, vm_unmap};
 use stem::{info, warn};
 
 /// Demonstration buffer size (4 KiB).
@@ -69,7 +67,7 @@ fn main(_arg: usize) -> ! {
         addr_hint: 0,
         len: BUF_SIZE,
         prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
-        flags: VmMapFlags::empty(),
+        flags: VmMapFlags::SHARED,
         backing: VmBacking::File { fd, offset: 0 },
     };
     let mapped_rw = match vm_map(&req) {
@@ -95,7 +93,10 @@ fn main(_arg: usize) -> ! {
             *b = pattern;
         }
     }
-    info!("ipc_memfd_demo: filled buffer with pattern 0x{:02X}", pattern);
+    info!(
+        "ipc_memfd_demo: filled buffer with pattern 0x{:02X}",
+        pattern
+    );
 
     // ── 4. Unmap the RW mapping ───────────────────────────────────────────
     //
@@ -115,7 +116,7 @@ fn main(_arg: usize) -> ! {
         addr_hint: 0,
         len: BUF_SIZE,
         prot: VmProt::READ | VmProt::USER,
-        flags: VmMapFlags::empty(),
+        flags: VmMapFlags::SHARED,
         backing: VmBacking::File { fd, offset: 0 },
     };
     let mapped_ro = match vm_map(&req_ro) {
@@ -137,7 +138,10 @@ fn main(_arg: usize) -> ! {
     };
 
     if ok {
-        info!("ipc_memfd_demo: PASS — all {} bytes match 0x{:02X}", BUF_SIZE, pattern);
+        info!(
+            "ipc_memfd_demo: PASS — all {} bytes match 0x{:02X}",
+            BUF_SIZE, pattern
+        );
     } else {
         warn!("ipc_memfd_demo: FAIL — buffer mismatch!");
     }

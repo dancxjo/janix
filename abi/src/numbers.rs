@@ -70,6 +70,9 @@ pub const SYS_GETPGRP: u32 = 0x101D;
 /// Create a new session. Analogous to POSIX `setsid(2)`.
 /// Args: none
 pub const SYS_SETSID: u32 = 0x101E;
+/// Set the calling thread's human-readable name.
+/// Args: (name_ptr, name_len) — UTF-8 string, clamped to 31 bytes.
+pub const SYS_TASK_SET_NAME: u32 = 0x101F;
 
 // ============================================================================
 // Process Environment (0x1100)

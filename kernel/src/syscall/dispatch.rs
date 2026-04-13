@@ -55,6 +55,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TASK_SET_TLS_BASE => handlers::sys_task_set_tls_base(args[0]),
         SYS_TASK_GET_TLS_BASE => handlers::sys_task_get_tls_base(),
         SYS_TASK_INTERRUPT => handlers::sys_task_interrupt(args[0]),
+        SYS_TASK_SET_NAME => handlers::sys_task_set_name(args[0], args[1]),
 
         // ── Signal management ─────────────────────────────────────────────
         SYS_KILL => handlers::sys_kill(args[0], args[1]),

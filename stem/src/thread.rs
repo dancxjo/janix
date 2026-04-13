@@ -55,6 +55,15 @@ pub fn set_priority(tid: ThreadId, priority: usize) -> Result<(), Errno> {
     crate::syscall::set_priority(tid, priority)
 }
 
+/// Set the calling thread's human-readable name.
+///
+/// The name is stored in the kernel's thread record and is visible via
+/// `/proc/<pid>/task/<tid>/name`.  Names longer than 31 bytes are
+/// silently truncated by the kernel.
+pub fn set_name(name: &[u8]) -> Result<(), Errno> {
+    crate::syscall::task_set_name(name)
+}
+
 /// A first-class handle for observing a task's exit via `wait_many`.
 ///
 /// Placing a `TaskExitWatch` in a `wait_many` call eliminates the need for

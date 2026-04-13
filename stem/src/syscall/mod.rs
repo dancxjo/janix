@@ -678,6 +678,26 @@ pub fn task_get_tls_base() -> Result<usize, Errno> {
     abi::errors::errno(ret).map(|v| v as usize)
 }
 
+/// Set the calling thread's human-readable name.
+///
+/// The name is stored in the kernel's thread record and is visible in
+/// `/proc/<pid>/task/<tid>/name`.  Names longer than 31 bytes are
+/// silently truncated by the kernel.
+pub fn task_set_name(name: &[u8]) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_TASK_SET_NAME,
+            name.as_ptr() as usize,
+            name.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
 pub fn task_interrupt(tid: u64) -> Result<(), Errno> {
     let ret = unsafe { raw_syscall6(SYS_TASK_INTERRUPT, tid as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())

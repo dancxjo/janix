@@ -17,6 +17,8 @@
 //! | `/proc/<pid>/cmdline`      | argv as null-delimited bytes |
 //! | `/proc/<pid>/exe`          | Symlink to the process's executable |
 //! | `/proc/<pid>/fd/`          | Directory of open fd targets |
+//! | `/proc/<pid>/task/`        | Directory of threads in the process |
+//! | `/proc/<pid>/task/<tid>/name` | Thread's human-readable name |
 
 use abi::errors::{Errno, SysResult};
 use alloc::string::{String, ToString};
@@ -82,6 +84,13 @@ impl VfsDriver for ProcFs {
 
 /// Look up a node inside a per-process `/proc/<pid>/` directory.
 fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
+    // For paths under "task/..." we delegate immediately without needing the
+    // process snapshot (which is only used by status/cmdline/exe).
+    if rest == "task" || rest.starts_with("task/") {
+        let tid_and_rest = rest.strip_prefix("task/").unwrap_or("");
+        return lookup_pid_task(pid, tid_and_rest);
+    }
+
     let procs = crate::sched::list_processes_current();
     let snap = procs
         .iter()
@@ -129,6 +138,47 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
         "exe" => {
             // /proc/<pid>/exe — symlink to the process's executable path.
             Ok(Arc::new(ProcPidExeNode { exec_path: snap.exec_path.clone() }))
+        }
+        _ => Err(Errno::ENOENT),
+    }
+}
+
+/// Look up a node inside `/proc/<pid>/task/`.
+///
+/// `tid_and_rest` is everything after `"task/"`, e.g. `""` (the directory
+/// itself), `"100"` (per-thread directory), or `"100/name"` (thread name).
+fn lookup_pid_task(pid: u32, tid_and_rest: &str) -> SysResult<Arc<dyn VfsNode>> {
+    // /proc/<pid>/task — directory listing all TIDs.
+    if tid_and_rest.is_empty() {
+        return Ok(Arc::new(ProcPidTaskDirNode { pid }));
+    }
+
+    let mut parts = tid_and_rest.splitn(2, '/');
+    let tid_str = parts.next().unwrap_or("");
+    let file = parts.next().unwrap_or("");
+
+    let tid: u64 = tid_str.parse().map_err(|_| Errno::ENOENT)?;
+
+    // Find the thread snapshot with the matching pid and tid.
+    let procs = crate::sched::list_processes_current();
+    let thread = procs
+        .iter()
+        .find(|s| s.pid == pid && s.tid == tid)
+        .ok_or(Errno::ENOENT)?;
+
+    match file {
+        // /proc/<pid>/task/<tid> — per-thread directory.
+        "" => Ok(Arc::new(ProcPidTaskTidDirNode { pid, tid })),
+        "name" => {
+            // Thread name, newline-terminated for compatibility with Linux.
+            let mut text = thread.name.clone();
+            text.push('\n');
+            // Inode: top nibble 0xB, next 32 bits = pid, bottom 28 bits = tid.
+            // This avoids collisions for the expected TID range (< 2^28).
+            let ino = 0xB000_0000_0000_0000u64
+                | ((pid as u64) << 28)
+                | (tid & 0x0FFF_FFFF);
+            Ok(Arc::new(DynamicTextNode::new(text.into_bytes(), ino)))
         }
         _ => Err(Errno::ENOENT),
     }
@@ -192,7 +242,7 @@ impl VfsNode for ProcPidDirNode {
         })
     }
     fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        let entries = ["status", "cmdline", "fd", "exe"];
+        let entries = ["status", "cmdline", "fd", "exe", "task"];
         super::write_readdir_entries(entries.into_iter(), offset, buf)
     }
 }
@@ -223,6 +273,72 @@ impl VfsNode for ProcPidFdDirNode {
         // Stub: empty directory.
         let _ = buf;
         Ok(0)
+    }
+}
+
+// ── /proc/<pid>/task/ directory ───────────────────────────────────────────────
+
+struct ProcPidTaskDirNode {
+    pid: u32,
+}
+
+impl VfsNode for ProcPidTaskDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o555,
+            size: 0,
+            // Inode: top nibble 0x9, bottom 32 bits = pid.
+            ino: 0x9000_0000_0000_0000u64 | self.pid as u64,
+            ..Default::default()
+        })
+    }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let procs = crate::sched::list_processes_current();
+        let tids: Vec<String> = procs
+            .iter()
+            .filter(|s| s.pid == self.pid)
+            .map(|s| alloc::format!("{}", s.tid))
+            .collect();
+        super::write_readdir_entries(tids.iter().map(|s: &String| s.as_str()), offset, buf)
+    }
+}
+
+// ── /proc/<pid>/task/<tid>/ directory ─────────────────────────────────────────
+
+struct ProcPidTaskTidDirNode {
+    #[allow(dead_code)]
+    pid: u32,
+    #[allow(dead_code)]
+    tid: u64,
+}
+
+impl VfsNode for ProcPidTaskTidDirNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
+        Err(Errno::EISDIR)
+    }
+    fn stat(&self) -> SysResult<VfsStat> {
+        Ok(VfsStat {
+            mode: VfsStat::S_IFDIR | 0o555,
+            size: 0,
+            // Inode: top nibble 0xA, next 32 bits = pid, bottom 28 bits = tid.
+            ino: 0xA000_0000_0000_0000u64
+                | ((self.pid as u64) << 28)
+                | (self.tid & 0x0FFF_FFFF),
+            ..Default::default()
+        })
+    }
+    fn readdir(&self, offset: u64, buf: &mut [u8]) -> SysResult<usize> {
+        let entries = ["name"];
+        super::write_readdir_entries(entries.into_iter(), offset, buf)
     }
 }
 

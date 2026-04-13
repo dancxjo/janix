@@ -262,7 +262,7 @@ fn list_unique_processes() -> alloc::vec::Vec<alloc::sync::Arc<spin::Mutex<crate
     out
 }
 
-fn process_group_exists_in_session(pgid: u32, sid: u32) -> bool {
+pub fn process_group_exists_in_session(pgid: u32, sid: u32) -> bool {
     for pinfo in list_unique_processes() {
         let p = pinfo.lock();
         if p.pgid == pgid && p.sid == sid {

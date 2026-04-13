@@ -115,6 +115,12 @@ pub const TERMINAL_OP_TCSETSW: u32 = 3;
 /// Set terminal settings after flushing pending I/O.
 /// The kernel reads a `Termios` from the user buffer at `in_ptr`.
 pub const TERMINAL_OP_TCSETSF: u32 = 4;
+/// Get foreground process group ID for the controlling terminal.
+/// The kernel writes a `u32` pgid to the user buffer at `out_ptr`.
+pub const TERMINAL_OP_TCGETPGRP: u32 = 5;
+/// Set foreground process group ID for the controlling terminal.
+/// The kernel reads a `u32` pgid from the user buffer at `in_ptr`.
+pub const TERMINAL_OP_TCSETPGRP: u32 = 6;
 
 // ── Default termios ───────────────────────────────────────────────────────────
 
@@ -130,11 +136,9 @@ pub const DEFAULT_TERMIOS: Termios = Termios {
     _pad: [0; 3],
     //        [0]  [1]   [2]   [3]   [4]  [5]  [6]  [7]
     c_cc: [
-        0x03, 0x1c, 0x7f, 0x15, 0x04, 0x00, 0x01, 0x00,
-        //    [8]   [9]   [10] … [31]
-        0x11, 0x13, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x03, 0x1c, 0x7f, 0x15, 0x04, 0x00, 0x01, 0x00, //    [8]   [9]   [10] … [31]
+        0x11, 0x13, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ],
 };
 

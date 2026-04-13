@@ -255,12 +255,37 @@ impl VfsNode for DevDirNode {
 static CONSOLE_BUF: Mutex<alloc::collections::VecDeque<u8>> =
     Mutex::new(alloc::collections::VecDeque::new());
 
-/// Global termios settings for `/dev/console`.
-///
-/// Initialised to a sane canonical-mode default.  Can be updated via the
-/// `TCSETS` device-call ioctl, which allows userspace to switch to raw mode.
-static CONSOLE_TERMIOS: Mutex<abi::termios::Termios> =
-    Mutex::new(abi::termios::DEFAULT_TERMIOS);
+/// Runtime tty state for `/dev/console`.
+#[derive(Clone, Copy)]
+struct ConsoleTtyState {
+    termios: abi::termios::Termios,
+    controlling_sid: Option<u32>,
+    foreground_pgid: Option<u32>,
+}
+
+impl Default for ConsoleTtyState {
+    fn default() -> Self {
+        Self {
+            termios: abi::termios::DEFAULT_TERMIOS,
+            controlling_sid: None,
+            foreground_pgid: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ConsoleCaller {
+    sid: u32,
+    pgid: u32,
+    session_leader: bool,
+}
+
+/// Global tty state for `/dev/console`.
+static CONSOLE_TTY_STATE: Mutex<ConsoleTtyState> = Mutex::new(ConsoleTtyState {
+    termios: abi::termios::DEFAULT_TERMIOS,
+    controlling_sid: None,
+    foreground_pgid: None,
+});
 
 /// Character device node for `/dev/console`.
 ///
@@ -275,14 +300,84 @@ static CONSOLE_TERMIOS: Mutex<abi::termios::Termios> =
 pub struct ConsoleNode;
 
 impl ConsoleNode {
+    fn current_caller() -> Option<ConsoleCaller> {
+        let pinfo = crate::sched::process_info_current()?;
+        let p = pinfo.lock();
+        Some(ConsoleCaller {
+            sid: p.sid,
+            pgid: p.pgid,
+            session_leader: p.session_leader,
+        })
+    }
+
+    fn maybe_acquire_controlling_tty(state: &mut ConsoleTtyState, caller: Option<ConsoleCaller>) {
+        if state.controlling_sid.is_some() {
+            return;
+        }
+        if let Some(c) = caller
+            && c.session_leader
+        {
+            state.controlling_sid = Some(c.sid);
+            state.foreground_pgid = Some(c.pgid);
+        }
+    }
+
+    fn is_background_caller(state: &ConsoleTtyState, caller: ConsoleCaller) -> bool {
+        match (state.controlling_sid, state.foreground_pgid) {
+            (Some(sid), Some(fg_pgid)) => caller.sid == sid && caller.pgid != fg_pgid,
+            _ => false,
+        }
+    }
+
+    fn enforce_job_control_before_read() -> SysResult<()> {
+        let caller = match Self::current_caller() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        let is_background = {
+            let mut state = CONSOLE_TTY_STATE.lock();
+            Self::maybe_acquire_controlling_tty(&mut state, Some(caller));
+            Self::is_background_caller(&state, caller)
+        };
+        if is_background {
+            crate::signal::send_signal_to_group(caller.pgid, abi::signal::SIGTTIN);
+            return Err(Errno::EINTR);
+        }
+        Ok(())
+    }
+
+    fn enforce_job_control_before_write() -> SysResult<()> {
+        let caller = match Self::current_caller() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        let is_background = {
+            let mut state = CONSOLE_TTY_STATE.lock();
+            Self::maybe_acquire_controlling_tty(&mut state, Some(caller));
+            Self::is_background_caller(&state, caller)
+        };
+        if is_background {
+            crate::signal::send_signal_to_group(caller.pgid, abi::signal::SIGTTOU);
+            return Err(Errno::EINTR);
+        }
+        Ok(())
+    }
+
     /// Return a copy of the current termios settings.
     pub fn get_termios() -> abi::termios::Termios {
-        *CONSOLE_TERMIOS.lock()
+        CONSOLE_TTY_STATE.lock().termios
     }
 
     /// Replace the current termios settings.
     pub fn set_termios(t: abi::termios::Termios) {
-        *CONSOLE_TERMIOS.lock() = t;
+        CONSOLE_TTY_STATE.lock().termios = t;
+    }
+
+    #[cfg(test)]
+    fn set_tty_owner_for_test(sid: Option<u32>, fg_pgid: Option<u32>) {
+        let mut st = CONSOLE_TTY_STATE.lock();
+        st.controlling_sid = sid;
+        st.foreground_pgid = fg_pgid;
     }
 }
 
@@ -293,6 +388,7 @@ impl VfsNode for ConsoleNode {
         if buf.is_empty() {
             return Ok(0);
         }
+        Self::enforce_job_control_before_read()?;
         let mut read_bytes = 0;
 
         loop {
@@ -305,7 +401,7 @@ impl VfsNode for ConsoleNode {
 
             // Snapshot current terminal flags so we are consistent across
             // one drain + one dequeue pass.
-            let termios = *CONSOLE_TERMIOS.lock();
+            let termios = CONSOLE_TTY_STATE.lock().termios;
             let canonical = termios.c_lflag & ICANON != 0;
             let do_echo = termios.c_lflag & ECHO != 0;
             let do_echo_erase = termios.c_lflag & ECHOE != 0;
@@ -422,6 +518,7 @@ impl VfsNode for ConsoleNode {
     }
 
     fn write(&self, _offset: u64, buf: &[u8]) -> SysResult<usize> {
+        Self::enforce_job_control_before_write()?;
         let rt = crate::runtime_base();
         for &b in buf {
             if b == b'\n' {
@@ -460,7 +557,8 @@ impl VfsNode for ConsoleNode {
     fn device_call(&self, call: &abi::device::DeviceCall) -> SysResult<usize> {
         use abi::device::DeviceKind;
         use abi::termios::{
-            TERMINAL_OP_TCGETS, TERMINAL_OP_TCSETS, TERMINAL_OP_TCSETSF, TERMINAL_OP_TCSETSW,
+            TERMINAL_OP_TCGETPGRP, TERMINAL_OP_TCGETS, TERMINAL_OP_TCSETPGRP, TERMINAL_OP_TCSETS,
+            TERMINAL_OP_TCSETSF, TERMINAL_OP_TCSETSW,
         };
 
         if call.kind != DeviceKind::Terminal {
@@ -468,6 +566,13 @@ impl VfsNode for ConsoleNode {
         }
 
         let termios_size = core::mem::size_of::<abi::termios::Termios>();
+        let pgid_size = core::mem::size_of::<u32>();
+
+        let caller = Self::current_caller();
+        {
+            let mut st = CONSOLE_TTY_STATE.lock();
+            Self::maybe_acquire_controlling_tty(&mut st, caller);
+        }
 
         match call.op {
             TERMINAL_OP_TCGETS => {
@@ -475,7 +580,7 @@ impl VfsNode for ConsoleNode {
                 if call.out_len < termios_size as u32 || call.out_ptr == 0 {
                     return Err(abi::errors::Errno::EINVAL);
                 }
-                let termios = *CONSOLE_TERMIOS.lock();
+                let termios = CONSOLE_TTY_STATE.lock().termios;
                 let bytes = unsafe {
                     core::slice::from_raw_parts(
                         &termios as *const abi::termios::Termios as *const u8,
@@ -502,7 +607,63 @@ impl VfsNode for ConsoleNode {
                 unsafe {
                     crate::syscall::validate::copyin(bytes, call.in_ptr as usize)?;
                 }
-                *CONSOLE_TERMIOS.lock() = new_termios;
+                CONSOLE_TTY_STATE.lock().termios = new_termios;
+                Ok(0)
+            }
+            TERMINAL_OP_TCGETPGRP => {
+                if call.out_len < pgid_size as u32 || call.out_ptr == 0 {
+                    return Err(abi::errors::Errno::EINVAL);
+                }
+
+                let caller = caller.ok_or(abi::errors::Errno::ENOTTY)?;
+                let fg_pgid = {
+                    let st = CONSOLE_TTY_STATE.lock();
+                    if st.controlling_sid != Some(caller.sid) {
+                        return Err(abi::errors::Errno::ENOTTY);
+                    }
+                    st.foreground_pgid.ok_or(abi::errors::Errno::ENOTTY)?
+                };
+
+                unsafe {
+                    crate::syscall::validate::copyout(
+                        call.out_ptr as usize,
+                        core::slice::from_raw_parts(&fg_pgid as *const u32 as *const u8, pgid_size),
+                    )?;
+                }
+                Ok(0)
+            }
+            TERMINAL_OP_TCSETPGRP => {
+                if call.in_len < pgid_size as u32 || call.in_ptr == 0 {
+                    return Err(abi::errors::Errno::EINVAL);
+                }
+
+                let caller = caller.ok_or(abi::errors::Errno::ENOTTY)?;
+                let mut new_pgid = 0u32;
+                unsafe {
+                    crate::syscall::validate::copyin(
+                        core::slice::from_raw_parts_mut(
+                            &mut new_pgid as *mut u32 as *mut u8,
+                            pgid_size,
+                        ),
+                        call.in_ptr as usize,
+                    )?;
+                }
+                if new_pgid == 0 {
+                    return Err(abi::errors::Errno::EINVAL);
+                }
+
+                {
+                    let st = CONSOLE_TTY_STATE.lock();
+                    if st.controlling_sid != Some(caller.sid) {
+                        return Err(abi::errors::Errno::ENOTTY);
+                    }
+                }
+
+                if !crate::signal::process_group_exists_in_session(new_pgid, caller.sid) {
+                    return Err(abi::errors::Errno::EPERM);
+                }
+
+                CONSOLE_TTY_STATE.lock().foreground_pgid = Some(new_pgid);
                 Ok(0)
             }
             _ => Err(abi::errors::Errno::ENOSYS),
@@ -1231,6 +1392,48 @@ mod tests {
 
         // Restore.
         ConsoleNode::set_termios(abi::termios::DEFAULT_TERMIOS);
+    }
+
+    #[test]
+    fn test_console_device_call_tcgetpgrp_requires_process_context() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_tty_owner_for_test(Some(1), Some(1));
+
+        let node = ConsoleNode;
+        let mut out_pgid = 0u32;
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCGETPGRP,
+            in_ptr: 0,
+            in_len: 0,
+            out_ptr: &mut out_pgid as *mut u32 as u64,
+            out_len: core::mem::size_of::<u32>() as u32,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Err(abi::errors::Errno::ENOTTY));
+
+        ConsoleNode::set_tty_owner_for_test(None, None);
+    }
+
+    #[test]
+    fn test_console_device_call_tcsetpgrp_requires_process_context() {
+        let _g = CONSOLE_TEST_GUARD.lock();
+        ConsoleNode::set_tty_owner_for_test(Some(1), Some(1));
+
+        let node = ConsoleNode;
+        let new_pgid = 2u32;
+        let call = abi::device::DeviceCall {
+            kind: abi::device::DeviceKind::Terminal,
+            op: abi::termios::TERMINAL_OP_TCSETPGRP,
+            in_ptr: &new_pgid as *const u32 as u64,
+            in_len: core::mem::size_of::<u32>() as u32,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let result = node.device_call(&call);
+        assert_eq!(result, Err(abi::errors::Errno::ENOTTY));
+
+        ConsoleNode::set_tty_owner_for_test(None, None);
     }
 
     // ── Ownership / rdev / nlink metadata tests ──────────────────────────────

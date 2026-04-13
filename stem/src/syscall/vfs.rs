@@ -646,6 +646,39 @@ pub fn tcsetattr(fd: u32, termios: &abi::termios::Termios) -> SysResult<()> {
     vfs_device_call_raw(fd, &call).map(|_| ())
 }
 
+/// Query the foreground process group ID for the controlling terminal on `fd`.
+///
+/// Equivalent to POSIX `tcgetpgrp(fd)`.
+pub fn tcgetpgrp(fd: u32) -> SysResult<u32> {
+    let mut pgid: u32 = 0;
+    let size = core::mem::size_of::<u32>();
+    let call = abi::device::DeviceCall {
+        kind: abi::device::DeviceKind::Terminal,
+        op: abi::termios::TERMINAL_OP_TCGETPGRP,
+        in_ptr: 0,
+        in_len: 0,
+        out_ptr: &mut pgid as *mut u32 as u64,
+        out_len: size as u32,
+    };
+    vfs_device_call_raw(fd, &call).map(|_| pgid)
+}
+
+/// Set the foreground process group ID for the controlling terminal on `fd`.
+///
+/// Equivalent to POSIX `tcsetpgrp(fd, pgrp)`.
+pub fn tcsetpgrp(fd: u32, pgrp: u32) -> SysResult<()> {
+    let size = core::mem::size_of::<u32>();
+    let call = abi::device::DeviceCall {
+        kind: abi::device::DeviceKind::Terminal,
+        op: abi::termios::TERMINAL_OP_TCSETPGRP,
+        in_ptr: &pgrp as *const u32 as u64,
+        in_len: size as u32,
+        out_ptr: 0,
+        out_len: 0,
+    };
+    vfs_device_call_raw(fd, &call).map(|_| ())
+}
+
 // ── chmod / fchmod ────────────────────────────────────────────────────────────
 
 /// Change the permission bits of the file at `path` (chmod).

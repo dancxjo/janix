@@ -59,6 +59,17 @@ fn child_dispatch() -> bool {
             io::stdout().write_all(&buf).unwrap();
             std::process::exit(0);
         }
+        "--child-deadlock" => {
+            // Use direct syscalls to avoid std::io dependencies in this mode.
+            // Write 128KB to stderr (fd 2).
+            let data = [0u8; 1024];
+            for _ in 0..128 {
+                let _ = abi::syscall::vfs_write(2, &data);
+            }
+            // Signal completion on stdout (fd 1).
+            let _ = abi::syscall::vfs_write(1, b"done");
+            std::process::exit(0);
+        }
         _ => return false,
     }
 }
@@ -227,6 +238,25 @@ fn test_proc_try_wait(exe: &str) -> Result<(), String> {
     }
 }
 
+/// proc_deadlock: spawn child that fills stderr before writing stdout; verify no hang.
+fn test_proc_deadlock(exe: &str) -> Result<(), String> {
+    let output = Command::new(exe)
+        .arg("--child-deadlock")
+        .output()
+        .map_err(|e| alloc::format!("spawn failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(alloc::format!("child exited {:?}", output.status.code()));
+    }
+    if output.stderr.len() < 64 * 1024 {
+        return Err(alloc::format!("expected large stderr, got {}", output.stderr.len()));
+    }
+    if !String::from_utf8_lossy(&output.stdout).contains("done") {
+        return Err(alloc::format!("missing 'done' in stdout, got {:?}", output.stdout));
+    }
+    Ok(())
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -246,6 +276,7 @@ fn main() {
         Test { name: "proc_stdin_pipe",    run: test_proc_stdin_pipe },
         Test { name: "proc_inherit_stdio", run: test_proc_inherit_stdio },
         Test { name: "proc_try_wait",      run: test_proc_try_wait },
+        Test { name: "proc_deadlock",      run: test_proc_deadlock },
     ];
 
     let args: Vec<String> = std::env::args().collect();

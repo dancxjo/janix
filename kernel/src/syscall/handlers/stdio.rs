@@ -78,21 +78,3 @@ pub fn sys_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> 
 
     Ok(n)
 }
-
-pub fn sys_console_set_ctrlc_target(tid: usize, action: usize) -> SysResult<usize> {
-    crate::vfs::devfs::set_console_ctrlc_target(
-        if tid == 0 { None } else { Some(tid as u64) },
-        action as u32,
-    )?;
-    Ok(0)
-}
-
-pub fn sys_console_inject_byte(byte: usize) -> SysResult<usize> {
-    let byte = u8::try_from(byte).map_err(|_| Errno::EINVAL)?;
-    crate::vfs::devfs::inject_console_byte(byte, false)?;
-    Ok(0)
-}
-
-pub fn sys_console_poll_input() -> SysResult<usize> {
-    Ok(crate::vfs::devfs::poll_console_input(true)? as usize)
-}

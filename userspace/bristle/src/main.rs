@@ -5,13 +5,18 @@
 #![no_std]
 #![no_main]
 use alloc::string::ToString;
+use core::default::Default;
 extern crate alloc;
 
-use abi::hid::{BristleEventHeader, EventType, Key, KeyEventPayload};
+
+use abi::hid::{
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
+    KeyEventPayload, PointerButtonPayload, PointerMovePayload,
+};
 use abi::syscall::vfs_flags::{O_CREAT, O_RDWR, O_TRUNC};
-use stem::info;
 use stem::syscall::vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_write};
 use stem::syscall::{ChannelHandle, channel_recv, channel_send_all};
+use stem::{debug, info};
 
 fn ensure_session_roots() {
     let _ = vfs_mkdir("/session");
@@ -134,9 +139,6 @@ fn main(packed_handles: usize) -> ! {
                                         let payload = KeyEventPayload::from_bytes(&p);
 
                                         match payload.key() {
-                                            Key::C if payload.mods().has_ctrl() => {
-                                                let _ = stem::syscall::console_inject_byte(0x03);
-                                            }
                                             Key::F2 => {
                                                 info!("bristle: F2 pressed - dumping tasks...");
                                                 stem::syscall::task_dump();

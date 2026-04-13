@@ -48,16 +48,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
         SYS_WAITPID => handlers::sys_waitpid(args[0], args[1], args[2]),
-
-        // ── Signals ──────────────────────────────────────────────────────────
-        SYS_KILL => handlers::sys_kill(args[0], args[1]),
-        SYS_SIGACTION => handlers::sys_sigaction(args[0], args[1], args[2]),
-        SYS_SIGPROCMASK => handlers::sys_sigprocmask(args[0], args[1], args[2]),
-        SYS_SIGPENDING => handlers::sys_sigpending(args[0]),
-        SYS_SIGSUSPEND => handlers::sys_sigsuspend(args[0]),
-        SYS_SIGRETURN => handlers::sys_sigreturn(),
-        SYS_ALARM => handlers::sys_alarm(args[0]),
-        SYS_PAUSE => handlers::sys_pause(),
         SYS_TASK_EXEC => {
             handlers::sys_task_exec(args[0] as u32, args[1], args[2], args[3], args[4])
         }
@@ -88,9 +78,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),
-        SYS_CONSOLE_SET_CTRLC_TARGET => handlers::sys_console_set_ctrlc_target(args[0], args[1]),
-        SYS_CONSOLE_INJECT_BYTE => handlers::sys_console_inject_byte(args[0]),
-        SYS_CONSOLE_POLL_INPUT => handlers::sys_console_poll_input(),
 
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0], args[1]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),

@@ -222,6 +222,8 @@ pub const SYS_FS_LINK: u32 = 0x4023;
 /// Args: (fd, how) where `how` is a combination of [`flock_flags`] constants.
 /// Returns 0 on success; EWOULDBLOCK if the lock is held and LOCK_NB was set.
 pub const SYS_FS_FLOCK: u32 = 0x4024;
+/// Set access and modification timestamps for a path without following symlinks (lutimes).
+pub const SYS_FS_LUTIMES: u32 = 0x4025;
 
 /// Flags for [`SYS_FS_FLOCK`].
 ///

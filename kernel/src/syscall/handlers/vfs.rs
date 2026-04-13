@@ -1578,6 +1578,32 @@ pub fn sys_fs_utimes(
     Ok(0)
 }
 
+/// Set the access and modification timestamps for the file at `path` without
+/// following symlinks (lutimes).
+///
+/// `times_ptr` points to an [`abi::fs::UtimesRequest`] struct.
+/// Returns `Ok(0)` on success, or an errno on failure.
+pub fn sys_fs_lutimes(
+    path_ptr: usize,
+    path_len: usize,
+    times_ptr: usize,
+) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    let (atime, mtime) = read_utimes_request(times_ptr)?;
+    let abs_path = resolve_path(path)?;
+
+    // Use no-follow lookup so the symlink node itself is returned.
+    let node = vfs::path::resolve_no_follow(&abs_path)?;
+    node.utimes(atime, mtime)?;
+    Ok(0)
+}
+
 /// Set the access and modification timestamps for the file associated with `fd`.
 ///
 /// `times_ptr` points to an [`abi::fs::UtimesRequest`] struct.

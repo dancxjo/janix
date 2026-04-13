@@ -33,6 +33,36 @@ pub const SYS_WAITPID: u32 = 0x1011;
 /// report the current online CPU count.
 pub const SYS_AVAILABLE_PARALLELISM: u32 = 0x1012;
 
+// ── Signal Management (0x1013–0x101F) ────────────────────────────────────────
+/// Send a signal to a process. Analogous to POSIX `kill(2)`.
+/// Args: pid (i64 as usize), signum (u8 as usize)
+pub const SYS_KILL: u32 = 0x1013;
+/// Send a signal to the calling process. Analogous to POSIX `raise(3)`.
+/// Args: signum (u8 as usize)
+pub const SYS_RAISE: u32 = 0x1014;
+/// Examine and change a per-signal action. Analogous to POSIX `sigaction(2)`.
+/// Args: signum, act_ptr, oldact_ptr
+pub const SYS_SIGACTION: u32 = 0x1015;
+/// Examine and change the per-thread signal mask. Analogous to POSIX `sigprocmask(2)`.
+/// Args: how, set_ptr, oldset_ptr
+pub const SYS_SIGPROCMASK: u32 = 0x1016;
+/// Return the set of pending blocked signals. Analogous to POSIX `sigpending(2)`.
+/// Args: set_ptr
+pub const SYS_SIGPENDING: u32 = 0x1017;
+/// Suspend until a signal arrives, temporarily replacing the mask.
+/// Analogous to POSIX `sigsuspend(2)`.
+/// Args: mask_ptr
+pub const SYS_SIGSUSPEND: u32 = 0x1018;
+/// Return from a signal handler and restore the saved context.
+/// Analogous to Linux `rt_sigreturn`.  No args (uses saved stack frame).
+pub const SYS_SIGRETURN: u32 = 0x1019;
+/// Set an alarm clock for delivery of SIGALRM. Analogous to POSIX `alarm(2)`.
+/// Args: seconds (u64 as usize)
+pub const SYS_ALARM: u32 = 0x101A;
+/// Suspend until a signal whose disposition is not SIG_IGN arrives.
+/// Analogous to POSIX `pause(2)`.  No args.
+pub const SYS_PAUSE: u32 = 0x101B;
+
 // ============================================================================
 // Process Environment (0x1100)
 // ============================================================================

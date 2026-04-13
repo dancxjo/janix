@@ -1,5 +1,6 @@
 pub mod arch;
 pub mod channel;
+pub mod signal;
 pub mod socket;
 pub mod vfs;
 pub mod wait;
@@ -100,6 +101,10 @@ pub use vfs::{
     vfs_writev,
 };
 pub use wait::wait_many;
+pub use signal::{
+    alarm, kill, pause, raise, sig_block, sig_setmask, sig_unblock, sigaction, sigpending,
+    sigprocmask, sigsuspend,
+};
 
 // ============================================================================
 // Futex (fast userspace mutex) syscall wrappers

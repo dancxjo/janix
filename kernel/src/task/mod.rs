@@ -120,6 +120,15 @@ pub struct Process {
     /// Updated atomically with `Thread.aspace` during exec and remains 0
     /// for kernel-only threads (which have no user address space).
     pub aspace_raw: u64,
+    /// Per-process signal state: dispositions, pending set, stop/alarm state.
+    pub signals: crate::signal::ProcessSignals,
+    /// Exited children waiting for `waitpid` to consume their status.
+    ///
+    /// Each entry is `(child_pid, wait_status)`.  The status is encoded in
+    /// the same format as POSIX `waitpid`: normal exit uses `(code << 8)`,
+    /// signal termination uses `signum`, and stopped/continued children use
+    /// the appropriate `w_stop_sig` / `w_continued` values.
+    pub children_done: alloc::collections::VecDeque<(u32, i32)>,
 }
 
 /// Backward-compatible alias — prefer `Process` in new code.
@@ -194,6 +203,9 @@ pub struct Thread<R: BootRuntime> {
 
     /// `true` if this thread was created as detached (cannot be joined).
     pub detached: bool,
+
+    /// Per-thread signal mask and thread-directed pending signals.
+    pub signals: crate::signal::ThreadSignals,
 }
 
 /// Backward-compatible alias — prefer `Thread<R>` in new code.

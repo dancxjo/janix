@@ -23,6 +23,7 @@ pub mod schema;
 pub mod service_contract;
 pub mod supervisor_protocol;
 pub mod symbols;
+pub mod signal;
 pub mod syscall;
 pub mod time;
 pub mod termios;

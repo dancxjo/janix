@@ -73,6 +73,8 @@ fn default_process_info(
         exec_path: alloc::string::String::new(),
         mappings,
         aspace_raw,
+        signals: crate::signal::ProcessSignals::new(),
+        children_done: alloc::collections::VecDeque::new(),
     }))
 }
 
@@ -102,6 +104,8 @@ fn inherit_process_info<R: BootRuntime>(
             exec_path: alloc::string::String::new(),
             mappings,
             aspace_raw,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }))
     } else {
         default_process_info(pid, ppid, mappings, aspace_raw)
@@ -233,6 +237,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -367,6 +372,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
             user_fs_base: tls_base,
             detached,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         // Register this thread's TID in the owning process so exec and exit
@@ -478,6 +484,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let sched_fields = crate::sched::state::TaskSchedFields {
@@ -1017,6 +1024,8 @@ pub unsafe fn boot_spawn_process_ex<R: BootRuntime>(
         exec_path: alloc::format!("/boot/{}", module.name),
         mappings: task_mappings,
         aspace_raw,
+        signals: crate::signal::ProcessSignals::new(),
+        children_done: alloc::collections::VecDeque::new(),
     }));
 
     // Store name, process_info, and initial TLS thread pointer on the task struct.
@@ -1235,6 +1244,8 @@ pub unsafe fn spawn_process_from_path<R: BootRuntime>(
         exec_path: alloc::string::String::from(path),
         mappings: task_mappings,
         aspace_raw,
+        signals: crate::signal::ProcessSignals::new(),
+        children_done: alloc::collections::VecDeque::new(),
     }));
 
     // Step 8: Attach the ProcessInfo to the new task and record its TLS base.
@@ -1397,6 +1408,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }))
     }
 
@@ -1437,6 +1450,7 @@ mod tests {
             process_info: Some(pinfo),
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
         crate::task::registry::get_registry::<MockRuntime>()
             .insert(alloc::boxed::Box::new(leader));

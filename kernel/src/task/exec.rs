@@ -502,6 +502,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }))
     }
 
@@ -567,6 +569,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         let caller_tid: crate::task::TaskId = 9230;
@@ -604,6 +608,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         let caller_tid: crate::task::TaskId = 9240;
@@ -732,6 +738,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         // Set up: fd 0 survives, fd 1 has FD_CLOEXEC.
@@ -786,6 +794,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         {
@@ -954,6 +964,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0xDEAD_0000,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }))
     }
 
@@ -1182,6 +1194,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         // ── Phase 1: set exec_in_progress ────────────────────────────────────

@@ -56,6 +56,18 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TASK_GET_TLS_BASE => handlers::sys_task_get_tls_base(),
         SYS_TASK_INTERRUPT => handlers::sys_task_interrupt(args[0]),
 
+        // ── Signal management ─────────────────────────────────────────────
+        SYS_KILL => handlers::sys_kill(args[0], args[1]),
+        SYS_RAISE => handlers::sys_raise(args[0]),
+        SYS_SIGACTION => handlers::sys_sigaction(args[0], args[1], args[2]),
+        SYS_SIGPROCMASK => handlers::sys_sigprocmask(args[0], args[1], args[2]),
+        SYS_SIGPENDING => handlers::sys_sigpending(args[0]),
+        SYS_SIGSUSPEND => handlers::sys_sigsuspend(args[0]),
+        // SYS_SIGRETURN is handled in flat.rs (needs raw frame pointer).
+        SYS_SIGRETURN => Ok(0), // handled by kernel_dispatch_flat
+        SYS_ALARM => handlers::sys_alarm(args[0]),
+        SYS_PAUSE => handlers::sys_pause(),
+
         SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
         SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),
         SYS_CHANNEL_SEND_ALL => handlers::sys_channel_send_all(args[0], args[1], args[2]),

@@ -208,41 +208,31 @@ syscall_entry:
     // RDX (Arg2) needs to go to RCX (4th Arg slot for Rust function)
     mov %r14, %rcx 
     
-    // R9 (Arg5) needs to go to Stack (7th Arg slot/a5)
-    // We must push R9 (A5) BEFORE we overwrite it with A4 (from R8).
-    // And we must move R8 (A4) to R9 BEFORE we overwrite R8 with A3 (from R10).
+    // Capture frame_ptr = current RSP (points to base of GPR save area).
+    // We use r15 as a temporary register; the user's r15 value is safe on the
+    // stack at [rsp+0] and will be restored by popq %r15 below.
+    mov %rsp, %r15   // r15 = frame_ptr
     
-    // 1. Save A5 (R9) to Stack
+    // Push stack arguments in right-to-left order:
+    // 8th arg (frame_ptr) — pushed first, lands at higher stack address
+    pushq %r15
+    // 7th arg (a5, from original R9) — pushed second, lands at lower stack address
     pushq %r9
     
-    // 2. Move A4 (R8) to R9
+    // 5th reg-arg: A4 (R8) → R9
     mov %r8, %r9
     
-    // 3. Move A3 (R10) to R8
+    // 4th stack-based reg-arg: A3 (R10) → R8
     mov %r10, %r8
     
-    // Align stack? We pushed odd number of args? 
-    // We pushed 1 arg (8 bytes).
-    // Previous stack alignment:
-    // We pushed 15 regs (8*15) + Err/Int (2*8) + IRET (5*8).
-    // 22 * 8 = 176. Divisible by 16. So aligned.
-    // Pushing 1 arg -> Not aligned.
-    // Sub 8.
-    sub $8, %rsp
-    // Wait, pushq %r9 put it at RSP.
-    // So we need to ensure RSP+8 is aligned 16 call.
-    // Before push R9, RSP was aligned.
-    // After push R9, RSP is -8.
-    // We need RSP to be 16-byte aligned BEFORE call? 
-    // No, call pushes RIP (8 bytes), making it 16-byte aligned inside function.
-    // So on 'call', RSP should be +8 aligned (ending in 8).
-    // If RSP was 0 aligned. Push R9 -> 8 aligned.
-    // Perfect.
+    // Stack alignment: we pushed 2 × 8 = 16 bytes.
+    // Before the pushes RSP was 16-byte aligned; after 2 pushes it is still
+    // aligned.  'call' will push RIP (8 bytes) so inside the function RSP
+    // will be 16n − 8, satisfying the System V ABI requirement.
     
     call kernel_dispatch_flat
     
-    // Cleanup stack arg and alignment padding
-    // We pushed %r9 (8 bytes) AND sub $8 (8 bytes) = 16 bytes total.
+    // Cleanup: remove the 2 stack arguments pushed above (frame_ptr + a5).
     add $16, %rsp
     
     // RAX has return value (isize).
@@ -278,6 +268,11 @@ syscall_entry:
     // GPRs popped above restored User RCX/R11 (clobbered/arguments).
     // The "True" RIP/RFLAGS are in the IRET frame on stack.
     // Stack Check: [Error(0), Int(8), RIP(16), CS(24), RFLAGS(32), RSP(40), SS(48)]
+    //
+    // NOTE: signal delivery in kernel_dispatch_flat may have modified the
+    // IRET frame (RIP/RSP/RFLAGS) to redirect to a signal handler.
+    // We always load from the saved frame, not from preserved registers,
+    // so signal frame redirection is automatically respected here.
     
     mov 16(%rsp), %rcx  // Load RIP into RCX
     mov 32(%rsp), %r11  // Load RFLAGS into R11

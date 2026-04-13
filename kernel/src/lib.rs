@@ -9,6 +9,7 @@ pub mod irq;
 pub mod logging;
 pub mod memory;
 pub mod once_cell;
+pub mod signal;
 
 pub mod sched;
 pub mod simd;

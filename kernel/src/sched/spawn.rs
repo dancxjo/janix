@@ -717,6 +717,8 @@ pub enum StdioSpec {
     Null,
     /// Create a pipe; returns the pipe_id for the parent's end.
     Pipe,
+    /// Clone the specified parent fd into this stdio slot.
+    Fd(u32),
 }
 
 /// Populate the fd_table slots 0, 1, 2 in `fd_table` based on the given specs.
@@ -785,6 +787,15 @@ fn setup_stdio_fds<R: BootRuntime>(
             }
             stdin_pipe = id;
         }
+        StdioSpec::Fd(fd) => {
+            if let Some((node, flags)) = inherited_node(fd) {
+                let path = alloc::format!("fd:{}", fd);
+                let _ = fd_table.insert_at(0, node, flags, path);
+            } else {
+                let _ =
+                    fd_table.insert_at(0, null.clone(), OpenFlags::read_only(), "/dev/null".into());
+            }
+        }
     }
 
     // fd 1 — stdout
@@ -817,6 +828,19 @@ fn setup_stdio_fds<R: BootRuntime>(
             }
             stdout_pipe = id;
         }
+        StdioSpec::Fd(fd) => {
+            if let Some((node, flags)) = inherited_node(fd) {
+                let path = alloc::format!("fd:{}", fd);
+                let _ = fd_table.insert_at(1, node, flags, path);
+            } else {
+                let _ = fd_table.insert_at(
+                    1,
+                    null.clone(),
+                    OpenFlags::write_only(),
+                    "/dev/null".into(),
+                );
+            }
+        }
     }
 
     // fd 2 — stderr
@@ -843,6 +867,14 @@ fn setup_stdio_fds<R: BootRuntime>(
                 );
             }
             stderr_pipe = id;
+        }
+        StdioSpec::Fd(fd) => {
+            if let Some((node, flags)) = inherited_node(fd) {
+                let path = alloc::format!("fd:{}", fd);
+                let _ = fd_table.insert_at(2, node, flags, path);
+            } else {
+                let _ = fd_table.insert_at(2, null, OpenFlags::write_only(), "/dev/null".into());
+            }
         }
     }
 

@@ -148,11 +148,18 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 }
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
-    crate::kprintln!("SYSCALL TASK_WAIT: TID={} waiting for TargetTID={}", unsafe { crate::sched::current_tid_current() }, tid);
-    let code = unsafe {
-        crate::sched::task_wait_current(tid as u64)?
-    };
-    crate::kprintln!("SYSCALL TASK_WAIT: TID={} wake up, TargetTID={} exited with {}", unsafe { crate::sched::current_tid_current() }, tid, code);
+    crate::kprintln!(
+        "SYSCALL TASK_WAIT: TID={} waiting for TargetTID={}",
+        unsafe { crate::sched::current_tid_current() },
+        tid
+    );
+    let code = unsafe { crate::sched::task_wait_current(tid as u64)? };
+    crate::kprintln!(
+        "SYSCALL TASK_WAIT: TID={} wake up, TargetTID={} exited with {}",
+        unsafe { crate::sched::current_tid_current() },
+        tid,
+        code
+    );
     Ok(code as usize)
 }
 
@@ -176,9 +183,7 @@ pub fn sys_waitpid(pid: usize, status_ptr: usize, flags: usize) -> SysResult<usi
     }
 
     // crate::kprintln!("SYSCALL WAITPID: TID={} waiting for TargetPID={} flags={:x}", unsafe { crate::sched::current_tid_current() }, pid, flags);
-    let (child_pid, code) = unsafe {
-        crate::sched::waitpid_current(pid, flags)?
-    };
+    let (child_pid, code) = unsafe { crate::sched::waitpid_current(pid, flags)? };
     // crate::kprintln!("SYSCALL WAITPID: TID={} wake up, TargetPID={} ChildPID={} exited with {}", unsafe { crate::sched::current_tid_current() }, pid, child_pid, code);
     if status_ptr != 0 {
         unsafe {
@@ -479,7 +484,7 @@ pub fn sys_auxv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 ///
 /// Args: req_ptr = pointer to SpawnProcessExReq, resp_ptr = pointer to SpawnProcessExResp.
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
-    use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
+    use abi::types::{SpawnProcessExReq, SpawnProcessExResp};
 
     /// Maximum allowed length for a cwd path supplied via SpawnProcessExReq.
     const MAX_CWD_LEN: usize = 4096;
@@ -558,9 +563,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         unsafe {
             copyin(&mut cwd_bytes, req.cwd_ptr as usize)?;
         }
-        Some(
-            alloc::string::String::from_utf8(cwd_bytes).map_err(|_| Errno::EINVAL)?,
-        )
+        Some(alloc::string::String::from_utf8(cwd_bytes).map_err(|_| Errno::EINVAL)?)
     } else {
         None
     };
@@ -605,7 +608,10 @@ fn mode_to_spec(mode: u32) -> Result<StdioSpec, Errno> {
         stdio_mode::INHERIT => Ok(StdioSpec::Inherit),
         stdio_mode::NULL => Ok(StdioSpec::Null),
         stdio_mode::PIPE => Ok(StdioSpec::Pipe),
-        _ => Err(Errno::EINVAL),
+        _ => match stdio_mode::explicit_fd(mode) {
+            Some(fd) => Ok(StdioSpec::Fd(fd)),
+            None => Err(Errno::EINVAL),
+        },
     }
 }
 
@@ -798,11 +804,8 @@ mod tests {
     /// Full ELF auxv: AT_PAGESZ + AT_PHDR + AT_ENTRY are all serialized before AT_NULL.
     #[test]
     fn serialize_elf_auxv_entries_and_null_sentinel() {
-        let entries: &[(u64, u64)] = &[
-            (AT_PAGESZ, 4096),
-            (AT_PHDR, 0x200040),
-            (AT_ENTRY, 0x201000),
-        ];
+        let entries: &[(u64, u64)] =
+            &[(AT_PAGESZ, 4096), (AT_PHDR, 0x200040), (AT_ENTRY, 0x201000)];
         let total = serialize_auxv_to_buf(entries, &mut []);
         // 4 + (3 + 1) * 16 = 68.
         assert_eq!(total, 68);
@@ -830,7 +833,11 @@ mod tests {
 
             let parsed = parse_blob(&buf);
             let found = parsed.iter().find(|&&(k, _)| k == AT_PAGESZ);
-            assert!(found.is_some(), "AT_PAGESZ must be present for pagesz={}", pagesz);
+            assert!(
+                found.is_some(),
+                "AT_PAGESZ must be present for pagesz={}",
+                pagesz
+            );
             assert_eq!(found.unwrap().1, pagesz);
         }
     }
@@ -842,8 +849,10 @@ mod tests {
         let total_from_query = serialize_auxv_to_buf(entries, &mut []);
         let mut full_buf = alloc::vec![0u8; total_from_query];
         let total_from_write = serialize_auxv_to_buf(entries, &mut full_buf);
-        assert_eq!(total_from_query, total_from_write,
-            "size query and full-write must return the same total");
+        assert_eq!(
+            total_from_query, total_from_write,
+            "size query and full-write must return the same total"
+        );
     }
 
     /// Partial read: a buffer smaller than the full size must not panic and must
@@ -856,7 +865,10 @@ mod tests {
         // Write only the count field (4 bytes).
         let mut small = alloc::vec![0u8; 4];
         let returned = serialize_auxv_to_buf(entries, &mut small);
-        assert_eq!(returned, total, "must return full size even for partial buffer");
+        assert_eq!(
+            returned, total,
+            "must return full size even for partial buffer"
+        );
 
         // The count field should still be written.
         let count = u32::from_le_bytes(small[0..4].try_into().unwrap());
@@ -875,8 +887,13 @@ mod tests {
             serialize_auxv_to_buf(&entries, &mut buf);
 
             let count = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
-            assert_eq!(count, n + 1,
-                "count should be n_entries + 1 (AT_NULL), got {} for n={}", count, n);
+            assert_eq!(
+                count,
+                n + 1,
+                "count should be n_entries + 1 (AT_NULL), got {} for n={}",
+                count,
+                n
+            );
         }
     }
 }

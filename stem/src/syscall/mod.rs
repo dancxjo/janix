@@ -890,11 +890,11 @@ pub fn task_wait(tid: u64) -> Result<i32, Errno> {
 ///
 /// - `pid > 0`: wait for the specific child with that PID.
 /// - `pid == -1` or `pid == 0`: wait for any child.
-/// - `flags`: pass `abi::types::waitpid_flags::WNOHANG` for non-blocking poll.
+/// - `flags`: combine `WNOHANG`, `WUNTRACED`, and `WCONTINUED` as needed.
 ///
-/// On success returns `(child_pid, exit_code)`.  With `WNOHANG` and no child
-/// exited yet, returns `Ok((0, 0))`.  Returns `Err(ECHILD)` when no matching
-/// children exist.
+/// On success returns `(child_pid, wait_status)`. With `WNOHANG` and no matching
+/// child state change ready, returns `Ok((0, 0))`. Returns `Err(ECHILD)` when no
+/// matching children exist.
 pub fn waitpid(pid: i64, flags: u32) -> Result<(i64, i32), Errno> {
     let mut status: i32 = 0;
     let ret = unsafe {

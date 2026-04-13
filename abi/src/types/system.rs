@@ -61,6 +61,10 @@ pub enum TaskStatus {
 pub mod waitpid_flags {
     /// Do not block; return immediately if no child has exited yet.
     pub const WNOHANG: u32 = 1;
+    /// Report stopped children in addition to exited/signalled children.
+    pub const WUNTRACED: u32 = 1 << 1;
+    /// Report children resumed by `SIGCONT`.
+    pub const WCONTINUED: u32 = 1 << 2;
 }
 
 #[repr(C)]
@@ -232,6 +236,24 @@ pub mod stdio_mode {
     pub const NULL: u32 = 1;
     /// Create a kernel pipe; parent gets the opposite end.
     pub const PIPE: u32 = 2;
+
+    const FD_BIT: u32 = 1 << 31;
+
+    /// Use an explicitly inherited parent file descriptor for this stream.
+    #[inline]
+    pub const fn fd(fd: u32) -> u32 {
+        FD_BIT | fd
+    }
+
+    /// Decode an explicit parent file descriptor, if `mode` encodes one.
+    #[inline]
+    pub const fn explicit_fd(mode: u32) -> Option<u32> {
+        if (mode & FD_BIT) != 0 {
+            Some(mode & !FD_BIT)
+        } else {
+            None
+        }
+    }
 }
 
 /// Request payload for SYS_SPAWN_PROCESS_EX.

@@ -1,62 +1,148 @@
 #![no_std]
 #![no_main]
-use alloc::string::ToString;
-use core::default::Default;
+
 extern crate alloc;
 
+use abi::errors::Errno;
+use abi::signal::{
+    SigAction, SigSet, SIG_IGN, SIGCONT, SIGINT, SIGTSTP, SIGTTIN, SIGTTOU,
+    wexitstatus, wifcontinued, wifexited, wifsignaled, wifstopped, wstopsig, wtermsig,
+};
 use abi::syscall::vfs_flags;
+use abi::types::{stdio_mode, waitpid_flags};
+use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::{info, syscall::{dup2, pipe, vfs_close, vfs_open, vfs_read, vfs_write}};
+use stem::syscall;
+use stem::syscall::signal;
+use stem::syscall::vfs;
 
-fn prompt() {
-    let mut buf = [0u8; 256];
-    match stem::syscall::vfs_getcwd(&mut buf) {
-        Ok(n) => {
-            let cwd = core::str::from_utf8(&buf[..n]).unwrap_or("/");
-            let out = alloc::format!("\x1B[32mthing\x1B[0m \x1B[34m{}\x1B[0m # ", cwd);
-            let _ = vfs_write(1, out.as_bytes());
-        }
-        Err(_) => {
-            let _ = vfs_write(1, b"\x1B[32mthing-os\x1B[0m # ");
-        }
-    }
+const TTY_FD: u32 = 0;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProcessState {
+    Running,
+    Stopped(u8),
+    Exited(u8),
+    Signaled(u8),
 }
 
-fn read_line() -> String {
-    let mut buf = [0u8; 1024];
-    let mut bytes = Vec::new();
-    loop {
-        match vfs_read(0, &mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                for &b in &buf[..n] {
-                    if b == 0x03 {
-                        bytes.clear();
-                        return String::new(); // Ctrl-C
-                    }
-                    bytes.push(b);
-                    if b == b'\n' {
-                        let s = String::from_utf8(bytes).unwrap_or_default();
-                        return s;
-                    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JobState {
+    Running,
+    Stopped,
+    Completed,
+}
+
+struct ProcessEntry {
+    pid: u32,
+    state: ProcessState,
+}
+
+struct Job {
+    id: usize,
+    pgid: u32,
+    command: String,
+    background: bool,
+    processes: Vec<ProcessEntry>,
+    state: JobState,
+    last_status: Option<i32>,
+    notify: bool,
+}
+
+impl Job {
+    fn new(id: usize, pgid: u32, command: String, background: bool, pids: Vec<u32>) -> Self {
+        let processes = pids
+            .into_iter()
+            .map(|pid| ProcessEntry {
+                pid,
+                state: ProcessState::Running,
+            })
+            .collect();
+        Self {
+            id,
+            pgid,
+            command,
+            background,
+            processes,
+            state: JobState::Running,
+            last_status: None,
+            notify: false,
+        }
+    }
+
+    fn recompute_state(&self) -> JobState {
+        let mut any_stopped = false;
+        let mut any_running = false;
+        let mut all_completed = true;
+
+        for process in &self.processes {
+            match process.state {
+                ProcessState::Running => {
+                    any_running = true;
+                    all_completed = false;
                 }
+                ProcessState::Stopped(_) => {
+                    any_stopped = true;
+                    all_completed = false;
+                }
+                ProcessState::Exited(_) | ProcessState::Signaled(_) => {}
             }
-            Err(_) => break,
+        }
+
+        if all_completed {
+            JobState::Completed
+        } else if any_running {
+            JobState::Running
+        } else if any_stopped {
+            JobState::Stopped
+        } else {
+            JobState::Running
         }
     }
-    String::from_utf8(bytes).unwrap_or_default()
+
+    fn update_process(&mut self, pid: u32, status: i32) -> bool {
+        let old_state = self.state;
+        for process in &mut self.processes {
+            if process.pid != pid {
+                continue;
+            }
+            process.state = if wifexited(status) {
+                ProcessState::Exited(wexitstatus(status))
+            } else if wifsignaled(status) {
+                ProcessState::Signaled(wtermsig(status))
+            } else if wifstopped(status) {
+                ProcessState::Stopped(wstopsig(status))
+            } else if wifcontinued(status) {
+                ProcessState::Running
+            } else {
+                process.state
+            };
+            self.last_status = Some(status);
+            break;
+        }
+
+        self.state = self.recompute_state();
+        old_state != self.state || wifcontinued(status)
+    }
+
+    fn mark_running(&mut self) {
+        for process in &mut self.processes {
+            if matches!(process.state, ProcessState::Stopped(_)) {
+                process.state = ProcessState::Running;
+            }
+        }
+        self.state = JobState::Running;
+        self.notify = false;
+    }
 }
 
-/// A single command segment: program name, args, optional stdin/stdout redirects.
 struct Cmd<'a> {
     program: &'a str,
     args: Vec<&'a str>,
-    /// Override stdin with this path (< file).
     stdin_file: Option<&'a str>,
-    /// Override stdout with this path (> file or >> file).
     stdout_file: Option<&'a str>,
-    /// Append mode for stdout.
     stdout_append: bool,
 }
 
@@ -65,48 +151,49 @@ impl<'a> Cmd<'a> {
         if tokens.is_empty() {
             return None;
         }
-        let mut program: Option<&'a str> = None;
-        let mut args = Vec::new();
-        let mut stdin_file: Option<&'a str> = None;
-        let mut stdout_file: Option<&'a str> = None;
-        let mut stdout_append = false;
 
-        let mut i = 0;
-        while i < tokens.len() {
-            let tok = tokens[i];
-            match tok {
+        let mut program = None;
+        let mut args = Vec::new();
+        let mut stdin_file = None;
+        let mut stdout_file = None;
+        let mut stdout_append = false;
+        let mut idx = 0;
+
+        while idx < tokens.len() {
+            match tokens[idx] {
                 "<" => {
-                    i += 1;
-                    if i < tokens.len() {
-                        stdin_file = Some(tokens[i]);
-                    }
-                }
-                ">>" => {
-                    i += 1;
-                    if i < tokens.len() {
-                        stdout_file = Some(tokens[i]);
-                        stdout_append = true;
+                    idx += 1;
+                    if idx < tokens.len() {
+                        stdin_file = Some(tokens[idx]);
                     }
                 }
                 ">" => {
-                    i += 1;
-                    if i < tokens.len() {
-                        stdout_file = Some(tokens[i]);
+                    idx += 1;
+                    if idx < tokens.len() {
+                        stdout_file = Some(tokens[idx]);
                         stdout_append = false;
                     }
                 }
-                _ => {
+                ">>" => {
+                    idx += 1;
+                    if idx < tokens.len() {
+                        stdout_file = Some(tokens[idx]);
+                        stdout_append = true;
+                    }
+                }
+                token => {
                     if program.is_none() {
-                        program = Some(tok);
+                        program = Some(token);
                     } else {
-                        args.push(tok);
+                        args.push(token);
                     }
                 }
             }
-            i += 1;
+            idx += 1;
         }
-        program.map(|p| Cmd {
-            program: p,
+
+        program.map(|program| Self {
+            program,
             args,
             stdin_file,
             stdout_file,
@@ -115,198 +202,520 @@ impl<'a> Cmd<'a> {
     }
 }
 
-/// Spawn one command with explicit stdin/stdout fds; wait for it to finish.
-///
-/// `stdin_fd` and `stdout_fd` are the fds that the child should inherit as 0
-/// and 1 respectively.  Pass 0/1 to keep the shell's own stdio.
-fn spawn_cmd(cmd: &Cmd, stdin_fd: u32, stdout_fd: u32) -> abi::errors::SysResult<()> {
-    let path = if cmd.program.starts_with('/') {
-        String::from(cmd.program)
-    } else {
-        alloc::format!("/bin/{}", cmd.program)
-    };
+enum ReadLineResult {
+    Line(String),
+    Interrupted,
+    Eof,
+}
 
-    let mut argv: Vec<Vec<u8>> = Vec::new();
-    argv.push(path.as_bytes().to_vec());
-    for arg in &cmd.args {
-        argv.push(arg.as_bytes().to_vec());
+struct Shell {
+    shell_pgid: u32,
+    jobs: Vec<Job>,
+    next_job_id: usize,
+    last_foreground_status: Option<i32>,
+}
+
+impl Shell {
+    fn new() -> Self {
+        let shell_pid = syscall::getpid();
+        let _ = signal::setsid();
+        let _ = signal::setpgid(0, 0);
+        let shell_pgid = signal::getpgrp().unwrap_or(shell_pid as i32) as u32;
+        let _ = vfs::tcsetpgrp(TTY_FD, shell_pgid);
+        Self {
+            shell_pgid,
+            jobs: Vec::new(),
+            next_job_id: 1,
+            last_foreground_status: None,
+        }
     }
-    let argv_slices: Vec<&[u8]> = argv.iter().map(|v| v.as_slice()).collect();
-    let env = alloc::collections::BTreeMap::new();
 
-    match stem::syscall::spawn_process_ex(
-        &path,
-        &argv_slices,
-        &env,
-        stdin_fd,
-        stdout_fd,
-        1,   // stderr → shell's own stdout
-        0,   // boot_arg
-        &[], // No handles to inherit
-    ) {
-        Ok(resp) => stem::syscall::waitpid(resp.child_pid as i64, 0).map(|_| ()),
-        Err(e) => {
-            let out = alloc::format!("sh: {}: command not found\n", cmd.program);
-            let _ = vfs_write(1, out.as_bytes());
-            Err(e)
+    fn reap_children(&mut self, nohang: bool) {
+        let flags = (if nohang { waitpid_flags::WNOHANG } else { 0 })
+            | waitpid_flags::WUNTRACED
+            | waitpid_flags::WCONTINUED;
+
+        loop {
+            match syscall::waitpid(-1, flags) {
+                Ok((0, _)) => break,
+                Ok((pid, status)) if pid > 0 => {
+                    self.handle_child_status(pid as u32, status);
+                    if !nohang {
+                        break;
+                    }
+                }
+                Ok(_) => break,
+                Err(Errno::ECHILD) => break,
+                Err(Errno::EINTR) => continue,
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn handle_child_status(&mut self, pid: u32, status: i32) {
+        let Some(idx) = self
+            .jobs
+            .iter()
+            .position(|job| job.processes.iter().any(|process| process.pid == pid))
+        else {
+            return;
+        };
+
+        let state_changed = self.jobs[idx].update_process(pid, status);
+        if state_changed {
+            self.jobs[idx].notify = true;
+        }
+    }
+
+    fn print_job_notifications(&mut self) {
+        let mut idx = 0;
+        while idx < self.jobs.len() {
+            let should_remove = if self.jobs[idx].notify && self.jobs[idx].background {
+                print_job_update(&self.jobs[idx]);
+                self.jobs[idx].notify = false;
+                self.jobs[idx].state == JobState::Completed
+            } else {
+                self.jobs[idx].state == JobState::Completed && self.jobs[idx].background
+            };
+
+            if should_remove {
+                self.jobs.remove(idx);
+            } else {
+                idx += 1;
+            }
+        }
+    }
+
+    fn launch_job(&mut self, cmds: &[Cmd<'_>], background: bool, command: &str) {
+        match spawn_job(cmds, background) {
+            Ok((pgid, pids)) => {
+                let job_id = self.next_job_id;
+                self.next_job_id += 1;
+                self.jobs
+                    .push(Job::new(job_id, pgid, String::from(command), background, pids));
+
+                if background {
+                    let msg = format!("[{}] {}\n", job_id, pgid);
+                    write_str(&msg);
+                } else {
+                    let _ = vfs::tcsetpgrp(TTY_FD, pgid);
+                    self.wait_for_foreground_job(job_id);
+                }
+            }
+            Err(err) => {
+                let msg = format!("sh: spawn failed: {:?}\n", err);
+                write_str(&msg);
+            }
+        }
+    }
+
+    fn wait_for_foreground_job(&mut self, job_id: usize) {
+        loop {
+            let Some(idx) = self.job_index(job_id) else {
+                break;
+            };
+            if self.jobs[idx].state != JobState::Running {
+                break;
+            }
+            self.reap_children(false);
+        }
+
+        let _ = vfs::tcsetpgrp(TTY_FD, self.shell_pgid);
+
+        let Some(idx) = self.job_index(job_id) else {
+            return;
+        };
+
+        self.jobs[idx].background = false;
+        self.jobs[idx].notify = false;
+        self.last_foreground_status = self.jobs[idx].last_status;
+
+        match self.jobs[idx].state {
+            JobState::Stopped => {
+                if let Some(status) = self.jobs[idx].last_status {
+                    let msg = format!("stopped by signal {}\n", wstopsig(status));
+                    write_str(&msg);
+                }
+            }
+            JobState::Completed => {
+                if let Some(status) = self.jobs[idx].last_status {
+                    if wifsignaled(status) {
+                        let msg = format!("terminated by signal {}\n", wtermsig(status));
+                        write_str(&msg);
+                    }
+                }
+                self.jobs.remove(idx);
+            }
+            JobState::Running => {}
+        }
+    }
+
+    fn list_jobs(&self) {
+        for job in &self.jobs {
+            let state = match job.state {
+                JobState::Running => "running",
+                JobState::Stopped => "stopped",
+                JobState::Completed => "done",
+            };
+            let msg = format!("[{}] {} {}\n", job.id, state, job.command);
+            write_str(&msg);
+        }
+    }
+
+    fn resume_job(&mut self, arg: Option<&str>, foreground: bool) {
+        let Some(idx) = self.resolve_job(arg) else {
+            write_str("sh: job not found\n");
+            return;
+        };
+
+        let pgid = self.jobs[idx].pgid;
+        self.jobs[idx].background = !foreground;
+        self.jobs[idx].mark_running();
+
+        if foreground {
+            let _ = vfs::tcsetpgrp(TTY_FD, pgid);
+        }
+
+        let _ = signal::kill(-(pgid as i32), SIGCONT);
+
+        if foreground {
+            let job_id = self.jobs[idx].id;
+            self.wait_for_foreground_job(job_id);
+        } else {
+            let msg = format!("[{}] {}\n", self.jobs[idx].id, pgid);
+            write_str(&msg);
+        }
+    }
+
+    fn resolve_job(&self, arg: Option<&str>) -> Option<usize> {
+        if let Some(id) = arg.and_then(parse_job_id) {
+            return self.job_index(id);
+        }
+
+        self.jobs
+            .iter()
+            .rposition(|job| job.state != JobState::Completed)
+    }
+
+    fn job_index(&self, job_id: usize) -> Option<usize> {
+        self.jobs.iter().position(|job| job.id == job_id)
+    }
+
+    fn terminate_jobs(&mut self) {
+        for job in &self.jobs {
+            let _ = signal::kill(-(job.pgid as i32), SIGCONT);
+            let _ = signal::kill(-(job.pgid as i32), abi::signal::SIGTERM);
+        }
+        self.reap_children(true);
+    }
+}
+
+fn install_signal_handlers() {
+    let ignore = SigAction {
+        handler: SIG_IGN,
+        mask: SigSet::EMPTY,
+        flags: 0,
+        restorer: 0,
+    };
+    let _ = signal::sigaction(SIGINT, Some(&ignore), None);
+    let _ = signal::sigaction(SIGTSTP, Some(&ignore), None);
+    let _ = signal::sigaction(SIGTTIN, Some(&ignore), None);
+    let _ = signal::sigaction(SIGTTOU, Some(&ignore), None);
+}
+
+fn prompt() {
+    let mut buf = [0u8; 256];
+    match syscall::vfs_getcwd(&mut buf) {
+        Ok(n) => {
+            let cwd = core::str::from_utf8(&buf[..n]).unwrap_or("/");
+            let out = format!("\x1B[32mthing\x1B[0m \x1B[34m{}\x1B[0m # ", cwd);
+            write_str(&out);
+        }
+        Err(_) => write_str("\x1B[32mthing-os\x1B[0m # "),
+    }
+}
+
+fn read_line() -> ReadLineResult {
+    let mut buf = [0u8; 512];
+    let mut bytes = Vec::new();
+    loop {
+        match syscall::vfs_read(0, &mut buf) {
+            Ok(0) => return ReadLineResult::Eof,
+            Ok(n) => {
+                for &b in &buf[..n] {
+                    bytes.push(b);
+                    if b == b'\n' {
+                        return ReadLineResult::Line(String::from_utf8(bytes).unwrap_or_default());
+                    }
+                }
+            }
+            Err(Errno::EINTR) => return ReadLineResult::Interrupted,
+            Err(_) => return ReadLineResult::Eof,
         }
     }
 }
 
-/// Open a file for use as stdin redirect.  Returns the fd on success.
-fn open_stdin_file(path: &str) -> Option<u32> {
-    vfs_open(path, vfs_flags::O_RDONLY).ok()
+fn parse_line<'a>(line: &'a str) -> (Vec<Cmd<'a>>, bool) {
+    let mut tokens: Vec<&str> = line.split_whitespace().collect();
+    let background = matches!(tokens.last().copied(), Some("&"));
+    if background {
+        tokens.pop();
+    }
+
+    let mut segments = Vec::new();
+    let mut current = Vec::new();
+    for token in tokens {
+        if token == "|" {
+            segments.push(current);
+            current = Vec::new();
+        } else {
+            current.push(token);
+        }
+    }
+    segments.push(current);
+
+    let cmds = segments
+        .iter()
+        .filter_map(|segment| Cmd::parse(segment))
+        .collect();
+    (cmds, background)
 }
 
-/// Open a file for use as stdout redirect.  Returns the fd on success.
-fn open_stdout_file(path: &str, append: bool) -> Option<u32> {
+fn parse_job_id(text: &str) -> Option<usize> {
+    text.strip_prefix('%').unwrap_or(text).parse().ok()
+}
+
+fn open_read(path: &str) -> Result<u32, Errno> {
+    vfs::vfs_open(path, vfs_flags::O_RDONLY)
+}
+
+fn open_write(path: &str, append: bool) -> Result<u32, Errno> {
     let flags = if append {
         vfs_flags::O_WRONLY | vfs_flags::O_CREAT | vfs_flags::O_APPEND
     } else {
         vfs_flags::O_WRONLY | vfs_flags::O_CREAT | vfs_flags::O_TRUNC
     };
-    vfs_open(path, flags).ok()
+    vfs::vfs_open(path, flags)
 }
 
-/// Execute a pipeline of commands.
-///
-/// `cmds` contains the parsed command segments separated by `|`.  Pipes are
-/// created between adjacent commands; the first and last segment may also have
-/// file redirections.
-fn run_pipeline(cmds: &[Cmd]) {
+fn spawn_job(cmds: &[Cmd<'_>], background: bool) -> Result<(u32, Vec<u32>), Errno> {
     if cmds.is_empty() {
-        return;
+        return Err(Errno::EINVAL);
     }
 
-    if cmds.len() == 1 {
-        // Simple case: single command, possibly with redirects.
-        let cmd = &cmds[0];
-        let stdin_fd = cmd.stdin_file.and_then(|p| open_stdin_file(p)).unwrap_or(0);
-        let stdout_fd = cmd
-            .stdout_file
-            .and_then(|p| open_stdout_file(p, cmd.stdout_append))
-            .unwrap_or(1);
-
-        let _ = spawn_cmd(cmd, stdin_fd, stdout_fd);
-
-        if stdin_fd != 0 {
-            let _ = vfs_close(stdin_fd);
-        }
-        if stdout_fd != 1 {
-            let _ = vfs_close(stdout_fd);
-        }
-        return;
+    let mut pipes = Vec::new();
+    for _ in 0..cmds.len().saturating_sub(1) {
+        let mut pair = [0u32; 2];
+        syscall::pipe(&mut pair)?;
+        pipes.push(pair);
     }
 
-    // Pipeline: create N-1 pipes for N commands.
-    // prev_read_fd tracks the read end of the previous pipe.
-    let mut prev_read_fd: Option<u32> = None;
+    let bg_in = if background {
+        Some(open_read("/dev/null")?)
+    } else {
+        None
+    };
+    let bg_out = if background {
+        Some(open_write("/dev/null", false)?)
+    } else {
+        None
+    };
 
-    for (i, cmd) in cmds.iter().enumerate() {
-        let is_last = i == cmds.len() - 1;
+    let env = BTreeMap::new();
+    let mut spawned = Vec::new();
+    let mut transient_fds = Vec::new();
+    let mut pgid = 0u32;
 
-        // Determine stdin for this stage.
-        let stdin_fd = if i == 0 {
-            // First stage: honour < redirection, else use shell stdin.
-            cmd.stdin_file.and_then(|p| open_stdin_file(p)).unwrap_or(0)
+    for (idx, cmd) in cmds.iter().enumerate() {
+        let path = if cmd.program.starts_with('/') {
+            String::from(cmd.program)
         } else {
-            // Middle/last stage: read from the previous pipe.
-            prev_read_fd.unwrap_or(0)
+            format!("/bin/{}", cmd.program)
         };
 
-        // Determine stdout for this stage.
-        let (stdout_fd, next_read_fd) = if is_last {
-            // Last stage: honour > / >> redirection, else use shell stdout.
-            let fd = cmd
-                .stdout_file
-                .and_then(|p| open_stdout_file(p, cmd.stdout_append))
-                .unwrap_or(1);
-            (fd, None)
-        } else {
-            // Non-last: create a new pipe; write end → stdout of this stage.
-            let mut pipefd = [0u32; 2];
-            if pipe(&mut pipefd).is_err() {
-                // Failed to create pipe; abort pipeline.
-                if stdin_fd != 0 {
-                    let _ = vfs_close(stdin_fd);
-                }
-                break;
+        let mut argv = Vec::new();
+        argv.push(path.as_bytes().to_vec());
+        for arg in &cmd.args {
+            argv.push(arg.as_bytes().to_vec());
+        }
+        let argv_slices: Vec<&[u8]> = argv.iter().map(|arg| arg.as_slice()).collect();
+
+        let stdin_mode = if idx == 0 {
+            if let Some(path) = cmd.stdin_file {
+                let fd = open_read(path)?;
+                transient_fds.push(fd);
+                stdio_mode::fd(fd)
+            } else if background {
+                stdio_mode::fd(bg_in.unwrap())
+            } else {
+                stdio_mode::INHERIT
             }
-            (pipefd[1], Some(pipefd[0]))
+        } else {
+            stdio_mode::fd(pipes[idx - 1][0])
         };
 
-        let _ = spawn_cmd(cmd, stdin_fd, stdout_fd);
+        let stdout_mode = if idx + 1 < cmds.len() {
+            stdio_mode::fd(pipes[idx][1])
+        } else if let Some(path) = cmd.stdout_file {
+            let fd = open_write(path, cmd.stdout_append)?;
+            transient_fds.push(fd);
+            stdio_mode::fd(fd)
+        } else if background {
+            stdio_mode::fd(bg_out.unwrap())
+        } else {
+            stdio_mode::INHERIT
+        };
 
-        // Close fds that the shell opened but no longer needs after spawn.
-        // Any fd that is not the shell's own stdin (0) or stdout (1) was
-        // created specifically for this pipeline stage and must be closed here
-        // so file descriptors are not leaked.
-        if stdin_fd != 0 {
-            let _ = vfs_close(stdin_fd);
-        }
-        if !is_last {
-            // Close the write end of the pipe we just used (child inherited it).
-            let _ = vfs_close(stdout_fd);
-        } else if stdout_fd != 1 {
-            let _ = vfs_close(stdout_fd);
-        }
+        let stderr_mode = if background {
+            stdio_mode::fd(bg_out.unwrap())
+        } else {
+            stdio_mode::INHERIT
+        };
 
-        prev_read_fd = next_read_fd;
+        match syscall::spawn_process_ex(
+            &path,
+            &argv_slices,
+            &env,
+            stdin_mode,
+            stdout_mode,
+            stderr_mode,
+            0,
+            &[],
+        ) {
+            Ok(resp) => {
+                let pid = resp.child_pid;
+                if pgid == 0 {
+                    pgid = pid;
+                    let _ = signal::setpgid(pid as i32, pid as i32);
+                } else {
+                    let _ = signal::setpgid(pid as i32, pgid as i32);
+                }
+                spawned.push(pid);
+            }
+            Err(err) => {
+                cleanup_fds(&pipes, &transient_fds, bg_in, bg_out);
+                if pgid != 0 {
+                    let _ = signal::kill(-(pgid as i32), abi::signal::SIGTERM);
+                }
+                return Err(err);
+            }
+        }
     }
+
+    cleanup_fds(&pipes, &transient_fds, bg_in, bg_out);
+    Ok((pgid, spawned))
+}
+
+fn cleanup_fds(
+    pipes: &[[u32; 2]],
+    transient_fds: &[u32],
+    bg_in: Option<u32>,
+    bg_out: Option<u32>,
+) {
+    for pair in pipes {
+        let _ = syscall::vfs_close(pair[0]);
+        let _ = syscall::vfs_close(pair[1]);
+    }
+    for &fd in transient_fds {
+        let _ = syscall::vfs_close(fd);
+    }
+    if let Some(fd) = bg_in {
+        let _ = syscall::vfs_close(fd);
+    }
+    if let Some(fd) = bg_out {
+        let _ = syscall::vfs_close(fd);
+    }
+}
+
+fn print_job_update(job: &Job) {
+    let state = match job.state {
+        JobState::Running => "continued",
+        JobState::Stopped => "stopped",
+        JobState::Completed => "done",
+    };
+
+    let detail = match job.last_status {
+        Some(status) if wifexited(status) => format!("exit {}", wexitstatus(status)),
+        Some(status) if wifsignaled(status) => format!("signal {}", wtermsig(status)),
+        Some(status) if wifstopped(status) => format!("signal {}", wstopsig(status)),
+        Some(status) if wifcontinued(status) => String::from("continued"),
+        _ => String::new(),
+    };
+
+    let msg = if detail.is_empty() {
+        format!("[{}] {} {}\n", job.id, state, job.command)
+    } else {
+        format!("[{}] {} ({}) {}\n", job.id, state, detail, job.command)
+    };
+    write_str(&msg);
+}
+
+fn write_str(s: &str) {
+    let _ = syscall::vfs_write(1, s.as_bytes());
 }
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    let _ = vfs_write(1, b"janix sh\n");
+    install_signal_handlers();
+    write_str("janix sh\n");
+
+    let mut shell = Shell::new();
 
     loop {
+        shell.reap_children(true);
+        shell.print_job_notifications();
+
         prompt();
-        let line = read_line();
+        let line = match read_line() {
+            ReadLineResult::Line(line) => line,
+            ReadLineResult::Interrupted => {
+                write_str("\n");
+                continue;
+            }
+            ReadLineResult::Eof => break,
+        };
+
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
-        // Tokenise by whitespace first (simple shell-level tokeniser — no
-        // quoting support yet).
-        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-
-        if tokens.first().copied() == Some("exit") {
-            break;
-        }
-
-        // Split into pipeline segments on `|`.
-        let mut segments: Vec<Vec<&str>> = Vec::new();
-        let mut current: Vec<&str> = Vec::new();
-        for &tok in &tokens {
-            if tok == "|" {
-                segments.push(current);
-                current = Vec::new();
-            } else {
-                current.push(tok);
-            }
-        }
-        segments.push(current);
-
-        // Parse each segment into a Cmd.
-        let cmds: Vec<Cmd> = segments.iter().filter_map(|seg| Cmd::parse(seg)).collect();
-
-        if cmds.len() == 1 && cmds[0].program == "cd" {
-            let target = if !cmds[0].args.is_empty() {
-                cmds[0].args[0]
-            } else {
-                "/"
-            };
-            if let Err(e) = stem::syscall::vfs_chdir(target) {
-                let out = alloc::format!("cd: {}: {:?}\n", target, e);
-                let _ = vfs_write(1, out.as_bytes());
-            }
+        let (cmds, background) = parse_line(trimmed);
+        if cmds.is_empty() {
             continue;
         }
 
-        run_pipeline(&cmds);
+        if cmds.len() == 1 {
+            match cmds[0].program {
+                "exit" => break,
+                "cd" => {
+                    let target = cmds[0].args.first().copied().unwrap_or("/");
+                    if let Err(err) = syscall::vfs_chdir(target) {
+                        let msg = format!("cd: {}: {:?}\n", target, err);
+                        write_str(&msg);
+                    }
+                    continue;
+                }
+                "jobs" => {
+                    shell.list_jobs();
+                    continue;
+                }
+                "fg" => {
+                    shell.resume_job(cmds[0].args.first().copied(), true);
+                    continue;
+                }
+                "bg" => {
+                    shell.resume_job(cmds[0].args.first().copied(), false);
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        shell.launch_job(&cmds, background, trimmed);
     }
 
-    let _ = vfs_write(1, b"SH EXITING\n");
-    stem::syscall::exit(0)
+    let _ = vfs::tcsetpgrp(TTY_FD, shell.shell_pgid);
+    shell.terminate_jobs();
+    syscall::exit(0)
 }

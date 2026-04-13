@@ -1527,6 +1527,66 @@ fn collect_child_tids<R: BootRuntime>(our_pid: u32, target_pid: i64) -> alloc::v
         .collect()
 }
 
+fn queued_status_matches(flags: u32, status: i32) -> bool {
+    use abi::signal::{wifcontinued, wifstopped};
+    use abi::types::waitpid_flags;
+
+    if wifstopped(status) {
+        return (flags & waitpid_flags::WUNTRACED) != 0;
+    }
+    if wifcontinued(status) {
+        return (flags & waitpid_flags::WCONTINUED) != 0;
+    }
+    true
+}
+
+fn reap_child_pid_if_dead<R: BootRuntime>(child_pid: u32, status: i32) {
+    if abi::signal::wifstopped(status) || abi::signal::wifcontinued(status) {
+        return;
+    }
+
+    let reg = crate::task::registry::get_registry::<R>();
+    let child_tid = reg.threads.iter().find_map(|task| {
+        task.process_info.as_ref().and_then(|pi| {
+            if pi.lock().pid == child_pid {
+                Some(task.id)
+            } else {
+                None
+            }
+        })
+    });
+    drop(reg);
+
+    if let Some(child_tid) = child_tid {
+        remove_task_completely::<R>(child_tid);
+    }
+}
+
+fn take_queued_child_status<R: BootRuntime>(
+    _our_pid: u32,
+    target_pid: i64,
+    flags: u32,
+) -> Option<(u64, i32)> {
+    let our_process = crate::sched::process_info_current()?;
+    let mut process = our_process.lock();
+    let mut match_index: Option<usize> = None;
+
+    for (idx, (child_pid, status)) in process.children_done.iter().enumerate() {
+        if target_pid > 0 && *child_pid != target_pid as u32 {
+            continue;
+        }
+        if queued_status_matches(flags, *status) {
+            match_index = Some(idx);
+            break;
+        }
+    }
+
+    let (child_pid, status) = process.children_done.remove(match_index?)?;
+    drop(process);
+    reap_child_pid_if_dead::<R>(child_pid, status);
+    Some((child_pid as u64, status))
+}
+
 /// Internal implementation: performs the wait with an explicit `our_pid`.
 ///
 /// Factored out so tests can exercise the core logic without registering a
@@ -1542,6 +1602,10 @@ fn waitpid_for_pid<R: BootRuntime>(
     let our_tid = current_tid::<R>();
 
     loop {
+        if let Some(result) = take_queued_child_status::<R>(our_pid, pid, flags) {
+            return Ok(result);
+        }
+
         // Collect matching children (releases registry guard before returning).
         let children = collect_child_tids::<R>(our_pid, pid);
 
@@ -1630,7 +1694,7 @@ fn waitpid_for_pid<R: BootRuntime>(
             let _ = unregister_task_exit_waiter::<R>(child_tid, our_tid);
         }
 
-        // Loop back to find which child exited.
+        // Loop back to find the next queued child state transition.
     }
 }
 

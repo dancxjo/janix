@@ -1088,13 +1088,55 @@ pub fn sys_watch_path(
 }
 
 pub fn sys_fs_device_call(fd: usize, call_ptr: usize) -> SysResult<usize> {
-    let size = core::mem::size_of::<abi::device::DeviceCall>();
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct RawDeviceCall {
+        kind: u32,
+        op: u32,
+        in_ptr: u64,
+        in_len: u32,
+        out_ptr: u64,
+        out_len: u32,
+    }
+
+    fn decode_device_call(raw: RawDeviceCall) -> SysResult<abi::device::DeviceCall> {
+        let kind = match raw.kind {
+            1 => abi::device::DeviceKind::RtcCmos,
+            2 => abi::device::DeviceKind::Keyboard,
+            3 => abi::device::DeviceKind::Mouse,
+            4 => abi::device::DeviceKind::Framebuffer,
+            5 => abi::device::DeviceKind::Pci,
+            6 => abi::device::DeviceKind::Display,
+            7 => abi::device::DeviceKind::Terminal,
+            8 => abi::device::DeviceKind::Audio,
+            _ => return Err(Errno::EINVAL),
+        };
+
+        Ok(abi::device::DeviceCall {
+            kind,
+            op: raw.op,
+            in_ptr: raw.in_ptr,
+            in_len: raw.in_len,
+            out_ptr: raw.out_ptr,
+            out_len: raw.out_len,
+        })
+    }
+
+    let size = core::mem::size_of::<RawDeviceCall>();
     validate_user_range(call_ptr, size, true)?;
-    let mut call: abi::device::DeviceCall = unsafe { core::mem::zeroed() };
-    let slice = unsafe { core::slice::from_raw_parts_mut(&mut call as *mut _ as *mut u8, size) };
+    let mut raw = RawDeviceCall {
+        kind: abi::device::DeviceKind::Terminal as u32,
+        op: 0,
+        in_ptr: 0,
+        in_len: 0,
+        out_ptr: 0,
+        out_len: 0,
+    };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut raw as *mut _ as *mut u8, size) };
     unsafe {
         copyin(slice, call_ptr)?;
     }
+    let call = decode_device_call(raw)?;
 
     let node = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;

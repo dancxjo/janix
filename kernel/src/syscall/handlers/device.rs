@@ -11,17 +11,59 @@ use abi::device::{
 };
 use abi::errors::{Errno, SysResult};
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RawDeviceCall {
+    kind: u32,
+    op: u32,
+    in_ptr: u64,
+    in_len: u32,
+    out_ptr: u64,
+    out_len: u32,
+}
+
+fn decode_device_call(raw: RawDeviceCall) -> SysResult<DeviceCall> {
+    let kind = match raw.kind {
+        1 => DeviceKind::RtcCmos,
+        2 => DeviceKind::Keyboard,
+        3 => DeviceKind::Mouse,
+        4 => DeviceKind::Framebuffer,
+        5 => DeviceKind::Pci,
+        6 => DeviceKind::Display,
+        7 => DeviceKind::Terminal,
+        8 => DeviceKind::Audio,
+        _ => return Err(Errno::EINVAL),
+    };
+
+    Ok(DeviceCall {
+        kind,
+        op: raw.op,
+        in_ptr: raw.in_ptr,
+        in_len: raw.in_len,
+        out_ptr: raw.out_ptr,
+        out_len: raw.out_len,
+    })
+}
+
 /// Maximum allowed length for a device sysfs path passed to `SYS_DEVICE_CLAIM`.
 const MAX_DEVICE_PATH_LEN: usize = 256;
 
 pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
-    let size = core::mem::size_of::<DeviceCall>();
+    let size = core::mem::size_of::<RawDeviceCall>();
     validate_user_range(call_ptr, size, true)?;
-    let mut call: DeviceCall = unsafe { core::mem::zeroed() };
-    let slice = unsafe { core::slice::from_raw_parts_mut(&mut call as *mut _ as *mut u8, size) };
+    let mut raw = RawDeviceCall {
+        kind: DeviceKind::Pci as u32,
+        op: 0,
+        in_ptr: 0,
+        in_len: 0,
+        out_ptr: 0,
+        out_len: 0,
+    };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut raw as *mut _ as *mut u8, size) };
     unsafe {
         copyin(slice, call_ptr)?;
     }
+    let call = decode_device_call(raw)?;
     match call.kind {
         DeviceKind::RtcCmos => Err(Errno::NotSupported),
         DeviceKind::Pci => sys_pci_call(&call),

@@ -42,9 +42,7 @@ use alloc::{vec, vec::Vec};
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer};
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
-use stem::syscall::channel::{
-    channel_create, channel_send, channel_try_recv, ChannelHandle,
-};
+use stem::syscall::channel::{channel_create, channel_send, channel_try_recv, ChannelHandle};
 use stem::syscall::vfs::vfs_mount;
 use stem::{info, warn};
 
@@ -735,7 +733,12 @@ impl NetVfsProvider {
                         let port = u16::from_le_bytes(result[10..12].try_into().unwrap());
                         let text = alloc::format!(
                             "{} {}.{}.{}.{} {}\n",
-                            conn_handle, ip[0], ip[1], ip[2], ip[3], port
+                            conn_handle,
+                            ip[0],
+                            ip[1],
+                            ip[2],
+                            ip[3],
+                            port
                         );
                         ReadResult::Data(text.into_bytes())
                     }
@@ -939,13 +942,10 @@ impl NetVfsProvider {
                     let mut parts = rest.split_whitespace();
                     if let Some(port_str) = parts.next() {
                         if let Ok(port) = port_str.parse::<u16>() {
-                            let backlog: u16 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(4);
-                            let r = socket_api.handle_listen_existing(
-                                socket_set,
-                                api_handle,
-                                port,
-                                backlog,
-                            );
+                            let backlog: u16 =
+                                parts.next().and_then(|s| s.parse().ok()).unwrap_or(4);
+                            let r = socket_api
+                                .handle_listen_existing(socket_set, api_handle, port, backlog);
                             return if r {
                                 WriteResult::Ok(text.len())
                             } else {
@@ -1039,9 +1039,8 @@ impl NetVfsProvider {
                     return WriteResult::Error;
                 }
                 let payload = &raw[10..10 + payload_len];
-                let r = socket_api.handle_udp_send_to(
-                    socket_set, api_handle, dest_ip, dest_port, payload,
-                );
+                let r = socket_api
+                    .handle_udp_send_to(socket_set, api_handle, dest_ip, dest_port, payload);
                 if r.len() >= 4 {
                     let sent = u16::from_le_bytes([r[2], r[3]]) as usize;
                     self.tx_bytes += sent as u64;
@@ -1207,14 +1206,27 @@ impl NetVfsProvider {
                 let b = c.ip.as_bytes();
                 alloc::format!(
                     "ipv4: {}.{}.{}.{}/{}\n",
-                    b[0], b[1], b[2], b[3], c.prefix_len
+                    b[0],
+                    b[1],
+                    b[2],
+                    b[3],
+                    c.prefix_len
                 )
             }
             None => "ipv4: unassigned\n".into(),
         };
         alloc::format!(
             "state: {}\nlink: {}\nmac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\nmtu: {}\n{}",
-            state, link, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], self.mtu, ip_line
+            state,
+            link,
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5],
+            self.mtu,
+            ip_line
         )
     }
 
@@ -1231,7 +1243,10 @@ impl NetVfsProvider {
     fn eth0_stats(&self) -> String {
         alloc::format!(
             "rx_bytes: {}\ntx_bytes: {}\nrx_packets: {}\ntx_packets: {}\n",
-            self.rx_bytes, self.tx_bytes, self.rx_packets, self.tx_packets
+            self.rx_bytes,
+            self.tx_bytes,
+            self.rx_packets,
+            self.tx_packets
         )
     }
 
@@ -1243,7 +1258,14 @@ impl NetVfsProvider {
                 // Derive network address by masking
                 alloc::format!(
                     "default via {}.{}.{}.{} dev eth0\n{}.{}.{}.0/{} dev eth0\n",
-                    gw[0], gw[1], gw[2], gw[3], net_b[0], net_b[1], net_b[2], c.prefix_len
+                    gw[0],
+                    gw[1],
+                    gw[2],
+                    gw[3],
+                    net_b[0],
+                    net_b[1],
+                    net_b[2],
+                    c.prefix_len
                 )
             }
             None => "# no routes\n".into(),

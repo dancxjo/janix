@@ -464,8 +464,7 @@ impl SocketApi {
                     return 0x0001; // POLLIN
                 }
                 for &(pool_handle, _) in &managed.listen_pool {
-                    if socket_set.get_mut::<TcpSocket>(pool_handle).state()
-                        == TcpState::Established
+                    if socket_set.get_mut::<TcpSocket>(pool_handle).state() == TcpState::Established
                     {
                         return 0x0001; // POLLIN
                     }
@@ -767,8 +766,7 @@ impl SocketApi {
                 connected_slot = Some((s.handle, s.buf_idx.unwrap_or(0), true, 0));
             } else {
                 for (i, &(pool_handle, pool_bidx)) in s.listen_pool.iter().enumerate() {
-                    if socket_set.get_mut::<TcpSocket>(pool_handle).state()
-                        == TcpState::Established
+                    if socket_set.get_mut::<TcpSocket>(pool_handle).state() == TcpState::Established
                     {
                         connected_slot = Some((pool_handle, pool_bidx, false, i));
                         break;
@@ -950,8 +948,7 @@ impl SocketApi {
             _ => return false,
         };
 
-        let socket =
-            socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
+        let socket = socket_set.get_mut::<smoltcp::socket::udp::Socket>(managed.handle);
         if let Err(e) = socket.bind(port) {
             warn!(
                 "SOCKET_API: handle_udp_bind_port: bind failed on port {}: {:?}",
@@ -1463,10 +1460,22 @@ mod tests {
     #[test]
     fn test_resp_constants_distinct() {
         // Verify all response type constants are distinct
-        let constants = [RESP_OK, RESP_ERROR, RESP_HANDLE, RESP_DATA, RESP_ACCEPT, RESP_EMPTY, RESP_CLOSED];
+        let constants = [
+            RESP_OK,
+            RESP_ERROR,
+            RESP_HANDLE,
+            RESP_DATA,
+            RESP_ACCEPT,
+            RESP_EMPTY,
+            RESP_CLOSED,
+        ];
         for i in 0..constants.len() {
             for j in (i + 1)..constants.len() {
-                assert_ne!(constants[i], constants[j], "constants[{}] == constants[{}]", i, j);
+                assert_ne!(
+                    constants[i], constants[j],
+                    "constants[{}] == constants[{}]",
+                    i, j
+                );
             }
         }
     }

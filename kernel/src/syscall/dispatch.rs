@@ -67,6 +67,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_SIGRETURN => Ok(0), // handled by kernel_dispatch_flat
         SYS_ALARM => handlers::sys_alarm(args[0]),
         SYS_PAUSE => handlers::sys_pause(),
+        SYS_SETPGID => handlers::sys_setpgid(args[0], args[1]),
+        SYS_GETPGRP => handlers::sys_getpgrp(),
+        SYS_SETSID => handlers::sys_setsid(),
 
         SYS_CHANNEL_CREATE => handlers::sys_channel_create(args[0]),
         SYS_CHANNEL_SEND => handlers::sys_channel_send(args[0], args[1], args[2]),

@@ -10,6 +10,9 @@
 //! - `sys_sigreturn`   — return from signal handler (arch-specific)
 //! - `sys_alarm`       — set/cancel SIGALRM timer
 //! - `sys_pause`       — sleep until a signal arrives
+//! - `sys_setpgid`     — set process group ID
+//! - `sys_getpgrp`     — get current process group ID
+//! - `sys_setsid`      — create a new session
 
 use super::copyin;
 use crate::sched;
@@ -23,8 +26,9 @@ use core::mem::size_of;
 /// `kill(pid, sig)` — send signal `sig` to the process with PID `pid`.
 ///
 /// - `pid > 0`  → signal exactly that PID
-/// - `pid == 0` → signal the calling process's process group (stub: self only)
-/// - `pid < 0`  → signal all processes in group -pid (stub: EPERM for now)
+/// - `pid == 0` → signal the calling process's process group
+/// - `pid < -1` → signal all processes in group `-pid`
+/// - `pid == -1` is currently not implemented
 /// - `sig == 0` → permission/existence check only (no signal sent)
 pub fn sys_kill(pid_raw: usize, sig_raw: usize) -> SysResult<usize> {
     let pid = pid_raw as isize as i64;
@@ -51,17 +55,52 @@ pub fn sys_kill(pid_raw: usize, sig_raw: usize) -> SysResult<usize> {
             }
         }
     } else if pid == 0 {
-        // Send to own process — self-signal.
         let pinfo = sched::process_info_current().ok_or(Errno::ESRCH)?;
-        let self_pid = pinfo.lock().pid;
-        if sig != 0 {
-            crate::signal::send_signal_to_process(self_pid, sig);
+        let pgid = pinfo.lock().pgid;
+        let delivered = if sig == 0 {
+            crate::signal::send_signal_to_group(pgid, 0)
+        } else {
+            crate::signal::send_signal_to_group(pgid, sig)
+        };
+        if delivered == 0 {
+            Err(Errno::ESRCH)
+        } else {
+            Ok(0)
         }
-        Ok(0)
+    } else if pid < -1 {
+        let pgid = (-pid) as u32;
+        let delivered = if sig == 0 {
+            crate::signal::send_signal_to_group(pgid, 0)
+        } else {
+            crate::signal::send_signal_to_group(pgid, sig)
+        };
+        if delivered == 0 {
+            Err(Errno::ESRCH)
+        } else {
+            Ok(0)
+        }
     } else {
-        // pid < 0: process group signaling — stub returns EPERM.
+        // pid == -1 (broadcast) is not implemented yet.
         Err(Errno::EPERM)
     }
+}
+
+/// `setpgid(pid, pgid)` — set the process group ID for `pid`.
+pub fn sys_setpgid(pid_raw: usize, pgid_raw: usize) -> SysResult<usize> {
+    let pid = pid_raw as isize as i64;
+    let pgid = pgid_raw as isize as i64;
+    crate::signal::setpgid_current(pid, pgid)?;
+    Ok(0)
+}
+
+/// `getpgrp()` — return the caller's process group ID.
+pub fn sys_getpgrp() -> SysResult<usize> {
+    Ok(crate::signal::getpgrp_current()? as usize)
+}
+
+/// `setsid()` — create a new session and return the new session ID.
+pub fn sys_setsid() -> SysResult<usize> {
+    Ok(crate::signal::setsid_current()? as usize)
 }
 
 // ── raise ─────────────────────────────────────────────────────────────────────

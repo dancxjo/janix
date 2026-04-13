@@ -73,6 +73,12 @@ pub struct Process {
     pub pid: u32,
     /// PID of the parent process.
     pub ppid: u32,
+    /// Process group ID.
+    pub pgid: u32,
+    /// Session ID.
+    pub sid: u32,
+    /// True when this process is the leader of its session.
+    pub session_leader: bool,
     /// Argument vector passed at spawn/exec time.
     pub argv: Vec<Vec<u8>>,
     /// Environment variables.

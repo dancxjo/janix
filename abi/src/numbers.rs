@@ -62,6 +62,14 @@ pub const SYS_ALARM: u32 = 0x101A;
 /// Suspend until a signal whose disposition is not SIG_IGN arrives.
 /// Analogous to POSIX `pause(2)`.  No args.
 pub const SYS_PAUSE: u32 = 0x101B;
+/// Set process group ID. Analogous to POSIX `setpgid(2)`.
+/// Args: pid (i64 as usize), pgid (i64 as usize)
+pub const SYS_SETPGID: u32 = 0x101C;
+/// Get caller process group ID. Analogous to POSIX `getpgrp(2)`.
+pub const SYS_GETPGRP: u32 = 0x101D;
+/// Create a new session. Analogous to POSIX `setsid(2)`.
+/// Args: none
+pub const SYS_SETSID: u32 = 0x101E;
 
 // ============================================================================
 // Process Environment (0x1100)

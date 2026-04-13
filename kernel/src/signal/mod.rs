@@ -16,14 +16,11 @@
 
 pub mod delivery;
 
-use abi::signal::{
-    SIG_DFL, SIG_IGN, SIGCHLD, SIGCONT, SIGKILL, SIGSTOP, SigAction, SigSet,
-};
+use abi::errors::Errno;
+use abi::signal::{SIG_DFL, SIG_IGN, SIGCHLD, SIGCONT, SIGKILL, SIGSTOP, SigAction, SigSet};
 
 /// Uncatchable signals — cannot be caught, blocked, or ignored.
-pub const UNCATCHABLE: SigSet = SigSet(
-    (1u64 << (SIGKILL - 1)) | (1u64 << (SIGSTOP - 1)),
-);
+pub const UNCATCHABLE: SigSet = SigSet((1u64 << (SIGKILL - 1)) | (1u64 << (SIGSTOP - 1)));
 
 /// Signals that are ignored by default (no default action kills the process).
 /// SIGCHLD, SIGCONT, SIGURG, SIGWINCH are in this set.
@@ -53,11 +50,11 @@ pub enum DefaultAction {
 pub fn default_action(sig: u8) -> DefaultAction {
     use abi::signal::*;
     match sig {
-        SIGHUP | SIGINT | SIGKILL | SIGPIPE | SIGALRM | SIGTERM | SIGUSR1 | SIGUSR2
-        | SIGSTKFLT | SIGPWR => DefaultAction::Terminate,
+        SIGHUP | SIGINT | SIGKILL | SIGPIPE | SIGALRM | SIGTERM | SIGUSR1 | SIGUSR2 | SIGSTKFLT
+        | SIGPWR => DefaultAction::Terminate,
 
-        SIGQUIT | SIGILL | SIGTRAP | SIGABRT | SIGBUS | SIGFPE | SIGSEGV | SIGXCPU
-        | SIGXFSZ | SIGSYS => DefaultAction::CoreDump,
+        SIGQUIT | SIGILL | SIGTRAP | SIGABRT | SIGBUS | SIGFPE | SIGSEGV | SIGXCPU | SIGXFSZ
+        | SIGSYS => DefaultAction::CoreDump,
 
         SIGCHLD | SIGCONT | SIGURG | SIGWINCH => DefaultAction::Ignore,
 
@@ -214,27 +211,18 @@ impl ThreadSignals {
 /// Any process can send SIGCONT to a process in the same session.  For now
 /// ThingOS grants kill permission freely (no UID/GID checks yet).
 pub fn send_signal_to_process(pid: u32, sig: u8) -> bool {
-    use crate::sched;
-    let snapshots = sched::list_processes_current();
-    for snap in &snapshots {
-        if snap.pid == pid {
-            // Locate the process mutex and post the signal.
-            if let Some(pinfo) = sched::process_info_for_tid_current(snap.pid as u64) {
-                let mut p = pinfo.lock();
-                p.signals.post(sig);
-                // Wake any thread in the process that is blocked and can
-                // receive this signal.
-                let tids = p.thread_ids.clone();
-                drop(p);
-                for tid in tids {
-                    // Wake the thread so it can check signals on return.
-                    unsafe { sched::wake_task_erased(tid as u64) };
-                }
-                return true;
-            }
+    if let Some(pinfo) = process_info_for_pid(pid) {
+        let mut p = pinfo.lock();
+        p.signals.post(sig);
+        let tids = p.thread_ids.clone();
+        drop(p);
+        for tid in tids {
+            unsafe { crate::sched::wake_task_erased(tid as u64) };
         }
+        true
+    } else {
+        false
     }
-    false
 }
 
 /// Post signal `sig` to the process containing thread `tid`.
@@ -255,4 +243,113 @@ pub fn notify_parent_sigchld(ppid: u32, _child_pid: u32, _status: i32) {
         return;
     }
     send_signal_to_process(ppid, SIGCHLD);
+}
+
+fn process_info_for_pid(pid: u32) -> Option<alloc::sync::Arc<spin::Mutex<crate::task::Process>>> {
+    crate::sched::process_info_for_tid_current(pid as u64)
+}
+
+fn list_unique_processes() -> alloc::vec::Vec<alloc::sync::Arc<spin::Mutex<crate::task::Process>>> {
+    let mut seen = alloc::collections::BTreeSet::new();
+    let mut out = alloc::vec::Vec::new();
+    for snap in crate::sched::list_processes_current() {
+        if seen.insert(snap.pid)
+            && let Some(pinfo) = process_info_for_pid(snap.pid)
+        {
+            out.push(pinfo);
+        }
+    }
+    out
+}
+
+fn process_group_exists_in_session(pgid: u32, sid: u32) -> bool {
+    for pinfo in list_unique_processes() {
+        let p = pinfo.lock();
+        if p.pgid == pgid && p.sid == sid {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn send_signal_to_group(pgid: u32, sig: u8) -> usize {
+    let mut delivered = 0usize;
+    for pinfo in list_unique_processes() {
+        let mut p = pinfo.lock();
+        if p.pgid != pgid {
+            continue;
+        }
+        if sig == 0 {
+            delivered += 1;
+            continue;
+        }
+        p.signals.post(sig);
+        let tids = p.thread_ids.clone();
+        drop(p);
+        for tid in tids {
+            unsafe { crate::sched::wake_task_erased(tid as u64) };
+        }
+        delivered += 1;
+    }
+    delivered
+}
+
+pub fn getpgrp_current() -> Result<u32, Errno> {
+    let pinfo = crate::sched::process_info_current().ok_or(Errno::ESRCH)?;
+    Ok(pinfo.lock().pgid)
+}
+
+pub fn setpgid_current(pid: i64, pgid: i64) -> Result<(), Errno> {
+    let caller_info = crate::sched::process_info_current().ok_or(Errno::ESRCH)?;
+    let (caller_pid, caller_sid) = {
+        let caller = caller_info.lock();
+        (caller.pid, caller.sid)
+    };
+
+    if pid < 0 || pgid < 0 {
+        return Err(Errno::EINVAL);
+    }
+
+    let target_pid = if pid == 0 { caller_pid } else { pid as u32 };
+    let new_pgid = if pgid == 0 { target_pid } else { pgid as u32 };
+    if new_pgid == 0 {
+        return Err(Errno::EINVAL);
+    }
+
+    let target_info = process_info_for_pid(target_pid).ok_or(Errno::ESRCH)?;
+    {
+        let target = target_info.lock();
+        if target.pid != caller_pid && target.ppid != caller_pid {
+            return Err(Errno::EPERM);
+        }
+        if target.sid != caller_sid {
+            return Err(Errno::EPERM);
+        }
+        if target.session_leader {
+            return Err(Errno::EPERM);
+        }
+    }
+
+    if new_pgid != target_pid && !process_group_exists_in_session(new_pgid, caller_sid) {
+        return Err(Errno::EPERM);
+    }
+
+    target_info.lock().pgid = new_pgid;
+    Ok(())
+}
+
+pub fn setsid_current() -> Result<u32, Errno> {
+    let pinfo = crate::sched::process_info_current().ok_or(Errno::ESRCH)?;
+    {
+        let p = pinfo.lock();
+        if p.pgid == p.pid {
+            return Err(Errno::EPERM);
+        }
+    }
+
+    let mut p = pinfo.lock();
+    p.sid = p.pid;
+    p.pgid = p.pid;
+    p.session_leader = true;
+    Ok(p.sid)
 }

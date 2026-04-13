@@ -2,8 +2,8 @@
 
 use abi::errors::{Errno, SysResult, errno};
 use abi::syscall::{
-    SYS_ALARM, SYS_KILL, SYS_PAUSE, SYS_RAISE, SYS_SIGACTION, SYS_SIGPENDING, SYS_SIGPROCMASK,
-    SYS_SIGSUSPEND,
+    SYS_ALARM, SYS_GETPGRP, SYS_KILL, SYS_PAUSE, SYS_RAISE, SYS_SETPGID, SYS_SETSID,
+    SYS_SIGACTION, SYS_SIGPENDING, SYS_SIGPROCMASK, SYS_SIGSUSPEND,
 };
 use abi::signal::{SigAction, SigSet, sig_how};
 
@@ -102,4 +102,22 @@ pub fn alarm(seconds: u32) -> u32 {
 pub fn pause() -> Errno {
     let ret = unsafe { raw_syscall6(SYS_PAUSE, 0, 0, 0, 0, 0, 0) };
     errno(ret).map(|_| ()).unwrap_err()
+}
+
+/// Set process group ID for `pid` (`0` means caller).
+pub fn setpgid(pid: i32, pgid: i32) -> SysResult<()> {
+    let ret = unsafe { raw_syscall6(SYS_SETPGID, pid as usize, pgid as usize, 0, 0, 0, 0) };
+    errno(ret).map(|_| ())
+}
+
+/// Return the caller's process group ID.
+pub fn getpgrp() -> SysResult<i32> {
+    let ret = unsafe { raw_syscall6(SYS_GETPGRP, 0, 0, 0, 0, 0, 0) };
+    errno(ret).map(|v| v as i32)
+}
+
+/// Create a new session and return the new session ID.
+pub fn setsid() -> SysResult<i32> {
+    let ret = unsafe { raw_syscall6(SYS_SETSID, 0, 0, 0, 0, 0, 0) };
+    errno(ret).map(|v| v as i32)
 }

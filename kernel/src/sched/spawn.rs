@@ -59,9 +59,17 @@ fn default_process_info(
         crate::vfs::OpenFlags::write_only(),
         "/dev/console".into(),
     );
+    let (pgid, sid, session_leader) = if ppid == 0 {
+        (pid, pid, true)
+    } else {
+        (pid, pid, false)
+    };
     alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid,
         ppid,
+        pgid,
+        sid,
+        session_leader,
         argv: alloc::vec::Vec::new(),
         env: alloc::collections::BTreeMap::new(),
         auxv: alloc::vec::Vec::new(),
@@ -93,6 +101,9 @@ fn inherit_process_info<R: BootRuntime>(
         alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
             pid,
             ppid,
+            pgid: parent.pgid,
+            sid: parent.sid,
+            session_leader: false,
             argv: alloc::vec::Vec::new(),
             env: parent.env.clone(),
             auxv: alloc::vec::Vec::new(),
@@ -252,8 +263,7 @@ impl<R: BootRuntime> Scheduler<R> {
         if safe_cpu == super::current_cpu_index::<R>() {
             self.state.per_cpu[safe_cpu].need_resched = true;
         } else {
-            super::GLOBAL_NEED_RESCHED[safe_cpu]
-                .store(true, core::sync::atomic::Ordering::Release);
+            super::GLOBAL_NEED_RESCHED[safe_cpu].store(true, core::sync::atomic::Ordering::Release);
             super::DIAG_IPI_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
@@ -313,9 +323,7 @@ impl<R: BootRuntime> Scheduler<R> {
             .as_ref()
             .map(|pi| pi.lock().mappings.clone())
             .unwrap_or_else(|| {
-                alloc::sync::Arc::new(spin::Mutex::new(
-                    crate::memory::mappings::MappingList::new(),
-                ))
+                alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
             });
 
         let spec = crate::UserTaskSpec {
@@ -393,8 +401,7 @@ impl<R: BootRuntime> Scheduler<R> {
         if safe_cpu == super::current_cpu_index::<R>() {
             self.state.per_cpu[safe_cpu].need_resched = true;
         } else {
-            super::GLOBAL_NEED_RESCHED[safe_cpu]
-                .store(true, core::sync::atomic::Ordering::Release);
+            super::GLOBAL_NEED_RESCHED[safe_cpu].store(true, core::sync::atomic::Ordering::Release);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
                 safe_cpu,
@@ -499,8 +506,7 @@ impl<R: BootRuntime> Scheduler<R> {
         if safe_cpu == super::current_cpu_index::<R>() {
             self.state.per_cpu[safe_cpu].need_resched = true;
         } else {
-            super::GLOBAL_NEED_RESCHED[safe_cpu]
-                .store(true, core::sync::atomic::Ordering::Release);
+            super::GLOBAL_NEED_RESCHED[safe_cpu].store(true, core::sync::atomic::Ordering::Release);
             crate::kdebug!(
                 "SCHED: Sending Resched IPI to CPU {} for task {}",
                 safe_cpu,
@@ -631,7 +637,8 @@ pub unsafe fn boot_spawn_process_with_priority<R: BootRuntime>(
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let (mut entry, stack_info, regions, aux_info) = crate::task::loader::load_module(rt, aspace, module)?;
+    let (mut entry, stack_info, regions, aux_info) =
+        crate::task::loader::load_module(rt, aspace, module)?;
     entry.arg0 = arg.to_raw();
 
     let _irq = rt.irq_disable();
@@ -668,9 +675,7 @@ pub unsafe fn boot_spawn_process_with_priority<R: BootRuntime>(
     let task_mappings = crate::task::registry::get_task::<R>(id)
         .map(|t| t.mappings.clone())
         .unwrap_or_else(|| {
-            alloc::sync::Arc::new(spin::Mutex::new(
-                crate::memory::mappings::MappingList::new(),
-            ))
+            alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
         });
 
     // Derive the process-owned address-space token (raw u64) from the handle.
@@ -994,18 +999,26 @@ pub unsafe fn boot_spawn_process_ex<R: BootRuntime>(
     let task_mappings = crate::task::registry::get_task::<R>(id)
         .map(|t| t.mappings.clone())
         .unwrap_or_else(|| {
-            alloc::sync::Arc::new(spin::Mutex::new(
-                crate::memory::mappings::MappingList::new(),
-            ))
+            alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
         });
 
     // Derive the process-owned address-space token (raw u64) from the handle.
     let aspace_raw = rt.tasking().aspace_to_raw(aspace);
 
+    let (pgid, sid, session_leader) = if let Some(parent_pi) = &parent_pinfo {
+        let parent = parent_pi.lock();
+        (parent.pgid, parent.sid, false)
+    } else {
+        (id as u32, id as u32, true)
+    };
+
     // Create per-process identity with provided argv & env
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
         ppid,
+        pgid,
+        sid,
+        session_leader,
         argv: final_argv,
         env,
         auxv: crate::task::exec::build_auxv(&aux_info, rt.page_size() as u64),
@@ -1216,17 +1229,25 @@ pub unsafe fn spawn_process_from_path<R: BootRuntime>(
     let task_mappings = crate::task::registry::get_task::<R>(id)
         .map(|t| t.mappings.clone())
         .unwrap_or_else(|| {
-            alloc::sync::Arc::new(spin::Mutex::new(
-                crate::memory::mappings::MappingList::new(),
-            ))
+            alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
         });
 
     let aspace_raw = rt.tasking().aspace_to_raw(aspace);
+
+    let (pgid, sid, session_leader) = if let Some(parent_pi) = &parent_pinfo {
+        let parent = parent_pi.lock();
+        (parent.pgid, parent.sid, false)
+    } else {
+        (id as u32, id as u32, true)
+    };
 
     // Step 7: Build the ProcessInfo for the new process.
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
         ppid,
+        pgid,
+        sid,
+        session_leader,
         argv: final_argv,
         env,
         auxv: crate::task::exec::build_auxv(&aux_info, rt.page_size() as u64),
@@ -1391,7 +1412,9 @@ mod tests {
     // ── Thread-group membership invariant tests ───────────────────────────
 
     /// Helper: build a minimal `ProcessInfo` Arc with the given leader TID.
-    fn make_process_info(leader: crate::task::TaskId) -> alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>> {
+    fn make_process_info(
+        leader: crate::task::TaskId,
+    ) -> alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>> {
         alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
             pid: leader as u32,
             ppid: 1,
@@ -1452,8 +1475,7 @@ mod tests {
             detached: false,
             signals: crate::signal::ThreadSignals::new(),
         };
-        crate::task::registry::get_registry::<MockRuntime>()
-            .insert(alloc::boxed::Box::new(leader));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(leader));
         sched.state.per_cpu[0].current = Some(leader_id);
     }
 
@@ -1481,7 +1503,7 @@ mod tests {
             abi::types::StackInfo::default(),
             TaskPriority::Normal,
             crate::task::Affinity::Any,
-            0,     // tls_base = 0 — the historically broken case
+            0, // tls_base = 0 — the historically broken case
             false,
         );
 
@@ -1668,10 +1690,7 @@ mod tests {
         }
 
         crate::vfs::mount::init();
-        crate::vfs::mount::mount(
-            "/spawn_test_dir",
-            alloc::sync::Arc::new(DirFs),
-        );
+        crate::vfs::mount::mount("/spawn_test_dir", alloc::sync::Arc::new(DirFs));
 
         let result = unsafe {
             spawn_process_from_path::<MockRuntime>(

@@ -297,8 +297,6 @@ impl ArchRuntime for X86_64Runtime {
         unsafe {
             // Initialize syscalls early (sets GS_BASE) so current_cpu_index() works
             syscall::init(0);
-            // Register x86_64 signal frame hooks.
-            syscall::init_signal_hooks();
 
             gdt::init();
 

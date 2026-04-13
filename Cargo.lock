@@ -2037,14 +2037,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kill"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
 name = "lazy-regex"
 version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3258,14 +3250,6 @@ dependencies = [
 name = "shutdown"
 version = "0.1.0"
 dependencies = [
- "stem",
-]
-
-[[package]]
-name = "sig_test"
-version = "0.1.0"
-dependencies = [
- "abi",
  "stem",
 ]
 

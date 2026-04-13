@@ -78,37 +78,6 @@ Important implications:
 - `git status` in the main repo does not track changes inside `vendor/rust/`.
 - The `xtask` build system hashes the git revision of `vendor/rust/` to detect when the compiler needs to be rebuilt.
 
-## `rustc-thingos` two-mode behavior
-
-`just rustc-thingos` (and the rustc step inside `just iso`/`just run`) operates in two modes:
-
-### Default mode (stable)
-- Builds and caches a **Linux-hosted cross-compiler** under `target/rustc-thingos/rustc`.
-- This is the only mode that is guaranteed to succeed.
-- The ThingOS-native compiler is **not** built; the ISO boots without `/bin/rustc`.
-- Operator controls:
-  - `SKIP_RUSTC_THINGOS=1` — skip the entire step (no build, no cache check).
-
-### Opt-in mode (unstable, non-fatal)
-- Attempts to build a **ThingOS-native stage-1 rustc** that can run inside a running ThingOS instance.
-- This path may fail while native bootstrap support is incomplete; failures are logged as warnings and never break the default boot path.
-- If successful the native binary is cached at `target/rustc-thingos/thingos-rustc` and staged into the ISO at `bin/rustc`.
-- Enable with: `BUILD_THINGOS_NATIVE_RUSTC=1 just rustc-thingos`
-
-### ISO staging decision
-At ISO build time, `stage_rustc_for_iso` checks whether the native binary is present:
-- **Present** → stages `bin/rustc` and `lib/rustlib/` into the ISO.
-- **Absent** → prints an advisory message and continues; the ISO boots without a native compiler.
-
-### Automated smoke checks
-Unit tests in `xtask/src/rustc_thingos.rs` verify the two-mode contract:
-- `should_attempt_native_recovery()` returns `false` by default (no env var).
-- `should_attempt_native_recovery()` returns `true` only when `BUILD_THINGOS_NATIVE_RUSTC=1`.
-- `build_rustc_thingos` returns `Ok(None)` for non-x86_64 arches and when `SKIP_RUSTC_THINGOS=1`.
-- `stage_rustc_for_iso` is a no-op (no files written) when native rustc is absent or `SKIP_RUSTC_THINGOS=1`.
-
-Run them with: `cargo test -p xtask`
-
 ## Architecture Guardrails
 
 Four non-negotiable design rules govern all kernel and userspace changes:

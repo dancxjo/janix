@@ -8,7 +8,6 @@ pub use crate::sched::Scheduler;
 use crate::BootRuntime;
 use crate::BootTasking;
 use crate::simd::SimdState;
-use abi::signal::{SigAction, SigSet};
 use abi::types::StackInfo;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
@@ -121,32 +120,6 @@ pub struct Process {
     /// Updated atomically with `Thread.aspace` during exec and remains 0
     /// for kernel-only threads (which have no user address space).
     pub aspace_raw: u64,
-
-    // ── Signal subsystem ─────────────────────────────────────────────────
-
-    /// Per-signal disposition table (indices 0 = signal 1 … 30 = signal 31).
-    ///
-    /// `dispositions[sig - 1]` holds the current [`SigAction`] for signal
-    /// `sig`.  Entries are initialised to `SIG_DFL` at process creation and
-    /// reset to `SIG_DFL` on exec (except for `SIG_IGN` dispositions, which
-    /// POSIX says survive exec — handled in `exec.rs`).
-    pub signal_dispositions: [SigAction; 32],
-
-    /// Process-level pending-signal bitset.
-    ///
-    /// Signals sent with `kill(pid, sig)` land here.  The kernel scans this
-    /// set when selecting a thread to deliver the signal to.
-    pub pending_signals: SigSet,
-
-    /// `true` while the process (all threads) is stopped due to `SIGSTOP` /
-    /// `SIGTSTP`.  Cleared when `SIGCONT` is received.
-    pub is_stopped: bool,
-
-    /// Alarm deadline in kernel ticks (0 = no alarm pending).
-    ///
-    /// Set by `SYS_ALARM`; when the tick counter reaches this value the
-    /// kernel delivers `SIGALRM` and clears the field.
-    pub alarm_deadline: u64,
 }
 
 /// Backward-compatible alias — prefer `Process` in new code.
@@ -221,32 +194,6 @@ pub struct Thread<R: BootRuntime> {
 
     /// `true` if this thread was created as detached (cannot be joined).
     pub detached: bool,
-
-    // ── Per-thread signal state ──────────────────────────────────────────
-
-    /// Signals currently blocked (masked) by this thread.
-    ///
-    /// A signal listed here will not be delivered to this thread; it remains
-    /// pending until unblocked.  `SIGKILL` and `SIGSTOP` can never be masked.
-    pub blocked_signals: SigSet,
-
-    /// Thread-level pending signal set.
-    ///
-    /// Signals targeted specifically at this thread (e.g. from `tgkill` or a
-    /// hardware exception) are placed here.  Combined with
-    /// `Process.pending_signals` when checking for deliverable signals.
-    pub pending_signals: SigSet,
-
-    /// When non-zero, the thread is blocked inside `sigsuspend` with a
-    /// temporary mask.  The original mask is stored here and restored on
-    /// signal delivery or wakeup.
-    pub sigsuspend_mask: Option<SigSet>,
-
-    /// When `true` the thread is stopped (waiting for `SIGCONT`).
-    /// Distinct from `ThreadState::Blocked` — we keep `Blocked` so the
-    /// scheduler ignores the thread, but `is_stopped` lets `waitpid` and
-    /// `SIGCHLD` distinguish the two cases.
-    pub is_stopped: bool,
 }
 
 /// Backward-compatible alias — prefer `Thread<R>` in new code.

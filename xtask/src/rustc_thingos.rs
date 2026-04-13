@@ -463,28 +463,14 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
     // Fast path: cache is still valid.
     if is_cache_valid() {
         println!("rustc-thingos: cache hit, reusing {}", RUSTC_BINARY);
-        println!(
-            "rustc-thingos: mode: Linux-hosted cross-compiler (default, stable)"
-        );
 
         let cwd = std::env::current_dir()?;
         let rust_src = cwd.join("vendor/rust");
-        if !Path::new(THINGOS_RUSTC_BINARY).exists() {
-            if should_attempt_native_recovery() {
-                println!(
-                    "rustc-thingos: ThingOS-native rustc missing from cache; attempting a recovery build..."
-                );
-                let _ = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
-            } else {
-                println!(
-                    "rustc-thingos: ThingOS-native rustc absent; \
-                     ISO will not include a native compiler (default)."
-                );
-                println!(
-                    "rustc-thingos: To attempt native recovery, re-run with \
-                     BUILD_THINGOS_NATIVE_RUSTC=1 (opt-in, may fail while unstable)."
-                );
-            }
+        if !Path::new(THINGOS_RUSTC_BINARY).exists() && should_attempt_native_recovery() {
+            println!(
+                "rustc-thingos: ThingOS-native rustc missing from cache; attempting a recovery build..."
+            );
+            let _ = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
         }
 
         return Ok(Some(PathBuf::from(RUSTC_BINARY)));
@@ -541,25 +527,11 @@ pub fn build_rustc_thingos(sh: &Shell, arch: &str) -> Result<Option<PathBuf>> {
 
     // Optional recovery path for producing a ThingOS-native rustc.
     if should_attempt_native_recovery() {
-        let staged = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
-        if staged {
-            println!(
-                "rustc-thingos: native recovery succeeded; ThingOS-native rustc cached at {}",
-                THINGOS_RUSTC_BINARY
-            );
-        } else {
-            println!(
-                "rustc-thingos: native recovery attempted but did not produce a staged binary; \
-                 ISO will not include a native compiler this run."
-            );
-        }
+        let _ = try_build_thingos_native_rustc(sh, &cwd, &rust_src)?;
     } else {
         println!(
-            "rustc-thingos: mode: Linux-hosted cross-compiler only (default, stable)."
-        );
-        println!(
-            "rustc-thingos: ThingOS-native rustc recovery disabled; \
-             set BUILD_THINGOS_NATIVE_RUSTC=1 to opt in (unstable, non-fatal)."
+            "rustc-thingos: ThingOS-native rustc recovery disabled; set BUILD_THINGOS_NATIVE_RUSTC=1 to attempt building {}",
+            THINGOS_RUSTC_BINARY
         );
     }
 
@@ -597,22 +569,11 @@ pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
     let thingos_rustc = Path::new(THINGOS_RUSTC_BINARY);
     if !thingos_rustc.exists() {
         println!(
-            "rustc-thingos: staging decision: ThingOS-native rustc absent ({}); \
-             skipping ISO staging (default, stable path).",
+            "rustc-thingos: ThingOS-native rustc not in cache ({}); skipping ISO staging.",
             THINGOS_RUSTC_BINARY
-        );
-        println!(
-            "rustc-thingos: To include a native compiler in the ISO, \
-             set BUILD_THINGOS_NATIVE_RUSTC=1 and run `just rustc-thingos`, \
-             then rebuild the ISO."
         );
         return Ok(());
     }
-
-    println!(
-        "rustc-thingos: staging decision: ThingOS-native rustc present ({}); staging into ISO.",
-        THINGOS_RUSTC_BINARY
-    );
 
     // ── 1. Copy the compiler binary to bin/rustc ──────────────────────────
     let iso_bin = iso_root.join("bin");
@@ -646,152 +607,4 @@ pub fn stage_rustc_for_iso(sh: &Shell, iso_root: &Path) -> Result<()> {
     }
 
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Serialize tests that modify environment variables so they don't race.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    // ── should_attempt_native_recovery ──────────────────────────────────────
-
-    /// By default (no env var) native recovery must be disabled so that the
-    /// stable Linux-hosted cross-compiler path is always the default.
-    #[test]
-    fn native_recovery_disabled_by_default() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // Deliberately remove the var to ensure a clean environment.
-        // SAFETY: serialized by ENV_LOCK; no other threads modify this var.
-        unsafe { std::env::remove_var("BUILD_THINGOS_NATIVE_RUSTC") };
-        assert!(
-            !should_attempt_native_recovery(),
-            "native recovery must be disabled when BUILD_THINGOS_NATIVE_RUSTC is unset"
-        );
-    }
-
-    /// Setting BUILD_THINGOS_NATIVE_RUSTC=1 enables the opt-in recovery path.
-    #[test]
-    fn native_recovery_enabled_by_env_var() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // SAFETY: serialized by ENV_LOCK; no other threads modify this var.
-        unsafe { std::env::set_var("BUILD_THINGOS_NATIVE_RUSTC", "1") };
-        let result = should_attempt_native_recovery();
-        unsafe { std::env::remove_var("BUILD_THINGOS_NATIVE_RUSTC") };
-        assert!(
-            result,
-            "native recovery must be enabled when BUILD_THINGOS_NATIVE_RUSTC=1"
-        );
-    }
-
-    /// Values other than "1" must not enable recovery.
-    #[test]
-    fn native_recovery_not_enabled_for_other_values() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        for val in &["0", "true", "yes", ""] {
-            // SAFETY: serialized by ENV_LOCK; no other threads modify this var.
-            unsafe { std::env::set_var("BUILD_THINGOS_NATIVE_RUSTC", val) };
-            assert!(
-                !should_attempt_native_recovery(),
-                "native recovery must remain disabled for BUILD_THINGOS_NATIVE_RUSTC={val}"
-            );
-        }
-        unsafe { std::env::remove_var("BUILD_THINGOS_NATIVE_RUSTC") };
-    }
-
-    // ── build_rustc_thingos early-exit guards ────────────────────────────────
-
-    /// Non-x86_64 architectures must return Ok(None) immediately without
-    /// performing any filesystem operations.
-    #[test]
-    fn build_skips_non_x86_64_architectures() {
-        let sh = Shell::new().unwrap();
-        for arch in &["aarch64", "riscv64", "loongarch64"] {
-            let result = build_rustc_thingos(&sh, arch)
-                .unwrap_or_else(|e| panic!("build_rustc_thingos failed for {arch}: {e}"));
-            assert!(
-                result.is_none(),
-                "expected Ok(None) for arch={arch}, got Ok(Some(...))"
-            );
-        }
-    }
-
-    /// SKIP_RUSTC_THINGOS=1 must short-circuit the build and return Ok(None).
-    #[test]
-    fn build_skips_when_skip_env_var_set() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let sh = Shell::new().unwrap();
-        // SAFETY: serialized by ENV_LOCK; no other threads modify this var.
-        unsafe { std::env::set_var("SKIP_RUSTC_THINGOS", "1") };
-        let result = build_rustc_thingos(&sh, "x86_64");
-        unsafe { std::env::remove_var("SKIP_RUSTC_THINGOS") };
-        let result = result.expect("build_rustc_thingos must not error when skipped");
-        assert!(
-            result.is_none(),
-            "expected Ok(None) when SKIP_RUSTC_THINGOS=1"
-        );
-    }
-
-    // ── stage_rustc_for_iso guards ───────────────────────────────────────────
-
-    /// SKIP_RUSTC_THINGOS=1 must make stage_rustc_for_iso a no-op (no files
-    /// written to the ISO root).
-    #[test]
-    fn stage_iso_noop_when_skip_env_var_set() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let sh = Shell::new().unwrap();
-        let tmp = std::env::temp_dir().join("xtask_test_stage_skip");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        // SAFETY: serialized by ENV_LOCK; no other threads modify this var.
-        unsafe { std::env::set_var("SKIP_RUSTC_THINGOS", "1") };
-        let result = stage_rustc_for_iso(&sh, &tmp);
-        unsafe { std::env::remove_var("SKIP_RUSTC_THINGOS") };
-
-        assert!(result.is_ok(), "stage_rustc_for_iso must not error when skipped");
-        assert!(
-            std::fs::read_dir(&tmp)
-                .unwrap()
-                .next()
-                .is_none(),
-            "stage_rustc_for_iso must not create any files in the ISO root when SKIP_RUSTC_THINGOS=1"
-        );
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    /// When the ThingOS-native rustc binary is absent from the cache,
-    /// stage_rustc_for_iso must succeed without writing any files.
-    /// This is the default stable path: no native compiler, no ISO staging.
-    #[test]
-    fn stage_iso_noop_when_native_rustc_absent() {
-        let sh = Shell::new().unwrap();
-        let tmp = std::env::temp_dir().join("xtask_test_stage_absent");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        // Verify the precondition: no native binary cached.
-        // In a fresh checkout or CI environment this is guaranteed.
-        if Path::new(THINGOS_RUSTC_BINARY).exists() {
-            // Skip this test if the native binary happens to be present.
-            let _ = std::fs::remove_dir_all(&tmp);
-            return;
-        }
-
-        let result = stage_rustc_for_iso(&sh, &tmp);
-        assert!(
-            result.is_ok(),
-            "stage_rustc_for_iso must not error when native rustc is absent"
-        );
-        assert!(
-            !tmp.join("bin/rustc").exists(),
-            "stage_rustc_for_iso must not stage a binary when native rustc is absent"
-        );
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
 }

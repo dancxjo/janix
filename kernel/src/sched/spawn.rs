@@ -912,6 +912,7 @@ pub unsafe fn boot_spawn_process_ex<R: BootRuntime>(
     boot_arg: u64,
     inherited_handles: Vec<u64>,
     cwd: Option<alloc::string::String>,
+    fd_remap: Vec<abi::types::FdRemap>,
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
@@ -975,6 +976,19 @@ pub unsafe fn boot_spawn_process_ex<R: BootRuntime>(
 
     let (stdin_pipe_id, stdout_pipe_id, stderr_pipe_id) =
         setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
+
+    // Step 6b: Apply explicit FD remappings.
+    // These take precedence over stdio/inherited defaults for the same slots.
+    for remap in fd_remap {
+        if let Err(e) = fd_table.dup2(remap.src_fd, remap.dst_fd) {
+            crate::kprintln!(
+                "SPAWN: FD remap failed: {} -> {} (errno {:?})",
+                remap.src_fd,
+                remap.dst_fd,
+                e
+            );
+        }
+    }
 
     // Open the parent-side pipe ends in the parent's fd table so the parent
     // can communicate with the child via normal file descriptors.
@@ -1122,6 +1136,7 @@ pub unsafe fn spawn_process_from_path<R: BootRuntime>(
     _boot_arg: u64,
     inherited_handles: Vec<u64>,
     cwd: Option<alloc::string::String>,
+    fd_remap: Vec<abi::types::FdRemap>,
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     // Step 1: Open the executable from the VFS.
     let node = crate::vfs::mount::lookup(path).map_err(|_| abi::errors::Errno::ENOENT)?;
@@ -1215,6 +1230,18 @@ pub unsafe fn spawn_process_from_path<R: BootRuntime>(
 
     let (stdin_pipe_id, stdout_pipe_id, stderr_pipe_id) =
         setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
+
+    // Step 6b: Apply explicit FD remappings.
+    for remap in fd_remap {
+        if let Err(e) = fd_table.dup2(remap.src_fd, remap.dst_fd) {
+            crate::kprintln!(
+                "SPAWN: FD remap failed: {} -> {} (errno {:?})",
+                remap.src_fd,
+                remap.dst_fd,
+                e
+            );
+        }
+    }
 
     // Open the parent-side pipe ends in the parent's fd_table.
     let mut parent_stdin_fd: u64 = 0;

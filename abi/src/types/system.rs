@@ -228,6 +228,14 @@ impl Default for BulkPropsResponse {
 // Enhanced Process Spawn (SYS_SPAWN_PROCESS_EX)
 // ============================================================================
 
+/// Mapping from a parent file descriptor to a destination file descriptor in the child.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FdRemap {
+    pub src_fd: u32,
+    pub dst_fd: u32,
+}
+
 /// Stdio mode for child streams in SpawnProcessExReq.
 pub mod stdio_mode {
     /// Inherit the parent's handle for this stream.
@@ -295,9 +303,13 @@ pub struct SpawnProcessExReq {
     /// Pointer to the desired working directory bytes (NOT null-terminated).
     /// Set to 0 to inherit the parent's cwd.
     pub cwd_ptr: u64,
-    /// Length of the cwd bytes (0 = inherit parent cwd).
     pub cwd_len: u32,
     pub _pad4: u32,
+    /// Pointer to an array of [`FdRemap`] entries.
+    pub fd_remap_ptr: u64,
+    /// Number of entries in the `fd_remap_ptr` array.
+    pub fd_remap_len: u32,
+    pub _pad5: u32,
 }
 
 /// Response payload for SYS_SPAWN_PROCESS_EX.

@@ -767,6 +767,9 @@ pub fn spawn_process_ex_cwd(
         cwd_ptr: cwd.map_or(0, |s| s.as_ptr() as u64),
         cwd_len: cwd.map_or(0, |s| s.len() as u32),
         _pad4: 0,
+        fd_remap_ptr: 0,
+        fd_remap_len: 0,
+        _pad5: 0,
     };
     // SAFETY: `req`, `argv_blob`, `env_blob`, and `cwd` all live on the stack
     // until after `raw_syscall6` returns.  The kernel copies all pointer fields

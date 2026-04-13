@@ -257,6 +257,46 @@ fn test_proc_deadlock(exe: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// proc_pipeline: spawn child 1 (echo "hello") -> pipe -> child 2 (cat); verify output.
+fn test_proc_pipeline(exe: &str) -> Result<(), String> {
+    use std::process::Stdio;
+
+    // child 1: echo "pipeline_data"
+    let mut child1 = Command::new(exe)
+        .arg("--child-echo")
+        .arg("pipeline_data")
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| alloc::format!("spawn child1 failed: {}", e))?;
+
+    let stdout1 = child1.stdout.take().ok_or("no child1 stdout")?;
+
+    // child 2: cat (echoes stdin)
+    // Here we pass ChildStdout (ChildPipe) directly to stdin.
+    // This relies on the new FdRemap logic in Command::spawn.
+    let output2 = Command::new(exe)
+        .arg("--child-stdin")
+        .stdin(stdout1)
+        .output()
+        .map_err(|e| alloc::format!("spawn child2 failed: {}", e))?;
+
+    if !output2.status.success() {
+        return Err(alloc::format!("child2 exited {:?}", output2.status.code()));
+    }
+    let stdout2 = String::from_utf8_lossy(&output2.stdout);
+    if !stdout2.contains("pipeline_data") {
+        return Err(alloc::format!("expected 'pipeline_data' in output2, got: {:?}", stdout2));
+    }
+
+    // Cleanup child1
+    let status1 = child1.wait().map_err(|e| alloc::format!("wait child1 failed: {}", e))?;
+    if !status1.success() {
+        return Err(alloc::format!("child1 exited with failure: {:?}", status1.code()));
+    }
+
+    Ok(())
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -277,6 +317,7 @@ fn main() {
         Test { name: "proc_inherit_stdio", run: test_proc_inherit_stdio },
         Test { name: "proc_try_wait",      run: test_proc_try_wait },
         Test { name: "proc_deadlock",      run: test_proc_deadlock },
+        Test { name: "proc_pipeline",      run: test_proc_pipeline },
     ];
 
     let args: Vec<String> = std::env::args().collect();

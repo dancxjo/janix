@@ -568,6 +568,26 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         None
     };
 
+    // Copy in the fd remap table
+    let fd_remap = if req.fd_remap_len > 0 && req.fd_remap_ptr != 0 {
+        let count = req.fd_remap_len as usize;
+        if count > 64 {
+            return Err(Errno::EINVAL);
+        }
+        let remap_size = count * core::mem::size_of::<abi::types::FdRemap>();
+        validate_user_range(req.fd_remap_ptr as usize, remap_size, false)?;
+        let mut remaps = alloc::vec![abi::types::FdRemap::default(); count];
+        unsafe {
+            copyin(
+                core::slice::from_raw_parts_mut(remaps.as_mut_ptr() as *mut u8, remap_size),
+                req.fd_remap_ptr as usize,
+            )?;
+        }
+        remaps
+    } else {
+        Vec::new()
+    };
+
     // Use the general-purpose VFS-based runtime process creation path.
     // The `name` field in the request is treated as the VFS path to the
     // executable (e.g. `/usr/bin/ls`).
@@ -582,6 +602,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
             boot_arg,
             inherited_handles,
             cwd,
+            fd_remap,
         )
     }?;
 

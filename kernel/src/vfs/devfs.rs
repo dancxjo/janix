@@ -383,7 +383,7 @@ impl ConsoleNode {
 
 impl VfsNode for ConsoleNode {
     fn read(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
-        use abi::termios::{ECHO, ECHOE, ICANON, ICRNL, ISIG, VMIN};
+        use abi::termios::{ECHO, ECHOE, ICANON, ICRNL, ISIG, VINTR, VMIN, VQUIT, VSUSP};
 
         if buf.is_empty() {
             return Ok(0);
@@ -399,17 +399,71 @@ impl VfsNode for ConsoleNode {
 
             let rt = crate::runtime_base();
 
-            // Snapshot current terminal flags so we are consistent across
-            // one drain + one dequeue pass.
-            let termios = CONSOLE_TTY_STATE.lock().termios;
+            // Snapshot current terminal flags and special characters so we are
+            // consistent across one drain + one dequeue pass.
+            let tty_state = CONSOLE_TTY_STATE.lock();
+            let termios = tty_state.termios;
+            let foreground_pgid = tty_state.foreground_pgid;
+            drop(tty_state);
+
             let canonical = termios.c_lflag & ICANON != 0;
             let do_echo = termios.c_lflag & ECHO != 0;
             let do_echo_erase = termios.c_lflag & ECHOE != 0;
             let isig = termios.c_lflag & ISIG != 0;
             let icrnl = termios.c_iflag & ICRNL != 0;
 
+            // Get configured signal characters
+            let vintr = termios.c_cc[VINTR];
+            let vquit = termios.c_cc[VQUIT];
+            let vsusp = termios.c_cc[VSUSP];
+
             // ── Drain hardware FIFO into the software buffer ──────────────────
             while let Some(c) = rt.getchar() {
+                // ── Check for signal-generating characters ────────────────────
+                if isig {
+                    if c == vintr {
+                        // SIGINT (interrupt) character
+                        if do_echo {
+                            rt.putchar(b'^');
+                            rt.putchar(b'C');
+                            rt.putchar(b'\r');
+                            rt.putchar(b'\n');
+                        }
+                        CONSOLE_BUF.lock().clear();
+                        if let Some(pgid) = foreground_pgid {
+                            crate::signal::send_signal_to_group(pgid, abi::signal::SIGINT);
+                        }
+                        return Err(abi::errors::Errno::EINTR);
+                    } else if c == vquit {
+                        // SIGQUIT (quit) character
+                        if do_echo {
+                            rt.putchar(b'^');
+                            rt.putchar(b'\\');
+                            rt.putchar(b'\r');
+                            rt.putchar(b'\n');
+                        }
+                        CONSOLE_BUF.lock().clear();
+                        if let Some(pgid) = foreground_pgid {
+                            crate::signal::send_signal_to_group(pgid, abi::signal::SIGQUIT);
+                        }
+                        return Err(abi::errors::Errno::EINTR);
+                    } else if c == vsusp {
+                        // SIGTSTP (suspend) character
+                        if do_echo {
+                            rt.putchar(b'^');
+                            rt.putchar(b'Z');
+                            rt.putchar(b'\r');
+                            rt.putchar(b'\n');
+                        }
+                        CONSOLE_BUF.lock().clear();
+                        if let Some(pgid) = foreground_pgid {
+                            crate::signal::send_signal_to_group(pgid, abi::signal::SIGTSTP);
+                        }
+                        return Err(abi::errors::Errno::EINTR);
+                    }
+                }
+
+                // ── Regular character processing ──────────────────────────────
                 match c {
                     b'\r' | b'\n' => {
                         let mapped = if icrnl { b'\n' } else { c };
@@ -434,25 +488,6 @@ impl VfsNode for ConsoleNode {
                             }
                         } else {
                             CONSOLE_BUF.lock().push_back(c);
-                        }
-                    }
-                    0x03 => {
-                        // Ctrl-C
-                        if do_echo {
-                            rt.putchar(b'^');
-                            rt.putchar(b'C');
-                            rt.putchar(b'\r');
-                            rt.putchar(b'\n');
-                        }
-                        if isig {
-                            // Discard pending input and return EINTR to the
-                            // caller; the pending interrupt flag has already
-                            // been consumed so we return directly.
-                            CONSOLE_BUF.lock().clear();
-                            return Err(abi::errors::Errno::EINTR);
-                        } else {
-                            // ISIG disabled — pass Ctrl-C as a literal byte.
-                            CONSOLE_BUF.lock().push_back(0x03);
                         }
                     }
                     0x04 => {
@@ -976,12 +1011,12 @@ impl VfsNode for KmsgNode {
         // For dmesg, a full snapshot is usually what's wanted.
         let mut temp = vec![0u8; crate::logging::get_log_buffer_len()];
         let n = crate::logging::copy_log_buffer(&mut temp);
-        
+
         let off = offset as usize;
         if off >= n {
             return Ok(0);
         }
-        
+
         let avail = &temp[off..n];
         let count = avail.len().min(buf.len());
         buf[..count].copy_from_slice(&avail[..count]);
@@ -989,7 +1024,7 @@ impl VfsNode for KmsgNode {
     }
 
     fn write(&self, _offset: u64, _buf: &[u8]) -> SysResult<usize> {
-        // Linux allows writing to /dev/kmsg to inject logs, but we'll stick to 
+        // Linux allows writing to /dev/kmsg to inject logs, but we'll stick to
         // read-only for now.
         Err(Errno::EPERM)
     }
@@ -1266,7 +1301,11 @@ mod tests {
         ConsoleNode::set_termios(raw);
 
         let t = ConsoleNode::get_termios();
-        assert_eq!(t.c_lflag & abi::termios::ICANON, 0, "ICANON should be clear");
+        assert_eq!(
+            t.c_lflag & abi::termios::ICANON,
+            0,
+            "ICANON should be clear"
+        );
         assert_eq!(t.c_lflag & abi::termios::ECHO, 0, "ECHO should be clear");
         assert_eq!(t.c_lflag & abi::termios::ISIG, 0, "ISIG should be clear");
 
@@ -1492,6 +1531,10 @@ mod tests {
     fn test_dev_dir_stat_has_nlink_two() {
         let st = DevDirNode.stat().unwrap();
         assert!(st.is_dir());
-        assert!(st.nlink >= 2, "dev dir nlink should be >= 2, got {}", st.nlink);
+        assert!(
+            st.nlink >= 2,
+            "dev dir nlink should be >= 2, got {}",
+            st.nlink
+        );
     }
 }

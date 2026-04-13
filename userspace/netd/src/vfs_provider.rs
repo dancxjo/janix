@@ -26,10 +26,10 @@
 //! ├── udp/
 //! │   ├── new           ← read:  allocates socket, returns id
 //! │   └── <id>/
-//! │       ├── ctl       ← write: "bind PORT" / "connect IP PORT" / "close"
+//! │       ├── ctl       ← write: "bind PORT" / "connect IP PORT" / "broadcast 0|1" / "close"
 //! │       ├── data      ← write: [4: dest_ipv4][2: dest_port_le][4: len_le][payload]
 //! │       │               read:  [4: src_ipv4][2: src_port_le][4: len_le][payload]
-//! │       └── status    ← read:  state text
+//! │       └── status    ← read:  state text, including `broadcast: true|false`
 //! └── dns/
 //!     └── lookup        ← write: hostname; read: dotted-decimal IPv4 address
 //! ```
@@ -985,7 +985,7 @@ impl NetVfsProvider {
     ) -> WriteResult {
         match sf {
             SF_CTL => {
-                // "bind PORT", "connect IP PORT", or "close"
+                // "bind PORT", "connect IP PORT", "broadcast 0|1", or "close"
                 if let Some(rest) = text.strip_prefix("bind ") {
                     if let Ok(port) = rest.trim().parse::<u16>() {
                         let r = socket_api.handle_udp_bind_port(socket_set, api_handle, port);
@@ -1009,6 +1009,18 @@ impl NetVfsProvider {
                             };
                         }
                     }
+                } else if let Some(rest) = text.strip_prefix("broadcast ") {
+                    let enabled = match rest.trim() {
+                        "1" | "true" => true,
+                        "0" | "false" => false,
+                        _ => return WriteResult::Error,
+                    };
+                    let r = socket_api.handle_udp_set_broadcast(api_handle, enabled);
+                    return if r {
+                        WriteResult::Ok(text.len())
+                    } else {
+                        WriteResult::Error
+                    };
                 } else if text == "close" {
                     socket_api.handle_close(socket_set, api_handle);
                     return WriteResult::Ok(5);

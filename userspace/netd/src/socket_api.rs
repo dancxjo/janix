@@ -60,6 +60,8 @@ struct ManagedSocket {
     pub buf_idx: Option<usize>,
     /// Additional socket handles for listener pool backlog
     pub listen_pool: Vec<(SocketHandle, usize)>,
+    /// Whether limited IPv4 broadcast sends are enabled for this UDP socket.
+    pub udp_broadcast: bool,
 }
 
 impl ManagedSocket {
@@ -220,6 +222,7 @@ impl SocketApi {
             last_seen_ms: now_ms,
             buf_idx,
             listen_pool: Vec::new(),
+            udp_broadcast: false,
         }
     }
 
@@ -404,7 +407,12 @@ impl SocketApi {
             }
             None => "none".into(),
         };
-        alloc::format!("local: {}\nremote: {}\n", local_str, remote_str)
+        alloc::format!(
+            "local: {}\nremote: {}\nbroadcast: {}\n",
+            local_str,
+            remote_str,
+            managed.udp_broadcast
+        )
     }
 
     /// Return the stored remote endpoint for a UDP socket.
@@ -557,6 +565,16 @@ impl SocketApi {
                     ip: remote_ip,
                     port: remote_port,
                 });
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn handle_udp_set_broadcast(&mut self, api_handle: u32, enabled: bool) -> bool {
+        if let Some(managed) = self.sockets.get_mut(&api_handle) {
+            if managed.kind == SocketType::Udp {
+                managed.udp_broadcast = enabled;
                 return true;
             }
         }

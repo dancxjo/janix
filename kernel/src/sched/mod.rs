@@ -36,6 +36,8 @@ pub use hooks::{
     spawn_process_from_path_current, spawn_user_thread_current, take_pending_interrupt_current,
     task_exec_current, task_status_current, task_wait_current, unregister_task_exit_waiter_current,
     unregister_timeout_wake_current, waitpid_current, yield_now_current,
+    get_signal_mask_current, set_signal_mask_current,
+    get_thread_pending_current, set_thread_pending_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -305,6 +307,10 @@ pub fn init<R: BootRuntime>() {
             hooks::TASK_EXEC_HOOK = Some(crate::task::exec::task_exec_current::<R>);
             hooks::SET_CURRENT_USER_FS_BASE_HOOK = Some(set_current_user_fs_base::<R>);
             hooks::WAITPID_HOOK = Some(waitpid::<R>);
+            hooks::GET_SIGNAL_MASK_HOOK = Some(get_signal_mask::<R>);
+            hooks::SET_SIGNAL_MASK_HOOK = Some(set_signal_mask::<R>);
+            hooks::GET_THREAD_PENDING_HOOK = Some(get_thread_pending::<R>);
+            hooks::SET_THREAD_PENDING_HOOK = Some(set_thread_pending::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -375,6 +381,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         base_priority: TaskPriority::Normal,
         user_fs_base: 0,
         detached: false,
+        signals: crate::signal::ThreadSignals::new(),
     };
     let sched_fields = crate::sched::state::TaskSchedFields {
         tid: task.id,
@@ -1275,6 +1282,10 @@ fn mark_task_exited<R: BootRuntime>(
     // Remove this TID from the process's thread group list.
     // If this is the thread-group leader, drain the remaining siblings in one
     // step to avoid a separate clone + clear pass.
+    // Also capture ppid/pid for SIGCHLD notification.
+    let mut notify_ppid: u32 = 0;
+    let mut notify_pid: u32 = 0;
+
     let siblings_to_kill: alloc::vec::Vec<TaskId> = {
         let pinfo_opt =
             crate::task::registry::get_task::<R>(tid).and_then(|t| t.process_info.clone());
@@ -1285,6 +1296,8 @@ fn mark_task_exited<R: BootRuntime>(
             // If the exiting thread is the thread-group leader (its TID == pid),
             // drain all remaining siblings and schedule them for termination.
             if pi.pid as TaskId == tid {
+                notify_ppid = pi.ppid;
+                notify_pid = pi.pid;
                 core::mem::take(&mut pi.thread_ids)
             } else {
                 alloc::vec::Vec::new()
@@ -1293,6 +1306,50 @@ fn mark_task_exited<R: BootRuntime>(
             alloc::vec::Vec::new()
         }
     };
+
+    // If the thread-group leader exited, notify the parent process.
+    if notify_ppid != 0 {
+        let encoded_status = if code < 0 {
+            abi::signal::w_term_sig((-code) as u8)
+        } else {
+            abi::signal::w_exit_status(code as u8)
+        };
+        // Find the parent's ProcessInfo Arc without holding the registry lock
+        // across the ProcessInfo lock.
+        let parent_arc: Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> = {
+            let reg = crate::task::registry::get_registry::<R>();
+            reg.threads
+                .iter()
+                .find_map(|task| {
+                    task.process_info.as_ref().and_then(|pi_arc| {
+                        // Avoid locking here; check PID via a try-approach.
+                        // We can peek at the pid without locking if it's stable.
+                        // ProcessInfo.pid is set at creation and never changes.
+                        // However spinning on the Mutex here under the registry
+                        // guard risks subtle ordering issues; clone the Arc
+                        // and lock it after releasing the registry guard.
+                        let guard = pi_arc.lock();
+                        if guard.pid == notify_ppid {
+                            drop(guard);
+                            Some(pi_arc.clone())
+                        } else {
+                            None
+                        }
+                    })
+                })
+        }; // registry guard released here
+
+        if let Some(pi_arc) = parent_arc {
+            let mut pp = pi_arc.lock();
+            pp.children_done.push_back((notify_pid, encoded_status));
+            pp.signals.post(abi::signal::SIGCHLD);
+            let tids = pp.thread_ids.clone();
+            drop(pp);
+            // Wake parent threads via the waiters list (after the scheduler lock
+            // is released by the caller).
+            waiters.extend(tids.iter().map(|&t| t as u64));
+        }
+    }
 
     // Kill sibling threads (thread-group exit).
     for &sibling in &siblings_to_kill {
@@ -1598,6 +1655,36 @@ pub fn waitpid<R: BootRuntime>(pid: i64, flags: u32) -> Result<(u64, i32), abi::
     };
 
     waitpid_for_pid::<R>(our_pid, pid, flags)
+}
+
+// ── Signal mask hooks ─────────────────────────────────────────────────────────
+
+fn get_signal_mask<R: BootRuntime>() -> abi::signal::SigSet {
+    let tid = current_tid::<R>();
+    crate::task::registry::get_task::<R>(tid)
+        .map(|t| t.signals.effective_mask())
+        .unwrap_or(abi::signal::SigSet::EMPTY)
+}
+
+fn set_signal_mask<R: BootRuntime>(mask: abi::signal::SigSet) {
+    let tid = current_tid::<R>();
+    if let Some(mut t) = crate::task::registry::get_task_mut::<R>(tid) {
+        t.signals.mask = abi::signal::SigSet(mask.0 & !crate::signal::UNCATCHABLE.0);
+    }
+}
+
+fn get_thread_pending<R: BootRuntime>() -> abi::signal::SigSet {
+    let tid = current_tid::<R>();
+    crate::task::registry::get_task::<R>(tid)
+        .map(|t| t.signals.pending)
+        .unwrap_or(abi::signal::SigSet::EMPTY)
+}
+
+fn set_thread_pending<R: BootRuntime>(pending: abi::signal::SigSet) {
+    let tid = current_tid::<R>();
+    if let Some(mut t) = crate::task::registry::get_task_mut::<R>(tid) {
+        t.signals.pending = pending;
+    }
 }
 
 pub fn register_timeout_wake<R: BootRuntime>(tid: TaskId, wake_tick: u64) {
@@ -1985,6 +2072,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         }
     }
 
@@ -2039,6 +2127,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         // Create a low-priority task enqueued a long time ago
@@ -2071,6 +2160,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2154,6 +2244,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         // Task 2 is runnable
@@ -2186,6 +2277,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task1));
@@ -2261,6 +2353,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         // Task 2: Realtime priority, sleeping (about to wake)
@@ -2293,6 +2386,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2393,6 +2487,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         // Insert tasks out of order
@@ -2472,6 +2567,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2569,6 +2665,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let sleeping_task = crate::task::Task {
@@ -2600,6 +2697,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2665,6 +2763,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let blocked_task = crate::task::Task {
@@ -2696,6 +2795,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2754,6 +2854,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2805,6 +2906,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -2859,6 +2961,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let waiter_task = crate::task::Task {
@@ -2890,6 +2993,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         let target_task = crate::task::Task {
@@ -2921,6 +3025,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>()
@@ -3149,10 +3254,13 @@ mod tests {
                         crate::memory::mappings::MappingList::new(),
                     )),
                     aspace_raw: 0,
+                    signals: crate::signal::ProcessSignals::new(),
+                    children_done: alloc::collections::VecDeque::new(),
                 },
             ))),
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         }
     }
 
@@ -3369,6 +3477,7 @@ mod tests {
             process_info: Some(shared_pinfo),
             user_fs_base: 0,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         }
     }
 
@@ -3396,6 +3505,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         {
@@ -3430,6 +3541,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         // Register both tasks.
@@ -3490,6 +3603,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3554,6 +3669,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3661,6 +3778,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(
@@ -3755,6 +3874,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }));
 
         // Before exec: flag is clear — new threads would be accepted.
@@ -3820,6 +3941,7 @@ mod tests {
             process_info: None,
             user_fs_base: tls_base,
             detached: false,
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task));
@@ -3867,6 +3989,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: true, // detached — must not be joinable
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task));
@@ -3913,6 +4036,7 @@ mod tests {
             process_info: None,
             user_fs_base: 0,
             detached: false, // joinable
+            signals: crate::signal::ThreadSignals::new(),
         };
 
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task));

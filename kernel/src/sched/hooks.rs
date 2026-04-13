@@ -91,6 +91,16 @@ pub(crate) static mut SET_CURRENT_USER_FS_BASE_HOOK: Option<fn(u64)> = None;
 /// Wait for a child process to exit, returning (child_pid, exit_code).
 pub(crate) static mut WAITPID_HOOK: Option<fn(i64, u32) -> Result<(u64, i32), Errno>> = None;
 
+// ── Signal hooks ──────────────────────────────────────────────────────────────
+/// Read the calling thread's signal mask.
+pub(crate) static mut GET_SIGNAL_MASK_HOOK: Option<fn() -> abi::signal::SigSet> = None;
+/// Set the calling thread's signal mask.
+pub(crate) static mut SET_SIGNAL_MASK_HOOK: Option<fn(abi::signal::SigSet)> = None;
+/// Get the calling thread's thread-directed pending signals.
+pub(crate) static mut GET_THREAD_PENDING_HOOK: Option<fn() -> abi::signal::SigSet> = None;
+/// Set (replace) the calling thread's thread-directed pending signals.
+pub(crate) static mut SET_THREAD_PENDING_HOOK: Option<fn(abi::signal::SigSet)> = None;
+
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
         let _ = hook();
@@ -490,4 +500,59 @@ pub unsafe fn waitpid_current(pid: i64, flags: u32) -> Result<(u64, i32), Errno>
     } else {
         Err(Errno::ENOSYS)
     }
+}
+
+// ── Signal hook accessors ─────────────────────────────────────────────────────
+
+/// Return the calling thread's signal mask (blocked signals).
+pub fn get_signal_mask_current() -> abi::signal::SigSet {
+    if let Some(hook) = unsafe { GET_SIGNAL_MASK_HOOK } {
+        hook()
+    } else {
+        abi::signal::SigSet::EMPTY
+    }
+}
+
+/// Replace the calling thread's signal mask.
+pub fn set_signal_mask_current(mask: abi::signal::SigSet) {
+    if let Some(hook) = unsafe { SET_SIGNAL_MASK_HOOK } {
+        hook(mask);
+    }
+}
+
+/// Return the set of signals pending specifically for the calling thread.
+pub fn get_thread_pending_current() -> abi::signal::SigSet {
+    if let Some(hook) = unsafe { GET_THREAD_PENDING_HOOK } {
+        hook()
+    } else {
+        abi::signal::SigSet::EMPTY
+    }
+}
+
+/// Replace the set of signals pending specifically for the calling thread.
+pub fn set_thread_pending_current(pending: abi::signal::SigSet) {
+    if let Some(hook) = unsafe { SET_THREAD_PENDING_HOOK } {
+        hook(pending);
+    }
+}
+
+/// Block the calling task until it is explicitly woken.
+///
+/// This is a type-erased wrapper around the scheduler's blocking mechanism,
+/// callable from non-generic code (e.g., signal syscall handlers).
+///
+/// # Safety
+///
+/// Must be called from a schedulable task context.
+pub unsafe fn block_current_erased() {
+    unsafe { super::block_current_erased() }
+}
+
+/// Wake a task by its TID (type-erased wrapper).
+///
+/// # Safety
+///
+/// Must be called from a schedulable task context.
+pub unsafe fn wake_task_erased(tid: u64) {
+    unsafe { super::wake_task_erased(tid) }
 }

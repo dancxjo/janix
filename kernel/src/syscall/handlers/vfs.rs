@@ -1675,6 +1675,8 @@ mod tests {
                 crate::memory::mappings::MappingList::new(),
             )),
             aspace_raw: 0,
+            signals: crate::signal::ProcessSignals::new(),
+            children_done: alloc::collections::VecDeque::new(),
         }))
     }
 

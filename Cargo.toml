@@ -42,6 +42,7 @@ members = [
     "userspace/sprout",
     "userspace/bristle",
     "userspace/echo",
+    "userspace/kill",
     "userspace/input_echo",
     "userspace/sh",
     "userspace/smallsh",

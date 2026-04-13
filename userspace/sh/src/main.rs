@@ -303,7 +303,7 @@ impl Shell {
                 }
             }
             Err(err) => {
-                let msg = format!("sh: spawn failed: {:?}\n", err);
+                let msg = format!("sh: spawn failed: {}\n", err);
                 write_str(&msg);
             }
         }
@@ -691,7 +691,7 @@ fn main(_arg: usize) -> ! {
                 "cd" => {
                     let target = cmds[0].args.first().copied().unwrap_or("/");
                     if let Err(err) = syscall::vfs_chdir(target) {
-                        let msg = format!("cd: {}: {:?}\n", target, err);
+                        let msg = format!("cd: {}: {}\n", target, err);
                         write_str(&msg);
                     }
                     continue;

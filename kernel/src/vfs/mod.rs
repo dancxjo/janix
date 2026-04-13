@@ -576,10 +576,14 @@ pub fn write_readdir_entries<'a>(
     offset: u64,
     buf: &mut [u8],
 ) -> SysResult<usize> {
+    let mut seen = alloc::collections::BTreeSet::new();
     let mut written = 0usize;
     let mut virtual_pos = 0u64;
 
     for entry in entries {
+        if !seen.insert(entry) {
+            continue;
+        }
         let name = entry.as_bytes();
         let entry_full_len = (name.len() + 1) as u64;
 
@@ -624,7 +628,6 @@ pub fn write_readdir_entries<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::String;
     use alloc::vec;
 
     // A trivial in-memory node for unit-testing the VFS layer.
@@ -882,5 +885,13 @@ mod tests {
         };
         let abi = stat.to_abi_stat();
         assert!(abi.nlink >= 2, "directory nlink must be >= 2, got {}", abi.nlink);
+    }
+
+    #[test]
+    fn test_write_readdir_entries_deduplicates_names() {
+        let entries = ["dup", "dup", "unique", "dup"];
+        let mut buf = [0u8; 32];
+        let n = write_readdir_entries(entries.into_iter(), 0, &mut buf).unwrap();
+        assert_eq!(&buf[..n], b"dup\0unique\0");
     }
 }

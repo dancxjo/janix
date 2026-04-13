@@ -21,7 +21,8 @@
 //! | `/proc/<pid>/task/<tid>/name` | Thread's human-readable name |
 
 use abi::errors::{Errno, SysResult};
-use alloc::string::{String, ToString};
+use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -91,12 +92,7 @@ fn lookup_pid(pid: u32, rest: &str) -> SysResult<Arc<dyn VfsNode>> {
         return lookup_pid_task(pid, tid_and_rest);
     }
 
-    let procs = crate::sched::list_processes_current();
-    let snap = procs
-        .iter()
-        .find(|p| p.pid == pid)
-        .ok_or(Errno::ENOENT)?
-        .clone();
+    let snap = process_snapshot(pid).ok_or(Errno::ENOENT)?;
 
     match rest {
         // /proc/<pid> — the per-process directory itself
@@ -184,6 +180,26 @@ fn lookup_pid_task(pid: u32, tid_and_rest: &str) -> SysResult<Arc<dyn VfsNode>> 
     }
 }
 
+fn process_snapshot(pid: u32) -> Option<crate::sched::ProcessSnapshot> {
+    let procs = crate::sched::list_processes_current();
+    procs
+        .iter()
+        .find(|p| p.pid == pid && p.tid == pid as u64)
+        .cloned()
+        .or_else(|| procs.into_iter().find(|p| p.pid == pid))
+}
+
+fn process_ids() -> Vec<u32> {
+    let mut seen = BTreeSet::new();
+    let mut pids = Vec::new();
+    for snap in crate::sched::list_processes_current() {
+        if seen.insert(snap.pid) {
+            pids.push(snap.pid);
+        }
+    }
+    pids
+}
+
 // ── /proc root directory ──────────────────────────────────────────────────────
 
 struct ProcDirNode;
@@ -213,8 +229,8 @@ impl VfsNode for ProcDirNode {
             String::from("ipc"),
             String::from("self"),
         ];
-        for snap in crate::sched::list_processes_current() {
-            names.push(alloc::format!("{}", snap.pid));
+        for pid in process_ids() {
+            names.push(alloc::format!("{}", pid));
         }
         super::write_readdir_entries(names.iter().map(|s: &String| s.as_str()), offset, buf)
     }

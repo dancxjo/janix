@@ -99,6 +99,66 @@ impl Errno {
     pub fn as_isize(self) -> isize {
         -(self as isize)
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Errno::Success => "success",
+            Errno::EPERM => "operation not permitted",
+            Errno::ENOENT => "no such file or directory",
+            Errno::ESRCH => "no such process",
+            Errno::EINTR => "interrupted system call",
+            Errno::EIO => "i/o error",
+            Errno::ENXIO => "no such device or address",
+            Errno::E2BIG => "argument list too long",
+            Errno::ENOEXEC => "exec format error",
+            Errno::EBADF => "bad file descriptor",
+            Errno::ECHILD => "no child processes",
+            Errno::EAGAIN => "resource temporarily unavailable",
+            Errno::ENOMEM => "cannot allocate memory",
+            Errno::EACCES => "permission denied",
+            Errno::EFAULT => "bad address",
+            Errno::ENOTBLK => "block device required",
+            Errno::EBUSY => "device or resource busy",
+            Errno::EEXIST => "file exists",
+            Errno::EXDEV => "invalid cross-device link",
+            Errno::ENODEV => "no such device",
+            Errno::ENOTDIR => "not a directory",
+            Errno::EISDIR => "is a directory",
+            Errno::EINVAL => "invalid argument",
+            Errno::ENFILE => "too many open files in system",
+            Errno::EMFILE => "too many open files",
+            Errno::ENOTTY => "inappropriate ioctl for device",
+            Errno::ETXTBSY => "text file busy",
+            Errno::EFBIG => "file too large",
+            Errno::ENOSPC => "no space left on device",
+            Errno::ESPIPE => "illegal seek",
+            Errno::EROFS => "read-only file system",
+            Errno::EMLINK => "too many links",
+            Errno::EPIPE => "broken pipe",
+            Errno::EDOM => "numerical argument out of domain",
+            Errno::ERANGE => "numerical result out of range",
+            Errno::ENAMETOOLONG => "file name too long",
+            Errno::ENOSYS => "function not implemented",
+            Errno::ELOOP => "too many levels of symbolic links",
+            Errno::EOVERFLOW => "value too large for defined data type",
+            Errno::EMSGSIZE => "message too long",
+            Errno::ENOBUFS => "no buffer space available",
+            Errno::ETIMEDOUT => "connection timed out",
+            Errno::ECONNREFUSED => "connection refused",
+            Errno::ENOTSOCK => "socket operation on non-socket",
+            Errno::EPROTOTYPE => "protocol wrong type for socket",
+            Errno::EOPNOTSUPP => "operation not supported",
+            Errno::EAFNOSUPPORT => "address family not supported by protocol",
+            Errno::EADDRINUSE => "address already in use",
+            Errno::ENOTCONN => "transport endpoint is not connected",
+        }
+    }
+}
+
+impl core::fmt::Display for Errno {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {

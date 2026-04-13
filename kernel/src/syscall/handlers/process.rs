@@ -712,6 +712,33 @@ pub fn sys_task_get_tls_base() -> SysResult<usize> {
     Ok(base as usize)
 }
 
+/// `SYS_TASK_SET_NAME`: Set the calling thread's human-readable name.
+///
+/// `name_ptr` is a user-space pointer to a UTF-8 string of `name_len` bytes.
+/// The name is truncated to at most 31 bytes and stored in the thread's
+/// kernel record, where it appears in `/proc/<pid>/task/<tid>/name`.
+pub fn sys_task_set_name(name_ptr: usize, name_len: usize) -> SysResult<usize> {
+    // Cap accepted length to 31 bytes so we never allocate a large buffer.
+    let len = name_len.min(31);
+
+    let name_bytes = if len > 0 {
+        validate_user_range(name_ptr, len, false)?;
+        let mut buf = alloc::vec![0u8; len];
+        unsafe {
+            copyin(&mut buf, name_ptr)?;
+        }
+        buf
+    } else {
+        alloc::vec![]
+    };
+
+    unsafe {
+        scheduler::set_current_task_name_current(&name_bytes);
+    }
+
+    Ok(0)
+}
+
 pub fn sys_task_exec(
     fd: u32,
     argv_ptr: usize,

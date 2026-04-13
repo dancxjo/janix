@@ -19,6 +19,9 @@ use spin::Mutex;
 pub struct ProcessSnapshot {
     pub pid: u32,
     pub ppid: u32,
+    /// Thread ID — unique per schedulable entity.  Equal to `pid` for the
+    /// thread-group leader; differs for additional threads in a process.
+    pub tid: u64,
     pub name: String,
     pub state: TaskState,
     pub argv: Vec<Vec<u8>>,
@@ -87,6 +90,8 @@ pub(crate) static mut TASK_EXEC_HOOK: Option<
 > = None;
 /// Updates the current task's stored `user_fs_base` field without touching hardware.
 pub(crate) static mut SET_CURRENT_USER_FS_BASE_HOOK: Option<fn(u64)> = None;
+/// Updates the calling thread's human-readable name (at most 31 bytes).
+pub(crate) static mut SET_CURRENT_TASK_NAME_HOOK: Option<fn(*const u8, usize)> = None;
 
 /// Wait for a child process to exit, returning (child_pid, exit_code).
 pub(crate) static mut WAITPID_HOOK: Option<fn(i64, u32) -> Result<(u64, i32), Errno>> = None;
@@ -485,6 +490,15 @@ pub unsafe fn task_exec_current(
 pub unsafe fn set_current_user_fs_base_current(base: u64) {
     if let Some(hook) = unsafe { SET_CURRENT_USER_FS_BASE_HOOK } {
         hook(base)
+    }
+}
+
+/// Set the calling thread's human-readable name (at most 31 bytes, silently
+/// truncated if longer).  The name is stored in the thread's kernel record and
+/// is visible via `/proc/{pid}/task/{tid}/name`.
+pub unsafe fn set_current_task_name_current(name: &[u8]) {
+    if let Some(hook) = unsafe { SET_CURRENT_TASK_NAME_HOOK } {
+        hook(name.as_ptr(), name.len())
     }
 }
 

@@ -31,8 +31,9 @@ pub use hooks::{
     exit_current, get_user_mapping_at_current, handle_user_stack_fault_current,
     interrupt_task_current, kill_by_tid_current, list_processes_current, poll_task_exit_current,
     process_info_current, process_info_for_tid_current, register_task_exit_waiter_current,
-    register_timeout_wake_current, remove_user_mappings_current, set_current_user_fs_base_current,
-    set_priority_current, sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
+    register_timeout_wake_current, remove_user_mappings_current, set_current_task_name_current,
+    set_current_user_fs_base_current, set_priority_current, sleep_ticks_current,
+    spawn_process_current, spawn_process_ex_current,
     spawn_process_from_path_current, spawn_user_thread_current, take_pending_interrupt_current,
     task_exec_current, task_status_current, task_wait_current, unregister_task_exit_waiter_current,
     unregister_timeout_wake_current, waitpid_current, yield_now_current,
@@ -306,6 +307,7 @@ pub fn init<R: BootRuntime>() {
             hooks::CURRENT_TASK_NAME_HOOK = Some(current_task_name_impl::<R>);
             hooks::TASK_EXEC_HOOK = Some(crate::task::exec::task_exec_current::<R>);
             hooks::SET_CURRENT_USER_FS_BASE_HOOK = Some(set_current_user_fs_base::<R>);
+            hooks::SET_CURRENT_TASK_NAME_HOOK = Some(set_current_task_name::<R>);
             hooks::WAITPID_HOOK = Some(waitpid::<R>);
             hooks::GET_SIGNAL_MASK_HOOK = Some(get_signal_mask::<R>);
             hooks::SET_SIGNAL_MASK_HOOK = Some(set_signal_mask::<R>);
@@ -1110,6 +1112,23 @@ fn set_current_user_fs_base<R: BootRuntime>(base: u64) {
     }
 }
 
+/// Update the calling thread's human-readable name.
+///
+/// Called by `SYS_TASK_SET_NAME`.  Defensively clamps to 31 bytes even
+/// though the syscall handler already enforces this limit, so that the
+/// function stays safe if called from other internal paths in the future.
+fn set_current_task_name<R: BootRuntime>(ptr: *const u8, len: usize) {
+    let tid = crate::runtime::<R>().current_tid();
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        let len = len.min(31);
+        // SAFETY: `ptr` points to a kernel buffer that was copied from user
+        // space by the syscall handler before this hook is called.
+        let src = unsafe { core::slice::from_raw_parts(ptr, len) };
+        task.name[..len].copy_from_slice(src);
+        task.name_len = len as u8;
+    }
+}
+
 fn interrupt_task<R: BootRuntime>(tid: TaskId) -> Result<(), abi::errors::Errno> {
     let should_wake = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
         if task.state == TaskState::Dead {
@@ -1199,6 +1218,7 @@ pub fn list_processes<R: BootRuntime>() -> alloc::vec::Vec<hooks::ProcessSnapsho
                 out.push(hooks::ProcessSnapshot {
                     pid: pi.pid,
                     ppid: pi.ppid,
+                    tid: task.id,
                     name,
                     state: task.state,
                     argv: pi.argv.clone(),

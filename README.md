@@ -1,4 +1,6 @@
-# Thing-OS
+This is historical. Find modern Thing-OS at https://github.com/dancxjo/thingos
+
+# Thing-OS (janix)
 
 > **If you cannot `cat` it, you cannot trust it.**
 

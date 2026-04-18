@@ -774,6 +774,30 @@ pub fn setup_network_apps(shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {
             warn!("SPROUT: Failed to spawn fetchd: {:?}", e);
         }
     }
+
+    match stem::syscall::spawn_process("/bin/httpsd", 0) {
+        Ok(pid) => {
+            debug!("SPROUT: Spawned httpsd (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            let mut tasks = shared_tasks.lock();
+            tasks.push(ManagedTask {
+                name: "httpsd".to_string(),
+                kind: TaskKind::Service("svc.net.https".to_string()),
+                module_path: "/bin/httpsd".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+                bind_instance_id: 0,
+                drv_req_write: 0,
+                drv_resp_read: 0,
+                boot_req_read: 0,
+                boot_resp_write: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn httpsd: {:?}", e);
+        }
+    }
 }
 
 pub fn setup_taskman_service(_shared_tasks: Arc<Mutex<Vec<ManagedTask>>>) {

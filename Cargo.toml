@@ -78,6 +78,7 @@ members = [
     "userspace/iso9660d",
     "userspace/iso_reader",
     "userspace/netd",
+    "userspace/httpsd",
     "userspace/fetchd",
     "userspace/ping",
     "userspace/nslookup",
